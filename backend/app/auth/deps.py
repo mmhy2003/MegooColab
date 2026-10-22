@@ -30,6 +30,19 @@ async def current_session(request: Request, db: DbSession) -> Session:
     return session
 
 
+async def user_from_session_token(db, token: str | None) -> User | None:
+    """Active user behind a raw session token, or None (used where FastAPI deps don't apply)."""
+    if not token:
+        return None
+    session = (
+        await db.execute(select(Session).where(Session.token_hash == hash_token(token)))
+    ).scalar_one_or_none()
+    if session is None or session.expires_at <= now():
+        return None
+    user = await db.get(User, session.user_id)
+    return user if user is not None and user.status == UserStatus.active else None
+
+
 async def current_user(
     db: DbSession, session: Annotated[Session, Depends(current_session)]
 ) -> User:
