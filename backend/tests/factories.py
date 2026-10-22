@@ -47,3 +47,18 @@ async def make_team(db: AsyncSession, *members: User, name: str | None = None):
         db.add(TeamMember(team_id=team.id, user_id=m.id))
     await db.commit()
     return team
+
+
+async def make_project(client, db, key: str = "PAY", *members: User):
+    """Creates a team (manager + members) and a project through the API; returns (project_json, manager, team)."""
+    from app.auth.models import Role
+
+    manager = await make_user(db, role=Role.manager)
+    team = await make_team(db, manager, *members)
+    await login(client, manager)
+    r = await client.post(
+        "/api/projects",
+        json={"key": key, "name": f"Project {key}", "description": "", "team_ids": [str(team.id)]},
+    )
+    assert r.status_code == 201, r.text
+    return r.json(), manager, team

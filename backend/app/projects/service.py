@@ -61,8 +61,12 @@ async def list_columns(db: AsyncSession, project_id: uuid.UUID) -> list[BoardCol
 
 
 async def column_task_counts(db: AsyncSession, project_id: uuid.UUID) -> dict[uuid.UUID, int]:
-    # tasks arrive in Task 10
-    return {}
+    from app.tasks.models import Task
+
+    rows = await db.execute(
+        select(Task.column_id, func.count()).where(Task.project_id == project_id).group_by(Task.column_id)
+    )
+    return dict(rows.all())
 
 
 async def columns_out(db: AsyncSession, project_id: uuid.UUID) -> list[ColumnOut]:
@@ -89,5 +93,23 @@ async def get_column_or_404(db: AsyncSession, project: Project, column_id: uuid.
 async def move_column_tasks(
     db: AsyncSession, project: Project, column: BoardColumn, move_to: uuid.UUID | None
 ) -> None:
-    # tasks arrive in Task 10
-    return None
+    """Before a column is deleted, its tasks go to `move_to` (required when there are any)."""
+    from app.tasks.models import Task
+    from app.tasks.service import POSITION_STEP, apply_column, end_position
+
+    tasks = list(
+        (await db.execute(select(Task).where(Task.column_id == column.id).order_by(Task.position))).scalars()
+    )
+    if not tasks:
+        return
+    if move_to is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "move_to_required")
+    target = await db.get(BoardColumn, move_to)
+    if target is None or target.project_id != project.id or target.id == column.id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_move_to")
+    pos = await end_position(db, target.id)
+    for t in tasks:
+        apply_column(t, target)
+        t.position = pos
+        pos += POSITION_STEP
+    await db.flush()

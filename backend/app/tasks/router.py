@@ -1,0 +1,72 @@
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, status
+
+from app.auth.deps import AuthedUser
+from app.core.db import DbSession
+from app.core.events import Event, publish
+from app.projects.access import can_manage_project, get_project_for, project_team_ids
+from app.tasks import service
+from app.tasks.models import Task, TaskType
+from app.tasks.schemas import TaskCreate, TaskOut, TaskUpdate
+from app.teams.service import user_team_ids
+
+router = APIRouter(tags=["tasks"])
+
+
+async def _changed(db, task: Task, kind: str = "task.updated") -> None:
+    await publish(db, Event(type=kind, project_id=task.project_id, task_id=task.id))
+
+
+@router.post("/api/projects/{ref}/tasks", status_code=status.HTTP_201_CREATED)
+async def create_task(ref: str, body: TaskCreate, user: AuthedUser, db: DbSession) -> TaskOut:
+    project = await get_project_for(db, user, ref, write=True)
+    task = await service.create_task(db, user, project, body)
+    await _changed(db, task, "task.created")
+    return await service.task_out(db, task)
+
+
+@router.get("/api/projects/{ref}/tasks")
+async def list_tasks(
+    ref: str,
+    user: AuthedUser,
+    db: DbSession,
+    type_: Annotated[TaskType | None, Query(alias="type")] = None,
+    assignee: uuid.UUID | None = None,
+    label: uuid.UUID | None = None,
+    epic: uuid.UUID | None = None,
+    sprint: str | None = None,
+    column: uuid.UUID | None = None,
+    q: str | None = None,
+) -> list[TaskOut]:
+    project = await get_project_for(db, user, ref)
+    tasks = await service.list_tasks(
+        db, project, type_=type_, assignee=assignee, label=label, epic=epic, sprint=sprint, column=column, q=q
+    )
+    return await service.tasks_out(db, tasks)
+
+
+@router.get("/api/tasks/{key}")
+async def get_task(key: str, user: AuthedUser, db: DbSession) -> TaskOut:
+    task, _ = await service.get_task_for(db, user, key)
+    return (await service.tasks_out(db, [task]))[0]
+
+
+@router.patch("/api/tasks/{key}")
+async def update_task(key: str, body: TaskUpdate, user: AuthedUser, db: DbSession) -> TaskOut:
+    task, project = await service.get_task_for(db, user, key, write=True)
+    await service.update_task(db, user, project, task, body)
+    await _changed(db, task)
+    return await service.task_out(db, task)
+
+
+@router.delete("/api/tasks/{key}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_task(key: str, user: AuthedUser, db: DbSession) -> None:
+    task, project = await service.get_task_for(db, user, key, write=True)
+    if task.reporter_id != user.id and not can_manage_project(
+        user, await project_team_ids(db, project.id), await user_team_ids(db, user.id)
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
+    await _changed(db, task, "task.deleted")
+    await service.delete_task(db, task)
