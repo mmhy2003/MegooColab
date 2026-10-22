@@ -68,3 +68,12 @@ async def test_setup_signs_admin_in(client):
     await client.post("/api/setup", json={"org_name": "Acme", "name": "Root", "email": "root@acme.io", "password": "correct-horse-1"})
     me = await client.get("/api/auth/me")
     assert me.status_code == 200 and me.json()["user"]["role"] == "admin"
+
+
+async def test_update_own_name(client, db):
+    u = await make_user(db, email="a@x.io")
+    await client.post("/api/auth/login", json={"email": "a@x.io", "password": "correct-horse-1"})
+    r = await client.patch("/api/auth/me", json={"name": "New Name"})
+    assert r.status_code == 200 and r.json()["user"]["name"] == "New Name"
+    r = await client.patch("/api/auth/me", json={"name": ""})
+    assert r.status_code == 422

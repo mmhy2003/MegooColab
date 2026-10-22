@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from app.audit import service as audit
@@ -60,6 +60,16 @@ async def logout(
 
 @router.get("/me")
 async def me(user: CurrentUser) -> UserEnvelope:
+    return UserEnvelope(user=UserOut.model_validate(user))
+
+
+class ProfileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+@router.patch("/me")
+async def update_me(body: ProfileIn, user: CurrentUser) -> UserEnvelope:
+    user.name = body.name
     return UserEnvelope(user=UserOut.model_validate(user))
 
 

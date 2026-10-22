@@ -45,7 +45,7 @@ describe("api", () => {
 
   it("throws ApiError carrying the server detail", async () => {
     vi.mocked(fetch).mockResolvedValue(jsonResponse(409, { detail: "project_key_taken" }));
-    const err = await api("/api/x").catch((e) => e);
+    const err = (await api("/api/x").catch((e) => e)) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.status).toBe(409);
     expect(err.detail).toBe("project_key_taken");
