@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     upload_dir: str = "/data/uploads"
     public_url: str = "http://localhost:8080"
+    db_null_pool: bool = False
 
 
 @lru_cache
