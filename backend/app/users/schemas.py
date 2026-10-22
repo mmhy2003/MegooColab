@@ -25,3 +25,8 @@ class CreateUserIn(BaseModel):
 
 class ResetLinkOut(BaseModel):
     reset_url: str
+
+
+class UpdateUserIn(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    role: Role | None = None

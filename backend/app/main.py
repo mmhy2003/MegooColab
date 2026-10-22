@@ -5,6 +5,9 @@ from app.core.csrf import CsrfHeaderMiddleware
 from app.setup.router import router as setup_router
 from app.teams.router import router as teams_router
 from app.users.router import admin_router as admin_users_router
+from app.users.router import users_router
+from app.audit.router import router as audit_router
+from app.org.router import router as org_router
 
 
 def create_app() -> FastAPI:
@@ -23,6 +26,9 @@ def create_app() -> FastAPI:
     app.include_router(setup_router)
     app.include_router(auth_router)
     app.include_router(admin_users_router)
+    app.include_router(users_router)
+    app.include_router(org_router)
+    app.include_router(audit_router)
     app.include_router(teams_router)
     return app
 
