@@ -19,6 +19,9 @@
   --green-ink: #1a7a27;
   --amber: #a16207;
   --on-accent: #ffffff;
+  /* chart series, validated (dataviz validate_palette) against #FFFFFF / #170838 */
+  --chart-1: #0090a8;
+  --chart-2: #d4004f;
   --grid: rgba(80, 40, 200, 0.06);
   --glow-cyan: none;
   --glow-pink: none;
@@ -41,6 +44,8 @@
   --green-ink: #7cff6b;
   --amber: #ffd166;
   --on-accent: #0d0221;
+  --chart-1: #0aa5c0;
+  --chart-2: #ff2a6d;
   --grid: rgba(5, 217, 232, 0.06);
   --glow-cyan: 0 0 8px rgba(5, 217, 232, 0.8);
   --glow-pink: 0 0 8px rgba(255, 42, 109, 0.8);
