@@ -28,3 +28,9 @@ async def make_user(
     db.add(user)
     await db.commit()
     return user
+
+
+async def login(client, user: User, password: str = DEFAULT_PASSWORD):
+    r = await client.post("/api/auth/login", json={"email": user.email, "password": password})
+    assert r.status_code == 200, r.text
+    return r
