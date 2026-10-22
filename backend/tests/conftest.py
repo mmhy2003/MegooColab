@@ -1,5 +1,6 @@
 import asyncio
 import os
+import tempfile
 from pathlib import Path
 
 os.environ["DATABASE_URL"] = os.environ.get(
@@ -7,6 +8,7 @@ os.environ["DATABASE_URL"] = os.environ.get(
 )
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ["DB_NULL_POOL"] = "true"
+os.environ["UPLOAD_DIR"] = tempfile.mkdtemp(prefix="megoo-uploads-")
 
 import httpx
 import pytest
