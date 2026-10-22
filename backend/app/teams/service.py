@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import Role, User
@@ -26,12 +26,24 @@ async def get_team_or_404(db: AsyncSession, team_id: uuid.UUID) -> Team:
 
 
 async def team_projects(db: AsyncSession, team_id: uuid.UUID) -> list[dict]:
-    # projects arrive in Task 9
-    return []
+    from app.projects.models import Project, ProjectTeam
+
+    rows = await db.execute(
+        select(Project.id, Project.key, Project.name)
+        .join(ProjectTeam, ProjectTeam.project_id == Project.id)
+        .where(ProjectTeam.team_id == team_id)
+        .order_by(Project.name)
+    )
+    return [{"id": i, "key": k, "name": n} for i, k, n in rows.all()]
 
 
 async def team_project_counts(db: AsyncSession) -> dict[uuid.UUID, int]:
-    return {}
+    from app.projects.models import ProjectTeam
+
+    rows = await db.execute(
+        select(ProjectTeam.team_id, func.count()).group_by(ProjectTeam.team_id)
+    )
+    return dict(rows.all())
 
 
 async def require_team_manage(db: AsyncSession, user: User, team: Team) -> None:

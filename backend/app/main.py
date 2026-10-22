@@ -8,6 +8,7 @@ from app.users.router import admin_router as admin_users_router
 from app.users.router import users_router
 from app.audit.router import router as audit_router
 from app.org.router import router as org_router
+from app.projects.router import router as projects_router
 
 
 def create_app() -> FastAPI:
@@ -30,6 +31,7 @@ def create_app() -> FastAPI:
     app.include_router(org_router)
     app.include_router(audit_router)
     app.include_router(teams_router)
+    app.include_router(projects_router)
     return app
 
 
