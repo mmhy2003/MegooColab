@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     upload_dir: str = "/data/uploads"
     public_url: str = "http://localhost:8080"
     db_null_pool: bool = False
+    run_migrations_on_startup: bool = True
 
 
 @lru_cache

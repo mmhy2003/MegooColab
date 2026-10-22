@@ -1,0 +1,6 @@
+# SITE_ADDRESS: a domain (e.g. megoo.example.com) gets automatic HTTPS; ":80" serves plain HTTP.
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+	reverse_proxy /api/* backend:8000
+	reverse_proxy frontend:3000
+}

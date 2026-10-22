@@ -6,7 +6,8 @@ from pathlib import Path
 os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://megoo:megoo@localhost:5433/megoo_test"
 )
-os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789abcdef")
+os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
 os.environ["DB_NULL_POOL"] = "true"
 os.environ["UPLOAD_DIR"] = tempfile.mkdtemp(prefix="megoo-uploads-")
 
