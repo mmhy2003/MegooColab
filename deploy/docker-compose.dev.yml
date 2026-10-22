@@ -1,0 +1,21 @@
+# Local development: database only. Run the backend and frontend on the host.
+name: megoocolab-dev
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: megoo
+      POSTGRES_PASSWORD: megoo
+      POSTGRES_DB: megoo
+    ports:
+      - "5433:5432"
+    volumes:
+      - devpgdata:/var/lib/postgresql/data
+      - ./dev-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U megoo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  devpgdata:

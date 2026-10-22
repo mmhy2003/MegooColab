@@ -1,0 +1,37 @@
+[project]
+name = "megoocolab-backend"
+version = "0.1.0"
+description = "MegooColab API server"
+authors = [
+    { name = "Mohamed H. Youssef", email = "mohamed.magdy@slnee.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "aiosmtplib>=5.1.3",
+    "alembic>=1.20.1",
+    "asyncpg>=0.32.0",
+    "cryptography>=50.0.2",
+    "fastapi[standard]>=0.161.0",
+    "pwdlib[argon2]>=0.3.1",
+    "pydantic-settings>=2.16.1",
+    "pyotp>=2.10.0",
+    "python-multipart>=0.0.32",
+    "sqlalchemy[asyncio]>=2",
+]
+
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
