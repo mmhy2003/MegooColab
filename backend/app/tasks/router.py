@@ -8,8 +8,8 @@ from app.core.db import DbSession
 from app.core.events import Event, publish
 from app.projects.access import can_manage_project, get_project_for, project_team_ids
 from app.tasks import service
-from app.tasks.models import Task, TaskType
-from app.tasks.schemas import TaskCreate, TaskOut, TaskUpdate
+from app.tasks.models import Task, TaskLink, TaskType
+from app.tasks.schemas import LinkIn, MoveIn, TaskCreate, TaskOut, TaskUpdate
 from app.teams.service import user_team_ids
 
 router = APIRouter(tags=["tasks"])
@@ -70,3 +70,46 @@ async def delete_task(key: str, user: AuthedUser, db: DbSession) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
     await _changed(db, task, "task.deleted")
     await service.delete_task(db, task)
+
+
+@router.post("/api/tasks/{key}/move")
+async def move_task(key: str, body: MoveIn, user: AuthedUser, db: DbSession) -> TaskOut:
+    task, project = await service.get_task_for(db, user, key, write=True)
+    await service.move_task(db, user, project, task, body)
+    await _changed(db, task)
+    return await service.task_out(db, task)
+
+
+@router.post("/api/tasks/{key}/links", status_code=status.HTTP_201_CREATED)
+async def add_link(key: str, body: LinkIn, user: AuthedUser, db: DbSession) -> TaskOut:
+    task, project = await service.get_task_for(db, user, key, write=True)
+    link = await service.add_link(db, user, project, task, body.target_key, body.kind)
+    await _changed(db, task)
+    target = await db.get(Task, link.target_id)
+    await _changed(db, target)
+    return await service.task_out(db, task)
+
+
+@router.delete("/api/tasks/{key}/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_link(key: str, link_id: uuid.UUID, user: AuthedUser, db: DbSession) -> None:
+    task, _ = await service.get_task_for(db, user, key, write=True)
+    link = await db.get(TaskLink, link_id)
+    if link is None or task.id not in (link.source_id, link.target_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "link_not_found")
+    other = await db.get(Task, link.target_id if link.source_id == task.id else link.source_id)
+    await db.delete(link)
+    await _changed(db, task)
+    if other is not None:
+        await _changed(db, other)
+
+
+@router.put("/api/tasks/{key}/watch", status_code=status.HTTP_204_NO_CONTENT)
+async def watch(key: str, user: AuthedUser, db: DbSession) -> None:
+    task, _ = await service.get_task_for(db, user, key)
+    await service.add_watcher(db, task.id, user.id)
+
+
+@router.delete("/api/tasks/{key}/watch", status_code=status.HTTP_204_NO_CONTENT)
+async def unwatch(key: str, user: AuthedUser, db: DbSession) -> None:
+    task, _ = await service.get_task_for(db, user, key)
+    await service.remove_watcher(db, task.id, user.id)

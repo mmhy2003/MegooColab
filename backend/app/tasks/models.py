@@ -12,7 +12,9 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, IdMixin, TimestampMixin
@@ -75,3 +77,29 @@ class Task(IdMixin, TimestampMixin, Base):
     # FK to sprints is added in Task 13
     sprint_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class LinkKind(StrEnum):
+    blocks = "blocks"
+    relates = "relates"
+
+
+class TaskLink(IdMixin, Base):
+    __tablename__ = "task_links"
+    __table_args__ = (UniqueConstraint("source_id", "target_id", "kind"),)
+
+    source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[LinkKind] = mapped_column(String(20))
+
+
+class TaskEvent(IdMixin, Base):
+    __tablename__ = "task_events"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(50))
+    data: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )

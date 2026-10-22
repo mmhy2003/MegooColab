@@ -1,11 +1,12 @@
 import uuid
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from app.projects.models import ColumnCategory
 from app.projects.schemas import LabelOut
-from app.tasks.models import Priority, TaskType
+from app.tasks.models import LinkKind, Priority, TaskType
 
 
 class TaskCreate(BaseModel):
@@ -59,3 +60,28 @@ class TaskOut(BaseModel):
     labels: list[LabelOut]
     subtask_count: int
     subtask_done_count: int
+    links: list["TaskLinkOut"] = []
+    watcher_ids: list[uuid.UUID] = []
+
+
+class LinkedTask(BaseModel):
+    key: str
+    title: str
+    column_category: ColumnCategory
+
+
+class TaskLinkOut(BaseModel):
+    id: uuid.UUID
+    kind: Literal["blocks", "blocked_by", "relates"]
+    task: LinkedTask
+
+
+class MoveIn(BaseModel):
+    column_id: uuid.UUID
+    before_key: str | None = None
+    after_key: str | None = None
+
+
+class LinkIn(BaseModel):
+    target_key: str
+    kind: LinkKind

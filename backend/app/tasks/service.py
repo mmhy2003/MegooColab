@@ -11,8 +11,9 @@ from app.auth.models import Role, User, UserStatus
 from app.projects.access import get_project_for
 from app.projects.models import BoardColumn, ColumnCategory, Label, Project, ProjectTeam
 from app.projects.schemas import LabelOut
-from app.tasks.models import Task, TaskType, task_labels, task_watchers
-from app.tasks.schemas import TaskCreate, TaskOut, TaskUpdate
+from app.tasks import ordering
+from app.tasks.models import LinkKind, Task, TaskEvent, TaskLink, TaskType, task_labels, task_watchers
+from app.tasks.schemas import LinkedTask, MoveIn, TaskCreate, TaskLinkOut, TaskOut, TaskUpdate
 from app.teams.models import TeamMember
 
 KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$")
@@ -72,6 +73,12 @@ async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
     ).group_by(Task.parent_id)
     for parent_id, total, done in await db.execute(child):
         sub_counts[parent_id] = (total, done)
+    watchers: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
+    for task_id, user_id in await db.execute(
+        select(task_watchers.c.task_id, task_watchers.c.user_id).where(task_watchers.c.task_id.in_(ids))
+    ):
+        watchers[task_id].append(user_id)
+    links = await _links_for(db, ids)
     return [
         TaskOut(
             id=t.id,
@@ -97,15 +104,54 @@ async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
             labels=labels.get(t.id, []),
             subtask_count=sub_counts.get(t.id, (0, 0))[0],
             subtask_done_count=sub_counts.get(t.id, (0, 0))[1],
+            links=links.get(t.id, []),
+            watcher_ids=watchers.get(t.id, []),
         )
         for t in tasks
     ]
+
+
+async def _links_for(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, list[TaskLinkOut]]:
+    rows = list(
+        (await db.execute(
+            select(TaskLink).where((TaskLink.source_id.in_(ids)) | (TaskLink.target_id.in_(ids)))
+        )).scalars()
+    )
+    if not rows:
+        return {}
+    other_ids = {r.source_id for r in rows} | {r.target_id for r in rows}
+    info = {
+        tid: LinkedTask(key=f"{pkey}-{num}", title=title, column_category=cat)
+        for tid, pkey, num, title, cat in await db.execute(
+            select(Task.id, Project.key, Task.number, Task.title, BoardColumn.category)
+            .join(Project, Project.id == Task.project_id)
+            .join(BoardColumn, BoardColumn.id == Task.column_id)
+            .where(Task.id.in_(other_ids))
+        )
+    }
+    out: dict[uuid.UUID, list[TaskLinkOut]] = defaultdict(list)
+    wanted = set(ids)
+    for r in rows:
+        if r.source_id in wanted:
+            out[r.source_id].append(TaskLinkOut(id=r.id, kind=str(r.kind), task=info[r.target_id]))
+        if r.target_id in wanted:
+            kind = "blocked_by" if r.kind == LinkKind.blocks else "relates"
+            out[r.target_id].append(TaskLinkOut(id=r.id, kind=kind, task=info[r.source_id]))
+    return out
 
 
 async def task_out(db: AsyncSession, task: Task) -> TaskOut:
     await db.flush()
     await db.refresh(task)
     return (await tasks_out(db, [task]))[0]
+
+
+async def record_event(
+    db: AsyncSession, task: Task, actor_id: uuid.UUID | None, kind: str, data: dict | None = None
+) -> TaskEvent:
+    event = TaskEvent(task_id=task.id, actor_user_id=actor_id, kind=kind, data=data or {})
+    db.add(event)
+    return event
 
 
 async def get_column(db: AsyncSession, project: Project, column_id: uuid.UUID) -> BoardColumn:
@@ -265,11 +311,22 @@ async def create_task(db: AsyncSession, user: User, project: Project, data: Task
     if data.label_ids:
         await set_labels(db, project, task, data.label_ids)
     await add_watcher(db, task.id, user.id)
+    await record_event(db, task, user.id, "created", {"column": str(column.id)})
     return task
+
+
+TRACKED_FIELDS = ("type", "parent_id", "title", "description_md", "priority", "story_points", "due_date")
+
+
+def _jsonable(v):
+    if v is None or isinstance(v, (int, float, str, bool)):
+        return v
+    return str(v)
 
 
 async def update_task(db: AsyncSession, user: User, project: Project, task: Task, data: TaskUpdate) -> Task:
     fields = data.model_fields_set
+    before = {name: getattr(task, name) for name in TRACKED_FIELDS}
     new_type = data.type if "type" in fields and data.type is not None else task.type
     new_parent = data.parent_id if "parent_id" in fields else task.parent_id
     if "type" in fields or "parent_id" in fields:
@@ -277,8 +334,10 @@ async def update_task(db: AsyncSession, user: User, project: Project, task: Task
         if new_type != task.type:
             await validate_children_after_type_change(db, task, new_type)
         task.type, task.parent_id = new_type, new_parent
-    if "assignee_user_id" in fields:
+    if "assignee_user_id" in fields and data.assignee_user_id != task.assignee_user_id:
         await check_assignee(db, project, data.assignee_user_id)
+        await record_event(db, task, user.id, "assigned", {
+            "from": _jsonable(task.assignee_user_id), "to": _jsonable(data.assignee_user_id)})
         task.assignee_user_id = data.assignee_user_id
     for name in ("title", "description_md", "priority"):
         if name in fields and getattr(data, name) is not None:
@@ -288,6 +347,14 @@ async def update_task(db: AsyncSession, user: User, project: Project, task: Task
             setattr(task, name, getattr(data, name))
     if "label_ids" in fields and data.label_ids is not None:
         await set_labels(db, project, task, data.label_ids)
+        await record_event(db, task, user.id, "field_changed", {"field": "labels"})
+    for name, old in before.items():
+        new = getattr(task, name)
+        if new != old:
+            change = {"field": name}
+            if name != "description_md":
+                change |= {"from": _jsonable(old), "to": _jsonable(new)}
+            await record_event(db, task, user.id, "field_changed", change)
     task.updated_at = _now()
     return task
 
@@ -332,3 +399,83 @@ async def list_tasks(
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_sprint")
     return list((await db.execute(stmt)).scalars())
 
+
+
+async def _column_tasks(db: AsyncSession, column_id: uuid.UUID, exclude: uuid.UUID) -> list[Task]:
+    rows = await db.execute(
+        select(Task).where(Task.column_id == column_id, Task.id != exclude).order_by(Task.position, Task.number)
+    )
+    return list(rows.scalars())
+
+
+async def move_task(db: AsyncSession, user: User, project: Project, task: Task, data: MoveIn) -> Task:
+    """Drops the task into `column_id` below `before_key` and above `after_key`."""
+    column = await get_column(db, project, data.column_id)
+    siblings = await _column_tasks(db, column.id, exclude=task.id)
+    by_key = {f"{project.key}-{t.number}": i for i, t in enumerate(siblings)}
+
+    def index_of(key: str | None) -> int | None:
+        if key is None:
+            return None
+        i = by_key.get(key.upper())
+        if i is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_neighbor")
+        return i
+
+    bi, ai = index_of(data.before_key), index_of(data.after_key)
+    # one neighbour is enough: the other is whatever card is adjacent to it
+    if bi is not None and ai is None:
+        ai = bi + 1 if bi + 1 < len(siblings) else None
+    elif ai is not None and bi is None:
+        bi = ai - 1 if ai > 0 else None
+    elif bi is None and ai is None:
+        bi = len(siblings) - 1 if siblings else None  # no neighbours given: append
+    if bi is not None and ai is not None and ai != bi + 1:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_neighbor")
+
+    def pos(i: int | None) -> float | None:
+        return siblings[i].position if i is not None else None
+
+    new_pos = ordering.position_between(pos(bi), pos(ai))
+    if bi is not None and ai is not None and (
+        ordering.needs_rebalance(pos(bi), new_pos) or ordering.needs_rebalance(new_pos, pos(ai))
+    ):
+        # gap exhausted: renumber the column, then split the fresh gap
+        for n, t in enumerate(siblings, start=1):
+            t.position = n * ordering.STEP
+        await db.flush()
+        new_pos = ordering.position_between(pos(bi), pos(ai))
+    task.position = new_pos
+    if column.id != task.column_id:
+        await record_event(db, task, user.id, "status_changed", {
+            "from_column": str(task.column_id), "to_column": str(column.id), "to_category": str(column.category)})
+    apply_column(task, column)
+    task.updated_at = _now()
+    return task
+
+
+async def add_link(db: AsyncSession, user: User, project: Project, task: Task, target_key: str, kind: LinkKind) -> TaskLink:
+    target, _ = await get_task_for(db, user, target_key)
+    if target.id == task.id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "cannot_link_to_self")
+    exists = (
+        await db.execute(
+            select(TaskLink.id).where(
+                TaskLink.kind == kind,
+                ((TaskLink.source_id == task.id) & (TaskLink.target_id == target.id))
+                | ((TaskLink.source_id == target.id) & (TaskLink.target_id == task.id) & (kind == LinkKind.relates)),
+            )
+        )
+    ).first()
+    if exists:
+        raise HTTPException(status.HTTP_409_CONFLICT, "link_exists")
+    link = TaskLink(source_id=task.id, target_id=target.id, kind=kind)
+    db.add(link)
+    await db.flush()
+    return link
+
+
+async def remove_watcher(db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    await db.execute(
+        delete(task_watchers).where(task_watchers.c.task_id == task_id, task_watchers.c.user_id == user_id)
+    )
