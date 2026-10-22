@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, select
 
 from app.audit import service as audit
-from app.auth import service
+from app.auth import service, totp
 from app.auth.deps import CurrentUser, current_session
 from app.auth.models import Session, TokenPurpose, User, UserStatus
 from app.auth.schemas import LowerEmail, Password, UserEnvelope, UserOut
@@ -30,7 +30,11 @@ async def login(body: LoginIn, request: Request, response: Response, db: DbSessi
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_credentials")
     if service.is_locked(user):
         raise HTTPException(status.HTTP_423_LOCKED, "locked")
-    if not verify_password(body.password, user.password_hash) or user.status != UserStatus.active:
+    password_ok = verify_password(body.password, user.password_hash)
+    if password_ok and user.status == UserStatus.active and user.totp_enabled and not body.totp_code:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "totp_required")
+    totp_ok = not user.totp_enabled or totp.verify(user, body.totp_code)
+    if not (password_ok and totp_ok) or user.status != UserStatus.active:
         locked = service.register_failed_login(user)
         await audit.record(db, "auth.login_failed", target_type="user", target_id=user.id)
         if locked:
@@ -132,3 +136,43 @@ async def change_password(
     user.must_change_password = False
     await service.revoke_user_sessions(db, user.id, except_token_hash=session.token_hash)
     await audit.record(db, "auth.password_changed", actor_id=user.id)
+
+
+class TotpSetupOut(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class TotpCodeIn(BaseModel):
+    code: str
+
+
+class TotpDisableIn(BaseModel):
+    password: str
+    code: str
+
+
+@router.post("/totp/setup")
+async def totp_setup(user: CurrentUser) -> TotpSetupOut:
+    if user.totp_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "totp_already_enabled")
+    secret, uri = totp.start_setup(user)
+    return TotpSetupOut(secret=secret, otpauth_uri=uri)
+
+
+@router.post("/totp/enable", status_code=status.HTTP_204_NO_CONTENT)
+async def totp_enable(body: TotpCodeIn, user: CurrentUser, db: DbSession) -> None:
+    if not totp.verify(user, body.code):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_code")
+    user.totp_enabled = True
+    await audit.record(db, "auth.totp_enabled", actor_id=user.id)
+
+
+@router.post("/totp/disable", status_code=status.HTTP_204_NO_CONTENT)
+async def totp_disable(body: TotpDisableIn, user: CurrentUser, db: DbSession) -> None:
+    password_ok = user.password_hash is not None and verify_password(body.password, user.password_hash)
+    if not (password_ok and user.totp_enabled and totp.verify(user, body.code)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_password_or_code")
+    user.totp_enabled = False
+    user.totp_secret_enc = None
+    await audit.record(db, "auth.totp_disabled", actor_id=user.id)
