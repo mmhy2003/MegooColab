@@ -1,4 +1,4 @@
-# Local development: database only. Run the backend and frontend on the host.
+# Local development: database + a Caddy front door on :8080. Run the backend and frontend on the host.
 name: megoocolab-dev
 services:
   db:
@@ -17,5 +17,13 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  caddy:
+    image: caddy:2
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 volumes:
   devpgdata:

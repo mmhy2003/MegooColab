@@ -1,0 +1,22 @@
+/** Query-key factory: one place that names every cached query, so live updates can invalidate them. */
+export const qk = {
+  me: () => ["me"] as const,
+  org: () => ["org"] as const,
+  users: (q?: string) => ["users", q ?? ""] as const,
+  projects: () => ["projects"] as const,
+  project: (ref: string) => ["project", ref] as const,
+  columns: (ref: string) => ["columns", ref] as const,
+  labels: (ref: string) => ["labels", ref] as const,
+  repositories: (ref: string) => ["repositories", ref] as const,
+  tasks: (ref: string, filters: Record<string, string | undefined> = {}) => ["tasks", ref, filters] as const,
+  task: (key: string) => ["task", key] as const,
+  activity: (key: string) => ["activity", key] as const,
+  attachments: (key: string) => ["attachments", key] as const,
+  sprints: (ref: string) => ["sprints", ref] as const,
+  burndown: (sprintId: string) => ["burndown", sprintId] as const,
+  velocity: (ref: string) => ["velocity", ref] as const,
+  teams: () => ["teams"] as const,
+  team: (id: string) => ["team", id] as const,
+  adminSettings: () => ["admin-settings"] as const,
+  audit: (filters: Record<string, string | undefined> = {}) => ["audit", filters] as const,
+};
