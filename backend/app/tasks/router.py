@@ -7,6 +7,7 @@ from app.auth.deps import AuthedUser
 from app.core.db import DbSession
 from app.core.events import Event, publish
 from app.projects.access import can_manage_project, get_project_for, project_team_ids
+from app.sprints.service import snapshot_if_active
 from app.tasks import service
 from app.tasks.models import Task, TaskLink, TaskType
 from app.tasks.schemas import LinkIn, MoveIn, TaskCreate, TaskOut, TaskUpdate
@@ -17,6 +18,8 @@ router = APIRouter(tags=["tasks"])
 
 async def _changed(db, task: Task, kind: str = "task.updated") -> None:
     await publish(db, Event(type=kind, project_id=task.project_id, task_id=task.id))
+    if kind != "task.deleted":
+        await snapshot_if_active(db, task.sprint_id)
 
 
 @router.post("/api/projects/{ref}/tasks", status_code=status.HTTP_201_CREATED)
@@ -68,8 +71,10 @@ async def delete_task(key: str, user: AuthedUser, db: DbSession) -> None:
         user, await project_team_ids(db, project.id), await user_team_ids(db, user.id)
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
+    sprint_id = task.sprint_id
     await _changed(db, task, "task.deleted")
     await service.delete_task(db, task)
+    await snapshot_if_active(db, sprint_id)
 
 
 @router.post("/api/tasks/{key}/move")

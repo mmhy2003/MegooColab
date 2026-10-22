@@ -74,8 +74,9 @@ class Task(IdMixin, TimestampMixin, Base):
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("tasks.id", ondelete="CASCADE"), index=True
     )
-    # FK to sprints is added in Task 13
-    sprint_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
+    sprint_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sprints.id", ondelete="SET NULL"), index=True
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

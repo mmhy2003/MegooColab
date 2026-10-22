@@ -9,6 +9,7 @@ from app.users.router import users_router
 from app.audit.router import router as audit_router
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
+from app.sprints.router import router as sprints_router
 from app.tasks.activity import router as activity_router
 from app.tasks.router import router as tasks_router
 
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
     app.include_router(projects_router)
     app.include_router(tasks_router)
     app.include_router(activity_router)
+    app.include_router(sprints_router)
     return app
 
 

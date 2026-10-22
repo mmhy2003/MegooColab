@@ -392,6 +392,14 @@ async def list_tasks(
         stmt = stmt.where(Task.title.ilike(f"%{q}%"))
     if sprint == "backlog":
         stmt = stmt.where(Task.sprint_id.is_(None))
+    elif sprint == "active":
+        from app.sprints.models import Sprint, SprintState
+
+        stmt = stmt.where(
+            Task.sprint_id.in_(
+                select(Sprint.id).where(Sprint.project_id == project.id, Sprint.state == SprintState.active)
+            )
+        )
     elif sprint:
         try:
             stmt = stmt.where(Task.sprint_id == uuid.UUID(sprint))
