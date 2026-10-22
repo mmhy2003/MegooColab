@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 
 from app.auth.deps import AuthedUser
 from app.auth.models import Role, User
@@ -91,16 +91,23 @@ async def task_activity(
     user: AuthedUser,
     db: DbSession,
     before: datetime | None = None,
+    before_id: uuid.UUID | None = None,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[ActivityItem]:
+    """Newest `limit` items, oldest first. Page back with the first item's (at, id) as the cursor."""
     task, _ = await get_task_for(db, user, key)
     c_stmt = select(Comment).where(Comment.task_id == task.id)
     e_stmt = select(TaskEvent).where(TaskEvent.task_id == task.id)
-    if before:
+    if before and before_id:
+        # (at, id) cursor: items written in one transaction share a timestamp
+        cursor = (before, before_id)
+        c_stmt = c_stmt.where(tuple_(Comment.created_at, Comment.id) < cursor)
+        e_stmt = e_stmt.where(tuple_(TaskEvent.created_at, TaskEvent.id) < cursor)
+    elif before:
         c_stmt = c_stmt.where(Comment.created_at < before)
         e_stmt = e_stmt.where(TaskEvent.created_at < before)
-    comments = (await db.execute(c_stmt.order_by(Comment.created_at.desc()).limit(limit))).scalars().all()
-    events = (await db.execute(e_stmt.order_by(TaskEvent.created_at.desc()).limit(limit))).scalars().all()
+    comments = (await db.execute(c_stmt.order_by(Comment.created_at.desc(), Comment.id.desc()).limit(limit))).scalars().all()
+    events = (await db.execute(e_stmt.order_by(TaskEvent.created_at.desc(), TaskEvent.id.desc()).limit(limit))).scalars().all()
     actor_ids = {c.author_user_id for c in comments} | {e.actor_user_id for e in events}
     actor_ids.discard(None)
     actors = {
@@ -116,8 +123,7 @@ async def task_activity(
                      kind=e.kind, data=e.data)
         for e in events
     ]
-    # events sort before comments made in the same instant (e.g. "created" then the first comment)
-    items.sort(key=lambda i: (i.at, i.type == "comment"), reverse=True)
+    items.sort(key=lambda i: (i.at, i.id), reverse=True)
     return list(reversed(items[:limit]))
 
 

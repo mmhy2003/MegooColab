@@ -1,11 +1,17 @@
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 
 from app.auth.models import Role, Session, User, UserStatus
-from app.auth.service import SESSION_COOKIE, SESSION_SLIDE_EVERY, SESSION_TTL, now
+from app.auth.service import (
+    SESSION_COOKIE,
+    SESSION_SLIDE_EVERY,
+    SESSION_TTL,
+    now,
+    set_session_cookie,
+)
 from app.core.db import DbSession
 from app.core.security import hash_token
 
@@ -14,7 +20,7 @@ def _unauthorized() -> HTTPException:
     return HTTPException(status.HTTP_401_UNAUTHORIZED, "not_authenticated")
 
 
-async def current_session(request: Request, db: DbSession) -> Session:
+async def current_session(request: Request, response: Response, db: DbSession) -> Session:
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         raise _unauthorized()
@@ -27,6 +33,7 @@ async def current_session(request: Request, db: DbSession) -> Session:
     if ts - session.last_seen_at >= SESSION_SLIDE_EVERY:
         session.last_seen_at = ts
         session.expires_at = ts + SESSION_TTL
+        set_session_cookie(response, token)  # the browser's copy slides too
     return session
 
 

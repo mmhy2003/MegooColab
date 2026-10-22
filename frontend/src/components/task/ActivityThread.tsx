@@ -38,8 +38,20 @@ function when(at: string): string {
   return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function ActivityThread({ items, columnNames, userNames }: { items: ActivityItem[] } & Names) {
+export function ActivityThread({
+  items,
+  columnNames,
+  userNames,
+  hasMore = false,
+  onLoadEarlier,
+}: { items: ActivityItem[]; hasMore?: boolean; onLoadEarlier?: () => void } & Names) {
   return (
+    <>
+    {hasMore && onLoadEarlier && (
+      <button type="button" className="text-xs text-cyan-ink" onClick={onLoadEarlier}>
+        Load earlier activity
+      </button>
+    )}
     <ol className="space-y-3">
       {items.map((item) => {
         const actor = item.actor?.name ?? "Someone";
@@ -68,5 +80,6 @@ export function ActivityThread({ items, columnNames, userNames }: { items: Activ
         );
       })}
     </ol>
+    </>
   );
 }

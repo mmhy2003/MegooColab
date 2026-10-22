@@ -7,7 +7,7 @@ from app.auth.deps import AuthedUser
 from app.auth.models import User
 from app.core.db import DbSession
 from app.core.events import Event, publish
-from app.projects.access import get_project_for
+from app.projects.access import get_project_for, require_manage
 from app.sprints import service
 from app.sprints.models import Sprint, SprintState
 from app.sprints.schemas import (
@@ -29,10 +29,12 @@ async def _changed(db, sprint: Sprint) -> None:
     await publish(db, Event(type="sprint.updated", project_id=sprint.project_id))
 
 
-async def _sprint_for(db, user: User, sprint_id: uuid.UUID, write: bool = False) -> Sprint:
+async def _sprint_for(db, user: User, sprint_id: uuid.UUID, manage: bool = False) -> Sprint:
     sprint = await service.get_sprint(db, sprint_id)
-    project = await get_project_for(db, user, str(sprint.project_id), write=write)
+    project = await get_project_for(db, user, str(sprint.project_id), write=manage)
     service.require_sprints(project)
+    if manage:
+        await require_manage(db, user, project)
     return sprint
 
 
@@ -50,6 +52,7 @@ async def list_sprints(ref: str, user: AuthedUser, db: DbSession) -> list[Sprint
 async def create_sprint(ref: str, body: SprintIn, user: AuthedUser, db: DbSession) -> SprintOut:
     project = await get_project_for(db, user, ref, write=True)
     service.require_sprints(project)
+    await require_manage(db, user, project)
     sprint = Sprint(project_id=project.id, **body.model_dump())
     db.add(sprint)
     await db.flush()
@@ -60,7 +63,7 @@ async def create_sprint(ref: str, body: SprintIn, user: AuthedUser, db: DbSessio
 
 @router.patch("/api/sprints/{sprint_id}")
 async def update_sprint(sprint_id: uuid.UUID, body: SprintPatch, user: AuthedUser, db: DbSession) -> SprintOut:
-    sprint = await _sprint_for(db, user, sprint_id, write=True)
+    sprint = await _sprint_for(db, user, sprint_id, manage=True)
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(sprint, field, value)
     if sprint.end_date < sprint.start_date:
@@ -71,7 +74,7 @@ async def update_sprint(sprint_id: uuid.UUID, body: SprintPatch, user: AuthedUse
 
 @router.post("/api/sprints/{sprint_id}/start")
 async def start_sprint(sprint_id: uuid.UUID, user: AuthedUser, db: DbSession) -> SprintOut:
-    sprint = await _sprint_for(db, user, sprint_id, write=True)
+    sprint = await _sprint_for(db, user, sprint_id, manage=True)
     await service.start(db, sprint)
     await _changed(db, sprint)
     return SprintOut.model_validate(sprint)
@@ -79,7 +82,7 @@ async def start_sprint(sprint_id: uuid.UUID, user: AuthedUser, db: DbSession) ->
 
 @router.post("/api/sprints/{sprint_id}/complete")
 async def complete_sprint(sprint_id: uuid.UUID, body: CompleteIn, user: AuthedUser, db: DbSession) -> SprintOut:
-    sprint = await _sprint_for(db, user, sprint_id, write=True)
+    sprint = await _sprint_for(db, user, sprint_id, manage=True)
     await service.complete(db, sprint, body.move_open_to)
     await _changed(db, sprint)
     return SprintOut.model_validate(sprint)

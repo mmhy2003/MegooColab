@@ -10,7 +10,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => search,
 }));
 
-import { LoginForm } from "@/app/(auth)/login/LoginForm";
+import { LoginForm, safeNext } from "@/app/(auth)/login/LoginForm";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -95,4 +95,12 @@ describe("LoginForm", () => {
     render(<LoginForm />);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/setup"));
   });
+});
+
+describe("safeNext", () => {
+  it.each(["https://evil.example", "//evil.example", "/\\evil.example", "/\\/evil.example", "javascript:alert(1)"])(
+    "rejects %s",
+    (next) => expect(safeNext(next)).toBe("/projects"),
+  );
+  it("keeps same-site paths", () => expect(safeNext("/projects/PAY/board?task=PAY-1")).toBe("/projects/PAY/board?task=PAY-1"));
 });

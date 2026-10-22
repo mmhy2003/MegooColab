@@ -50,12 +50,16 @@ export function connectRealtime(client: QueryClient): () => void {
   let stopped = false;
   let backoff = MIN_BACKOFF_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let connectedBefore = false;
 
   const open = () => {
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     socket = new WebSocket(`${scheme}://${window.location.host}/api/ws`);
     socket.onopen = () => {
       backoff = MIN_BACKOFF_MS;
+      // events published while we were disconnected are gone: refetch rather than show stale data
+      if (connectedBefore) void client.invalidateQueries();
+      connectedBefore = true;
     };
     socket.onmessage = (msg) => {
       let event: LiveEvent;

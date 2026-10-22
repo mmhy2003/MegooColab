@@ -56,12 +56,19 @@ test("foundation smoke", async ({ browser }) => {
   await admin.getByLabel("Core").check();
   await admin.getByRole("button", { name: "Create project" }).click();
   await expect(admin).toHaveURL(/\/projects\/PAY\/board/);
+
+  // 4b. with sprints on (the default), work is created in the backlog
+  await admin.goto("/projects/PAY/backlog");
+  await admin.getByLabel("New backlog item").fill("Refund flow");
+  await admin.getByLabel("New backlog item").press("Enter");
+  await expect(admin.getByRole("region", { name: "Backlog" }).getByText("Refund flow")).toBeVisible();
+
   const patched = await admin.request.patch("/api/projects/PAY", {
     data: { sprints_enabled: false },
     headers: { "X-Megoo-Client": "web" },
   });
   expect(patched.ok()).toBeTruthy();
-  await admin.reload();
+  await admin.goto("/projects/PAY/board");
 
   // 5. task via quick-create
   await admin.getByLabel("New task in To Do").fill("Sync orders");
@@ -79,8 +86,8 @@ test("foundation smoke", async ({ browser }) => {
   await member.goto("/projects/PAY/board");
   await expect(column(member, "To Do").getByText("Sync orders")).toBeVisible();
 
-  // 7. admin drags PAY-1 to In Progress; the member sees it move within 2 s
-  const card = column(admin, "To Do").getByRole("button", { name: /PAY-1 Sync orders/ });
+  // 7. admin drags PAY-2 to In Progress; the member sees it move within 2 s
+  const card = column(admin, "To Do").getByRole("button", { name: /PAY-2 Sync orders/ });
   const target = column(admin, "In Progress");
   const from = (await card.boundingBox())!;
   const to = (await target.boundingBox())!;
@@ -93,12 +100,12 @@ test("foundation smoke", async ({ browser }) => {
   await expect(column(member, "In Progress").getByText("Sync orders")).toBeVisible({ timeout: 2_000 });
 
   // 8. member comments; the admin's open task shows it live
-  await admin.goto("/projects/PAY/board?task=PAY-1");
-  await expect(admin.getByRole("dialog", { name: "PAY-1" })).toBeVisible();
-  await member.goto("/projects/PAY/board?task=PAY-1");
+  await admin.goto("/projects/PAY/board?task=PAY-2");
+  await expect(admin.getByRole("dialog", { name: "PAY-2" })).toBeVisible();
+  await member.goto("/projects/PAY/board?task=PAY-2");
   await member.getByLabel("Add a comment").fill("On it — **ERP** creds received.");
   await member.getByRole("button", { name: "Comment" }).click();
-  await expect(admin.getByRole("dialog", { name: "PAY-1" }).getByText("creds received.")).toBeVisible({ timeout: 2_000 });
+  await expect(admin.getByRole("dialog", { name: "PAY-2" }).getByText("creds received.")).toBeVisible({ timeout: 2_000 });
 
   // 9. removing the member from Core takes PAY away from them
   const team = (await (await admin.request.get("/api/teams")).json())[0];

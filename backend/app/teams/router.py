@@ -25,7 +25,7 @@ async def _flush_unique_name(db: AsyncSession) -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, "team_name_taken")
 
 
-async def _detail(db: AsyncSession, team: Team) -> TeamDetail:
+async def _detail(db: AsyncSession, team: Team, viewer: User) -> TeamDetail:
     members = (
         await db.execute(
             select(User).join(TeamMember, TeamMember.user_id == User.id)
@@ -37,8 +37,15 @@ async def _detail(db: AsyncSession, team: Team) -> TeamDetail:
         name=team.name,
         description=team.description,
         members=[UserOut.model_validate(u) for u in members],
-        projects=await service.team_projects(db, team.id),
+        projects=await _visible_projects(db, team, viewer),
     )
+
+
+async def _visible_projects(db: AsyncSession, team: Team, viewer: User) -> list[dict]:
+    from app.projects.access import accessible_project_ids
+
+    allowed = await accessible_project_ids(db, viewer)
+    return [p for p in await service.team_projects(db, team.id) if allowed is None or p["id"] in allowed]
 
 
 @router.get("")
@@ -76,7 +83,7 @@ async def create_team(body: TeamIn, user: AuthedUser, db: DbSession) -> TeamOut:
 
 @router.get("/{team_id}")
 async def get_team(team_id: uuid.UUID, user: AuthedUser, db: DbSession) -> TeamDetail:
-    return await _detail(db, await service.get_team_or_404(db, team_id))
+    return await _detail(db, await service.get_team_or_404(db, team_id), user)
 
 
 @router.patch("/{team_id}")
@@ -129,4 +136,4 @@ async def replace_members(team_id: uuid.UUID, body: MembersIn, user: AuthedUser,
         )
     for uid in added | removed:
         await publish(db, Event(type="membership.changed", user_id=uid))
-    return await _detail(db, team)
+    return await _detail(db, team, user)

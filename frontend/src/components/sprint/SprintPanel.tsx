@@ -67,6 +67,7 @@ export function DropZone({
   meta,
   actions,
   tasks,
+  top,
   children,
 }: {
   id: string;
@@ -74,6 +75,7 @@ export function DropZone({
   meta?: React.ReactNode;
   actions?: React.ReactNode;
   tasks: Task[];
+  top?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `sprint:${id}` });
@@ -87,6 +89,7 @@ export function DropZone({
         <span className="flex-1" />
         {actions}
       </header>
+      {top}
       <ul className="min-h-10">{children}</ul>
       {tasks.length === 0 && <p className="px-3 py-3 text-xs text-muted">Drag tasks here.</p>}
     </section>

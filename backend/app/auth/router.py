@@ -11,6 +11,7 @@ from app.auth.models import Session, TokenPurpose, User, UserStatus
 from app.auth.schemas import LowerEmail, Password, UserEnvelope, UserOut
 from app.core.db import DbSession
 from app.core.email import Mailer, get_mailer
+from app.core.events import Event, publish
 from app.core.security import DUMMY_HASH, hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -24,7 +25,10 @@ class LoginIn(BaseModel):
 
 @router.post("/login")
 async def login(body: LoginIn, request: Request, response: Response, db: DbSession) -> UserEnvelope:
-    user = (await db.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
+    # row lock: parallel attempts must count one by one, or the lockout can be raced past
+    user = (
+        await db.execute(select(User).where(User.email == body.email).with_for_update())
+    ).scalar_one_or_none()
     if user is None or user.password_hash is None:
         verify_password(body.password, DUMMY_HASH)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_credentials")
@@ -55,6 +59,7 @@ async def logout(
     response: Response, db: DbSession, session: Annotated[Session, Depends(current_session)]
 ) -> None:
     await db.execute(delete(Session).where(Session.id == session.id))
+    await publish(db, Event(type="sessions.revoked", user_id=session.user_id))
     service.clear_session_cookie(response)
 
 

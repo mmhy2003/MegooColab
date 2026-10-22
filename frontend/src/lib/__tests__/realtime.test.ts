@@ -94,6 +94,17 @@ describe("connectRealtime", () => {
     expect(MockSocket.instances).toHaveLength(1);
   });
 
+  it("refetches everything after reconnecting, since events may have been missed", () => {
+    const spy = vi.spyOn(client, "invalidateQueries");
+    connectRealtime(client);
+    MockSocket.instances[0].onopen?.();
+    expect(spy).not.toHaveBeenCalled();
+    MockSocket.instances[0].onclose?.({ code: 1006 });
+    vi.advanceTimersByTime(1000);
+    MockSocket.instances[1].onopen?.();
+    expect(spy).toHaveBeenCalledWith();
+  });
+
   it("reconnects with backoff after other closes", () => {
     connectRealtime(client);
     MockSocket.instances[0].onclose?.({ code: 1006 });

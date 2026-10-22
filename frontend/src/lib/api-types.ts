@@ -743,7 +743,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Task Activity */
+        /**
+         * Task Activity
+         * @description Newest `limit` items, oldest first. Page back with the first item's (at, id) as the cursor.
+         */
         get: operations["task_activity_api_tasks__key__activity_get"];
         put?: never;
         post?: never;
@@ -3665,6 +3668,7 @@ export interface operations {
         parameters: {
             query?: {
                 before?: string | null;
+                before_id?: string | null;
                 limit?: number;
             };
             header?: never;

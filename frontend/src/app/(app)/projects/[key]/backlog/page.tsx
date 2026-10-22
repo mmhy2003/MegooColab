@@ -6,6 +6,7 @@ import { Plus } from "lucide-react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 
+import { BacklogQuickCreate } from "@/components/sprint/BacklogQuickCreate";
 import { CompleteSprintDialog } from "@/components/sprint/CompleteSprintDialog";
 import { NewSprintDialog } from "@/components/sprint/NewSprintDialog";
 import { BACKLOG, DropZone, TaskRow, sprintLabel } from "@/components/sprint/SprintPanel";
@@ -13,7 +14,7 @@ import { TaskDrawer } from "@/components/task/TaskDrawer";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-import { useMe } from "@/lib/me";
+import { canManage, useMe } from "@/lib/me";
 import { useProject, useSprints, useTasks } from "@/lib/project";
 import { qk } from "@/lib/queries";
 import type { Sprint, Task } from "@/lib/types";
@@ -36,6 +37,7 @@ function BacklogPage() {
   const [error, setError] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor));
   const disabled = me?.role === "viewer";
+  const canPlan = canManage(me); // sprint create/start/complete is for managers and admins
   const openKey = params.get("task");
 
   const all = tasks.data ?? [];
@@ -122,7 +124,7 @@ function BacklogPage() {
                 tasks={list}
                 meta={<span className="text-xs text-muted">{s.start_date} → {s.end_date}{s.goal ? ` · ${s.goal}` : ""}</span>}
                 actions={
-                  !disabled &&
+                  canPlan &&
                   (s.state === "active" ? (
                     <Button variant="ghost" onClick={() => setCompleting(s)}>Complete</Button>
                   ) : (
@@ -140,8 +142,17 @@ function BacklogPage() {
             id={BACKLOG}
             title="Backlog"
             tasks={grouped.get(BACKLOG) ?? []}
-            actions={
+            top={
               !disabled && (
+                <BacklogQuickCreate
+                  onCreate={(title, type) =>
+                    run(() => api(`/api/projects/${key}/tasks`, { method: "POST", json: { title, type } }))
+                  }
+                />
+              )
+            }
+            actions={
+              canPlan && (
                 <Button variant="ghost" onClick={() => setCreating(true)}>
                   <Plus size={14} aria-hidden /> New sprint
                 </Button>
@@ -165,7 +176,7 @@ function BacklogPage() {
       {completing && (
         <CompleteSprintDialog
           sprint={completing}
-          openCount={(grouped.get(completing.id) ?? []).filter((t) => t.column_category !== "done").length}
+          openCount={all.filter((t) => t.sprint_id === completing.id && t.column_category !== "done").length}
           planned={open.filter((s) => s.state === "planned")}
           onClose={() => setCompleting(null)}
           onConfirm={(move_open_to) => {

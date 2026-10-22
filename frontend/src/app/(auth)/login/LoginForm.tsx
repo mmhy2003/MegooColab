@@ -11,7 +11,8 @@ import { errorMessage } from "@/lib/errors";
 
 /** Only same-site paths are honoured, so a crafted link can't bounce users off-site. */
 export function safeNext(next: string | null): string {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/projects";
+  // browsers treat "\" like "/", so "/\evil.com" would leave the site too
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "/projects";
 }
 
 export function LoginForm() {

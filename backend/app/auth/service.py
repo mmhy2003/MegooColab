@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.models import OneTimeToken, Session, TokenPurpose, User
 from app.core.config import get_settings
 from app.core.email import Mailer
+from app.core.events import Event, publish
 from app.core.security import hash_token, new_token
 
 log = logging.getLogger(__name__)
@@ -51,6 +52,8 @@ async def revoke_user_sessions(
     if except_token_hash:
         stmt = stmt.where(Session.token_hash != except_token_hash)
     await db.execute(stmt)
+    # open sockets of revoked sessions re-check themselves and close
+    await publish(db, Event(type="sessions.revoked", user_id=user_id))
 
 
 def set_session_cookie(response: Response, token: str) -> None:

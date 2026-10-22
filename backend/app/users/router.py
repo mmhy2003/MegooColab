@@ -108,6 +108,8 @@ async def update_user(
             data={"from": user.role, "to": body.role},
         )
         user.role = body.role
+        # access is role-dependent (admins see every project): open sockets must recompute it
+        await publish(db, Event(type="membership.changed", user_id=user.id))
     return UserEnvelope(user=UserOut.model_validate(user))
 
 

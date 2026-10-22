@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import { ActivityThread } from "@/components/task/ActivityThread";
 import type { ActivityItem } from "@/lib/types";
@@ -48,5 +48,19 @@ describe("ActivityThread", () => {
     const edited: ActivityItem = { ...items[1], id: "c2", edited_at: "2026-10-22T11:00:00Z" };
     render(<ActivityThread items={[edited]} columnNames={columnNames} userNames={userNames} />);
     expect(screen.getByText("(edited)")).toBeInTheDocument();
+  });
+});
+
+describe("ActivityThread paging", () => {
+  it("offers to load earlier activity when there is more", () => {
+    const onLoadEarlier = vi.fn();
+    render(<ActivityThread items={[]} columnNames={new Map()} userNames={new Map()} hasMore onLoadEarlier={onLoadEarlier} />);
+    fireEvent.click(screen.getByRole("button", { name: "Load earlier activity" }));
+    expect(onLoadEarlier).toHaveBeenCalled();
+  });
+
+  it("hides the button when everything is loaded", () => {
+    render(<ActivityThread items={[]} columnNames={new Map()} userNames={new Map()} />);
+    expect(screen.queryByRole("button", { name: "Load earlier activity" })).not.toBeInTheDocument();
   });
 });

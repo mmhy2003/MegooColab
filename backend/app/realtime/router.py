@@ -4,7 +4,6 @@ import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.auth.deps import user_from_session_token
-from app.auth.models import User
 from app.auth.service import SESSION_COOKIE
 from app.core.db import SessionLocal
 from app.core.events import Event, hub
@@ -12,24 +11,19 @@ from app.projects.access import accessible_project_ids
 
 router = APIRouter()
 
+# also the re-authorization interval: a socket never outlives its session by more than this
 PING_EVERY_SECONDS = 25
 CLOSE_UNAUTHORIZED = 4401
+RECHECK_EVENTS = {"membership.changed", "sessions.revoked"}
 
 
-async def _authenticate(token: str | None) -> User | None:
+async def _authorize(token: str | None) -> tuple[uuid.UUID, set[uuid.UUID] | None] | None:
+    """(user id, visible project ids — None means all) for a live session, else None."""
     async with SessionLocal() as db:
-        return await user_from_session_token(db, token)
-
-
-async def _allowed_projects(user_id: uuid.UUID) -> tuple[User | None, set[uuid.UUID] | None]:
-    """Re-reads the user (role/status may have changed) and the projects they can see."""
-    async with SessionLocal() as db:
-        from app.auth.models import UserStatus
-
-        user = await db.get(User, user_id)
-        if user is None or user.status != UserStatus.active:
-            return None, set()
-        return user, await accessible_project_ids(db, user)
+        user = await user_from_session_token(db, token)
+        if user is None:
+            return None
+        return user.id, await accessible_project_ids(db, user)
 
 
 def _visible(event: Event, user_id: uuid.UUID, allowed: set[uuid.UUID] | None) -> bool:
@@ -42,31 +36,34 @@ def _visible(event: Event, user_id: uuid.UUID, allowed: set[uuid.UUID] | None) -
 
 @router.websocket("/api/ws")
 async def events_socket(websocket: WebSocket) -> None:
-    # subscribe before accepting so nothing published after the handshake is missed
+    # subscribe before authorizing so nothing published after the handshake is missed
     queue = hub.subscribe()
+    token = websocket.cookies.get(SESSION_COOKIE)
     try:
-        user = await _authenticate(websocket.cookies.get(SESSION_COOKIE))
+        auth = await _authorize(token)
         await websocket.accept()
-        if user is None:
+        if auth is None:
             await websocket.close(code=CLOSE_UNAUTHORIZED)
             return
-        user_id = user.id
-        _, allowed = await _allowed_projects(user_id)
+        user_id, allowed = auth
         while True:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=PING_EVERY_SECONDS)
             except TimeoutError:
-                await websocket.send_json({"type": "ping"})
-                continue
-            if event.type == "user.deactivated" and event.user_id == user_id:
-                await websocket.close(code=CLOSE_UNAUTHORIZED)
-                return
-            if (event.type == "membership.changed" and event.user_id == user_id) or event.type == "project.updated":
-                current, allowed = await _allowed_projects(user_id)
-                if current is None:
+                event = None
+            mine = event is not None and event.user_id == user_id
+            if event is None or event.type == "project.updated" or (mine and event.type in RECHECK_EVENTS) or (
+                mine and event.type == "user.deactivated"
+            ):
+                # re-authorize: session still valid, user still active, access recomputed
+                auth = await _authorize(token)
+                if auth is None:
                     await websocket.close(code=CLOSE_UNAUTHORIZED)
                     return
-            if _visible(event, user_id, allowed):
+                _, allowed = auth
+            if event is None:
+                await websocket.send_json({"type": "ping"})
+            elif event.type != "sessions.revoked" and _visible(event, user_id, allowed):
                 await websocket.send_text(event.model_dump_json())
     except WebSocketDisconnect:
         pass

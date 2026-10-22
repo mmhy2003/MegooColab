@@ -20,6 +20,8 @@ import { Links } from "./Links";
 import { Subtasks } from "./Subtasks";
 import { TaskFields } from "./TaskFields";
 
+const ACTIVITY_PAGE = 50;
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-2">
@@ -44,7 +46,12 @@ export function TaskView({
   const client = useQueryClient();
   const { data: me } = useMe();
   const task = useQuery({ queryKey: qk.task(taskKey), queryFn: () => api<Task>(`/api/tasks/${taskKey}`) });
-  const activity = useQuery({ queryKey: qk.activity(taskKey), queryFn: () => api<ActivityItem[]>(`/api/tasks/${taskKey}/activity`) });
+  const activity = useQuery({
+    queryKey: qk.activity(taskKey),
+    queryFn: () => api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?limit=${ACTIVITY_PAGE}`),
+  });
+  // older pages, prepended as the user asks for them; the live first page keeps refreshing
+  const [older, setOlder] = useState<{ items: ActivityItem[]; more: boolean }>({ items: [], more: true });
   const attachments = useQuery({ queryKey: qk.attachments(taskKey), queryFn: () => api<Attachment[]>(`/api/tasks/${taskKey}/attachments`) });
   const project = useProject(projectKey);
   const columns = useColumns(projectKey);
@@ -166,7 +173,19 @@ export function TaskView({
             />
           </Section>
           <Section title="Activity">
-            <ActivityThread items={activity.data ?? []} columnNames={columnNames} userNames={userNames} />
+            <ActivityThread
+              items={[...older.items, ...(activity.data ?? [])]}
+              columnNames={columnNames}
+              userNames={userNames}
+              hasMore={older.more && (older.items.length > 0 || (activity.data?.length ?? 0) >= ACTIVITY_PAGE)}
+              onLoadEarlier={async () => {
+                const first = older.items[0] ?? activity.data?.[0];
+                if (!first) return;
+                const params = new URLSearchParams({ limit: String(ACTIVITY_PAGE), before: first.at, before_id: first.id });
+                const page = await api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?${params}`);
+                setOlder({ items: [...page, ...older.items], more: page.length >= ACTIVITY_PAGE });
+              }}
+            />
             {!disabled && <CommentBox onSubmit={(body_md) => run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md } }))} />}
           </Section>
         </div>

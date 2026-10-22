@@ -466,6 +466,9 @@ async def add_link(db: AsyncSession, user: User, project: Project, task: Task, t
     target, _ = await get_task_for(db, user, target_key)
     if target.id == task.id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "cannot_link_to_self")
+    if target.project_id != task.project_id:
+        # cross-project links would show the other task's title to people without access to it
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "cross_project_link")
     exists = (
         await db.execute(
             select(TaskLink.id).where(
