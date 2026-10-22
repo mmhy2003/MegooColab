@@ -7,10 +7,11 @@ from sqlalchemy import delete, select
 from app.audit import service as audit
 from app.auth import service
 from app.auth.deps import CurrentUser, current_session
-from app.auth.models import Session, User, UserStatus
-from app.auth.schemas import LowerEmail, UserEnvelope, UserOut
+from app.auth.models import Session, TokenPurpose, User, UserStatus
+from app.auth.schemas import LowerEmail, Password, UserEnvelope, UserOut
 from app.core.db import DbSession
-from app.core.security import DUMMY_HASH, verify_password
+from app.core.email import Mailer, get_mailer
+from app.core.security import DUMMY_HASH, hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -56,3 +57,78 @@ async def logout(
 @router.get("/me")
 async def me(user: CurrentUser) -> UserEnvelope:
     return UserEnvelope(user=UserOut.model_validate(user))
+
+
+class TokenPasswordIn(BaseModel):
+    token: str
+    password: Password
+
+
+class ForgotIn(BaseModel):
+    email: LowerEmail
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: Password
+
+
+@router.post("/accept-invite")
+async def accept_invite(
+    body: TokenPasswordIn, request: Request, response: Response, db: DbSession
+) -> UserEnvelope:
+    user = await service.consume_token(db, body.token, TokenPurpose.invite)
+    if user.status != UserStatus.invited:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_or_expired_token")
+    user.password_hash = hash_password(body.password)
+    user.status = UserStatus.active
+    service.register_successful_login(user)
+    token = await service.create_session(db, user, request.headers.get("user-agent"))
+    await audit.record(db, "user.invite_accepted", actor_id=user.id)
+    service.set_session_cookie(response, token)
+    return UserEnvelope(user=UserOut.model_validate(user))
+
+
+@router.post("/forgot", status_code=status.HTTP_204_NO_CONTENT)
+async def forgot_password(
+    body: ForgotIn, db: DbSession, mailer: Annotated[Mailer | None, Depends(get_mailer)]
+) -> None:
+    user = (await db.execute(select(User).where(User.email == body.email))).scalar_one_or_none()
+    if user is None or user.status != UserStatus.active:
+        return
+    token = await service.issue_token(db, user, TokenPurpose.reset)
+    url = service.token_url(TokenPurpose.reset, token)
+    await service.try_send(
+        mailer,
+        user.email,
+        "Reset your MegooColab password",
+        f"Someone asked to reset your MegooColab password.\n\n{url}\n\n"
+        "The link works once and expires in 1 hour. If it wasn't you, ignore this email.",
+    )
+
+
+@router.post("/reset", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(body: TokenPasswordIn, db: DbSession) -> None:
+    user = await service.consume_token(db, body.token, TokenPurpose.reset)
+    if user.status != UserStatus.active:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_or_expired_token")
+    user.password_hash = hash_password(body.password)
+    user.must_change_password = False
+    service.register_successful_login(user)
+    await service.revoke_user_sessions(db, user.id)
+    await audit.record(db, "auth.password_reset", actor_id=user.id)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: ChangePasswordIn,
+    user: CurrentUser,
+    db: DbSession,
+    session: Annotated[Session, Depends(current_session)],
+) -> None:
+    if user.password_hash is None or not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_current_password")
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_password = False
+    await service.revoke_user_sessions(db, user.id, except_token_hash=session.token_hash)
+    await audit.record(db, "auth.password_changed", actor_id=user.id)

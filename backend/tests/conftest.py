@@ -72,9 +72,33 @@ def app():
 
 
 @pytest.fixture
-async def client(app):
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test", headers={"X-Megoo-Client": "web"}
-    ) as c:
-        yield c
+async def client_factory(app):
+    """Builds extra independent clients (separate cookie jars) against the same app."""
+    clients: list[httpx.AsyncClient] = []
+
+    def _make() -> httpx.AsyncClient:
+        c = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://test",
+            headers={"X-Megoo-Client": "web"},
+        )
+        clients.append(c)
+        return c
+
+    yield _make
+    for c in clients:
+        await c.aclose()
+
+
+@pytest.fixture
+async def client(client_factory):
+    return client_factory()
+
+
+@pytest.fixture
+def outbox(app):
+    from app.core.email import OutboxMailer, get_mailer
+
+    mailer = OutboxMailer()
+    app.dependency_overrides[get_mailer] = lambda: mailer
+    return mailer
