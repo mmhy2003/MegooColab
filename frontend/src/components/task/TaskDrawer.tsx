@@ -1,19 +1,47 @@
 "use client";
 
-import { Dialog } from "@/components/ui/Dialog";
+import { Maximize2, X } from "lucide-react";
+import Link from "next/link";
+import { useEffect } from "react";
 
-// Minimal drawer; the full task view arrives in Task 21.
+import { TaskView } from "./TaskView";
+
 export function TaskDrawer({
   taskKey,
   onClose,
+  onOpenTask,
 }: {
   taskKey: string;
   onClose: () => void;
-  onOpenTask?: (key: string) => void;
+  onOpenTask: (key: string) => void;
 }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const [projectKey, number] = taskKey.split("-");
   return (
-    <Dialog open title={taskKey} onClose={onClose}>
-      <p className="text-sm text-muted">Task details coming soon.</p>
-    </Dialog>
+    <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={taskKey}>
+      <button type="button" aria-label="Close task" className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="card absolute inset-y-0 right-0 w-full max-w-4xl rounded-none border-y-0 border-r-0">
+        <TaskView
+          taskKey={taskKey}
+          onOpenTask={onOpenTask}
+          onDeleted={onClose}
+          headerExtra={
+            <>
+              <Link href={`/projects/${projectKey}/tasks/${number}`} className="icon-btn" aria-label="Open full page">
+                <Maximize2 size={16} aria-hidden />
+              </Link>
+              <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
+                <X size={16} aria-hidden />
+              </button>
+            </>
+          }
+        />
+      </div>
+    </div>
   );
 }
