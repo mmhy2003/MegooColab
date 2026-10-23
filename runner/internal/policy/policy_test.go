@@ -125,10 +125,10 @@ func TestReadOnlyDeniesAllWrites(t *testing.T) {
 
 func TestReadOnlyCommands(t *testing.T) {
 	allowed := []string{
-		"git status", "git log --oneline -n 5", "git diff HEAD~1", "git show abc", "git blame a.go", "git grep foo", "git ls-files",
+		"git status", "git log --oneline -n 5", "git diff HEAD", "git show abc", "git blame a.go", "git grep foo", "git ls-files",
 		"ls -la", "dir", "cat a.txt", "type a.txt", "head -n 3 a", "tail -n 3 a", "rg foo", "grep -rn foo .", "find . -name '*.go'", "wc -l a", "pwd",
-		`"git" status`, `'git' status`, "GIT.EXE status", `"C:\Program Files\Git\bin\git.exe" status`, "/usr/bin/cat a.txt",
-		"  git   status  ", "git grep -in foo", "git grep -efoo a.go", "git log -n 5", "git log --pretty", "git log --pretty=oneline", "git diff -U3", "git diff --unified=5", "head -n5 a", "find . ! -name x -o -type d", "git blame -L1,5 a.go", "git log -5", "git log --since=2020-01-01 --author=bob", "git diff --stat HEAD",
+		`'git' status`, "GIT.EXE status", "C:/Git/bin/git.exe status", "/usr/bin/cat a.txt",
+		"  git   status  ", "git grep -in foo", "git grep -efoo a.go", "git log -n 5", "git log --pretty", "git log --pretty=oneline", "git diff -U3", "git diff --unified=5", "head -n5 a", "find . -name x -o -type d", "git blame -L1,5 a.go", "git log -5", "git log --since=2020-01-01 --author=bob", "git diff --stat HEAD",
 		"git status -sb", "git blame -L 1,5 a.go", "ls -lah", "tail -n 20 a.log", "head -5 a", "find . -type f -maxdepth 2 -name x", "rg -n --hidden foo src", "wc -lw a", "cat -n a",
 	}
 	for _, c := range allowed {
@@ -148,6 +148,10 @@ func TestReadOnlyCommands(t *testing.T) {
 		"git log --format", "git diff --no-index a b", "git show --output=x", "git status --unknown", "git ls-files -x",
 		"rg --pr=x foo", "rg -z foo", "rg --search-zip foo", "rg --pre-g x foo", "grep --exclude-from=x foo", "find . -exec", "find . -execdir sh {} +", "find . -ok rm {} ;", "find . -fprint0 x", "find . -fls x", "find . -newer",
 		"tail -f a", "tail --follow a", "cat --help", "ls --color=always", "ls -Z", "ls -lX", "wc -lx a", "pwd -x",
+		// round 3: only a conservative character set, so every shell splits and expands the same way
+		"git log {--output=x,}", "git log *", "git log ?", "git log [a-z]*", "cat ~/x", "cat ~", "git grep 'x -O sh'", `rg "a b"`, `grep a\ b`, "git log --pretty=format:%H",
+		`"git" status`, `"C:\Program Files\Git\bin\git.exe" status`, "git log 'a b'", "git log ''", "git log 'a\\b'", `git log 'a"b'`, "git log \tfoo", "git\tlog", "git\x01log", "git log\x7f",
+		"git log a!b", "git log #x", "git log a#b", "git log a*b", "git log {a,b}", "git log a'b'", "git log 'a'b", "git log 'a' 'b c'", "cat 'a	b'", "ls é", "git log a=~b", "git log foo\bar", "git log",
 		// round 2: `--` ends no scanning; value flags take attached values only; find has a closed grammar
 		"find -- . -delete", "find -- . -fprint out", "find -- . -fls out", "find -- . -exec sh -c id {} +", "find . -- -delete", "find . -prune", "find . -files0-from x",
 		"git log --pretty --output=x", "git show --pretty --output=x", "git diff -U --output=x", "git diff --unified --output=x", "git log --pretty --ext-diff -p",

@@ -23,7 +23,7 @@ var driveAbs = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
 // basename without ".exe". A first token with a directory part must be an
 // absolute path: "./cat" or "bin/cat" would run a file from the worktree.
 func ReadOnlyCommand(cmd string) bool {
-	if strings.ContainsAny(cmd, shellMeta) {
+	if !plainCommand(cmd) || strings.ContainsAny(cmd, shellMeta) {
 		return false
 	}
 	toks, ok := tokenize(cmd)
@@ -48,6 +48,61 @@ func ReadOnlyCommand(cmd string) bool {
 		return false
 	}
 	return sp.accepts(args)
+}
+
+const (
+	sq = rune(39) // single quote
+	bs = rune(92) // backslash
+)
+
+// plainCommand accepts only text that bash, PowerShell and cmd all split into
+// the same words and leave unexpanded (no globs, braces, ~, variables, escapes):
+//   - unquoted text uses only [A-Za-z0-9._/:@,+=-], and the space character is the only
+//     separator (no tabs or newlines);
+//   - a single-quoted segment starts a word (or follows "=") and ends it, is not
+//     empty, and holds no whitespace, quote or backslash, so cmd (which keeps the
+//     quotes literally) still sees one word.
+//
+// Anything else, including double quotes and non-ASCII, is refused.
+func plainCommand(cmd string) bool {
+	atWordStart := true
+	prev := ' '
+	in := false
+	n := 0 // length of the current quoted content
+	for _, r := range cmd {
+		if in {
+			switch {
+			case r == sq:
+				if n == 0 {
+					return false
+				}
+				in = false
+			case r <= ' ' || r == 0x7f || r == '"' || r == bs || r > 0x7e:
+				return false
+			default:
+				n++
+			}
+			prev = r
+			continue
+		}
+		switch {
+		case r == ' ':
+			atWordStart = true
+		case r == sq:
+			if !atWordStart && prev != '=' {
+				return false
+			}
+			in, n, atWordStart = true, 0, false
+		case prev == sq && !atWordStart: // text glued to a closing quote
+			return false
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', strings.ContainsRune("._/:@,+=-", r):
+			atWordStart = false
+		default:
+			return false
+		}
+		prev = r
+	}
+	return !in
 }
 
 // tokenize splits on spaces and tabs, honouring single and double quotes and a

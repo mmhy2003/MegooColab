@@ -45,7 +45,7 @@ func TestWindowsForms(t *testing.T) {
 	if _, ok := policy.InsideRoot(root, `sub\x.txt`); !ok {
 		t.Error("backslash relative must be inside")
 	}
-	if !policy.ReadOnlyCommand(`"C:\Program Files\Git\cmd\git.exe" status`) || !policy.ReadOnlyCommand(`DIR /b`) {
+	if !policy.ReadOnlyCommand("C:/Git/cmd/git.exe status") || !policy.ReadOnlyCommand(`DIR /b`) {
 		t.Error("windows commands")
 	}
 }
