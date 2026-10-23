@@ -36,7 +36,7 @@ async def list_tasks(
     user: AuthedUser,
     db: DbSession,
     type_: Annotated[TaskType | None, Query(alias="type")] = None,
-    assignee: uuid.UUID | None = None,
+    assignee: str | None = None,
     label: uuid.UUID | None = None,
     epic: uuid.UUID | None = None,
     sprint: str | None = None,

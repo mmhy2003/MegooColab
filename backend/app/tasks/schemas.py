@@ -18,6 +18,7 @@ class TaskCreate(BaseModel):
     story_points: int | None = Field(default=None, ge=0, le=1000)
     due_date: date | None = None
     assignee_user_id: uuid.UUID | None = None
+    assignee_agent_id: uuid.UUID | None = None
     parent_id: uuid.UUID | None = None
     label_ids: list[uuid.UUID] = []
 
@@ -32,8 +33,17 @@ class TaskUpdate(BaseModel):
     story_points: int | None = Field(default=None, ge=0, le=1000)
     due_date: date | None = None
     assignee_user_id: uuid.UUID | None = None
+    assignee_agent_id: uuid.UUID | None = None
     parent_id: uuid.UUID | None = None
     label_ids: list[uuid.UUID] | None = None
+
+
+class AssigneeAgentOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    program: str
+    owner_id: uuid.UUID
+    status: str
 
 
 class TaskOut(BaseModel):
@@ -51,6 +61,8 @@ class TaskOut(BaseModel):
     story_points: int | None
     due_date: date | None
     assignee_user_id: uuid.UUID | None
+    assignee_agent_id: uuid.UUID | None
+    assignee_agent: "AssigneeAgentOut | None" = None
     reporter_id: uuid.UUID | None
     parent_id: uuid.UUID | None
     sprint_id: uuid.UUID | None

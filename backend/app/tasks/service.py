@@ -7,13 +7,15 @@ from fastapi import HTTPException, status
 from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.models import Agent, AgentBinding
+from app.agents.service import agent_status, can_use_agent
 from app.auth.models import Role, User, UserStatus
 from app.projects.access import get_project_for
 from app.projects.models import BoardColumn, ColumnCategory, Label, Project, ProjectTeam
 from app.projects.schemas import LabelOut
 from app.tasks import ordering
 from app.tasks.models import LinkKind, Task, TaskEvent, TaskLink, TaskType, task_labels, task_watchers
-from app.tasks.schemas import LinkedTask, MoveIn, TaskCreate, TaskLinkOut, TaskOut, TaskUpdate
+from app.tasks.schemas import AssigneeAgentOut, LinkedTask, MoveIn, TaskCreate, TaskLinkOut, TaskOut, TaskUpdate
 from app.teams.models import TeamMember
 
 KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$")
@@ -79,6 +81,13 @@ async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
     ):
         watchers[task_id].append(user_id)
     links = await _links_for(db, ids)
+    agent_ids = {t.assignee_agent_id for t in tasks if t.assignee_agent_id}
+    agents: dict[uuid.UUID, AssigneeAgentOut] = {}
+    if agent_ids:
+        for a in (await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))).scalars():
+            agents[a.id] = AssigneeAgentOut(
+                id=a.id, name=a.name, program=a.program, owner_id=a.owner_id, status=agent_status(a.id)
+            )
     return [
         TaskOut(
             id=t.id,
@@ -95,6 +104,8 @@ async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
             story_points=t.story_points,
             due_date=t.due_date,
             assignee_user_id=t.assignee_user_id,
+            assignee_agent_id=t.assignee_agent_id,
+            assignee_agent=agents.get(t.assignee_agent_id) if t.assignee_agent_id else None,
             reporter_id=t.reporter_id,
             parent_id=t.parent_id,
             sprint_id=t.sprint_id,
@@ -250,6 +261,28 @@ async def check_assignee(db: AsyncSession, project: Project, user_id: uuid.UUID 
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "assignee_no_access")
 
 
+async def check_agent_assignee(
+    db: AsyncSession, user: User, project: Project, agent_id: uuid.UUID | None
+) -> None:
+    """Order matters: unknown agent 422, not bound to the project 422, not allowed to use it 403."""
+    if agent_id is None:
+        return
+    agent = await db.get(Agent, agent_id)
+    if agent is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "unknown_agent")
+    bound = (
+        await db.execute(
+            select(AgentBinding.id).where(
+                AgentBinding.agent_id == agent_id, AgentBinding.project_id == project.id
+            )
+        )
+    ).first()
+    if bound is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agent_not_bound")
+    if not await can_use_agent(db, user, agent, project):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
+
+
 async def set_labels(db: AsyncSession, project: Project, task: Task, label_ids: list[uuid.UUID]) -> None:
     wanted = set(label_ids)
     if wanted:
@@ -287,7 +320,10 @@ async def next_number(db: AsyncSession, project: Project) -> int:
 
 async def create_task(db: AsyncSession, user: User, project: Project, data: TaskCreate) -> Task:
     await validate_parent(db, project, data.type, data.parent_id)
+    if data.assignee_user_id and data.assignee_agent_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "single_assignee")
     await check_assignee(db, project, data.assignee_user_id)
+    await check_agent_assignee(db, user, project, data.assignee_agent_id)
     column = (
         await get_column(db, project, data.column_id) if data.column_id else await first_before_column(db, project)
     )
@@ -302,6 +338,7 @@ async def create_task(db: AsyncSession, user: User, project: Project, data: Task
         story_points=data.story_points,
         due_date=data.due_date,
         assignee_user_id=data.assignee_user_id,
+        assignee_agent_id=data.assignee_agent_id,
         reporter_id=user.id,
         parent_id=data.parent_id,
     )
@@ -334,11 +371,25 @@ async def update_task(db: AsyncSession, user: User, project: Project, task: Task
         if new_type != task.type:
             await validate_children_after_type_change(db, task, new_type)
         task.type, task.parent_id = new_type, new_parent
-    if "assignee_user_id" in fields and data.assignee_user_id != task.assignee_user_id:
-        await check_assignee(db, project, data.assignee_user_id)
-        await record_event(db, task, user.id, "assigned", {
-            "from": _jsonable(task.assignee_user_id), "to": _jsonable(data.assignee_user_id)})
-        task.assignee_user_id = data.assignee_user_id
+    if "assignee_user_id" in fields or "assignee_agent_id" in fields:
+        new_user, new_agent = task.assignee_user_id, task.assignee_agent_id
+        if "assignee_user_id" in fields:
+            new_user = data.assignee_user_id
+            new_agent = None if new_user else new_agent
+        if "assignee_agent_id" in fields:
+            if new_user and data.assignee_agent_id and "assignee_user_id" in fields:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "single_assignee")
+            new_agent = data.assignee_agent_id
+            new_user = None if new_agent else new_user
+        if (new_user, new_agent) != (task.assignee_user_id, task.assignee_agent_id):
+            if new_user != task.assignee_user_id:
+                await check_assignee(db, project, new_user)
+            if new_agent != task.assignee_agent_id:
+                await check_agent_assignee(db, user, project, new_agent)
+            await record_event(db, task, user.id, "assigned", {
+                "from": _jsonable(task.assignee_user_id), "to": _jsonable(new_user),
+                "to_agent": _jsonable(new_agent)})
+            task.assignee_user_id, task.assignee_agent_id = new_user, new_agent
     for name in ("title", "description_md", "priority"):
         if name in fields and getattr(data, name) is not None:
             setattr(task, name, getattr(data, name))
@@ -370,7 +421,7 @@ async def list_tasks(
     project: Project,
     *,
     type_: TaskType | None = None,
-    assignee: uuid.UUID | None = None,
+    assignee: str | None = None,
     label: uuid.UUID | None = None,
     epic: uuid.UUID | None = None,
     sprint: str | None = None,
@@ -381,7 +432,12 @@ async def list_tasks(
     if type_:
         stmt = stmt.where(Task.type == type_)
     if assignee:
-        stmt = stmt.where(Task.assignee_user_id == assignee)
+        is_agent = assignee.startswith("agent:")
+        try:
+            who = uuid.UUID(assignee.removeprefix("agent:"))
+        except ValueError:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_assignee")
+        stmt = stmt.where((Task.assignee_agent_id if is_agent else Task.assignee_user_id) == who)
     if label:
         stmt = stmt.where(Task.id.in_(select(task_labels.c.task_id).where(task_labels.c.label_id == label)))
     if epic:
