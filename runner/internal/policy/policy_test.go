@@ -128,7 +128,7 @@ func TestReadOnlyCommands(t *testing.T) {
 		"git status", "git log --oneline -n 5", "git diff HEAD~1", "git show abc", "git blame a.go", "git grep foo", "git ls-files",
 		"ls -la", "dir", "cat a.txt", "type a.txt", "head -n 3 a", "tail -n 3 a", "rg foo", "grep -rn foo .", "find . -name '*.go'", "wc -l a", "pwd",
 		`"git" status`, `'git' status`, "GIT.EXE status", `"C:\Program Files\Git\bin\git.exe" status`, "/usr/bin/cat a.txt",
-		"  git   status  ", "git grep -in foo", "git grep -e foo -- a.go", "git log -5", "git log --since=2020-01-01 --author=bob", "git diff --stat HEAD",
+		"  git   status  ", "git grep -in foo", "git grep -efoo a.go", "git log -n 5", "git log --pretty", "git log --pretty=oneline", "git diff -U3", "git diff --unified=5", "head -n5 a", "find . ! -name x -o -type d", "git blame -L1,5 a.go", "git log -5", "git log --since=2020-01-01 --author=bob", "git diff --stat HEAD",
 		"git status -sb", "git blame -L 1,5 a.go", "ls -lah", "tail -n 20 a.log", "head -5 a", "find . -type f -maxdepth 2 -name x", "rg -n --hidden foo src", "wc -lw a", "cat -n a",
 	}
 	for _, c := range allowed {
@@ -144,10 +144,15 @@ func TestReadOnlyCommands(t *testing.T) {
 		"find . -delete", "find . -exec rm {} +", "find . -fprint out", "rg --pre ./evil foo", "rg --pre=./evil foo", "gitx status", "cat.sh a", `grep "a;b" file`,
 		// git grep -O / --open-files-in-pager runs a program; git accepts abbreviations and bundled flags
 		"git grep --open=echo foo", "git grep --open-files=rm foo", "git grep -iOecho foo", `git grep "--open=rm -f" foo`, "git grep -O foo", "git grep --open-files-in-pager=sh foo",
-		"git grep -nOsh foo", "git grep --ope=sh foo", "git log --outp=x", "git log --out=x", "git diff --ext foo", "git diff --text foo", "git log -S", "git grep -e",
+		"git grep -nOsh foo", "git grep --ope=sh foo", "git log --outp=x", "git log --out=x", "git diff --ext foo", "git diff --text foo",
 		"git log --format", "git diff --no-index a b", "git show --output=x", "git status --unknown", "git ls-files -x",
 		"rg --pr=x foo", "rg -z foo", "rg --search-zip foo", "rg --pre-g x foo", "grep --exclude-from=x foo", "find . -exec", "find . -execdir sh {} +", "find . -ok rm {} ;", "find . -fprint0 x", "find . -fls x", "find . -newer",
-		"tail -f a", "tail --follow a", "cat --help", "ls --color=always", "ls -Z", "head -n", "ls -lX", "wc -lx a", "pwd -x",
+		"tail -f a", "tail --follow a", "cat --help", "ls --color=always", "ls -Z", "ls -lX", "wc -lx a", "pwd -x",
+		// round 2: `--` ends no scanning; value flags take attached values only; find has a closed grammar
+		"find -- . -delete", "find -- . -fprint out", "find -- . -fls out", "find -- . -exec sh -c id {} +", "find . -- -delete", "find . -prune", "find . -files0-from x",
+		"git log --pretty --output=x", "git show --pretty --output=x", "git diff -U --output=x", "git diff --unified --output=x", "git log --pretty --ext-diff -p",
+		"git log --unified --output=/tmp/x", "git log --format --output=x", "git log -n --output=x", "git log -S --output=x", "git grep -e -O foo", "git grep -- foo", "git grep foo --",
+		"cat -- a", "ls -- -a", "head --lines 5 a", "git log --max-count 5", "git log --pretty -- ", "rg -- --pre=x foo",
 		// environment-assignment prefixes are not a plain command
 		"FOO=bar git status", "API_KEY=sk-123 ls", `"X=1" cat a`,
 	}
@@ -227,10 +232,62 @@ func TestFirstTokenBase(t *testing.T) {
 		"":                                           "",
 		"   ":                                        "",
 		`API_KEY="a b" make`:                         "make",
-		`bash -c "unterminated`:                      "bash",
+		`bash -c "unterminated`:                      "",
+		`A=a\ secret make`:                           "make",
+		`A="x y pytest`:                              "",
+		`A=a\ secret`:                                "",
 	} {
 		if got := policy.FirstTokenBase(cmd); got != want {
 			t.Errorf("FirstTokenBase(%q) = %q, want %q", cmd, got, want)
+		}
+	}
+}
+
+// dangerous options that must never get through, wherever they are placed
+func TestReadOnlyDangerousOptionsInEveryPosition(t *testing.T) {
+	dangerous := []string{"--output=x", "-O", "--open", "--ext-diff", "-exec", "-delete", "-fprint", "--pre", "-c", "--exec-path", "--git-dir=x", "--work-tree=x", "-C"}
+	// options a program legitimately takes
+	legit := map[string]map[string]bool{
+		"git grep": {"-C": true, "-c": true, "-exec": true}, "grep": {"-C": true, "-c": true, "-exec": true}, "git ls-files": {"-c": true}, "wc": {"-c": true},
+		"head": {"-c": true}, "tail": {"-c": true}, "rg": {"-c": true, "-C": true, "-exec": true}, // -exec = -e xec: a pattern
+	}
+	// bare value-taking flags: what follows must still be judged as its own argument
+	valueFlags := map[string][]string{
+		"git log": {"-n", "-S", "--pretty", "--format", "--unified", "-U", "--since"}, "git show": {"--pretty", "--format", "-U", "--unified"},
+		"git diff": {"-U", "--unified", "--pretty", "--diff-filter"}, "git blame": {"-L"}, "git grep": {"-e", "-A", "-B", "-C"},
+		"head": {"-n", "-c", "--lines"}, "tail": {"-n", "-c", "--lines"}, "grep": {"-e", "-A", "-m", "--include"}, "rg": {"-e", "-g", "-t", "--glob"},
+	}
+	progs := []string{"git status", "git log", "git diff", "git show", "git blame", "git grep", "git ls-files", "ls", "dir", "cat", "type", "head", "tail", "wc", "pwd", "grep", "rg", "find"}
+	for _, prog := range progs {
+		var cmds []string
+		for _, d := range dangerous {
+			if legit[prog][d] {
+				continue
+			}
+			cmds = append(cmds, prog+" "+d, prog+" "+d+" x", prog+" x "+d, prog+" -- "+d, prog+" "+d+" --", prog+" . -- "+d)
+			if prog != "find" {
+				for _, vf := range valueFlags[prog] {
+					cmds = append(cmds, prog+" "+vf+" "+d, prog+" "+vf+" "+d+" x", prog+" "+vf+" -- "+d)
+				}
+			} else {
+				cmds = append(cmds, "find . -type f "+d, "find . -name x "+d)
+			}
+			if len(d) == 2 && len(legit[prog]) == 0 { // bundled behind innocuous letters
+				for _, pre := range []string{"-i", "-n", "-l", "-s", "-a", "-r"} {
+					cmds = append(cmds, prog+" "+pre+d[1:], prog+" x "+pre+d[1:]+"x")
+				}
+			}
+		}
+		for _, c := range cmds {
+			if policy.ReadOnlyCommand(c) {
+				t.Errorf("%q must be denied", c)
+			}
+		}
+	}
+	// git global options come before the subcommand: never allowed
+	for _, c := range []string{"git -c core.pager=sh log", "git -C /tmp status", "git --exec-path log", "git --git-dir=x log", "git --work-tree=x status", "git --no-pager log", "git -P log"} {
+		if policy.ReadOnlyCommand(c) {
+			t.Errorf("%q must be denied", c)
 		}
 	}
 }

@@ -50,15 +50,23 @@ func ReadOnlyCommand(cmd string) bool {
 	return sp.accepts(args)
 }
 
-// tokenize splits on spaces and tabs, honouring single and double quotes (no
-// escapes, so Windows paths keep their backslashes). An unterminated quote fails.
+// tokenize splits on spaces and tabs, honouring single and double quotes and a
+// backslash before a space or quote (other backslashes stay literal, so Windows
+// paths keep them). An unterminated quote fails.
 func tokenize(s string) ([]string, bool) {
 	var toks []string
 	var cur strings.Builder
 	inTok := false
 	var quote rune
-	for _, r := range s {
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
 		switch {
+		case quote == 0 && r == '\\' && i+1 < len(runes) && strings.ContainsRune(" \t\"'", runes[i+1]):
+			// an escaped space or quote is part of the token; other backslashes stay literal (Windows paths)
+			i++
+			cur.WriteRune(runes[i])
+			inTok = true
 		case quote != 0:
 			if r == quote {
 				quote = 0
@@ -112,7 +120,7 @@ var envAssignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 func FirstTokenBase(cmd string) string {
 	toks, ok := tokenize(cmd)
 	if !ok {
-		toks = strings.Fields(cmd)
+		return "" // cannot be split cleanly: report nothing rather than a fragment
 	}
 	for len(toks) > 0 && envAssignment.MatchString(toks[0]) {
 		toks = toks[1:]
