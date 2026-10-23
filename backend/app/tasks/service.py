@@ -10,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import agent_statuses, can_use_agent
 from app.auth.models import Role, User, UserStatus
+from app.core.events import Event, publish
 from app.projects.access import get_project_for
 from app.projects.models import BoardColumn, ColumnCategory, Label, Project, ProjectTeam
 from app.projects.schemas import LabelOut
+from app.sprints.service import snapshot_if_active
 from app.tasks import ordering
 from app.tasks.models import LinkKind, Task, TaskEvent, TaskLink, TaskType, task_labels, task_watchers
 from app.tasks.schemas import AssigneeAgentOut, LinkedTask, MoveIn, TaskCreate, TaskLinkOut, TaskOut, TaskUpdate
@@ -45,6 +47,13 @@ async def get_task_for(
     if task is None:
         raise _not_found()
     return task, project
+
+
+async def task_changed(db: AsyncSession, task: Task, kind: str = "task.updated") -> None:
+    """Tells live boards about a task change (and keeps an active sprint's burndown current)."""
+    await publish(db, Event(type=kind, project_id=task.project_id, task_id=task.id))
+    if kind != "task.deleted":
+        await snapshot_if_active(db, task.sprint_id)
 
 
 async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:

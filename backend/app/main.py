@@ -7,6 +7,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI
+from starlette.routing import Route
 
 from app.agents.router import admin_router as admin_agents_router
 from app.agents.router import project_agents_router
@@ -17,6 +18,7 @@ from app.auth.tokens_router import router as tokens_router
 from app.core.config import get_settings
 from app.core.csrf import CsrfHeaderMiddleware
 from app.core.events import hub
+from app.mcp_server.server import MCP_PATH, build_mcp
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
 from app.realtime.router import router as realtime_router
@@ -52,7 +54,7 @@ def run_migrations() -> None:
 
 
 @contextlib.asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     validate_secret_key(settings.secret_key)
     if settings.run_migrations_on_startup:
@@ -63,8 +65,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         await asyncio.wait_for(hub.ready.wait(), timeout=10)
     except TimeoutError:
         log.error("event hub not connected yet; live updates start once the database is reachable")
-    yield
-    await hub.stop()
+    try:
+        # a mounted sub-app's own lifespan never runs, so the host enters the session manager
+        async with app.state.mcp.session_manager.run():
+            yield
+    finally:
+        await hub.stop()
 
 
 def create_app() -> FastAPI:
@@ -102,6 +108,9 @@ def create_app() -> FastAPI:
         agent_runs_router,
     ):
         app.include_router(router)
+    # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect
+    app.state.mcp, mcp_endpoint = build_mcp()
+    app.router.routes.append(Route(MCP_PATH, endpoint=mcp_endpoint))
     return app
 
 

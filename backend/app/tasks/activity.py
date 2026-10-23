@@ -85,17 +85,9 @@ async def _changed(db, task: Task, kind: str) -> None:
 # ---- activity ---------------------------------------------------------------
 
 
-@router.get("/api/tasks/{key}/activity")
-async def task_activity(
-    key: str,
-    user: AuthedUser,
-    db: DbSession,
-    before: datetime | None = None,
-    before_id: uuid.UUID | None = None,
-    limit: int = Query(default=50, ge=1, le=200),
+async def activity_items(
+    db, task: Task, limit: int = 50, before: datetime | None = None, before_id: uuid.UUID | None = None
 ) -> list[ActivityItem]:
-    """Newest `limit` items, oldest first. Page back with the first item's (at, id) as the cursor."""
-    task, _ = await get_task_for(db, user, key)
     c_stmt = select(Comment).where(Comment.task_id == task.id)
     e_stmt = select(TaskEvent).where(TaskEvent.task_id == task.id)
     if before and before_id:
@@ -127,18 +119,36 @@ async def task_activity(
     return list(reversed(items[:limit]))
 
 
+@router.get("/api/tasks/{key}/activity")
+async def task_activity(
+    key: str,
+    user: AuthedUser,
+    db: DbSession,
+    before: datetime | None = None,
+    before_id: uuid.UUID | None = None,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[ActivityItem]:
+    """Newest `limit` items, oldest first. Page back with the first item's (at, id) as the cursor."""
+    task, _ = await get_task_for(db, user, key)
+    return await activity_items(db, task, limit, before, before_id)
+
+
 # ---- comments ---------------------------------------------------------------
 
 
-@router.post("/api/tasks/{key}/comments", status_code=status.HTTP_201_CREATED)
-async def add_comment(key: str, body: CommentIn, user: AuthedUser, db: DbSession) -> CommentOut:
+async def create_comment(db, user: User, key: str, body_md: str) -> Comment:
     task, _ = await get_task_for(db, user, key, write=True)
-    comment = Comment(task_id=task.id, author_user_id=user.id, body_md=body.body_md)
+    comment = Comment(task_id=task.id, author_user_id=user.id, body_md=body_md)
     db.add(comment)
     await db.flush()
     await db.refresh(comment)
     await _changed(db, task, "comment.created")
-    return CommentOut.model_validate(comment)
+    return comment
+
+
+@router.post("/api/tasks/{key}/comments", status_code=status.HTTP_201_CREATED)
+async def add_comment(key: str, body: CommentIn, user: AuthedUser, db: DbSession) -> CommentOut:
+    return CommentOut.model_validate(await create_comment(db, user, key, body.body_md))
 
 
 async def _own_comment(db, user: User, comment_id: uuid.UUID, allow_admin: bool) -> tuple[Comment, Task]:

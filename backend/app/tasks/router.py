@@ -5,7 +5,6 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
-from app.core.events import Event, publish
 from app.projects.access import can_manage_project, get_project_for, project_team_ids
 from app.sprints.service import snapshot_if_active
 from app.tasks import service
@@ -16,10 +15,7 @@ from app.teams.service import user_team_ids
 router = APIRouter(tags=["tasks"])
 
 
-async def _changed(db, task: Task, kind: str = "task.updated") -> None:
-    await publish(db, Event(type=kind, project_id=task.project_id, task_id=task.id))
-    if kind != "task.deleted":
-        await snapshot_if_active(db, task.sprint_id)
+_changed = service.task_changed
 
 
 @router.post("/api/projects/{ref}/tasks", status_code=status.HTTP_201_CREATED)
