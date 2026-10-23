@@ -29,6 +29,7 @@ describe("invalidationsFor", () => {
     expect(out).toContainEqual(["tasks", "PAY"]);
     expect(out).toContainEqual(["task"]);
     expect(out).toContainEqual(["activity"]);
+    expect(out).toContainEqual(["agent-runs"]);
     expect(out).toContainEqual(["columns", "PAY"]);
   });
 
@@ -42,11 +43,11 @@ describe("invalidationsFor", () => {
   });
 
   it("maps project-scoped agent events to project agents and my agents", () => {
-    expect(invalidationsFor({ type: "agents.updated", project_id: "p1" }, keys)).toEqual([["project-agents", "PAY"], ["agents"]]);
+    expect(invalidationsFor({ type: "agents.updated", project_id: "p1" }, keys)).toEqual([["project-agents", "PAY"], ["agents"], ["team"]]);
   });
 
   it("maps user-only agent events to my agents", () => {
-    expect(invalidationsFor({ type: "agents.updated", user_id: "u" }, keys)).toEqual([["agents"]]);
+    expect(invalidationsFor({ type: "agents.updated", user_id: "u" }, keys)).toEqual([["agents"], ["team"]]);
   });
 
   it("invalidates everything on membership changes", () => {

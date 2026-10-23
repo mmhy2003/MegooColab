@@ -51,6 +51,57 @@ describe("ActivityThread", () => {
   });
 });
 
+describe("ActivityThread agent events", () => {
+  const agentEvent = (id: string, kind: string, data: Record<string, unknown>): ActivityItem => ({
+    type: "event",
+    id,
+    at: "2026-10-22T10:00:00Z",
+    actor: null,
+    kind,
+    data: { agent_id: "a1", run_id: "r1", ...data },
+  });
+  const render1 = (item: ActivityItem, agentNames = new Map([["a1", "Ann's Codex"]])) =>
+    render(<ActivityThread items={[item]} columnNames={new Map()} userNames={new Map()} agentNames={agentNames} />);
+
+  it("renders a file change with the agent's name", () => {
+    render1(agentEvent("g1", "agent_file_change", { path: "src/a.ts", lines_added: 3, lines_removed: 1 }));
+    expect(screen.getByRole("listitem").textContent).toContain("Ann's Codex changed src/a.ts (+3 −1)");
+  });
+
+  it("renders a denied permission", () => {
+    render1(agentEvent("g2", "agent_permission", { tool_kind: "edit", title: "Write x.txt", decision: "denied", reason: "read_only" }));
+    expect(screen.getByRole("listitem").textContent).toContain("Ann's Codex was denied: Write x.txt");
+  });
+
+  it("falls back to Agent when the agent is unknown", () => {
+    render1(agentEvent("g3", "agent_run_started", {}), new Map());
+    expect(screen.getByRole("listitem").textContent).toContain("Agent started working");
+  });
+
+  it("renders agent messages as plain text", () => {
+    const { container } = render1(agentEvent("g4", "agent_message", { text: "<b>hi</b> **x**" }));
+    expect(container.querySelector("b")).toBeNull();
+    expect(screen.getByRole("listitem").textContent).toContain("<b>hi</b> **x**");
+  });
+
+  it("describes the other agent kinds", () => {
+    const cases: [string, Record<string, unknown>, string][] = [
+      ["agent_run_queued", {}, "queued a run"],
+      ["agent_plan", { entries: [{}, {}] }, "updated the plan (2 steps)"],
+      ["agent_tool", { title: "Read a.ts", status: "completed" }, "Read a.ts (completed)"],
+      ["agent_command", { command: "pytest", exit_code: 1 }, "ran pytest → exit 1"],
+      ["agent_run_completed", { summary: "Done" }, "finished: Done"],
+      ["agent_run_failed", { reason: "runner_disconnected" }, "failed: runner_disconnected"],
+      ["agent_run_cancelled", {}, "was cancelled"],
+    ];
+    for (const [kind, data, text] of cases) {
+      const { unmount } = render1(agentEvent("x", kind, data));
+      expect(screen.getByRole("listitem").textContent).toContain(text);
+      unmount();
+    }
+  });
+});
+
 describe("ActivityThread paging", () => {
   it("offers to load earlier activity when there is more", () => {
     const onLoadEarlier = vi.fn();

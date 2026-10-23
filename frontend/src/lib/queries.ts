@@ -20,6 +20,7 @@ export const qk = {
   tokens: () => ["tokens"] as const,
   agents: () => ["agents"] as const,
   adminAgents: () => ["agents", "admin"] as const,
+  agentRuns: (taskKey: string) => ["agent-runs", taskKey] as const,
   projectAgents: (ref: string) => ["project-agents", ref] as const,
   adminSettings: () => ["admin-settings"] as const,
   audit: (filters: Record<string, string | undefined> = {}) => ["audit", filters] as const,

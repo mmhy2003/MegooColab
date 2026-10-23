@@ -23,7 +23,7 @@ export function invalidationsFor(event: LiveEvent, keyById: Map<string, string>)
   const kind = event.type.split(".")[0];
   switch (kind) {
     case "task":
-      return [scoped("tasks"), ["task"], ["activity"], ["attachments"], scoped("columns"), ["burndown"]];
+      return [scoped("tasks"), ["task"], ["activity"], ["attachments"], scoped("columns"), ["burndown"], ["agent-runs"]];
     case "comment":
       return [["activity"]];
     case "columns":
@@ -33,7 +33,7 @@ export function invalidationsFor(event: LiveEvent, keyById: Map<string, string>)
     case "sprint":
       return [scoped("sprints"), ["burndown"], scoped("velocity"), scoped("tasks")];
     case "agents":
-      return key ? [["project-agents", key], ["agents"]] : [["agents"]];
+      return key ? [["project-agents", key], ["agents"], ["team"]] : [["agents"], ["team"]];
     case "membership":
       return "all";
     default:

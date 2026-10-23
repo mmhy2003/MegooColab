@@ -1,4 +1,8 @@
-import type { AgentProgram, AnswerMode } from "@/lib/types";
+import { useQuery } from "@tanstack/react-query";
+
+import { api } from "@/lib/api";
+import { qk } from "@/lib/queries";
+import type { AgentProgram, AgentRun, AnswerMode, ProjectAgent } from "@/lib/types";
 
 export type AgentStatus = "online" | "busy" | "offline";
 
@@ -19,4 +23,13 @@ export function isAbsolutePath(path: string): boolean {
 
 export function asAgentStatus(status: string): AgentStatus {
   return status === "online" || status === "busy" ? status : "offline";
+}
+
+export function useProjectAgents(projectKey: string) {
+  return useQuery({ queryKey: qk.projectAgents(projectKey), queryFn: () => api<ProjectAgent[]>(`/api/projects/${projectKey}/agents`) });
+}
+
+/** Runs for a task, newest first. */
+export function useAgentRuns(taskKey: string) {
+  return useQuery({ queryKey: qk.agentRuns(taskKey), queryFn: () => api<AgentRun[]>(`/api/tasks/${taskKey}/agent-runs`) });
 }

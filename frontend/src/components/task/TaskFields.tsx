@@ -2,10 +2,11 @@
 
 import { Eye, EyeOff } from "lucide-react";
 
-import type { Column, Label, Priority, Sprint, Task, TaskType, User } from "@/lib/types";
+import type { Column, Label, Priority, ProjectAgent, Sprint, Task, TaskType, User } from "@/lib/types";
 
 const PRIORITIES: Priority[] = ["highest", "high", "medium", "low", "lowest"];
 const TYPES: TaskType[] = ["epic", "story", "task", "bug", "subtask"];
+const AGENT_DENIED = "Only the owner, project managers and admins can assign this agent";
 const FIELD = "w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm disabled:opacity-60";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -21,6 +22,7 @@ export function TaskFields({
   task,
   columns,
   users,
+  agents = [],
   labels,
   parents,
   sprints,
@@ -34,6 +36,7 @@ export function TaskFields({
   task: Task;
   columns: Column[];
   users: User[];
+  agents?: ProjectAgent[];
   labels: Label[];
   parents: Task[];
   sprints: Sprint[] | undefined;
@@ -63,11 +66,34 @@ export function TaskFields({
         </select>
       </Row>
       <Row label="Assignee">
-        <select aria-label="Assignee" className={FIELD} disabled={disabled} value={task.assignee_user_id ?? ""} onChange={(e) => onPatch({ assignee_user_id: e.target.value || null })}>
+        <select
+          aria-label="Assignee"
+          className={FIELD}
+          disabled={disabled}
+          value={task.assignee_agent_id ? `agent:${task.assignee_agent_id}` : task.assignee_user_id ? `user:${task.assignee_user_id}` : ""}
+          onChange={(e) => {
+            const [kind, id] = e.target.value.split(":");
+            onPatch(kind === "agent" ? { assignee_agent_id: id } : { assignee_user_id: id || null });
+          }}
+        >
           <option value="">Unassigned</option>
-          {users.filter((u) => u.status !== "deactivated" || u.id === task.assignee_user_id).map((u) => (
-            <option key={u.id} value={u.id}>{u.name}</option>
-          ))}
+          <optgroup label="People">
+            {users.filter((u) => u.status !== "deactivated" || u.id === task.assignee_user_id).map((u) => (
+              <option key={u.id} value={`user:${u.id}`}>{u.name}</option>
+            ))}
+          </optgroup>
+          {(agents.length > 0 || task.assignee_agent) && (
+            <optgroup label="Agents">
+              {agents.map((a) => (
+                <option key={a.id} value={`agent:${a.id}`} disabled={!a.can_use} title={a.can_use ? undefined : AGENT_DENIED}>
+                  {a.name}
+                </option>
+              ))}
+              {task.assignee_agent && !agents.some((a) => a.id === task.assignee_agent_id) && (
+                <option value={`agent:${task.assignee_agent.id}`} disabled>{task.assignee_agent.name}</option>
+              )}
+            </optgroup>
+          )}
         </select>
       </Row>
       <Row label="Priority">

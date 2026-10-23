@@ -56,4 +56,11 @@ describe("TaskCardView", () => {
     render(<TaskCardView task={{ ...task, subtask_count: 0, subtask_done_count: 0 }} />);
     expect(screen.queryByLabelText(/subtasks done/)).not.toBeInTheDocument();
   });
+
+  it("shows a bot avatar and status for an agent assignee", () => {
+    const agent = { id: "a1", name: "Ann's Codex", program: "codex", owner_id: "u1", status: "busy" };
+    render(<TaskCardView task={{ ...task, assignee_user_id: null, assignee_agent_id: "a1", assignee_agent: agent }} />);
+    expect(screen.getByRole("img", { name: "Agent Ann's Codex" })).toBeInTheDocument();
+    expect(screen.getByText("Busy")).toBeInTheDocument();
+  });
 });

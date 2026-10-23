@@ -28,3 +28,6 @@ export type AdminAgent = S["AdminAgentOut"];
 export type AccessToken = S["TokenOut"];
 export type TokenScope = S["TokenScope"];
 export type CreatedToken = S["CreatedTokenOut"];
+export type ProjectAgent = S["ProjectAgentOut"];
+export type AgentRun = S["RunOut"];
+export type RunPolicy = S["RunPolicy"];

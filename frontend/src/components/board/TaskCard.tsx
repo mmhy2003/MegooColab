@@ -2,8 +2,9 @@
 
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Bookmark, Bug, CheckSquare, ChevronDown, ChevronsDown, ChevronsUp, ChevronUp, Equal, Zap } from "lucide-react";
+import { Bookmark, Bot, Bug, CheckSquare, ChevronDown, ChevronsDown, ChevronsUp, ChevronUp, Equal, Zap } from "lucide-react";
 
+import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { LabelChip } from "@/components/project/LabelEditor";
 import { Avatar } from "@/components/ui/Avatar";
 import type { Priority, Task, TaskType } from "@/lib/types";
@@ -65,10 +66,19 @@ export function TaskCardView({
           </span>
         )}
         <span className="flex-1" />
-        {assigneeName && (
+        {task.assignee_agent ? (
+          <span className="inline-flex items-center gap-1" title={`Assigned to agent ${task.assignee_agent.name}`}>
+            <span className="inline-grid h-5 w-5 place-items-center rounded-sm bg-cyan-ink text-on-accent" role="img" aria-label={`Agent ${task.assignee_agent.name}`}>
+              <Bot size={12} aria-hidden />
+            </span>
+            <AgentStatusDot status={task.assignee_agent.status} />
+          </span>
+        ) : (
+          assigneeName && (
           <span title={`Assigned to ${assigneeName}`}>
             <Avatar name={assigneeName} />
           </span>
+          )
         )}
       </div>
     </div>

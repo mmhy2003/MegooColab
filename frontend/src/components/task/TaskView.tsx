@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { TYPE_ICON } from "@/components/board/TaskCard";
+import { useProjectAgents } from "@/lib/agents";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useMe } from "@/lib/me";
@@ -13,6 +14,7 @@ import { qk } from "@/lib/queries";
 import type { ActivityItem, Attachment, Task } from "@/lib/types";
 
 import { ActivityThread } from "./ActivityThread";
+import { AgentRunPanel } from "./AgentRunPanel";
 import { Attachments } from "./Attachments";
 import { CommentBox } from "./CommentBox";
 import { Description } from "./Description";
@@ -57,11 +59,13 @@ export function TaskView({
   const columns = useColumns(projectKey);
   const labels = useLabels(projectKey);
   const users = useUsers();
+  const agents = useProjectAgents(projectKey);
   const sprints = useSprints(projectKey, project.data?.sprints_enabled ?? false);
   const all = useTasks(projectKey);
   const [error, setError] = useState<string | null>(null);
 
   const userNames = useMemo(() => new Map(users.data?.map((u) => [u.id, u.name])), [users.data]);
+  const agentNames = useMemo(() => new Map(agents.data?.map((a) => [a.id, a.name])), [agents.data]);
   const columnNames = useMemo(() => new Map(columns.data?.map((c) => [c.id, c.name])), [columns.data]);
 
   if (task.error) return <p className="p-4 text-sm text-pink">{errorMessage(task.error)}</p>;
@@ -177,6 +181,7 @@ export function TaskView({
               items={[...older.items, ...(activity.data ?? [])]}
               columnNames={columnNames}
               userNames={userNames}
+              agentNames={agentNames}
               hasMore={older.more && (older.items.length > 0 || (activity.data?.length ?? 0) >= ACTIVITY_PAGE)}
               onLoadEarlier={async () => {
                 const first = older.items[0] ?? activity.data?.[0];
@@ -194,6 +199,7 @@ export function TaskView({
             task={t}
             columns={columns.data}
             users={users.data ?? []}
+            agents={agents.data ?? []}
             labels={labels.data ?? []}
             parents={parents}
             sprints={project.data?.sprints_enabled ? sprints.data : undefined}
@@ -204,6 +210,10 @@ export function TaskView({
             onSprint={(sprint_id) => void run(() => api(`/api/tasks/${t.key}/sprint`, { method: "PUT", json: { sprint_id } }))}
             onWatch={(watch) => void run(() => api(`/api/tasks/${t.key}/watch`, { method: watch ? "PUT" : "DELETE" }))}
           />
+          {(() => {
+            const assigned = t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined;
+            return assigned && <AgentRunPanel taskKey={t.key} agent={assigned} disabled={disabled} />;
+          })()}
           <p className="text-[11px] text-muted">
             Reported by {t.reporter_id ? userNames.get(t.reporter_id) ?? "someone" : "someone"} ·{" "}
             {new Date(t.created_at).toLocaleDateString()}

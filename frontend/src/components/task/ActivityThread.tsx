@@ -2,7 +2,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Markdown } from "@/components/ui/Markdown";
 import type { ActivityItem } from "@/lib/types";
 
-type Names = { columnNames: Map<string, string>; userNames: Map<string, string> };
+type Names = { columnNames: Map<string, string>; userNames: Map<string, string>; agentNames?: Map<string, string> };
 
 function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
@@ -30,7 +30,43 @@ export function describeEvent(kind: string, data: Record<string, unknown>, { col
     case "sprint_changed":
       return data.to ? "moved this into a sprint" : "moved this to the backlog";
     default:
-      return kind;
+      return describeAgentEvent(kind, data) ?? kind;
+  }
+}
+
+function num(v: unknown): number {
+  return typeof v === "number" ? v : 0;
+}
+
+/** Agent-produced fields are shown as plain text only, never as markup. */
+function describeAgentEvent(kind: string, data: Record<string, unknown>): string | undefined {
+  switch (kind) {
+    case "agent_run_queued":
+      return "queued a run";
+    case "agent_run_started":
+      return "started working";
+    case "agent_message":
+      return str(data.text) ?? "";
+    case "agent_plan": {
+      const n = Array.isArray(data.entries) ? data.entries.length : 0;
+      return `updated the plan (${n} ${n === 1 ? "step" : "steps"})`;
+    }
+    case "agent_tool":
+      return `${str(data.title) ?? "used a tool"} (${str(data.status) ?? "unknown"})`;
+    case "agent_file_change":
+      return `changed ${str(data.path) ?? "a file"} (+${num(data.lines_added)} −${num(data.lines_removed)})`;
+    case "agent_command":
+      return `ran ${str(data.command) ?? "a command"} → exit ${data.exit_code == null ? "?" : String(data.exit_code)}`;
+    case "agent_permission":
+      return `was ${data.decision === "allowed" ? "allowed" : "denied"}: ${str(data.title) ?? "a request"}`;
+    case "agent_run_completed":
+      return `finished: ${str(data.summary) ?? "done"}`;
+    case "agent_run_failed":
+      return `failed: ${str(data.reason) ?? "unknown reason"}`;
+    case "agent_run_cancelled":
+      return "was cancelled";
+    default:
+      return undefined;
   }
 }
 
@@ -42,6 +78,7 @@ export function ActivityThread({
   items,
   columnNames,
   userNames,
+  agentNames,
   hasMore = false,
   onLoadEarlier,
 }: { items: ActivityItem[]; hasMore?: boolean; onLoadEarlier?: () => void } & Names) {
@@ -54,7 +91,9 @@ export function ActivityThread({
     )}
     <ol className="space-y-3">
       {items.map((item) => {
-        const actor = item.actor?.name ?? "Someone";
+        const agentId = str(item.data?.agent_id);
+        const isAgent = item.kind?.startsWith("agent_") && !item.actor;
+        const actor = item.actor?.name ?? (isAgent ? (agentId && agentNames?.get(agentId)) || "Agent" : "Someone");
         if (item.type === "comment") {
           return (
             <li key={item.id} className="flex gap-2">
