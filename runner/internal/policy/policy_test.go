@@ -1,0 +1,205 @@
+package policy_test
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/coder/acp-go-sdk"
+	"github.com/mmhy2003/megoocolab/runner/internal/policy"
+)
+
+func TestInsideRoot(t *testing.T) {
+	root := t.TempDir()
+	for _, p := range []string{"", "../x", "..", "/etc/passwd", filepath.Join(root, "..", "y"), filepath.Join(root, "a", "..", "..", "z"), filepath.Dir(root)} {
+		if _, ok := policy.InsideRoot(root, p); ok {
+			t.Fatalf("%q must be outside", p)
+		}
+	}
+	for _, p := range []string{"a.txt", "sub/dir/new.txt", filepath.Join(root, "a.txt"), filepath.Join(root, "not", "yet", "there.go"), filepath.Join(root, "x", "..", "y.txt")} {
+		got, ok := policy.InsideRoot(root, p)
+		if !ok {
+			t.Fatalf("%q must be inside", p)
+		}
+		if !filepath.IsAbs(got) {
+			t.Fatalf("resolved path %q must be absolute", got)
+		}
+	}
+	// a sibling directory sharing the root as a string prefix is outside
+	if _, ok := policy.InsideRoot(root, root+"-evil"+string(filepath.Separator)+"x"); ok {
+		t.Fatal("prefix sibling must be outside")
+	}
+}
+
+func TestInsideRootSymlinkOut(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "nope"), filepath.Join(root, "dangling")); err != nil {
+		t.Skipf("cannot create symlinks here: %v", err)
+	}
+	for _, p := range []string{"link", "link/x.txt", "link/new/dir/x.txt", filepath.Join(root, "link", "x.txt"), "dangling", "dangling/x"} {
+		if _, ok := policy.InsideRoot(root, p); ok {
+			t.Fatalf("%q escapes through a symlink and must be outside", p)
+		}
+	}
+	// a symlink that stays inside is fine
+	if err := os.Mkdir(filepath.Join(root, "real"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "alias")); err != nil {
+		t.Skip(err)
+	}
+	if _, ok := policy.InsideRoot(root, "alias/x.txt"); !ok {
+		t.Fatal("internal symlink must be inside")
+	}
+}
+
+func TestRelative(t *testing.T) {
+	root := t.TempDir()
+	got, ok := policy.Relative(root, filepath.Join(root, "a", "b.go"))
+	if !ok || got != "a/b.go" {
+		t.Fatalf("got %q %v", got, ok)
+	}
+	if _, ok := policy.Relative(root, "../x"); ok {
+		t.Fatal("outside must fail")
+	}
+}
+
+func mustNew(t *testing.T, k policy.Kind, root string) policy.Policy {
+	t.Helper()
+	p, err := policy.New(k, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestNew(t *testing.T) {
+	if _, err := policy.New("bogus", t.TempDir()); err == nil {
+		t.Fatal("unknown kind must fail")
+	}
+	if _, err := policy.New(policy.Workspace, ""); err == nil {
+		t.Fatal("empty root must fail")
+	}
+	if policy.ReadOnly != "read_only" || policy.Workspace != "workspace" {
+		t.Fatal("kind values must match the backend")
+	}
+}
+
+func TestReadOnlyDeniesAllWrites(t *testing.T) {
+	root := t.TempDir()
+	p := mustNew(t, policy.ReadOnly, root)
+	for _, path := range []string{filepath.Join(root, "a.txt"), "a.txt", "../x", "/etc/passwd"} {
+		if d := p.CheckWrite(path); d.Allow || d.Reason == "" {
+			t.Fatalf("write %q: %+v", path, d)
+		}
+	}
+	for _, k := range []acp.ToolKind{acp.ToolKindEdit, acp.ToolKindDelete, acp.ToolKindMove, acp.ToolKindOther, "switch_mode", "mystery"} {
+		if d := p.CheckTool(k, "t", []string{filepath.Join(root, "a")}, ""); d.Allow {
+			t.Fatalf("kind %q must be denied under read_only", k)
+		}
+	}
+	for _, k := range []acp.ToolKind{acp.ToolKindRead, acp.ToolKindSearch, acp.ToolKindThink, acp.ToolKindFetch} {
+		if d := p.CheckTool(k, "t", nil, ""); !d.Allow {
+			t.Fatalf("kind %q must be allowed under read_only: %+v", k, d)
+		}
+	}
+	if d := p.CheckTool(acp.ToolKindExecute, "x", nil, "git status"); !d.Allow {
+		t.Fatalf("git status: %+v", d)
+	}
+	if d := p.CheckTool(acp.ToolKindExecute, "x", nil, "rm -rf x"); d.Allow {
+		t.Fatal("rm must be denied")
+	}
+	if d := p.CheckTool(acp.ToolKindExecute, "x", nil, ""); d.Allow {
+		t.Fatal("empty command must be denied")
+	}
+	if d := p.CheckRead(filepath.Join(root, "a.txt")); !d.Allow {
+		t.Fatalf("read inside: %+v", d)
+	}
+	if d := p.CheckRead("/etc/passwd"); d.Allow {
+		t.Fatal("read outside root must be denied")
+	}
+}
+
+func TestReadOnlyCommands(t *testing.T) {
+	allowed := []string{
+		"git status", "git log --oneline -n 5", "git diff HEAD~1", "git show abc", "git blame a.go", "git grep foo", "git ls-files",
+		"ls -la", "dir", "cat a.txt", "type a.txt", "head -n 3 a", "tail -n 3 a", "rg foo", "grep -rn foo .", "find . -name '*.go'", "wc -l a", "pwd",
+		`"git" status`, `'git' status`, "GIT.EXE status", `"C:\Program Files\Git\bin\git.exe" status`, "/usr/bin/cat a.txt",
+		"  git   status  ",
+	}
+	for _, c := range allowed {
+		if !policy.ReadOnlyCommand(c) {
+			t.Errorf("%q should be allowed", c)
+		}
+	}
+	denied := []string{
+		"", "   ", "git", "git push", "git push origin main", "git commit -m x", "git checkout -b x", "git reset --hard", "git -c core.pager=evil log",
+		"rm -rf x", "npm install", "python -c 1", "sh -c ls", "curl http://x", "mv a b", "sed -i s/a/b/ f", "./cat a", "..\\cat a", "bin/cat a",
+		"cat a; rm x", "ls && rm x", "ls || rm x", "ls | sh", "cat a > b", "cat a >> b", "cat < a", "echo `id`", "ls `id`", "cat $(id)", "cat ${HOME}", "cat $HOME/x",
+		"ls\nrm x", "ls & rm x", "git status; git push", `"git status`, "git log --output=out.txt", "git diff --ext-diff", "git grep -O sh foo",
+		"find . -delete", "find . -exec rm {} +", "find . -fprint out", "rg --pre ./evil foo", "rg --pre=./evil foo", "gitx status", "cat.sh a", `grep "a;b" file`,
+	}
+	for _, c := range denied {
+		if policy.ReadOnlyCommand(c) {
+			t.Errorf("%q must be denied", c)
+		}
+	}
+}
+
+func TestWorkspaceAllowsInsideDeniesOutside(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	p := mustNew(t, policy.Workspace, root)
+	in := filepath.Join(root, "src", "a.go")
+	if d := p.CheckWrite(in); !d.Allow {
+		t.Fatalf("inside write: %+v", d)
+	}
+	if d := p.CheckWrite("rel/a.go"); !d.Allow {
+		t.Fatalf("relative write: %+v", d)
+	}
+	if d := p.CheckRead(in); !d.Allow {
+		t.Fatalf("inside read: %+v", d)
+	}
+	for _, bad := range []string{"../../etc/x", filepath.Join(outside, "x"), "/etc/x", filepath.Join(root, "..", "x")} {
+		if d := p.CheckWrite(bad); d.Allow || d.Reason == "" {
+			t.Fatalf("write %q must be denied: %+v", bad, d)
+		}
+		if d := p.CheckRead(bad); d.Allow {
+			t.Fatalf("read %q must be denied", bad)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err == nil {
+		if d := p.CheckWrite(filepath.Join(root, "link", "x")); d.Allow {
+			t.Fatal("write through escaping symlink must be denied")
+		}
+	}
+	// tools
+	if d := p.CheckTool(acp.ToolKindEdit, "e", []string{in}, ""); !d.Allow {
+		t.Fatalf("edit inside: %+v", d)
+	}
+	if d := p.CheckTool(acp.ToolKindEdit, "e", []string{in, filepath.Join(outside, "x")}, ""); d.Allow {
+		t.Fatal("edit with one outside location must be denied")
+	}
+	if d := p.CheckTool(acp.ToolKindDelete, "e", []string{"../x"}, ""); d.Allow {
+		t.Fatal("delete outside must be denied")
+	}
+	if d := p.CheckTool(acp.ToolKindMove, "e", nil, ""); d.Allow {
+		t.Fatal("move without verifiable path must be denied")
+	}
+	if d := p.CheckTool(acp.ToolKindRead, "r", []string{"/etc/passwd"}, ""); d.Allow {
+		t.Fatal("read outside must be denied")
+	}
+	if d := p.CheckTool(acp.ToolKindRead, "r", nil, ""); !d.Allow {
+		t.Fatal("read without locations is allowed")
+	}
+	if d := p.CheckTool(acp.ToolKindExecute, "x", nil, "go test ./..."); !d.Allow {
+		t.Fatalf("execute allowed in workspace: %+v", d)
+	}
+	for _, k := range []acp.ToolKind{acp.ToolKindSearch, acp.ToolKindThink, acp.ToolKindFetch, acp.ToolKindOther} {
+		if d := p.CheckTool(k, "t", nil, ""); !d.Allow {
+			t.Fatalf("%q: %+v", k, d)
+		}
+	}
+}
