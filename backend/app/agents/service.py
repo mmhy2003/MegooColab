@@ -45,13 +45,19 @@ async def get_owned_agent(db: AsyncSession, user: User, agent_id: uuid.UUID) -> 
     return agent
 
 
-async def can_use_agent(db: AsyncSession, user: User, agent: Agent, project: Project) -> bool:
-    """AGT-5: the owner, an admin, or a manager of the project."""
-    if agent.owner_id == user.id or user.role == Role.admin:
-        return True
+def may_use_agent(user: User, agent_owner_id: uuid.UUID, manages: bool) -> bool:
+    """AGT-5, the single rule: the owner, an admin, or a manager of the project."""
+    return agent_owner_id == user.id or user.role == Role.admin or manages
+
+
+async def _manages_project(db: AsyncSession, user: User, project: Project) -> bool:
     return can_manage_project(
         user, await project_team_ids(db, project.id), await user_team_ids(db, user.id)
     )
+
+
+async def can_use_agent(db: AsyncSession, user: User, agent: Agent, project: Project) -> bool:
+    return may_use_agent(user, agent.owner_id, await _manages_project(db, user, project))
 
 
 async def bound_project_ids(db: AsyncSession, agent_id: uuid.UUID) -> set[uuid.UUID]:
@@ -119,12 +125,10 @@ async def agents_out(db: AsyncSession, agents: list[Agent], viewer: User) -> lis
 async def project_agents_out(
     db: AsyncSession, agents: list[Agent], viewer: User, project: Project
 ) -> list[ProjectAgentOut]:
-    manages = can_manage_project(
-        viewer, await project_team_ids(db, project.id), await user_team_ids(db, viewer.id)
-    )
+    manages = await _manages_project(db, viewer, project)
     fields = await _base_fields(db, agents, viewer)
     return [
-        ProjectAgentOut(**f, can_use=manages or a.owner_id == viewer.id)
+        ProjectAgentOut(**f, can_use=may_use_agent(viewer, a.owner_id, manages))
         for f, a in zip(fields, agents, strict=True)
     ]
 

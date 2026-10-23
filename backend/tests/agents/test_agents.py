@@ -166,3 +166,28 @@ async def test_admin_agents_overview_admin_only(client, client_factory, db):
     assert len(rows) == 1
     assert rows[0]["owner"]["id"] == str(owner.id)
     assert rows[0]["status"] == "offline" and rows[0]["current_run"] is None
+
+
+async def test_can_use_agent_rule(client, db):
+    from app.agents.models import Agent
+    from app.agents.service import can_use_agent, may_use_agent
+    from app.projects.models import Project
+
+    owner = await make_user(db)
+    member = await make_user(db)
+    admin = await make_user(db, role=Role.admin)
+    outside_mgr = await make_user(db, role=Role.manager)
+    await make_team(db, outside_mgr)
+    project_json, manager, _ = await make_project(client, db, "PAY", owner, member)
+    project = await db.get(Project, __import__("uuid").UUID(project_json["id"]))
+    agent = Agent(owner_id=owner.id, name="A", program="codex")
+    db.add(agent)
+    await db.commit()
+
+    assert await can_use_agent(db, owner, agent, project) is True
+    assert await can_use_agent(db, admin, agent, project) is True
+    assert await can_use_agent(db, manager, agent, project) is True
+    assert await can_use_agent(db, outside_mgr, agent, project) is False
+    assert await can_use_agent(db, member, agent, project) is False
+    assert may_use_agent(member, owner.id, manages=False) is False
+    assert may_use_agent(admin, owner.id, manages=False) is True
