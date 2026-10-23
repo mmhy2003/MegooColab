@@ -1,0 +1,219 @@
+import asyncio
+import contextlib
+import json
+import logging
+import time
+import uuid
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
+from sqlalchemy import select
+
+from app.agents.models import Agent, AgentBinding
+from app.agents.service import bound_project_ids, publish_agents_updated
+from app.auth.models import TokenScope
+from app.auth.tokens import resolve_bearer
+from app.core.db import SessionLocal
+from app.core.events import Event, hub
+from app.projects.models import Project
+from app.runner.protocol import (
+    CLOSE_IDLE,
+    CLOSE_PROTOCOL_ERROR,
+    CLOSE_UNAUTHORIZED,
+    AgentReport,
+    AgentStatus,
+    ConfigChanged,
+    Heartbeat,
+    Hello,
+    RunFinished,
+    RunUpdate,
+    Welcome,
+    WelcomeAgent,
+    WelcomeBinding,
+    runner_message,
+)
+from app.runner.registry import RunnerConn, registry
+
+log = logging.getLogger(__name__)
+router = APIRouter()
+
+# module-level so tests can monkeypatch them small
+REVALIDATE_EVERY_SECONDS = 15
+IDLE_TIMEOUT_SECONDS = 45
+RECHECK_EVENTS = {"user.deactivated", "sessions.revoked", "tokens.revoked"}
+
+
+def _bearer(websocket: WebSocket) -> str | None:
+    scheme, _, value = websocket.headers.get("authorization", "").partition(" ")
+    return value.strip() if scheme.lower() == "bearer" and value.strip() else None
+
+
+async def _authorize(raw: str | None) -> uuid.UUID | None:
+    """User id behind a live runner-scoped token, else None."""
+    if raw is None:
+        return None
+    async with SessionLocal() as db:
+        resolved = await resolve_bearer(db, raw, scope=TokenScope.runner)
+        await db.commit()  # persists last_used_at
+        return resolved[0].id if resolved else None
+
+
+async def build_welcome(user_id: uuid.UUID) -> Welcome:
+    async with SessionLocal() as db:
+        agents = (
+            (await db.execute(select(Agent).where(Agent.owner_id == user_id).order_by(Agent.created_at, Agent.id)))
+            .scalars()
+            .all()
+        )
+        rows = await db.execute(
+            select(AgentBinding.agent_id, Project.key, AgentBinding.local_path)
+            .join(Project, Project.id == AgentBinding.project_id)
+            .where(AgentBinding.agent_id.in_([a.id for a in agents]))
+            .order_by(Project.key)
+        )
+        bindings: dict[uuid.UUID, list[WelcomeBinding]] = {}
+        for agent_id, key, path in rows.all():
+            bindings.setdefault(agent_id, []).append(WelcomeBinding(project_key=key, local_path=path))
+        return Welcome(
+            user_id=user_id,
+            agents=[
+                WelcomeAgent(
+                    agent_id=a.id,
+                    name=a.name,
+                    program=a.program,
+                    max_concurrent_runs=a.max_concurrent_runs,
+                    bindings=bindings.get(a.id, []),
+                )
+                for a in agents
+            ],
+        )
+
+
+async def _publish_availability(user_id: uuid.UUID, agent_ids: set[uuid.UUID]) -> None:
+    """agents.updated for the projects these agents are bound to (and the owner's own views)."""
+    if not agent_ids:
+        return
+    async with SessionLocal() as db:
+        projects: set[uuid.UUID] = set()
+        for agent_id in agent_ids:
+            projects |= await bound_project_ids(db, agent_id)
+        await publish_agents_updated(db, user_id, projects)
+        await db.commit()
+
+
+async def _apply_reports(conn: RunnerConn, reports: list[AgentReport | AgentStatus]) -> None:
+    """Record availability for the user's own agents only; publish if anything changed."""
+    owned = set(conn.owned_agents)
+    changed: set[uuid.UUID] = set()
+    for r in reports:
+        if r.agent_id in owned and conn.set_availability(r.agent_id, r.available, r.problems):
+            changed.add(r.agent_id)
+    await _publish_availability(conn.user_id, changed)
+
+
+async def _send_welcome(conn: RunnerConn, *, announce_change: bool) -> None:
+    welcome = await build_welcome(conn.user_id)
+    payload = welcome.model_dump(mode="json")
+    conn.owned_agents = {a.agent_id for a in welcome.agents}
+    conn.retain_agents(conn.owned_agents)
+    if announce_change:
+        if payload == conn.last_welcome:
+            return  # nothing the runner cares about changed (e.g. our own availability events)
+        await conn.send(ConfigChanged())
+    conn.last_welcome = payload
+    await conn.send(welcome)
+
+
+async def _handle(conn: RunnerConn, text: str) -> bool:
+    """Process one runner message. False means a protocol error."""
+    try:
+        msg = runner_message.validate_python(json.loads(text))
+    except (ValueError, ValidationError):
+        return False
+    conn.touch()
+    if isinstance(msg, Hello):
+        await _apply_reports(conn, msg.agents)
+    elif isinstance(msg, AgentStatus):
+        await _apply_reports(conn, [msg])
+    elif isinstance(msg, Heartbeat | RunUpdate | RunFinished):
+        pass  # heartbeat only refreshes last_seen; run messages are handled by the run service (Task 5)
+    return True
+
+
+async def _cancel(*tasks: asyncio.Task) -> None:
+    for t in tasks:
+        t.cancel()
+    for t in tasks:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await t
+
+
+@router.websocket("/api/runner/ws")
+async def runner_socket(websocket: WebSocket) -> None:
+    # subscribe before authorizing so nothing published after the handshake is missed
+    queue = hub.subscribe()
+    conn: RunnerConn | None = None
+    raw = _bearer(websocket)
+    try:
+        user_id = await _authorize(raw)
+        await websocket.accept()
+        if user_id is None:
+            await websocket.close(code=CLOSE_UNAUTHORIZED)
+            return
+        conn = await registry.connect(user_id, websocket)
+        await _send_welcome(conn, announce_change=False)
+        await _serve(conn, queue, raw)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        hub.unsubscribe(queue)
+        if conn is not None:
+            registry.disconnect(conn)
+            lost = set(conn.available)
+            with contextlib.suppress(Exception):
+                await _publish_availability(conn.user_id, lost)
+
+
+async def _serve(conn: RunnerConn, queue: asyncio.Queue[Event], raw: str | None) -> None:
+    ws = conn.socket
+    recv = asyncio.create_task(ws.receive())
+    event = asyncio.create_task(queue.get())
+    replaced = asyncio.create_task(conn.closed.wait())
+    next_check = time.monotonic() + REVALIDATE_EVERY_SECONDS
+    try:
+        while True:
+            now = time.monotonic()
+            timeout = max(0.0, min(next_check - now, conn.last_seen + IDLE_TIMEOUT_SECONDS - now))
+            done, _ = await asyncio.wait(
+                {recv, event, replaced}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+            )
+            if replaced in done:
+                return  # already closed with 4409
+            recheck = False
+            if recv in done:
+                message = recv.result()
+                if message["type"] == "websocket.disconnect":
+                    return
+                text = message.get("text")
+                if text is None or not await _handle(conn, text):
+                    await conn.close(CLOSE_PROTOCOL_ERROR)
+                    return
+                recv = asyncio.create_task(ws.receive())
+            if event in done:
+                ev: Event = event.result()
+                event = asyncio.create_task(queue.get())
+                if ev.user_id == conn.user_id and ev.project_id is None:
+                    if ev.type in RECHECK_EVENTS:
+                        recheck = True
+                    elif ev.type == "agents.updated":
+                        await _send_welcome(conn, announce_change=True)
+            if time.monotonic() - conn.last_seen >= IDLE_TIMEOUT_SECONDS:
+                await conn.close(CLOSE_IDLE)
+                return
+            if recheck or time.monotonic() >= next_check:
+                next_check = time.monotonic() + REVALIDATE_EVERY_SECONDS
+                if await _authorize(raw) is None:
+                    await conn.close(CLOSE_UNAUTHORIZED)
+                    return
+    finally:
+        await _cancel(recv, event, replaced)

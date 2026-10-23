@@ -86,7 +86,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
     if agent_ids:
         for a in (await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))).scalars():
             agents[a.id] = AssigneeAgentOut(
-                id=a.id, name=a.name, program=a.program, owner_id=a.owner_id, status=agent_status(a.id)
+                id=a.id, name=a.name, program=a.program, owner_id=a.owner_id, status=agent_status(a.id, a.owner_id)
             )
     return [
         TaskOut(

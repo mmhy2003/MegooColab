@@ -12,6 +12,7 @@ from app.auth.schemas import UserOut
 from app.core.events import Event, publish
 from app.projects.access import accessible_project_ids, can_manage_project, project_team_ids
 from app.projects.models import Project
+from app.runner.registry import registry
 from app.teams.service import user_team_ids
 
 PROGRAM_LABELS = {AgentProgram.claude_code: "Claude Code", AgentProgram.codex: "Codex"}
@@ -28,9 +29,10 @@ def is_absolute_path(path: str) -> bool:
     return bool(_ABSOLUTE_PATH.match(path))
 
 
-def agent_status(agent_id: uuid.UUID) -> str:
-    """online | busy | offline. Task 4 adds the runner registry, Task 5 adds busy."""
-    return "offline"
+def agent_status(agent_id: uuid.UUID, owner_id: uuid.UUID) -> str:
+    """online | busy | offline. "online" means the owner's live runner reports it available;
+    Task 5 adds busy."""
+    return "online" if agent_id in registry.available_agents(owner_id) else "offline"
 
 
 async def has_active_runs(db: AsyncSession, agent_id: uuid.UUID) -> bool:
@@ -111,7 +113,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "answer_mode": a.answer_mode,
             "max_concurrent_runs": a.max_concurrent_runs,
             "owner": UserOut.model_validate(owners[a.owner_id]),
-            "status": agent_status(a.id),
+            "status": agent_status(a.id, a.owner_id),
             "bindings": bindings.get(a.id, []),
         }
         for a in agents
