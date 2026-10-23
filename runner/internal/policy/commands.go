@@ -10,20 +10,9 @@ var readOnlyPrograms = map[string]bool{
 	"tail": true, "rg": true, "grep": true, "find": true, "wc": true, "pwd": true,
 }
 
-var readOnlyGitSubcommands = map[string]bool{
-	"status": true, "log": true, "diff": true, "show": true, "blame": true, "grep": true, "ls-files": true,
-}
-
 // Anything that chains, redirects, substitutes or expands is refused outright
 // (even inside quotes: refusing is always safe, and the agent can retry plainly).
 const shellMeta = ";&|<>`$()%^\n\r\x00"
-
-// Flags that make an otherwise read-only program write files or run other programs.
-var dangerousArgs = map[string][]string{
-	"git":  {"--output", "--ext-diff", "--textconv", "--open-files-in-pager", "--exec", "-O"},
-	"find": {"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0", "-fprintf", "-fls"},
-	"rg":   {"--pre", "--hostname-bin"},
-}
 
 var driveAbs = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
 
@@ -46,17 +35,19 @@ func ReadOnlyCommand(cmd string) bool {
 		return false
 	}
 	args := toks[1:]
-	if prog == "git" && (len(args) == 0 || !readOnlyGitSubcommands[args[0]]) {
+	key := prog
+	if prog == "git" {
+		if len(args) == 0 {
+			return false
+		}
+		key = "git " + args[0]
+		args = args[1:]
+	}
+	sp, ok := specs[key]
+	if !ok {
 		return false
 	}
-	for _, a := range args {
-		for _, bad := range dangerousArgs[prog] {
-			if a == bad || strings.HasPrefix(a, bad+"=") || (strings.HasPrefix(bad, "--") && strings.HasPrefix(a, bad)) || (bad == "-O" && strings.HasPrefix(a, "-O")) {
-				return false
-			}
-		}
-	}
-	return true
+	return sp.accepts(args)
 }
 
 // tokenize splits on spaces and tabs, honouring single and double quotes (no
@@ -112,21 +103,30 @@ func programName(tok string) (string, bool) {
 	return name, name != ""
 }
 
+var envAssignment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
+
 // FirstTokenBase is the program name of a command line for run updates: the
 // basename of the first token only (never the directory, never the arguments).
+// Leading VAR=value assignments are skipped, since their values can be secrets.
+// It returns "" when no plain program name remains.
 func FirstTokenBase(cmd string) string {
 	toks, ok := tokenize(cmd)
-	if !ok || len(toks) == 0 {
-		fields := strings.Fields(cmd)
-		if len(fields) == 0 {
-			return ""
-		}
-		toks = fields[:1]
+	if !ok {
+		toks = strings.Fields(cmd)
+	}
+	for len(toks) > 0 && envAssignment.MatchString(toks[0]) {
+		toks = toks[1:]
+	}
+	if len(toks) == 0 {
+		return ""
 	}
 	t := toks[0]
 	t = t[strings.LastIndexAny(t, `/\`)+1:]
 	if strings.HasSuffix(strings.ToLower(t), ".exe") {
 		t = t[:len(t)-4]
+	}
+	if strings.Contains(t, "=") {
+		return ""
 	}
 	return t
 }

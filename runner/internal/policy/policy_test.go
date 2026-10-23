@@ -128,7 +128,8 @@ func TestReadOnlyCommands(t *testing.T) {
 		"git status", "git log --oneline -n 5", "git diff HEAD~1", "git show abc", "git blame a.go", "git grep foo", "git ls-files",
 		"ls -la", "dir", "cat a.txt", "type a.txt", "head -n 3 a", "tail -n 3 a", "rg foo", "grep -rn foo .", "find . -name '*.go'", "wc -l a", "pwd",
 		`"git" status`, `'git' status`, "GIT.EXE status", `"C:\Program Files\Git\bin\git.exe" status`, "/usr/bin/cat a.txt",
-		"  git   status  ",
+		"  git   status  ", "git grep -in foo", "git grep -e foo -- a.go", "git log -5", "git log --since=2020-01-01 --author=bob", "git diff --stat HEAD",
+		"git status -sb", "git blame -L 1,5 a.go", "ls -lah", "tail -n 20 a.log", "head -5 a", "find . -type f -maxdepth 2 -name x", "rg -n --hidden foo src", "wc -lw a", "cat -n a",
 	}
 	for _, c := range allowed {
 		if !policy.ReadOnlyCommand(c) {
@@ -141,6 +142,14 @@ func TestReadOnlyCommands(t *testing.T) {
 		"cat a; rm x", "ls && rm x", "ls || rm x", "ls | sh", "cat a > b", "cat a >> b", "cat < a", "echo `id`", "ls `id`", "cat $(id)", "cat ${HOME}", "cat $HOME/x",
 		"ls\nrm x", "ls & rm x", "git status; git push", `"git status`, "git log --output=out.txt", "git diff --ext-diff", "git grep -O sh foo",
 		"find . -delete", "find . -exec rm {} +", "find . -fprint out", "rg --pre ./evil foo", "rg --pre=./evil foo", "gitx status", "cat.sh a", `grep "a;b" file`,
+		// git grep -O / --open-files-in-pager runs a program; git accepts abbreviations and bundled flags
+		"git grep --open=echo foo", "git grep --open-files=rm foo", "git grep -iOecho foo", `git grep "--open=rm -f" foo`, "git grep -O foo", "git grep --open-files-in-pager=sh foo",
+		"git grep -nOsh foo", "git grep --ope=sh foo", "git log --outp=x", "git log --out=x", "git diff --ext foo", "git diff --text foo", "git log -S", "git grep -e",
+		"git log --format", "git diff --no-index a b", "git show --output=x", "git status --unknown", "git ls-files -x",
+		"rg --pr=x foo", "rg -z foo", "rg --search-zip foo", "rg --pre-g x foo", "grep --exclude-from=x foo", "find . -exec", "find . -execdir sh {} +", "find . -ok rm {} ;", "find . -fprint0 x", "find . -fls x", "find . -newer",
+		"tail -f a", "tail --follow a", "cat --help", "ls --color=always", "ls -Z", "head -n", "ls -lX", "wc -lx a", "pwd -x",
+		// environment-assignment prefixes are not a plain command
+		"FOO=bar git status", "API_KEY=sk-123 ls", `"X=1" cat a`,
 	}
 	for _, c := range denied {
 		if policy.ReadOnlyCommand(c) {
@@ -200,6 +209,28 @@ func TestWorkspaceAllowsInsideDeniesOutside(t *testing.T) {
 	for _, k := range []acp.ToolKind{acp.ToolKindSearch, acp.ToolKindThink, acp.ToolKindFetch, acp.ToolKindOther} {
 		if d := p.CheckTool(k, "t", nil, ""); !d.Allow {
 			t.Fatalf("%q: %+v", k, d)
+		}
+	}
+}
+
+func TestFirstTokenBase(t *testing.T) {
+	for cmd, want := range map[string]string{
+		"pytest -q": "pytest",
+		`C:\Users\alice\.venv\Scripts\pytest.exe -q`: "pytest",
+		`"C:\Program Files\Git\git.exe" status`:      "git",
+		"/usr/bin/go test":                           "go",
+		"API_KEY=sk-123 pytest":                      "pytest",
+		"A=1 B=2 C_3=x go test":                      "go",
+		"API_KEY=sk-123":                             "",
+		"A=1 b=c=d":                                  "",
+		"pytest=1x":                                  "",
+		"":                                           "",
+		"   ":                                        "",
+		`API_KEY="a b" make`:                         "make",
+		`bash -c "unterminated`:                      "bash",
+	} {
+		if got := policy.FirstTokenBase(cmd); got != want {
+			t.Errorf("FirstTokenBase(%q) = %q, want %q", cmd, got, want)
 		}
 	}
 }

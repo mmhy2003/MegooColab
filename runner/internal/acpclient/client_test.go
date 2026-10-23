@@ -570,3 +570,52 @@ func asString(v any) string {
 	s, _ := v.(string)
 	return s
 }
+
+func TestPermissionNeverDecidesOnARememberedCommand(t *testing.T) {
+	root := t.TempDir()
+	pol, _ := policy.New(policy.ReadOnly, root)
+	rec := &recorder{}
+	c := acpclient.New(pol, root, rec.emit)
+	ctx := context.Background()
+	// an earlier tool_call announced a harmless command under this id...
+	_ = c.SessionUpdate(ctx, acp.SessionNotification{Update: acp.StartToolCall("c1", "Run", acp.WithStartKind(acp.ToolKindExecute), acp.WithStartRawInput(map[string]any{"command": "git status"}))})
+	// ...but the permission request names no command: it must not be decided on the old one
+	kind := acp.ToolKindExecute
+	r, err := c.RequestPermission(ctx, acp.RequestPermissionRequest{
+		SessionId: "s",
+		ToolCall:  acp.ToolCallUpdate{ToolCallId: "c1", Kind: &kind, RawInput: map[string]any{"cmd": "rm -rf /"}},
+		Options: []acp.PermissionOption{
+			{Kind: acp.PermissionOptionKindAllowOnce, OptionId: "ao", Name: "once"},
+			{Kind: acp.PermissionOptionKindRejectOnce, OptionId: "ro", Name: "no"},
+		},
+	})
+	if err != nil || r.Outcome.Selected == nil || r.Outcome.Selected.OptionId != "ro" {
+		t.Fatalf("outcome = %+v %v", r, err)
+	}
+	if cmds := rec.ofKind("command"); len(cmds) != 0 {
+		t.Fatalf("no command may be announced: %v", cmds)
+	}
+}
+
+func TestEnvAssignmentSecretsNeverEmitted(t *testing.T) {
+	root := t.TempDir()
+	pol, _ := policy.New(policy.Workspace, root)
+	rec := &recorder{}
+	c := acpclient.New(pol, root, rec.emit)
+	ctx := context.Background()
+	kind := acp.ToolKindExecute
+	opts := []acp.PermissionOption{{Kind: acp.PermissionOptionKindAllowOnce, OptionId: "ao", Name: "once"}}
+	for _, cmd := range []string{"API_KEY=sk-123 pytest -q", "API_KEY=sk-123"} {
+		_, _ = c.RequestPermission(ctx, acp.RequestPermissionRequest{SessionId: "s", Options: opts,
+			ToolCall: acp.ToolCallUpdate{ToolCallId: "x", Kind: &kind, RawInput: map[string]any{"command": cmd}}})
+	}
+	_ = c.SessionUpdate(ctx, acp.SessionNotification{Update: acp.StartToolCall("y", "API_KEY=sk-123 pytest", acp.WithStartKind(acp.ToolKindExecute), acp.WithStartRawInput(map[string]any{"command": "API_KEY=sk-123 pytest"}))})
+	if strings.Contains(rec.json(t), "sk-123") || strings.Contains(rec.json(t), "API_KEY") {
+		t.Fatalf("secret leaked: %s", rec.json(t))
+	}
+	cmds := rec.ofKind("command")
+	if len(cmds) != 1 || cmds[0]["command"] != "pytest" {
+		t.Fatalf("commands = %v", cmds)
+	}
+	rec.checkShape(t)
+}

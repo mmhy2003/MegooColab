@@ -121,12 +121,9 @@ func (c *Client) RequestPermission(_ context.Context, p acp.RequestPermissionReq
 	}
 	command := commandOf(p.ToolCall.RawInput)
 	c.mu.Lock()
-	if known := c.tools[p.ToolCall.ToolCallId]; known != nil { // the request may omit what tool_call carried
+	if known := c.tools[p.ToolCall.ToolCallId]; known != nil { // kind and title may be omitted; the command never is borrowed: decide on this request's own
 		if p.ToolCall.Kind == nil {
 			kind = known.kind
-		}
-		if command == "" {
-			command = known.command
 		}
 		if title == "" {
 			title = known.title
