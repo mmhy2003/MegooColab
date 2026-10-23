@@ -5,6 +5,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.models import Agent
+from app.agents.service import agents_out
 from app.audit import service as audit
 from app.auth.deps import AuthedUser
 from app.auth.models import Role, User
@@ -26,10 +28,17 @@ async def _flush_unique_name(db: AsyncSession) -> None:
 
 
 async def _detail(db: AsyncSession, team: Team, viewer: User) -> TeamDetail:
-    members = (
+    members = list(
+        (
+            await db.execute(
+                select(User).join(TeamMember, TeamMember.user_id == User.id)
+                .where(TeamMember.team_id == team.id).order_by(User.name)
+            )
+        ).scalars()
+    )
+    agents = (
         await db.execute(
-            select(User).join(TeamMember, TeamMember.user_id == User.id)
-            .where(TeamMember.team_id == team.id).order_by(User.name)
+            select(Agent).where(Agent.owner_id.in_([u.id for u in members])).order_by(Agent.name)
         )
     ).scalars()
     return TeamDetail(
@@ -38,6 +47,7 @@ async def _detail(db: AsyncSession, team: Team, viewer: User) -> TeamDetail:
         description=team.description,
         members=[UserOut.model_validate(u) for u in members],
         projects=await _visible_projects(db, team, viewer),
+        agents=await agents_out(db, list(agents), viewer),
     )
 
 

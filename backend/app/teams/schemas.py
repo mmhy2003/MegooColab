@@ -2,6 +2,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.schemas import AgentOut
 from app.auth.schemas import UserOut
 
 
@@ -37,6 +38,7 @@ class ProjectRef(BaseModel):
 class TeamDetail(TeamOut):
     members: list[UserOut]
     projects: list[ProjectRef]
+    agents: list[AgentOut] = []
 
 
 class MembersIn(BaseModel):

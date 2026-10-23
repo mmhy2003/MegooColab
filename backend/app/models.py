@@ -1,5 +1,6 @@
 """Imports every model module so Base.metadata is complete (Alembic, tests)."""
 
+from app.agents import models as agents_models  # noqa: F401
 from app.audit import models as audit_models  # noqa: F401
 from app.auth import models as auth_models  # noqa: F401
 from app.org import models as org_models  # noqa: F401
