@@ -9,7 +9,13 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from app.agent_runs.service import dispatch_pending, fail_disconnected_runs
+from app.agent_runs.service import (
+    apply_update,
+    dispatch_pending,
+    fail_disconnected_runs,
+    fail_unclaimed_runs,
+    finish_run,
+)
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import bound_project_ids, publish_agents_updated
 from app.auth.models import TokenScope
@@ -129,6 +135,25 @@ async def _fail_runs(conn: RunnerConn) -> None:
         await db.commit()
 
 
+async def _fail_unclaimed(conn: RunnerConn) -> None:
+    try:
+        async with SessionLocal() as db:
+            await fail_unclaimed_runs(db, conn)
+            await db.commit()
+    except Exception:
+        log.exception("runner: failing leftover running runs failed")
+
+
+async def _run_message(handler, *args) -> None:
+    """Apply one run update or finish in its own transaction. A failure must not kill the socket."""
+    try:
+        async with SessionLocal() as db:
+            await handler(db, *args)
+            await db.commit()
+    except Exception:
+        log.exception("runner: handling a run message failed")
+
+
 async def _send_welcome(conn: RunnerConn, *, announce_change: bool) -> None:
     welcome = await build_welcome(conn.user_id)
     payload = welcome.model_dump(mode="json")
@@ -150,11 +175,16 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
         return False
     conn.touch()
     if isinstance(msg, Hello):
+        await _fail_unclaimed(conn)
         await _apply_reports(conn, msg.agents)
     elif isinstance(msg, AgentStatus):
         await _apply_reports(conn, [msg])
-    elif isinstance(msg, Heartbeat | RunUpdate | RunFinished):
-        pass  # heartbeat only refreshes last_seen; run messages are handled by the run service (Task 6)
+    elif isinstance(msg, RunUpdate):
+        await _run_message(apply_update, conn.user_id, msg.run_id, msg.seq, msg.kind, msg.data)
+    elif isinstance(msg, RunFinished):
+        await _run_message(finish_run, conn.user_id, msg.run_id, msg.outcome, msg.summary, msg.error)
+        conn.run_ids.discard(msg.run_id)
+    # Heartbeat only refreshes last_seen
     return True
 
 

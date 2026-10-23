@@ -1,4 +1,5 @@
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -45,13 +46,17 @@ async def _transition(
     owner_id: uuid.UUID,
     reason: str | None = None,
     actor_id: uuid.UUID | None = None,
+    summary: str | None = None,
+    extra: dict | None = None,
 ) -> None:
     """Move a run to a terminal status, record it on the task and tell the browsers."""
     run.status = to
     run.reason = reason
     run.finished_at = _now()
+    if summary is not None:
+        run.summary = summary
     task = await db.get(Task, run.task_id)
-    data = {"run_id": str(run.id)}
+    data = {"run_id": str(run.id), **(extra or {})}
     if reason:
         data["reason"] = reason
     await record_event(db, task, actor_id, event_kind, data)
@@ -257,6 +262,23 @@ async def fail_disconnected_runs(db: AsyncSession, conn: RunnerConn) -> None:
             )
 
 
+async def fail_unclaimed_runs(db: AsyncSession, conn: RunnerConn) -> None:
+    """On hello: running runs of this user that this connection was not given (left over from a server
+    restart or an earlier connection) can never finish, so they fail with runner_disconnected."""
+    stmt = (
+        select(AgentRun, Agent.owner_id)
+        .join(Agent, Agent.id == AgentRun.agent_id)
+        .where(Agent.owner_id == conn.user_id, AgentRun.status == RunStatus.running)
+        .with_for_update(of=AgentRun)
+        .execution_options(populate_existing=True)
+    )
+    for run, owner_id in (await db.execute(stmt)).all():
+        if run.id not in conn.run_ids:
+            await _transition(
+                db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
+            )
+
+
 async def cancel_user_runs(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Deactivation: cancel the user's queued and running runs, on their agents or requested by them.
     Running ones get a best-effort run_cancel on the agent owner's connection."""
@@ -312,3 +334,162 @@ async def runs_out(db: AsyncSession, runs: list[AgentRun]) -> list[RunOut]:
         )
         for r in runs
     ]
+
+
+# ---- run updates: metadata only (BRD NFR-2) ---------------------------------
+
+OUTSIDE_WORKTREE = "<outside worktree>"
+MAX_TEXT = 4000
+MAX_TITLE = 200
+MAX_PLAN_ENTRIES = 50
+MAX_PATH = 500
+MAX_COMMAND = 100
+_TOOL_KINDS = {"read", "edit", "delete", "move", "search", "execute", "think", "fetch", "other"}
+_PLAN_STATUS = {"pending", "in_progress", "completed"}
+_TOOL_STATUS = {"pending", "in_progress", "completed", "failed"}
+_DECISIONS = {"allowed", "denied"}
+_DRIVE = re.compile(r"^[A-Za-z]:")
+
+
+def _pick(fields: dict) -> dict:
+    return {k: v for k, v in fields.items() if v is not None}
+
+
+def _text(value, limit: int) -> str | None:
+    return value[:limit] if isinstance(value, str) else None
+
+
+def _choice(value, allowed: set[str]) -> str | None:
+    return value if isinstance(value, str) and value in allowed else None
+
+
+def _int(value, *, non_negative: bool = False) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if value >= 0 or not non_negative else None
+
+
+def _safe_path(value) -> str | None:
+    """Relative paths without `..` are kept; anything else is replaced, never echoed."""
+    if not isinstance(value, str):
+        return None
+    if (
+        not value
+        or value.startswith(("/", "\\", "~"))
+        or _DRIVE.match(value)
+        or ".." in value.replace("\\", "/").split("/")
+    ):
+        return OUTSIDE_WORKTREE
+    return value[:MAX_PATH]
+
+
+def _first_token(value) -> str | None:
+    parts = value.split() if isinstance(value, str) else []
+    return parts[0][:MAX_COMMAND] if parts else None
+
+
+def _plan_entries(value) -> list[dict] | None:
+    if not isinstance(value, list):
+        return None
+    return [
+        _pick({"title": _text(e.get("title"), MAX_TITLE), "status": _choice(e.get("status"), _PLAN_STATUS)})
+        for e in value[:MAX_PLAN_ENTRIES]
+        if isinstance(e, dict)
+    ]
+
+
+def sanitize_update(kind: str, data: dict) -> dict | None:
+    """Keep only the metadata fields allowed for this kind, within their limits. None for unknown kinds."""
+    g = data.get
+    match kind:
+        case "message":
+            return _pick({"text": _text(g("text"), MAX_TEXT)})
+        case "plan":
+            return _pick({"entries": _plan_entries(g("entries"))})
+        case "tool":
+            return _pick({
+                "tool_kind": _choice(g("tool_kind"), _TOOL_KINDS),
+                "title": _text(g("title"), MAX_TITLE),
+                "status": _choice(g("status"), _TOOL_STATUS),
+            })
+        case "file_change":
+            return _pick({
+                "path": _safe_path(g("path")),
+                "lines_added": _int(g("lines_added"), non_negative=True),
+                "lines_removed": _int(g("lines_removed"), non_negative=True),
+            })
+        case "command":
+            return _pick({"command": _first_token(g("command")), "exit_code": _int(g("exit_code"))})
+        case "permission":
+            return _pick({
+                "tool_kind": _choice(g("tool_kind"), _TOOL_KINDS),
+                "title": _text(g("title"), MAX_TITLE),
+                "decision": _choice(g("decision"), _DECISIONS),
+                "reason": _text(g("reason"), MAX_TITLE),
+            })
+    return None
+
+
+async def apply_update(
+    db: AsyncSession, conn_user_id: uuid.UUID, run_id: uuid.UUID, seq: int, kind: str, data: dict
+) -> None:
+    """Store one run update as a task event. Ignored unless the run is running, belongs to this runner's
+    user and seq is new. Does not commit."""
+    clean = sanitize_update(kind, data)
+    if clean is None:
+        return
+    # one conditional statement: ownership, running, and a strictly newer seq (idempotent on resend)
+    claimed = (
+        await db.execute(
+            update(AgentRun)
+            .where(
+                AgentRun.id == run_id,
+                AgentRun.status == RunStatus.running,
+                AgentRun.last_seq < seq,
+                AgentRun.agent_id.in_(select(Agent.id).where(Agent.owner_id == conn_user_id)),
+            )
+            .values(last_seq=seq)
+            .returning(AgentRun.task_id, AgentRun.agent_id)
+        )
+    ).first()
+    if claimed is None:
+        return
+    task = await db.get(Task, claimed.task_id)
+    event = {**clean, "run_id": str(run_id), "agent_id": str(claimed.agent_id)}
+    await record_event(db, task, None, f"agent_{kind}", event)
+    await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
+
+
+async def finish_run(
+    db: AsyncSession,
+    conn_user_id: uuid.UUID,
+    run_id: uuid.UUID,
+    outcome: str,
+    summary: str,
+    error: str | None,
+) -> None:
+    """The runner reports the end of a run. A running run takes the outcome; a run already terminal (e.g.
+    cancelled by deactivation) keeps its status and only gets finished_at and summary if they are empty.
+    Commits, then dispatches the owner's pending runs."""
+    run = await _lock_run(db, run_id)
+    agent = await db.get(Agent, run.agent_id) if run is not None else None
+    if run is None or agent is None or agent.owner_id != conn_user_id or run.status == RunStatus.queued:
+        await db.rollback()
+        return
+    summary = summary[:2000]
+    if run.status == RunStatus.running:
+        reason = None
+        if outcome == "failed":
+            reason = "agent_error"  # the runner's error text is logged, not stored: it is not allowed metadata
+            log.warning("run %s failed on the runner: %.200s", run.id, error or "")
+        await _transition(
+            db, run, RunStatus(outcome), f"agent_run_{outcome}", owner_id=agent.owner_id,
+            reason=reason, summary=summary, extra={"agent_id": str(agent.id), "summary": summary},
+        )
+    else:
+        run.finished_at = run.finished_at or _now()
+        run.summary = run.summary or summary
+    await db.commit()
+    async with SessionLocal() as dispatch_db:
+        await dispatch_pending(dispatch_db, agent.owner_id)
+        await dispatch_db.commit()
