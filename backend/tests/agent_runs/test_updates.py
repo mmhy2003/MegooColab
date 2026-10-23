@@ -128,11 +128,10 @@ async def test_absolute_or_parent_paths_redacted(client, db):
 
 async def test_duplicate_seq_ignored(client, db):
     me, _agent, [run_id] = await _running(client, db)
-    await apply_update(db, me.id, run_id, 2, "message", {"text": "one"})
-    await apply_update(db, me.id, run_id, 2, "message", {"text": "again"})
-    await apply_update(db, me.id, run_id, 1, "message", {"text": "older"})
-    await apply_update(db, me.id, run_id, 3, "message", {"text": "two"})
-    await db.commit()
+    # one transaction per update, as on the socket: events written in one transaction share created_at
+    for seq, text in ((2, "one"), (2, "again"), (1, "older"), (3, "two")):
+        await apply_update(db, me.id, run_id, seq, "message", {"text": text})
+        await db.commit()
     assert [e.data["text"] for e in await _events(db)] == ["one", "two"]
     assert (await _row(db, run_id)).last_seq == 3
 
