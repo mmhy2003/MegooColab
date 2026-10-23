@@ -226,6 +226,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tokens/self": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Token Self */
+        get: operations["token_self_api_tokens_self_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tokens */
+        get: operations["list_tokens_api_tokens_get"];
+        put?: never;
+        /** Create Token */
+        post: operations["create_token_api_tokens_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tokens/{token_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Token */
+        delete: operations["revoke_token_api_tokens__token_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users/invite": {
         parameters: {
             query?: never;
@@ -630,6 +682,109 @@ export interface paths {
         patch: operations["update_label_api_projects__ref__labels__label_id__patch"];
         trace?: never;
     };
+    "/api/agents/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Agents */
+        get: operations["my_agents_api_agents_mine_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Agent */
+        post: operations["create_agent_api_agents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agents/{agent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Agent */
+        delete: operations["delete_agent_api_agents__agent_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Agent */
+        patch: operations["update_agent_api_agents__agent_id__patch"];
+        trace?: never;
+    };
+    "/api/agents/{agent_id}/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace Bindings */
+        put: operations["replace_bindings_api_agents__agent_id__bindings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Agents */
+        get: operations["project_agents_api_projects__ref__agents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Agents */
+        get: operations["admin_agents_api_admin_agents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{ref}/tasks": {
         parameters: {
             query?: never;
@@ -947,6 +1102,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{key}/agent-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Runs */
+        get: operations["list_runs_api_tasks__key__agent_runs_get"];
+        put?: never;
+        /** Start Run */
+        post: operations["start_run_api_tasks__key__agent_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Run */
+        post: operations["cancel_run_api_agent_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -980,6 +1170,29 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** AdminAgentOut */
+        AdminAgentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            program: components["schemas"]["AgentProgram"];
+            answer_mode: components["schemas"]["AnswerMode"];
+            /** Max Concurrent Runs */
+            max_concurrent_runs: number;
+            owner: components["schemas"]["UserOut"];
+            /** Status */
+            status: string;
+            /** Bindings */
+            bindings: components["schemas"]["BindingOut"][];
+            /** Current Run */
+            current_run?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** AdminSettingsIn */
         AdminSettingsIn: {
             /** Name */
@@ -991,6 +1204,75 @@ export interface components {
             /** Name */
             name: string;
             smtp: components["schemas"]["SmtpOut"];
+        };
+        /** AgentIn */
+        AgentIn: {
+            program: components["schemas"]["AgentProgram"];
+            /** Name */
+            name?: string | null;
+            /** @default manual */
+            answer_mode: components["schemas"]["AnswerMode"];
+            /**
+             * Max Concurrent Runs
+             * @default 1
+             */
+            max_concurrent_runs: number;
+        };
+        /** AgentOut */
+        AgentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            program: components["schemas"]["AgentProgram"];
+            answer_mode: components["schemas"]["AnswerMode"];
+            /** Max Concurrent Runs */
+            max_concurrent_runs: number;
+            owner: components["schemas"]["UserOut"];
+            /** Status */
+            status: string;
+            /** Bindings */
+            bindings: components["schemas"]["BindingOut"][];
+        };
+        /** AgentPatch */
+        AgentPatch: {
+            /** Name */
+            name?: string | null;
+            answer_mode?: components["schemas"]["AnswerMode"] | null;
+            /** Max Concurrent Runs */
+            max_concurrent_runs?: number | null;
+        };
+        /**
+         * AgentProgram
+         * @enum {string}
+         */
+        AgentProgram: "claude_code" | "codex";
+        /**
+         * AnswerMode
+         * @enum {string}
+         */
+        AnswerMode: "auto" | "manual";
+        /** AssigneeAgentOut */
+        AssigneeAgentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Program */
+            program: string;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Status */
+            status: string;
         };
         /** AttachmentOut */
         AttachmentOut: {
@@ -1042,6 +1324,30 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** BindingIn */
+        BindingIn: {
+            /** Project Ref */
+            project_ref: string;
+            /** Local Path */
+            local_path: string;
+        };
+        /** BindingOut */
+        BindingOut: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Key */
+            project_key: string;
+            /** Local Path */
+            local_path: string | null;
+        };
+        /** BindingsIn */
+        BindingsIn: {
+            /** Bindings */
+            bindings: components["schemas"]["BindingIn"][];
         };
         /** Body_upload_attachment_api_tasks__key__attachments_post */
         Body_upload_attachment_api_tasks__key__attachments_post: {
@@ -1144,6 +1450,15 @@ export interface components {
              */
             move_open_to: "backlog" | string;
         };
+        /** CreateTokenIn */
+        CreateTokenIn: {
+            /** Name */
+            name: string;
+            /** Scopes */
+            scopes: components["schemas"]["TokenScope"][];
+            /** Expires In Days */
+            expires_in_days?: number | null;
+        };
         /** CreateUserIn */
         CreateUserIn: {
             /**
@@ -1156,6 +1471,12 @@ export interface components {
             role: components["schemas"]["Role"];
             /** Temporary Password */
             temporary_password: string;
+        };
+        /** CreatedTokenOut */
+        CreatedTokenOut: {
+            token: components["schemas"]["TokenOut"];
+            /** Secret */
+            secret: string;
         };
         /** ForgotIn */
         ForgotIn: {
@@ -1278,6 +1599,27 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** ProjectAgentOut */
+        ProjectAgentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            program: components["schemas"]["AgentProgram"];
+            answer_mode: components["schemas"]["AnswerMode"];
+            /** Max Concurrent Runs */
+            max_concurrent_runs: number;
+            owner: components["schemas"]["UserOut"];
+            /** Status */
+            status: string;
+            /** Bindings */
+            bindings: components["schemas"]["BindingOut"][];
+            /** Can Use */
+            can_use: boolean;
+        };
         /** ProjectIn */
         ProjectIn: {
             /** Key */
@@ -1391,6 +1733,59 @@ export interface components {
          * @enum {string}
          */
         Role: "admin" | "manager" | "member" | "viewer";
+        /** RunAgentOut */
+        RunAgentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            program: components["schemas"]["AgentProgram"];
+        };
+        /** RunIn */
+        RunIn: {
+            policy: components["schemas"]["RunPolicy"];
+            /** Prompt */
+            prompt?: string | null;
+        };
+        /** RunOut */
+        RunOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Task Key */
+            task_key: string;
+            agent: components["schemas"]["RunAgentOut"];
+            policy: components["schemas"]["RunPolicy"];
+            status: components["schemas"]["RunStatus"];
+            /** Reason */
+            reason: string | null;
+            /** Summary */
+            summary: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+        };
+        /**
+         * RunPolicy
+         * @enum {string}
+         */
+        RunPolicy: "read_only" | "workspace";
+        /**
+         * RunStatus
+         * @enum {string}
+         */
+        RunStatus: "queued" | "running" | "completed" | "failed" | "cancelled";
         /** SetupIn */
         SetupIn: {
             /** Org Name */
@@ -1535,6 +1930,8 @@ export interface components {
             due_date?: string | null;
             /** Assignee User Id */
             assignee_user_id?: string | null;
+            /** Assignee Agent Id */
+            assignee_agent_id?: string | null;
             /** Parent Id */
             parent_id?: string | null;
             /**
@@ -1593,6 +1990,9 @@ export interface components {
             due_date: string | null;
             /** Assignee User Id */
             assignee_user_id: string | null;
+            /** Assignee Agent Id */
+            assignee_agent_id: string | null;
+            assignee_agent?: components["schemas"]["AssigneeAgentOut"] | null;
             /** Reporter Id */
             reporter_id: string | null;
             /** Parent Id */
@@ -1655,6 +2055,8 @@ export interface components {
             due_date?: string | null;
             /** Assignee User Id */
             assignee_user_id?: string | null;
+            /** Assignee Agent Id */
+            assignee_agent_id?: string | null;
             /** Parent Id */
             parent_id?: string | null;
             /** Label Ids */
@@ -1675,6 +2077,11 @@ export interface components {
             members: components["schemas"]["UserOut"][];
             /** Projects */
             projects: components["schemas"]["ProjectRef"][];
+            /**
+             * Agents
+             * @default []
+             */
+            agents: components["schemas"]["AgentOut"][];
         };
         /** TeamIn */
         TeamIn: {
@@ -1729,12 +2136,47 @@ export interface components {
              */
             to: string;
         };
+        /** TokenOut */
+        TokenOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Prefix */
+            prefix: string;
+            /** Scopes */
+            scopes: components["schemas"]["TokenScope"][];
+            /** Expires At */
+            expires_at: string | null;
+            /** Last Used At */
+            last_used_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Revoked At */
+            revoked_at: string | null;
+        };
         /** TokenPasswordIn */
         TokenPasswordIn: {
             /** Token */
             token: string;
             /** Password */
             password: string;
+        };
+        /**
+         * TokenScope
+         * @enum {string}
+         */
+        TokenScope: "mcp" | "runner";
+        /** TokenSelfOut */
+        TokenSelfOut: {
+            /** Scopes */
+            scopes: components["schemas"]["TokenScope"][];
         };
         /** TotpCodeIn */
         TotpCodeIn: {
@@ -2194,6 +2636,108 @@ export interface operations {
                 "application/json": components["schemas"]["TotpDisableIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    token_self_api_tokens_self_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenSelfOut"];
+                };
+            };
+        };
+    };
+    list_tokens_api_tokens_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenOut"][];
+                };
+            };
+        };
+    };
+    create_token_api_tokens_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTokenIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedTokenOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_token_api_tokens__token_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             204: {
@@ -3337,6 +3881,209 @@ export interface operations {
             };
         };
     };
+    my_agents_api_agents_mine_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentOut"][];
+                };
+            };
+        };
+    };
+    create_agent_api_agents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_agent_api_agents__agent_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_agent_api_agents__agent_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_bindings_api_agents__agent_id__bindings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindingsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_agents_api_projects__ref__agents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectAgentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_agents_api_admin_agents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAgentOut"][];
+                };
+            };
+        };
+    };
     list_tasks_api_projects__ref__tasks_get: {
         parameters: {
             query?: {
@@ -4178,6 +4925,101 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TaskOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_runs_api_tasks__key__agent_runs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_run_api_tasks__key__agent_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_agent_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

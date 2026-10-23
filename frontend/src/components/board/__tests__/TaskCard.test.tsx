@@ -19,6 +19,7 @@ const task: Task = {
   story_points: 5,
   due_date: null,
   assignee_user_id: "u1",
+  assignee_agent_id: null,
   reporter_id: "u1",
   parent_id: null,
   sprint_id: null,

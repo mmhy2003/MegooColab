@@ -17,6 +17,10 @@ export const qk = {
   velocity: (ref: string) => ["velocity", ref] as const,
   teams: () => ["teams"] as const,
   team: (id: string) => ["team", id] as const,
+  tokens: () => ["tokens"] as const,
+  agents: () => ["agents"] as const,
+  adminAgents: () => ["agents", "admin"] as const,
+  projectAgents: (ref: string) => ["project-agents", ref] as const,
   adminSettings: () => ["admin-settings"] as const,
   audit: (filters: Record<string, string | undefined> = {}) => ["audit", filters] as const,
 };

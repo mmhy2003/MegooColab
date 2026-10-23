@@ -41,6 +41,14 @@ describe("invalidationsFor", () => {
     expect(invalidationsFor({ type: "comment.created", project_id: "p1" }, keys)).toEqual([["activity"]]);
   });
 
+  it("maps project-scoped agent events to project agents and my agents", () => {
+    expect(invalidationsFor({ type: "agents.updated", project_id: "p1" }, keys)).toEqual([["project-agents", "PAY"], ["agents"]]);
+  });
+
+  it("maps user-only agent events to my agents", () => {
+    expect(invalidationsFor({ type: "agents.updated", user_id: "u" }, keys)).toEqual([["agents"]]);
+  });
+
   it("invalidates everything on membership changes", () => {
     expect(invalidationsFor({ type: "membership.changed", user_id: "u" }, keys)).toEqual("all");
   });

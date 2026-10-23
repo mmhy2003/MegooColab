@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Menu, UserRound } from "lucide-react";
+import { Bot, KeyRound, LogOut, Menu, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -53,6 +53,12 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
           <div role="menu" className="card absolute right-0 z-20 mt-1 w-44 p-1" onMouseLeave={() => setOpen(false)}>
             <Link role="menuitem" href="/settings/profile" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded px-3 py-2 text-sm text-fg no-underline hover:bg-surface-2">
               <UserRound size={14} aria-hidden /> Profile
+            </Link>
+            <Link role="menuitem" href="/settings/tokens" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded px-3 py-2 text-sm text-fg no-underline hover:bg-surface-2">
+              <KeyRound size={14} aria-hidden /> Access tokens
+            </Link>
+            <Link role="menuitem" href="/settings/agents" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded px-3 py-2 text-sm text-fg no-underline hover:bg-surface-2">
+              <Bot size={14} aria-hidden /> My agents
             </Link>
             <button
               role="menuitem"

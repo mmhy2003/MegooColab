@@ -32,6 +32,8 @@ export function invalidationsFor(event: LiveEvent, keyById: Map<string, string>)
       return [qk.projects(), ["project"], scoped("labels"), scoped("repositories"), ["teams"], ["team"]];
     case "sprint":
       return [scoped("sprints"), ["burndown"], scoped("velocity"), scoped("tasks")];
+    case "agents":
+      return key ? [["project-agents", key], ["agents"]] : [["agents"]];
     case "membership":
       return "all";
     default:

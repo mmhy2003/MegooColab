@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
+import { PROGRAM_LABEL } from "@/lib/agents";
 import { MemberPicker } from "@/components/team/MemberPicker";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -85,6 +87,20 @@ export default function TeamPage() {
             </li>
           ))}
           {t.projects.length === 0 && <li className="text-sm text-muted">No projects yet.</li>}
+        </ul>
+      </section>
+      <section>
+        <h2 className="mb-2 text-xs tracking-widest text-muted uppercase">Agents ({t.agents.length})</h2>
+        <ul className="card divide-y divide-line">
+          {t.agents.map((a) => (
+            <li key={a.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+              <span className="flex-1">{a.name}</span>
+              <span className="text-muted">{a.owner.name}</span>
+              <Badge>{PROGRAM_LABEL[a.program]}</Badge>
+              <AgentStatusDot status={a.status} />
+            </li>
+          ))}
+          {t.agents.length === 0 && <li className="px-3 py-4 text-sm text-muted">No agents yet.</li>}
         </ul>
       </section>
       {editing && users.data && (

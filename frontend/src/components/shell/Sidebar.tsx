@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderKanban, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
+import { Bot, FolderKanban, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -16,6 +16,7 @@ const MAIN: Item[] = [
 
 const ADMIN: Item[] = [
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/agents", label: "Agents", icon: Bot },
   { href: "/admin/settings", label: "Settings", icon: Settings2 },
   { href: "/admin/audit", label: "Audit log", icon: ScrollText },
 ];
