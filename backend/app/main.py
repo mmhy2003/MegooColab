@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
+from app.auth.tokens_router import router as tokens_router
 from app.core.config import get_settings
 from app.core.csrf import CsrfHeaderMiddleware
 from app.core.events import hub
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
     for router in (
         setup_router,
         auth_router,
+        tokens_router,
         admin_users_router,
         users_router,
         org_router,

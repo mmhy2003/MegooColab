@@ -12,6 +12,7 @@ from app.auth.service import (
     now,
     set_session_cookie,
 )
+from app.auth.tokens import resolve_bearer
 from app.core.db import DbSession
 from app.core.security import hash_token
 
@@ -20,7 +21,15 @@ def _unauthorized() -> HTTPException:
     return HTTPException(status.HTTP_401_UNAUTHORIZED, "not_authenticated")
 
 
+def bearer_token(request: Request) -> str | None:
+    """Raw token of an `Authorization: Bearer` header, or None. Such requests ignore cookies."""
+    scheme, _, value = request.headers.get("authorization", "").partition(" ")
+    return value.strip() if scheme.lower() == "bearer" else None
+
+
 async def current_session(request: Request, response: Response, db: DbSession) -> Session:
+    if bearer_token(request) is not None:
+        raise _unauthorized()  # token callers have no cookie session
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         raise _unauthorized()
@@ -50,9 +59,14 @@ async def user_from_session_token(db, token: str | None) -> User | None:
     return user if user is not None and user.status == UserStatus.active else None
 
 
-async def current_user(
-    db: DbSession, session: Annotated[Session, Depends(current_session)]
-) -> User:
+async def current_user(request: Request, response: Response, db: DbSession) -> User:
+    raw = bearer_token(request)
+    if raw is not None:
+        resolved = await resolve_bearer(db, raw)
+        if resolved is None:
+            raise _unauthorized()
+        return resolved[0]
+    session = await current_session(request, response, db)
     user = await db.get(User, session.user_id)
     if user is None or user.status != UserStatus.active:
         raise _unauthorized()
