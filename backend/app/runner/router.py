@@ -170,8 +170,10 @@ async def runner_socket(websocket: WebSocket) -> None:
         if conn is not None:
             registry.disconnect(conn)
             lost = set(conn.available)
-            with contextlib.suppress(Exception):
+            try:
                 await _publish_availability(conn.user_id, lost)
+            except Exception:  # never let cleanup raise, but do not hide it
+                log.exception("runner disconnect: publishing availability failed")
 
 
 async def _serve(conn: RunnerConn, queue: asyncio.Queue[Event], raw: str | None) -> None:

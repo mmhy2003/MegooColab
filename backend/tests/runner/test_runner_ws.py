@@ -300,3 +300,24 @@ async def test_token_revalidated_periodically_without_events(db, tc_factory, mon
         await db.execute(update(PersonalAccessToken).values(revoked_at=now()))
         await db.commit()
         _expect_close(ws, 4401)
+
+
+async def test_failed_publish_on_disconnect_is_logged(db, tc_factory, monkeypatch, caplog):
+    from app.runner import router as rr
+
+    async def boom(*_a, **_k):
+        raise RuntimeError("publish down")
+
+    tc = tc_factory(lifespan=True)
+    _, token = await _owner(db, tc)
+    a = _agent(tc)
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello([{"agent_id": a["id"], "available": True, "problems": []}]))
+        _wait_status(tc, a["id"], "online")
+        monkeypatch.setattr(rr, "_publish_availability", boom)
+    deadline = time.monotonic() + 3
+    while "availability failed" not in caplog.text and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert "runner disconnect: publishing availability failed" in caplog.text
+    _wait_status(tc, a["id"], "offline")  # the registry was still cleaned up
