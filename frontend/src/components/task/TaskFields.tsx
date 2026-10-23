@@ -73,7 +73,8 @@ export function TaskFields({
           value={task.assignee_agent_id ? `agent:${task.assignee_agent_id}` : task.assignee_user_id ? `user:${task.assignee_user_id}` : ""}
           onChange={(e) => {
             const [kind, id] = e.target.value.split(":");
-            onPatch(kind === "agent" ? { assignee_agent_id: id } : { assignee_user_id: id || null });
+            if (!id) onPatch({ assignee_user_id: null, assignee_agent_id: null });
+            else onPatch(kind === "agent" ? { assignee_agent_id: id } : { assignee_user_id: id });
           }}
         >
           <option value="">Unassigned</option>
