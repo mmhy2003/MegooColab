@@ -9,6 +9,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from app.agent_runs.service import dispatch_pending, fail_disconnected_runs
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import bound_project_ids, publish_agents_updated
 from app.auth.models import TokenScope
@@ -109,6 +110,23 @@ async def _apply_reports(conn: RunnerConn, reports: list[AgentReport | AgentStat
         if r.agent_id in owned and conn.set_availability(r.agent_id, r.available, r.problems):
             changed.add(r.agent_id)
     await _publish_availability(conn.user_id, changed)
+    await _dispatch(conn.user_id)
+
+
+async def _dispatch(user_id: uuid.UUID) -> None:
+    """Send queued runs to agents that are now available. A failure must not kill the socket."""
+    try:
+        async with SessionLocal() as db:
+            await dispatch_pending(db, user_id)
+            await db.commit()
+    except Exception:
+        log.exception("runner: dispatching queued runs failed")
+
+
+async def _fail_runs(conn: RunnerConn) -> None:
+    async with SessionLocal() as db:
+        await fail_disconnected_runs(db, conn)
+        await db.commit()
 
 
 async def _send_welcome(conn: RunnerConn, *, announce_change: bool) -> None:
@@ -136,7 +154,7 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
     elif isinstance(msg, AgentStatus):
         await _apply_reports(conn, [msg])
     elif isinstance(msg, Heartbeat | RunUpdate | RunFinished):
-        pass  # heartbeat only refreshes last_seen; run messages are handled by the run service (Task 5)
+        pass  # heartbeat only refreshes last_seen; run messages are handled by the run service (Task 6)
     return True
 
 
@@ -169,11 +187,20 @@ async def runner_socket(websocket: WebSocket) -> None:
         hub.unsubscribe(queue)
         if conn is not None:
             registry.disconnect(conn)
-            lost = set(conn.available)
-            try:
-                await _publish_availability(conn.user_id, lost)
-            except Exception:  # never let cleanup raise, but do not hide it
-                log.exception("runner disconnect: publishing availability failed")
+            # shielded: a cancelled handler (server shutdown) must still fail its runs
+            await asyncio.shield(asyncio.ensure_future(_cleanup(conn)))
+
+
+async def _cleanup(conn: RunnerConn) -> None:
+    lost = set(conn.available)
+    try:
+        await _fail_runs(conn)
+    except Exception:  # never let cleanup raise, but do not hide it
+        log.exception("runner disconnect: failing running runs failed")
+    try:
+        await _publish_availability(conn.user_id, lost)
+    except Exception:
+        log.exception("runner disconnect: publishing availability failed")
 
 
 async def _serve(conn: RunnerConn, queue: asyncio.Queue[Event], raw: str | None) -> None:

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent_runs.service import cancel_user_runs
 from app.audit import service as audit
 from app.auth import service as auth_service
 from app.auth import tokens as auth_tokens
@@ -123,6 +124,7 @@ async def deactivate_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -
     user.status = UserStatus.deactivated
     await auth_service.revoke_user_sessions(db, user.id)
     await auth_tokens.revoke_user_tokens(db, user.id)
+    await cancel_user_runs(db, user.id)
     await audit.record(db, "user.deactivated", actor_id=admin.id, target_type="user", target_id=user.id)
     await publish(db, Event(type="user.deactivated", user_id=user.id))
 

@@ -14,6 +14,10 @@ from fastapi import WebSocket
 from app.runner.protocol import CLOSE_REPLACED, ServerMessage
 
 
+class RunnerClosed(Exception):
+    """The connection is closed (or the peer is gone): the message was not delivered."""
+
+
 class RunnerConn:
     def __init__(self, user_id: uuid.UUID, socket: WebSocket) -> None:
         self.user_id = user_id
@@ -24,6 +28,7 @@ class RunnerConn:
         self.owned_agents: set[uuid.UUID] = set()  # the user's agents, as of the last welcome
         self.last_welcome: dict | None = None
         self.closed = asyncio.Event()  # set once the server has closed this connection
+        self.run_ids: set[uuid.UUID] = set()  # runs dispatched over this connection
 
     @property
     def available(self) -> frozenset[uuid.UUID]:
@@ -48,8 +53,14 @@ class RunnerConn:
         self.last_seen = time.monotonic()
 
     async def send(self, msg: ServerMessage | dict) -> None:
+        """Raises RunnerClosed if the message could not be delivered."""
+        if self.closed.is_set():
+            raise RunnerClosed
         payload = msg if isinstance(msg, dict) else msg.model_dump(mode="json")
-        await self.socket.send_text(json.dumps(payload))
+        try:
+            await self.socket.send_text(json.dumps(payload))
+        except Exception as exc:  # starlette raises RuntimeError / WebSocketDisconnect once gone
+            raise RunnerClosed from exc
 
     async def close(self, code: int) -> None:
         if self.closed.is_set():
@@ -78,10 +89,12 @@ class RunnerRegistry:
             del self._conns[conn.user_id]
 
     def conn_for_user(self, user_id: uuid.UUID) -> RunnerConn | None:
-        return self._conns.get(user_id)
+        """The user's live connection; one that is closed but not yet unregistered does not count."""
+        conn = self._conns.get(user_id)
+        return conn if conn is not None and not conn.closed.is_set() else None
 
     def available_agents(self, user_id: uuid.UUID) -> set[uuid.UUID]:
-        conn = self._conns.get(user_id)
+        conn = self.conn_for_user(user_id)
         return set(conn.available) if conn is not None else set()
 
 

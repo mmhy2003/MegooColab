@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agents.models import Agent, AgentBinding, AgentProgram
 from app.agents.schemas import AdminAgentOut, AgentOut, BindingOut, ProjectAgentOut
 from app.auth.models import Role, User
@@ -13,6 +14,7 @@ from app.core.events import Event, publish
 from app.projects.access import accessible_project_ids, can_manage_project, project_team_ids
 from app.projects.models import Project
 from app.runner.registry import registry
+from app.tasks.models import Task
 from app.teams.service import user_team_ids
 
 PROGRAM_LABELS = {AgentProgram.claude_code: "Claude Code", AgentProgram.codex: "Codex"}
@@ -29,15 +31,37 @@ def is_absolute_path(path: str) -> bool:
     return bool(_ABSOLUTE_PATH.match(path))
 
 
-def agent_status(agent_id: uuid.UUID, owner_id: uuid.UUID) -> str:
-    """online | busy | offline. "online" means the owner's live runner reports it available;
-    Task 5 adds busy."""
-    return "online" if agent_id in registry.available_agents(owner_id) else "offline"
+async def agent_statuses(db: AsyncSession, agents: list[tuple[uuid.UUID, uuid.UUID]]) -> dict[uuid.UUID, str]:
+    """online | busy | offline for (agent_id, owner_id) pairs. busy: it has a running run;
+    online: the owner's live runner reports it available."""
+    ids = {agent_id for agent_id, _ in agents}
+    busy: set[uuid.UUID] = set()
+    if ids:
+        rows = await db.execute(
+            select(AgentRun.agent_id).where(AgentRun.agent_id.in_(ids), AgentRun.status == RunStatus.running)
+        )
+        busy = set(rows.scalars())
+    return {
+        agent_id: "busy"
+        if agent_id in busy
+        else "online"
+        if agent_id in registry.available_agents(owner_id)
+        else "offline"
+        for agent_id, owner_id in agents
+    }
+
+
+async def agent_status(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> str:
+    return (await agent_statuses(db, [(agent_id, owner_id)]))[agent_id]
 
 
 async def has_active_runs(db: AsyncSession, agent_id: uuid.UUID) -> bool:
-    """True if the agent has a queued or running run. Task 5 implements this."""
-    return False
+    """True if the agent has a queued or running run."""
+    return (
+        await db.scalar(
+            select(AgentRun.id).where(AgentRun.agent_id == agent_id, AgentRun.status.in_(ACTIVE_STATUSES)).limit(1)
+        )
+    ) is not None
 
 
 async def get_owned_agent(db: AsyncSession, user: User, agent_id: uuid.UUID) -> Agent:
@@ -87,6 +111,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
         ).scalars()
     }
     owner_of = {a.id: a.owner_id for a in agents}
+    statuses = await agent_statuses(db, list(owner_of.items()))
     allowed = await accessible_project_ids(db, viewer)
     rows = await db.execute(
         select(AgentBinding, Project.key)
@@ -113,7 +138,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "answer_mode": a.answer_mode,
             "max_concurrent_runs": a.max_concurrent_runs,
             "owner": UserOut.model_validate(owners[a.owner_id]),
-            "status": agent_status(a.id, a.owner_id),
+            "status": statuses[a.id],
             "bindings": bindings.get(a.id, []),
         }
         for a in agents
@@ -136,5 +161,15 @@ async def project_agents_out(
 
 
 async def admin_agents_out(db: AsyncSession, agents: list[Agent], viewer: User) -> list[AdminAgentOut]:
-    """current_run stays null until Task 5 adds runs."""
-    return [AdminAgentOut(**f) for f in await _base_fields(db, agents, viewer)]
+    fields = await _base_fields(db, agents, viewer)
+    running = {
+        agent_id: {"id": run_id, "task_key": f"{pkey}-{num}", "status": run_status, "started_at": started_at}
+        for agent_id, run_id, pkey, num, run_status, started_at in await db.execute(
+            select(AgentRun.agent_id, AgentRun.id, Project.key, Task.number, AgentRun.status, AgentRun.started_at)
+            .join(Task, Task.id == AgentRun.task_id)
+            .join(Project, Project.id == Task.project_id)
+            .where(AgentRun.agent_id.in_([a.id for a in agents]), AgentRun.status == RunStatus.running)
+            .order_by(AgentRun.started_at.desc())
+        )
+    }
+    return [AdminAgentOut(**f, current_run=running.get(f["id"])) for f in fields]

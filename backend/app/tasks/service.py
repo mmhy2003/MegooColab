@@ -8,7 +8,7 @@ from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.models import Agent, AgentBinding
-from app.agents.service import agent_status, can_use_agent
+from app.agents.service import agent_statuses, can_use_agent
 from app.auth.models import Role, User, UserStatus
 from app.projects.access import get_project_for
 from app.projects.models import BoardColumn, ColumnCategory, Label, Project, ProjectTeam
@@ -84,9 +84,11 @@ async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
     agent_ids = {t.assignee_agent_id for t in tasks if t.assignee_agent_id}
     agents: dict[uuid.UUID, AssigneeAgentOut] = {}
     if agent_ids:
-        for a in (await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))).scalars():
+        rows = list((await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))).scalars())
+        statuses = await agent_statuses(db, [(a.id, a.owner_id) for a in rows])
+        for a in rows:
             agents[a.id] = AssigneeAgentOut(
-                id=a.id, name=a.name, program=a.program, owner_id=a.owner_id, status=agent_status(a.id, a.owner_id)
+                id=a.id, name=a.name, program=a.program, owner_id=a.owner_id, status=statuses[a.id]
             )
     return [
         TaskOut(

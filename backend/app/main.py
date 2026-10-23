@@ -21,6 +21,7 @@ from app.org.router import router as org_router
 from app.projects.router import router as projects_router
 from app.realtime.router import router as realtime_router
 from app.runner.router import router as runner_router
+from app.agent_runs.router import router as agent_runs_router
 from app.setup.router import router as setup_router
 from app.sprints.router import router as sprints_router
 from app.tasks.activity import router as activity_router
@@ -98,6 +99,7 @@ def create_app() -> FastAPI:
         sprints_router,
         realtime_router,
         runner_router,
+        agent_runs_router,
     ):
         app.include_router(router)
     return app
