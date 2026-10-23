@@ -2,19 +2,36 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.audit import service as audit
 from app.auth import tokens
-from app.auth.deps import AuthedUser, current_session
+from app.auth.deps import AuthedUser, bearer_token, current_session
 from app.auth.models import PersonalAccessToken, TokenScope
 from app.auth.service import now
 from app.core.db import DbSession
 
 # Cookie sessions only: a bearer token must not be able to mint or revoke tokens.
 router = APIRouter(prefix="/api/tokens", tags=["tokens"], dependencies=[Depends(current_session)])
+
+
+# Bearer only: describes the presenting token (the runner uses it to learn its scopes).
+self_router = APIRouter(prefix="/api/tokens", tags=["tokens"])
+
+
+class TokenSelfOut(BaseModel):
+    scopes: list[TokenScope]
+
+
+@self_router.get("/self")
+async def token_self(request: Request, db: DbSession) -> TokenSelfOut:
+    raw = bearer_token(request)
+    resolved = await tokens.resolve_bearer(db, raw) if raw else None
+    if resolved is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not_authenticated")
+    return TokenSelfOut(scopes=[TokenScope(s) for s in resolved[1].scopes])
 
 
 class TokenOut(BaseModel):

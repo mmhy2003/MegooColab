@@ -156,3 +156,20 @@ async def test_bearer_cannot_manage_tokens(client, client_factory, db):
     assert r.status_code == 401
     assert (await bare.delete(f"/api/tokens/{made['token']['id']}", headers=h)).status_code == 401
     assert len((await client.get("/api/tokens")).json()) == 1
+
+
+async def test_tokens_self_returns_scopes(client, client_factory, db):
+    u = await make_user(db)
+    await login(client, u)
+    secret = (await _mint(client, scopes=("runner", "mcp")))["secret"]
+    anon = client_factory()
+    r = await anon.get("/api/tokens/self", headers=_bearer(secret))
+    assert r.status_code == 200
+    assert sorted(r.json()["scopes"]) == ["mcp", "runner"]
+    # a cookie session describes no token
+    assert (await client.get("/api/tokens/self")).status_code == 401
+    assert (await anon.get("/api/tokens/self")).status_code == 401
+    assert (await anon.get("/api/tokens/self", headers=_bearer("mgc_bogus"))).status_code == 401
+    minted = await _mint(client, scopes=("runner",))
+    assert (await client.delete(f"/api/tokens/{minted['token']['id']}")).status_code == 204
+    assert (await anon.get("/api/tokens/self", headers=_bearer(minted["secret"]))).status_code == 401

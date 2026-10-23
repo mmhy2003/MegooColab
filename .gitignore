@@ -6,3 +6,7 @@ __pycache__/
 .pytest_cache/
 node_modules/
 .next/
+
+runner/dist/
+runner/megoocolab-runner
+runner/megoocolab-runner.exe
