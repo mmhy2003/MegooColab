@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunPolicy, RunStatus
@@ -11,9 +11,10 @@ from app.agent_runs.schemas import RunAgentOut, RunOut
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import can_use_agent, publish_agents_updated
 from app.auth.models import User
+from app.core.db import SessionLocal
 from app.core.events import Event, publish
 from app.projects.models import Project
-from app.runner.protocol import RunCancel, RunStart, RunTask
+from app.runner.protocol import CLOSE_UNAUTHORIZED, RunCancel, RunStart, RunTask
 from app.runner.registry import RunnerClosed, RunnerConn, registry
 from app.tasks.models import Task
 from app.tasks.service import record_event
@@ -79,37 +80,80 @@ async def start_run(
     await db.flush()
     await record_event(db, task, user.id, "agent_run_queued", {"run_id": str(run.id), "policy": policy})
     await _announce(db, task, agent.owner_id)
-    await dispatch_pending(db, agent.owner_id)
+    await db.commit()  # the queued run is durable before anything is sent to a runner
+    async with SessionLocal() as dispatch_db:
+        await dispatch_pending(dispatch_db, agent.owner_id)
     await db.refresh(run)  # server defaults (created_at) and any dispatch changes
     return run
 
 
-async def _start_one(db: AsyncSession, conn: RunnerConn, agent: Agent, run: AgentRun) -> bool:
-    """Mark one locked queued run running and send run_start. False if the connection is gone
-    (the run is back to queued in this same transaction)."""
+async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> AgentRun | None:
+    """Under the agent lock, mark its oldest queued run running and COMMIT, if a slot is free.
+
+    The agent row is locked FOR NO KEY UPDATE (serialises concurrent dispatches so max_concurrent_runs
+    cannot be overshot) and the run row FOR UPDATE SKIP LOCKED. The commit comes before run_start is sent:
+    a run the runner has can never be rolled back to queued and sent twice."""
+    agent = (
+        await db.execute(
+            select(Agent)
+            .where(Agent.id == agent_id, Agent.owner_id == owner_id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if agent is None:
+        await db.rollback()
+        return None
+    running = await db.scalar(
+        select(func.count()).select_from(AgentRun).where(
+            AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.running
+        )
+    )
+    run = None
+    if agent.max_concurrent_runs > (running or 0):
+        run = (
+            await db.execute(
+                select(AgentRun)
+                .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued)
+                .order_by(AgentRun.created_at, AgentRun.id)
+                .limit(1)
+                .with_for_update(skip_locked=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+    if run is not None:
+        run.status = RunStatus.running
+        run.started_at = _now()
+    await db.commit()
+    return run
+
+
+async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, run: AgentRun) -> bool:
+    """Send run_start for a run already committed as running. False if the connection is gone, in which
+    case the run goes back to queued (conditionally, in a new transaction)."""
     row = (
         await db.execute(
-            select(Task, Project.key, AgentBinding.local_path)
+            select(Task, Project.key, AgentBinding.local_path, Agent.owner_id)
             .join(Project, Project.id == Task.project_id)
+            .join(Agent, Agent.id == agent_id)
             .outerjoin(
                 AgentBinding,
-                (AgentBinding.project_id == Task.project_id) & (AgentBinding.agent_id == agent.id),
+                (AgentBinding.project_id == Task.project_id) & (AgentBinding.agent_id == agent_id),
             )
             .where(Task.id == run.task_id)
         )
     ).one()
-    task, project_key, local_path = row
+    task, project_key, local_path, owner_id = row
     if local_path is None:  # the binding was removed while the run waited
-        await _transition(db, run, RunStatus.failed, "agent_run_failed", owner_id=agent.owner_id, reason="agent_not_bound")
+        await _transition(db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="agent_not_bound")
+        await db.commit()
         return True
-    run.status = RunStatus.running
-    run.started_at = _now()
-    await db.flush()
+    conn.run_ids.add(run.id)
     try:
         await conn.send(
             RunStart(
                 run_id=run.id,
-                agent_id=agent.id,
+                agent_id=agent_id,
                 task=RunTask(
                     key=f"{project_key}-{task.number}",
                     title=task.title,
@@ -122,58 +166,35 @@ async def _start_one(db: AsyncSession, conn: RunnerConn, agent: Agent, run: Agen
             )
         )
     except RunnerClosed:
-        run.status = RunStatus.queued
-        run.started_at = None
-        await db.flush()
+        conn.run_ids.discard(run.id)
+        await db.execute(
+            update(AgentRun)
+            .where(AgentRun.id == run.id, AgentRun.status == RunStatus.running)
+            .values(status=RunStatus.queued, started_at=None)
+        )
+        await db.commit()
         return False
-    conn.run_ids.add(run.id)
     await record_event(db, task, None, "agent_run_started", {"run_id": str(run.id)})
-    await _announce(db, task, agent.owner_id)
+    await _announce(db, task, owner_id)
+    await db.commit()
     return True
 
 
 async def dispatch_pending(db: AsyncSession, owner_id: uuid.UUID) -> None:
     """Send run_start for each available agent's oldest queued runs, up to its free slots.
 
-    The agent row is locked first (FOR NO KEY UPDATE, held to the end of the caller's transaction) so
-    concurrent dispatches for one agent are serialised and cannot overshoot max_concurrent_runs; the run
-    rows are then locked with SKIP LOCKED and marked running before run_start goes out.
+    Commits the session it is given (claim, then send, then record), so call it with a session of its own.
     """
     conn = registry.conn_for_user(owner_id)
     if conn is None:
         return
     for agent_id in sorted(conn.available):
-        agent = (
-            await db.execute(
-                select(Agent)
-                .where(Agent.id == agent_id, Agent.owner_id == owner_id)
-                .with_for_update(key_share=True)
-                .execution_options(populate_existing=True)
-            )
-        ).scalar_one_or_none()
-        if agent is None:
-            continue
-        running = await db.scalar(
-            select(func.count()).select_from(AgentRun).where(
-                AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.running
-            )
-        )
-        free = agent.max_concurrent_runs - (running or 0)
-        if free <= 0:
-            continue
-        queued = (
-            await db.execute(
-                select(AgentRun)
-                .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued)
-                .order_by(AgentRun.created_at, AgentRun.id)
-                .limit(free)
-                .with_for_update(skip_locked=True)
-                .execution_options(populate_existing=True)
-            )
-        ).scalars().all()
-        for run in queued:
-            if not await _start_one(db, conn, agent, run):
-                return  # the connection died: everything stays queued
+        while True:
+            run = await _claim_next(db, agent_id, owner_id)
+            if run is None:
+                break
+            if not await _send_start(db, conn, agent_id, run):
+                return  # the connection died: everything else stays queued
 
 
 async def _lock_run(db: AsyncSession, run_id: uuid.UUID) -> AgentRun | None:
@@ -212,8 +233,9 @@ async def cancel_run(db: AsyncSession, user: User, run: AgentRun) -> None:
 
 
 async def fail_disconnected_runs(db: AsyncSession, conn: RunnerConn) -> None:
-    """The runner is gone: its running runs fail with runner_disconnected. If a newer connection already
-    took over, only the runs this connection was given are failed."""
+    """The runner is gone: its running runs fail with runner_disconnected, or, if the server closed the
+    socket because the token or user was revoked (4401), are cancelled with runner_unauthorized. If a newer
+    connection already took over, only the runs this connection was given are touched."""
     stmt = (
         select(AgentRun, Agent.owner_id)
         .join(Agent, Agent.id == AgentRun.agent_id)
@@ -225,9 +247,14 @@ async def fail_disconnected_runs(db: AsyncSession, conn: RunnerConn) -> None:
     for run, owner_id in (await db.execute(stmt)).all():
         if superseded and run.id not in conn.run_ids:
             continue
-        await _transition(
-            db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
-        )
+        if conn.close_code == CLOSE_UNAUTHORIZED:
+            await _transition(
+                db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, reason="runner_unauthorized"
+            )
+        else:
+            await _transition(
+                db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
+            )
 
 
 async def cancel_user_runs(db: AsyncSession, user_id: uuid.UUID) -> None:

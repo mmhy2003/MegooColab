@@ -352,3 +352,41 @@ async def test_delete_agent_with_active_runs_409_and_current_run(client, client_
     await db.execute(update(AgentRun).values(status="completed"))
     await db.commit()
     assert (await client.delete(f"/api/agents/{agent['id']}")).status_code == 204
+
+
+async def test_start_run_with_runner_online_sends_one_run_start_and_is_running(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello([_avail(agent)]))
+        _wait_status(tc, agent["id"], "online")
+        run = _start(tc, task, prompt="Go")
+        assert run["status"] == "running" and run["started_at"] is not None
+        assert ws.receive_json()["run_id"] == run["id"]
+        # more reports must not start it again; the next frame is the cancel triggered now
+        ws.send_json(_hello([_avail(agent)]))
+        ws.send_json(_status_report(agent))
+        ws.send_json({"type": "heartbeat"})
+        assert tc.post(f"/api/agent-runs/{run['id']}/cancel").status_code == 204
+        assert ws.receive_json() == {"type": "run_cancel", "run_id": run["id"]}
+
+
+async def test_token_revocation_cancels_running_runs_as_runner_unauthorized(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    run = _start(tc, task)
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello([_avail(agent)]))
+        assert ws.receive_json()["run_id"] == run["id"]
+        _wait_run(tc, task, run["id"], "running")
+        assert tc.delete(f"/api/tokens/{token['id']}").status_code == 204
+        with pytest.raises(WebSocketDisconnect) as exc:
+            while True:
+                ws.receive_json()
+        assert exc.value.code == 4401
+    _wait_run(tc, task, run["id"], "cancelled")
+    assert tc.get(f"/api/tasks/{task['key']}/agent-runs").json()[0]["reason"] == "runner_unauthorized"

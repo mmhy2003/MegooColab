@@ -27,6 +27,7 @@ class RunnerConn:
         self._available: set[uuid.UUID] = set()
         self.owned_agents: set[uuid.UUID] = set()  # the user's agents, as of the last welcome
         self.last_welcome: dict | None = None
+        self.close_code: int | None = None  # why the server closed it, if it did
         self.closed = asyncio.Event()  # set once the server has closed this connection
         self.run_ids: set[uuid.UUID] = set()  # runs dispatched over this connection
 
@@ -65,6 +66,7 @@ class RunnerConn:
     async def close(self, code: int) -> None:
         if self.closed.is_set():
             return
+        self.close_code = code
         self.closed.set()
         with contextlib.suppress(Exception):  # the peer may already be gone
             await self.socket.close(code=code)
