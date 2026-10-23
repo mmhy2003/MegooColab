@@ -114,9 +114,9 @@ async def test_bearer_post_needs_no_csrf_header(client_factory, db):
     secret = (await _mint(c))["secret"]
     bare = client_factory()
     del bare.headers["X-Megoo-Client"]
-    r = await bare.post("/api/tokens", json={"name": "x", "scopes": ["mcp"]}, headers=_bearer(secret))
-    assert r.status_code == 201
-    r = await bare.post("/api/tokens", json={"name": "x", "scopes": ["mcp"]})
+    r = await bare.patch("/api/auth/me", json={"name": "Renamed"}, headers=_bearer(secret))
+    assert r.status_code == 200
+    r = await bare.patch("/api/auth/me", json={"name": "Again"})
     assert r.status_code == 403
 
 
@@ -144,3 +144,15 @@ async def test_cookie_only_endpoints_reject_bearer(client, client_factory, db):
     secret = (await _mint(client))["secret"]
     r = await client.post("/api/auth/logout", headers=_bearer(secret))
     assert r.status_code == 401
+
+
+async def test_bearer_cannot_manage_tokens(client, client_factory, db):
+    await login(client, await make_user(db))
+    made = await _mint(client)
+    h = _bearer(made["secret"])
+    bare = client_factory()
+    assert (await bare.get("/api/tokens", headers=h)).status_code == 401
+    r = await bare.post("/api/tokens", json={"name": "x", "scopes": ["runner"]}, headers=h)
+    assert r.status_code == 401
+    assert (await bare.delete(f"/api/tokens/{made['token']['id']}", headers=h)).status_code == 401
+    assert len((await client.get("/api/tokens")).json()) == 1

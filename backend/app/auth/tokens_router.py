@@ -2,18 +2,19 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.audit import service as audit
 from app.auth import tokens
-from app.auth.deps import AuthedUser
+from app.auth.deps import AuthedUser, current_session
 from app.auth.models import PersonalAccessToken, TokenScope
 from app.auth.service import now
 from app.core.db import DbSession
 
-router = APIRouter(prefix="/api/tokens", tags=["tokens"])
+# Cookie sessions only: a bearer token must not be able to mint or revoke tokens.
+router = APIRouter(prefix="/api/tokens", tags=["tokens"], dependencies=[Depends(current_session)])
 
 
 class TokenOut(BaseModel):
