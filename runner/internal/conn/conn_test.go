@@ -307,3 +307,37 @@ func TestOnDisconnectCalledOnReconnectableLoss(t *testing.T) {
 	}
 	s.WaitNthFrame(t, "hello", 2)
 }
+
+func TestEnvelopesCarryConnectionNumber(t *testing.T) {
+	s := testserver.New(t, token)
+	c := newTestClient(t, s, token)
+	start(t, c)
+	s.WaitFrame(t, "hello")
+	_ = s.Send(protocol.RunCancel{Type: protocol.TypeRunCancel, RunID: "a"})
+	first := nextCancel(t, c)
+	s.Close(1011, "bye")
+	s.WaitNthFrame(t, "hello", 2)
+	_ = s.Send(protocol.RunCancel{Type: protocol.TypeRunCancel, RunID: "b"})
+	second := nextCancel(t, c)
+	if first.Conn != 1 || second.Conn != 2 {
+		t.Fatalf("connection numbers = %d, %d; want 1, 2", first.Conn, second.Conn)
+	}
+	if c.Session() != 2 {
+		t.Fatalf("Session() = %d, want 2", c.Session())
+	}
+}
+
+// nextCancel returns the next run_cancel, skipping the welcomes the fake server sends.
+func nextCancel(t *testing.T, c *Client) protocol.Envelope {
+	t.Helper()
+	for {
+		select {
+		case env := <-c.Messages():
+			if env.Type == protocol.TypeRunCancel {
+				return env
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("no run_cancel")
+		}
+	}
+}

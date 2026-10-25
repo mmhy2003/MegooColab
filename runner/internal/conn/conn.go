@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -48,7 +49,8 @@ type Client struct {
 	OnState func(string)
 	// OnDisconnect, if set, is called from the Run goroutine whenever a session
 	// ends with an error that will be retried, before "reconnecting in ..." is
-	// announced. The server fails a run when its runner disconnects, so callers
+	// announced. Session() is then the number of the connection that ended;
+	// messages of that connection may still be queued in Messages(). The server fails a run when its runner disconnects, so callers
 	// stop their in-flight work here.
 	OnDisconnect func(error)
 
@@ -56,6 +58,8 @@ type Client struct {
 	version  string
 	probe    func() []protocol.AgentAvailability
 	messages chan protocol.Envelope
+
+	sessions atomic.Int64 // number of connections established so far
 
 	mu   sync.Mutex
 	conn *websocket.Conn
@@ -78,6 +82,11 @@ func New(cfg config.Config, version string, agentsProbe func() []protocol.AgentA
 // Messages delivers server messages. It is closed when Run returns. The
 // consumer must keep reading: a full channel pauses reading from the socket.
 func (c *Client) Messages() <-chan protocol.Envelope { return c.messages }
+
+// Session is the number of the current (or, between connections, the most
+// recent) connection: 1 for the first, 2 after one reconnect, and so on.
+// Envelopes carry the number of the connection they arrived on.
+func (c *Client) Session() int { return int(c.sessions.Load()) }
 
 // WSURL converts the configured http(s):// base URL to the runner websocket URL.
 func WSURL(base string) (string, error) {
@@ -184,6 +193,7 @@ func (c *Client) session(ctx context.Context) (gotWelcome bool, err error) {
 		return false, err
 	}
 	ws.SetReadLimit(readLimit)
+	number := int(c.sessions.Add(1))
 
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -231,6 +241,7 @@ func (c *Client) session(ctx context.Context) (gotWelcome bool, err error) {
 		if derr != nil {
 			continue // not ours to act on; the server only sends typed frames
 		}
+		env.Conn = number
 		gotWelcome = gotWelcome || env.Type == protocol.TypeWelcome
 		select {
 		case c.messages <- env:

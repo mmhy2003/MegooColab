@@ -57,6 +57,7 @@ type Manager struct {
 	reported map[string]string
 	closed   bool
 	gen      int // connection generation; bumped by StopAll
+	ended    int // highest connection number known to be lost
 	wg       sync.WaitGroup
 }
 
@@ -149,7 +150,7 @@ func truncate(s string, n int) string {
 func (m *Manager) Serve(ctx context.Context, c *conn.Client) error {
 	// The server fails a run when its runner disconnects, so any loss of the
 	// connection stops the in-flight runs; new ones are accepted after reconnect.
-	c.OnDisconnect = func(error) { m.StopAll() }
+	c.OnDisconnect = func(error) { m.StopAllUpTo(c.Session()) }
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 	for env := range c.Messages() {
@@ -173,7 +174,7 @@ func (m *Manager) Dispatch(ctx context.Context, env protocol.Envelope) {
 	case protocol.TypeRunStart:
 		var rs protocol.RunStart
 		if env.Into(&rs) == nil {
-			m.HandleRunStart(ctx, rs)
+			m.handleRunStart(ctx, rs, env.Conn)
 		}
 	case protocol.TypeRunCancel:
 		var rc protocol.RunCancel
@@ -277,7 +278,18 @@ func (m *Manager) finish(runID, outcome, summary, errMsg string) {
 // HandleRunStart starts a run in the background, or answers right away when it
 // cannot or must not start.
 func (m *Manager) HandleRunStart(ctx context.Context, rs protocol.RunStart) {
+	m.handleRunStart(ctx, rs, 0)
+}
+
+// handleRunStart is HandleRunStart for a run_start that arrived on connection
+// number conn (0 if unknown). One from a connection already known to be lost
+// is dropped: the server failed that run when the connection went away.
+func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn int) {
 	m.mu.Lock()
+	if conn > 0 && conn <= m.ended {
+		m.mu.Unlock()
+		return
+	}
 	if m.closed {
 		m.mu.Unlock()
 		m.finish(rs.RunID, "failed", "", "shutting_down")
@@ -341,12 +353,6 @@ func (m *Manager) HandleRunCancel(runID string) {
 	}
 }
 
-func (m *Manager) takeEarlyCancel(runID string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.takeEarlyCancelLocked(runID)
-}
-
 func (m *Manager) takeEarlyCancelLocked(runID string) bool {
 	for i, id := range m.early {
 		if id == runID {
@@ -387,8 +393,13 @@ func (m *Manager) requestCancel(r *run) {
 // StopAll cancels every run in flight (ACP cancel, then a kill after
 // CancelGrace) and detaches them from the connection: they stop counting toward
 // the concurrency limit and send nothing more. New runs are still accepted.
-func (m *Manager) StopAll() []*run {
+func (m *Manager) StopAll() []*run { return m.StopAllUpTo(0) }
+
+// StopAllUpTo is StopAll for the loss of connection number lost (and every
+// earlier one): run_starts that arrived on it, even if still queued, are dropped.
+func (m *Manager) StopAllUpTo(lost int) []*run {
 	m.mu.Lock()
+	m.ended = max(m.ended, lost)
 	m.gen++
 	runs := make([]*run, 0, len(m.runs))
 	for _, r := range m.runs {
@@ -496,6 +507,8 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	fail := func(code string, cause error) (string, string) {
 		if cause != nil {
 			fmt.Fprintf(logf, "runner: %s: %v\n", code, cause)
+		} else {
+			fmt.Fprintf(logf, "runner: %s\n", code)
 		}
 		if r.cancelled() {
 			return "cancelled", ""
@@ -610,7 +623,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	case acp.StopReasonCancelled:
 		return "cancelled", ""
 	}
-	return fail(stopReasonCode(resp.StopReason), nil)
+	return fail(stopReasonCode(resp.StopReason), fmt.Errorf("agent stop reason %q", resp.StopReason))
 }
 
 // reap ends the adapter process: after a finished turn it gets ExitGrace to

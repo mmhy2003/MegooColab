@@ -435,13 +435,18 @@ func TestEarlyCancelSetIsBounded(t *testing.T) {
 	for i := 0; i < earlyCancelLimit+10; i++ {
 		m.HandleRunCancel(fmt.Sprintf("r%d", i))
 	}
-	if m.takeEarlyCancel("r0") {
+	take := func(id string) bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return m.takeEarlyCancelLocked(id)
+	}
+	if take("r0") {
 		t.Error("the oldest remembered cancel should have been dropped")
 	}
-	if !m.takeEarlyCancel(fmt.Sprintf("r%d", earlyCancelLimit+9)) {
+	if !take(fmt.Sprintf("r%d", earlyCancelLimit+9)) {
 		t.Error("the newest cancel was forgotten")
 	}
-	if m.takeEarlyCancel(fmt.Sprintf("r%d", earlyCancelLimit+9)) {
+	if take(fmt.Sprintf("r%d", earlyCancelLimit+9)) {
 		t.Error("a cancel must be consumed once")
 	}
 }
@@ -508,10 +513,22 @@ func TestWelcomeReportsAvailabilityChanges(t *testing.T) {
 func TestDisconnectStopsRuns(t *testing.T) {
 	var mu sync.Mutex
 	var killed int
+	// The kill blocks until the test has made its assertions, so the stopped run
+	// is certain to still be alive while they run.
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	open := func() { releaseOnce.Do(func() { close(release) }) }
 	e := newEnvWithCache(t, sleeping, 1, t.TempDir(), func(m *Manager) {
-		m.CancelGrace = time.Second
-		m.Kill = func(c *exec.Cmd) { mu.Lock(); killed++; mu.Unlock(); killTree(c) }
+		m.CancelGrace = 100 * time.Millisecond
+		m.Kill = func(c *exec.Cmd) {
+			<-release
+			mu.Lock()
+			killed++
+			mu.Unlock()
+			killTree(c)
+		}
 	})
+	t.Cleanup(open)
 	t.Setenv("FAKEAGENT_IGNORE_CANCEL", "1") // the old run lingers until the kill
 	e.startRun("run-d", "MEG-9", "workspace")
 	e.waitUpdate("run-d")
@@ -540,6 +557,7 @@ func TestDisconnectStopsRuns(t *testing.T) {
 		t.Fatalf("run after reconnect = %+v", rf)
 	}
 
+	open() // assertions done: let the lingering adapter be killed
 	deadline := time.Now().Add(10 * time.Second)
 	for e.mgr.Active() != 0 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
@@ -646,6 +664,56 @@ func TestProbeRejectsEmptyOrRelativeBindingPath(t *testing.T) {
 	for _, a := range m.Probe() {
 		if a.Available || len(a.Problems) != 1 || !strings.Contains(a.Problems[0], "not an absolute path") {
 			t.Errorf("agent %s = %+v", a.AgentID, a)
+		}
+	}
+}
+
+func TestRunStartFromLostConnectionIsNotLaunched(t *testing.T) {
+	var mu sync.Mutex
+	var sent []any
+	m := New(func(v any) error { mu.Lock(); sent = append(sent, v); mu.Unlock(); return nil }, t.TempDir())
+	m.HandleWelcome(protocol.Welcome{Agents: []protocol.WelcomeAgent{{AgentID: "agent-1", MaxConcurrentRuns: 1}}})
+	mu.Lock()
+	sent = nil
+	mu.Unlock()
+
+	raw, _ := json.Marshal(protocol.RunStart{Type: protocol.TypeRunStart, RunID: "run-old", AgentID: "agent-1",
+		Task: protocol.RunTask{Key: "MEG-1", Title: "t", ProjectKey: "MEG"}, Policy: "workspace", Prompt: "p"})
+	buffered := protocol.Envelope{Type: protocol.TypeRunStart, Raw: raw, Conn: 1}
+
+	m.StopAllUpTo(1) // connection 1 was lost before the buffered run_start was dispatched
+	m.Dispatch(context.Background(), buffered)
+	if m.Active() != 0 {
+		t.Fatal("a run_start from the lost connection was launched")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 0 {
+		t.Fatalf("sent %v for a run the server already failed", sent)
+	}
+	// A run_start from the next connection is still accepted.
+	buffered.Conn = 2
+	m.mu.Lock()
+	ok := buffered.Conn > m.ended
+	m.mu.Unlock()
+	if !ok {
+		t.Fatal("the new connection must not count as lost")
+	}
+}
+
+func TestStopCodesAreLogged(t *testing.T) {
+	e := newEnvWithCache(t, `[{"stop":"refusal"}]`, 1, t.TempDir())
+	e.startRun("run-s", "MEG-12", "workspace")
+	rf := e.finished("run-s")
+	if rf.Error == nil || *rf.Error != "stopped:refusal" {
+		t.Fatalf("finished = %+v", rf)
+	}
+	e.startRun("run-q", "MEG-13", "bogus")
+	e.finished("run-q")
+	for id, want := range map[string]string{"run-s": "stopped:refusal", "run-q": "unknown_policy"} {
+		b, err := os.ReadFile(filepath.Join(e.cache, "logs", id+".log"))
+		if err != nil || !strings.Contains(string(b), want) {
+			t.Errorf("log of %s = %q, %v; want it to name %q", id, b, err, want)
 		}
 	}
 }

@@ -155,6 +155,9 @@ func NewAgentStatus(agentID string, available bool, problems []string) AgentStat
 type Envelope struct {
 	Type string
 	Raw  json.RawMessage
+	// Conn is the number of the connection the frame arrived on (1, 2, ...),
+	// set by the connection client; 0 when unknown.
+	Conn int
 }
 
 // Decode parses a frame's type and keeps the raw bytes for Into.
