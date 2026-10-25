@@ -65,7 +65,7 @@ The service runs as you, because the adapters need your agent logins and reposit
   manager does. Run `loginctl enable-linger $USER` once to keep it running when you are
   logged out.
 - **macOS:** a LaunchAgent in `~/Library/LaunchAgents`, loaded at login.
-- **Windows:** an `HKCUSoftwareMicrosoftWindowsCurrentVersionRun` entry that starts `megoocolab-runner run --background`
+- **Windows:** an `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry that starts `megoocolab-runner run --background`
   (no console window) at logon. `service start` launches it detached right away,
   `service stop` asks it to cancel its runs and exit (and ends it after 15 s if it does
   not), `service status` shows `running (pid N)`, `stopped` or `not installed`.
