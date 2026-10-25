@@ -31,15 +31,18 @@ from app.auth.models import User
 from app.core.text import strip_nul
 from app.projects.models import ColumnCategory, Project
 from app.tasks.models import Task
-from app.workflow import build, engine
+from app.workflow import build, engine, questions
 from app.workflow.models import (
+    Driver,
     FinishingOption,
     Needs,
+    QuestionStatus,
     RunRole,
     Stage,
     StepReview,
     TaskWorkflow,
     Verdict,
+    WorkflowQuestion,
     WorkflowStatus,
 )
 
@@ -84,8 +87,28 @@ async def _handle_final_review(db: AsyncSession, wf: TaskWorkflow, task: Task, r
         await engine.escalate(db, wf, "final_review_not_clean")
 
 
+async def _asked_or_answered(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> bool:
+    """final_fix and finish may ask a human: wait for the answer, or resume the run's session with an answer
+    that arrived while it was running. True when the run's end was handled that way."""
+    asked = await db.scalar(
+        select(WorkflowQuestion.id)
+        .where(WorkflowQuestion.run_id == run.id, WorkflowQuestion.status == QuestionStatus.open)
+        .limit(1)
+    )
+    if asked is not None:
+        engine.wait_for(wf, Needs.question)
+        return True
+    pending = await questions.undelivered_answer(db, task.id, run.id)
+    if pending is not None:
+        await questions.deliver(db, wf, task, pending, requested_by=await engine.owner_id(db, run))
+        return True
+    return False
+
+
 async def _handle_final_fix(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
     """The fix round ended: the scoped re-review (round 2) follows."""
+    if await _asked_or_answered(db, wf, task, run):
+        return
     wf.review_round = 2
     wf.nudged = False
     await engine.enqueue(db, wf, task, RunRole.final_review, requested_by=await engine.owner_id(db, run))
@@ -102,6 +125,9 @@ async def _accept_final_review(db: AsyncSession, wf: TaskWorkflow, task: Task, u
 async def enter_done(db: AsyncSession, wf: TaskWorkflow, task: Task, *, requested_by: uuid.UUID) -> None:
     """The Done stage: the finish run states the effective option. The card moves when the workflow finishes."""
     await engine.set_stage(db, wf, task, Stage.done)
+    project = await db.get(Project, task.project_id)
+    wf.finishing_override = engine.finishing_option(project, wf)  # frozen for the whole Done stage
+    wf.sessions[engine.FROZEN_REVIEW_KEY] = bool(project.require_human_code_review)
     wf.review_round = 0
     wf.nudged = False
     await engine.enqueue(db, wf, task, RunRole.finish, requested_by=requested_by)
@@ -122,7 +148,7 @@ async def report_finish(
 ) -> None:
     """A finish run reports how it finished (MCP tool in Task 11). A later report from the same run replaces it.
     The caller commits."""
-    wf, task = await build._lock(db, run, (RunRole.finish,))
+    wf, task = await build.lock_run_role(db, run, (RunRole.finish,))
     project = await db.get(Project, task.project_id)
     option = engine.finishing_option(project, wf)
     if outcome != OUTCOME_OF[option]:
@@ -153,8 +179,10 @@ async def report_finish(
 
 
 async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
+    if await _asked_or_answered(db, wf, task, run):
+        return
     if (run.step_result or {}).get("tests_passed") is True:
-        if (await db.get(Project, task.project_id)).require_human_code_review:
+        if wf.sessions.get(engine.FROZEN_REVIEW_KEY) and wf.finishing_override == FinishingOption.pull_request:
             engine.wait_for(wf, Needs.human_code_review)
         else:
             await _finish_workflow(db, wf, task, None)
@@ -176,7 +204,8 @@ async def approve_human_review(db: AsyncSession, user: User, task: Task) -> Task
     """A human clicked "PR approved": the workflow finishes. The first approval wins."""
     wf = await engine.lock_task(db, task)
     await engine.require_actor(db, user, task, wf)
-    if wf is not None and wf.status == WorkflowStatus.finished and wf.stage == Stage.done:
+    needed_review = wf is not None and wf.sessions.get(engine.FROZEN_REVIEW_KEY) is True
+    if needed_review and wf.status == WorkflowStatus.finished:
         raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")
     if wf is None or wf.status != WorkflowStatus.waiting_human or wf.needs != Needs.human_code_review:
         raise HTTPException(status.HTTP_409_CONFLICT, "not_waiting_for_decision")
@@ -191,8 +220,10 @@ async def approve_human_review(db: AsyncSession, user: User, task: Task) -> Task
 
 async def set_finishing(db: AsyncSession, user: User, task: Task, option: FinishingOption | None) -> TaskWorkflow:
     """The task-level override of the project's finishing option, allowed until the Done stage."""
-    wf = await engine.lock_task(db, task, create=True)
+    wf = await engine.lock_task(db, task)  # never creates one: an idle row would block human board moves
     await engine.require_actor(db, user, task, wf)
+    if wf is None or wf.driver != Driver.runner or wf.status == WorkflowStatus.idle:
+        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_not_started")
     if wf.stage == Stage.done:
         raise HTTPException(status.HTTP_409_CONFLICT, "workflow_past_finishing")
     wf.finishing_override = option

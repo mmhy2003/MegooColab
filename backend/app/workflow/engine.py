@@ -291,8 +291,15 @@ async def _previous_findings(db: AsyncSession, wf: TaskWorkflow, role: RunRole, 
     return list(found) if found else None
 
 
+# wf.sessions[FROZEN_REVIEW_KEY] (bool) records, when the Done stage begins, whether human code review was required;
+# the effective option is then frozen into wf.finishing_override, so later project changes do not affect the run.
+FROZEN_REVIEW_KEY = "finish_human_review"
+
+
 def finishing_option(project: Project, wf: TaskWorkflow) -> FinishingOption:
     """WF-6a/6b: human code review forces a pull request; else the task's override; else the project's option."""
+    if wf.stage == Stage.done and FROZEN_REVIEW_KEY in wf.sessions:  # frozen when Done began (finish.enter_done)
+        return FinishingOption(wf.finishing_override)
     if project.require_human_code_review:
         return FinishingOption.pull_request
     return FinishingOption(wf.finishing_override or project.finishing_option)
@@ -309,6 +316,7 @@ async def enqueue(
     payload=None,
     requested_by: uuid.UUID,
     resume_prompt: str | None = None,
+    resume_session_ref: str | None = None,
 ) -> AgentRun:
     """Queue the next workflow run. The caller holds the workflow lock; dispatch happens after commit
     (`dispatch_queued`, or the run-ending path's own dispatch).
@@ -335,7 +343,8 @@ async def enqueue(
         previous_findings=await _previous_findings(db, wf, role, step), extra_sections=extra,
     )
     key = session_key(role, step)
-    session = wf.sessions.get(key) if key else None
+    # a fresh-by-design role has no stored session; an answer resumes the asking run's own (resume_session_ref)
+    session = resume_session_ref or (wf.sessions.get(key) if key else None)
     text = resume_text(resume_kind, payload) if resume_kind else resume_prompt
     if resume_kind == "nudge" and not session:
         # nothing to resume: the reminder goes at the end of the full prompt, within its size limit
@@ -552,6 +561,7 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
         await record_workflow_event(db, task, user.id, "workflow.paused")
     elif action == "retry":
         wf.failures = 0
+        wf.nudged = False
         wf.status = WorkflowStatus.running
         await rerun(db, wf, task, requested_by=user.id)
     else:

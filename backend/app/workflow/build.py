@@ -62,7 +62,7 @@ def _422(code: str) -> HTTPException:
     return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, code)
 
 
-async def _lock(db: AsyncSession, run: AgentRun, roles: tuple[RunRole, ...]) -> tuple[TaskWorkflow, Task]:
+async def lock_run_role(db: AsyncSession, run: AgentRun, roles: tuple[RunRole, ...]) -> tuple[TaskWorkflow, Task]:
     """The workflow lock first (as every engine entry point), then the run's role."""
     task = await db.get(Task, run.task_id)
     if task is None:
@@ -83,7 +83,7 @@ async def complete_step(
 ) -> None:
     """An implement or step_fix run reports its step done. A later report from the same run replaces it.
     The caller commits."""
-    _, task = await _lock(db, run, WORK_ROLES)
+    _, task = await lock_run_role(db, run, WORK_ROLES)
     if isinstance(step, bool) or not isinstance(step, int) or step != run.step:
         raise _422("wrong_step")
     if not isinstance(tests_passed, bool):
@@ -126,7 +126,7 @@ def _clean_findings(findings) -> list[dict]:
 
 async def submit_review(db: AsyncSession, run: AgentRun, verdict: str, findings: list[dict]) -> StepReview:
     """A step_review or final_review run gives its verdict, once (409 already_submitted). The caller commits."""
-    wf, task = await _lock(db, run, REVIEW_ROLES)
+    wf, task = await lock_run_role(db, run, REVIEW_ROLES)
     try:
         verdict = Verdict(verdict)
     except ValueError:

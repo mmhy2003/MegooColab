@@ -26,7 +26,7 @@ async def before_move(db: AsyncSession, user: User, task: Task, to: BoardColumn)
         return
     frm = (await db.get(BoardColumn, task.column_id)).category
     wf = await engine.lock_task(db, task)
-    runner = wf is not None and wf.driver == Driver.runner
+    runner = wf is not None and wf.driver == Driver.runner and wf.status != WorkflowStatus.idle
     if to.category in (ColumnCategory.review, ColumnCategory.done):
         if runner and wf.status != WorkflowStatus.finished:
             raise HTTPException(status.HTTP_409_CONFLICT, "workflow_controls_column")

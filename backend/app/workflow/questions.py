@@ -239,11 +239,15 @@ async def deliver(db, wf: TaskWorkflow, task: Task, q: WorkflowQuestion, *, requ
     asked_by = await db.get(AgentRun, q.run_id) if q.run_id else None
     if asked_by is not None and asked_by.workflow_role:
         role, step = RunRole(asked_by.workflow_role), asked_by.step
+        # a fresh-by-design role (final_fix, finish) has no stored session: resume the asking run's own
+        session_ref = asked_by.session_ref if role in engine.FRESH_ROLES else None
     else:
         role, step = (RunRole.plan if wf.stage == Stage.plan else RunRole.brainstorm), None
+        session_ref = None
     run = await engine.enqueue(
         db, wf, task, role, step=step, resume_kind="answer",
         payload={"choice_label": label, "text": q.answer_text}, requested_by=requested_by,
+        resume_session_ref=session_ref,
     )
     q.delivered_at = datetime.now(UTC)
     await retire_answers(db, q.task_id, keep=q.id)

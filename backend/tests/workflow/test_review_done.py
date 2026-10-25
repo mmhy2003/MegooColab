@@ -1,16 +1,21 @@
 """Review and Done stages: final review rounds, finishing options, report_finish, human code review (Task 10)."""
 
+import asyncio
+import uuid
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.agent_runs.models import AgentRun
 from app.audit.models import AuditLog
+from app.auth.models import User
 from app.core.db import SessionLocal
 from app.tasks.models import Task
-from app.workflow import context, engine, finish
+from app.workflow import context, engine, finish, questions
 from app.workflow.models import RunRole
 from tests.agent_runs.test_run_guards import _next_of
+from tests.factories import DEFAULT_PASSWORD
 from tests.workflow.test_build import (
     FINDING,
     REVIEW_NUDGE,
@@ -28,11 +33,13 @@ from tests.workflow.test_engine import (
     SHA_A,
     SHA_B,
     URL,
+    _board,
     _events,
     _finish,
     _hello_v2,
     _login,
     _member,
+    _move,
     _runs,
     _wf,
 )
@@ -348,3 +355,146 @@ async def test_finish_handlers_registered():
     for role in ("final_review", "final_fix", "finish"):
         assert engine.ROLE_HANDLERS[RunRole(role)].__module__ == "app.workflow.finish"
     assert "final_review_not_clean" in engine.ACCEPT_HANDLERS
+
+
+# ---- fix round 1 ------------------------------------------------------------------------------
+
+
+async def _ask(b, run, body="Which branch name?"):
+    async with SessionLocal() as s:
+        q = await questions.ask(s, run, await s.get(Task, b.task_id), body, [], None)
+        await s.commit()
+        return q.id
+
+
+async def _answer(b, qid, text="use release"):
+    async with SessionLocal() as s:
+        await questions.answer(s, await s.get(User, b.manager.id), await s.get(Task, b.task_id), qid, None, text)
+        await s.commit()
+
+
+async def _fix_run(db, tc):
+    b, review = await _final_review(db, tc)
+    await _review(review, "changes_requested", [FINDING])
+    await _finish(b.manager.id, review, "completed")
+    fix = await _last(b.task_id)
+    assert fix.workflow_role == "final_fix"
+    return b, fix
+
+
+@pytest.mark.parametrize("role", ["final_fix", "finish"])
+async def test_question_in_fresh_role_waits_then_answer_resumes_same_session(db, tc_factory, role):
+    tc = tc_factory(lifespan=True)
+    b, run = await (_fix_run(db, tc) if role == "final_fix" else _to_finish(db, tc))
+    qid = await _ask(b, run)
+    if role == "finish":
+        await _report(run)  # tests passed, yet the question is still open
+    count = len(await _runs(b.task_id))
+    await _finish(b.manager.id, run, "completed", session_id="sess-q")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs) == ("waiting_human", "question")
+    assert len(await _runs(b.task_id)) == count  # no re-review, and the workflow did not finish
+    assert wf.review_round == (1 if role == "final_fix" else 0)
+    await _answer(b, qid)
+    resumed = await _last(b.task_id)
+    assert (resumed.workflow_role, resumed.resume_session_ref) == (role, "sess-q")
+    assert "use release" in resumed.resume_prompt
+    assert (await _wf(b.task_id)).status == "running"
+
+
+@pytest.mark.parametrize("role", ["final_fix", "finish"])
+async def test_answer_given_while_fresh_role_runs_is_delivered_at_its_end(db, tc_factory, role):
+    tc = tc_factory(lifespan=True)
+    b, run = await (_fix_run(db, tc) if role == "final_fix" else _to_finish(db, tc))
+    qid = await _ask(b, run)
+    await _answer(b, qid)
+    count = len(await _runs(b.task_id))
+    await _finish(b.manager.id, run, "completed", session_id="sess-q")
+    resumed = await _last(b.task_id)
+    assert len(await _runs(b.task_id)) == count + 1
+    assert (resumed.workflow_role, resumed.resume_session_ref) == (role, "sess-q")
+    assert "use release" in resumed.resume_prompt
+    assert (await _wf(b.task_id)).review_round == (1 if role == "final_fix" else 0)
+
+
+async def test_finishing_override_needs_a_started_workflow_and_creates_no_row(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _board(db, tc)
+    r = tc.post("/api/projects/PAY/tasks", json={"title": "Human task", "type": "task"})
+    assert r.status_code == 201, r.text
+    key, tid = r.json()["key"], uuid.UUID(r.json()["id"])
+    r = tc.put(f"/api/tasks/{key}/workflow/finishing", json={"option": "keep_branch"})
+    assert (r.status_code, r.json()["detail"]) == (409, "workflow_not_started")
+    assert await _wf(tid) is None
+    assert _move(tc, key, b.cols["done"]).status_code == 200
+
+
+async def test_finishing_is_frozen_when_done_begins(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)  # pull_request, no human review
+    _patch_project(tc, finishing_option="keep_branch", require_human_code_review=True)
+    assert tc.get(f"/api/tasks/{b.key}/workflow").json()["finishing_option"] == "pull_request"
+    assert await _report_code(run, "branch_kept", pr_url=None) == (422, "wrong_finish")
+    await _report(run)
+    await _finish(b.manager.id, run, "completed")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs) == ("finished", None)  # the human review requirement came later
+
+
+async def test_frozen_human_review_still_waits_when_setting_is_turned_off(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    _patch_project(tc, require_human_code_review=True)
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    run = await _last(b.task_id)
+    _patch_project(tc, require_human_code_review=False)
+    await _report(run)
+    await _finish(b.manager.id, run, "completed")
+    assert (await _wf(b.task_id)).needs == "human_code_review"
+
+
+async def test_human_review_when_never_required_is_not_waiting_409(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    await _report(run)
+    await _finish(b.manager.id, run, "completed")
+    r = tc.post(f"/api/tasks/{b.key}/workflow/human-review", json={"approved": True})
+    assert (r.status_code, r.json()["detail"]) == (409, "not_waiting_for_decision")
+
+
+async def test_escalation_retry_resets_nudge(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    await _finish(b.manager.id, review, "completed")
+    nudge = await _last(b.task_id)
+    await _finish(b.manager.id, nudge, "completed")
+    assert (await _wf(b.task_id)).escalation_reason == "review_incomplete"
+    r = tc.post(f"/api/tasks/{b.key}/workflow/escalation", json={"action": "retry"})
+    assert r.status_code == 200
+    assert (await _wf(b.task_id)).nudged is False
+    retried = await _last(b.task_id)
+    await _finish(b.manager.id, retried, "completed")
+    again = await _last(b.task_id)
+    assert again.id != retried.id and again.prompt.rstrip().endswith(REVIEW_NUDGE)
+    assert (await _wf(b.task_id)).status == "running"
+
+
+async def test_concurrent_human_review_approval_one_wins(db, tc_factory, client_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    _patch_project(tc, require_human_code_review=True)
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    run = await _last(b.task_id)
+    await _report(run)
+    await _finish(b.manager.id, run, "completed")
+    clients = [client_factory(), client_factory()]
+    for c in clients:
+        r = await c.post("/api/auth/login", json={"email": b.manager.email, "password": DEFAULT_PASSWORD})
+        assert r.status_code == 200
+    url = f"/api/tasks/{b.key}/workflow/human-review"
+    rs = await asyncio.gather(*(c.post(url, json={"approved": True}) for c in clients))
+    assert sorted(r.status_code for r in rs) == [200, 409]
+    assert [r.json()["detail"] for r in rs if r.status_code == 409] == ["already_decided"]
+    assert len(await _events(b.task_id, "workflow.finished")) == 1
