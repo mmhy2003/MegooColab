@@ -78,7 +78,7 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
       });
       setComment("");
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 409 ? "Someone already decided this version." : errorMessage(err));
+      setError(err instanceof ApiError && err.detail === "already_decided" ? "Someone already decided this version." : errorMessage(err));
     } finally {
       await Promise.all(
         [qk.documents(taskKey), ["document", taskKey], qk.mockups(taskKey), qk.workflow(taskKey), qk.activity(taskKey), qk.task(taskKey)].map((queryKey) =>

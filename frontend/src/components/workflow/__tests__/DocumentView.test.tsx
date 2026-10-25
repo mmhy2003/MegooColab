@@ -102,6 +102,12 @@ describe("DocumentView", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Someone already decided this version.");
   });
 
+  it("any other 409 shows its own message", async () => {
+    setup({ decision: new Response(JSON.stringify({ detail: "not_waiting_for_decision" }), { status: 409 }) });
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The workflow isn't waiting for that decision right now.");
+  });
+
   it("shows no decision buttons on a read-only view", async () => {
     setup({ disabled: true });
     await screen.findByRole("heading", { name: "Second design" });
