@@ -101,6 +101,11 @@ The file is truncated at start when it exceeds 5 MiB. Interactive `run` prints t
   `workspace` allows reads, writes and commands only inside the worktree; anything
   resolving outside it (including `..` and symlinks) is denied. Denials are shown on the task.
 - **Isolation.** Your own Claude settings cannot pre-approve tools for MegooColab runs.
+- **Not a sandbox.** The runner's before/after git check (risk R1) is a best-effort check of what a
+  run changed. It is there to catch adapters or settings that bypass the runner's permission
+  requests. An agent that can run arbitrary commands, for example through a bypassed adapter,
+  can still evade it, such as by tampering with git state the runner trusts. `workspace` runs
+  can execute commands in the worktree by design.
 - It never runs anything unless your account's agent is assigned a run by someone
   allowed to use it (owner, project manager or admin).
 - **Run token.** A workflow run gets its own MCP token. It is valid only while that run is

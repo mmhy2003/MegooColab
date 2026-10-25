@@ -160,16 +160,16 @@ func git(dir string, args ...string) (string, error) {
 }
 
 func gitCtx(parent context.Context, d time.Duration, dir string, args ...string) (string, error) {
-	return gitIn(parent, d, dir, "", args...)
+	return gitIn(parent, d, dir, "", nil, args...)
 }
 
-// gitIn is gitCtx with stdin.
-func gitIn(parent context.Context, d time.Duration, dir, stdin string, args ...string) (string, error) {
+// gitIn is gitCtx with stdin and extra environment.
+func gitIn(parent context.Context, d time.Duration, dir, stdin string, env []string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, d)
 	defer cancel()
 	full := append(append([]string{"-C", dir}, HardenedArgs()...), args...)
 	cmd := exec.CommandContext(ctx, gitBin, full...)
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0",
+	cmd.Env = append(append(os.Environ(), env...), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0",
 		"GIT_NO_REPLACE_OBJECTS=1", // git replace could make an old HEAD read as new content
 		"LC_ALL=C")                 // untranslated messages; worktree add writes its "initializing" lock in English
 	killTreeOnCancel(cmd)
@@ -194,52 +194,15 @@ func gitIn(parent context.Context, d time.Duration, dir, stdin string, args ...s
 // verb is the git subcommand in args, for error messages: the first argument
 // that is not an option.
 func verb(args []string) string {
-	for _, a := range args {
-		if !strings.HasPrefix(a, "-") {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "-c" || a == "-C":
+			i++ // its value
+		case !strings.HasPrefix(a, "-"):
 			return a
 		}
 	}
 	return ""
-}
-
-// pinned is a worktree's git dirs as they were when the worktree was first
-// used: the per-worktree dir and the common dir.
-type pinned struct{ gitdir, common string }
-
-var pins sync.Map // filepath.Clean(worktree) -> pinned
-
-// Pin validates the worktree's git dir and remembers it (the manager calls it
-// right after the worktree is ensured, before any agent runs). From then on
-// every gitstate git call for that worktree passes --git-dir and --work-tree
-// explicitly, so an agent that rewrites the worktree's .git file cannot make
-// the runner read another repository. A pin whose directory has vanished (the
-// worktree was recreated) is taken again.
-func Pin(worktree string) error {
-	_, err := pinFor(worktree)
-	return err
-}
-
-func pinFor(worktree string) (pinned, error) {
-	key := filepath.Clean(worktree)
-	if v, ok := pins.Load(key); ok && isDir(v.(pinned).gitdir) {
-		return v.(pinned), nil
-	}
-	gitdir, common, err := ownedGitDirs(worktree)
-	if err != nil {
-		return pinned{}, err
-	}
-	p := pinned{gitdir, common}
-	pins.Store(key, p)
-	return p, nil
-}
-
-// wgit is git for a worktree, pinned to its validated git dir.
-func wgit(worktree string, args ...string) (string, error) {
-	p, err := pinFor(worktree)
-	if err != nil {
-		return "", err
-	}
-	return git(worktree, append([]string{"--git-dir=" + p.gitdir, "--work-tree=" + worktree}, args...)...)
 }
 
 // Read returns the worktree's HEAD, branch and whether it has changes outside
@@ -306,6 +269,10 @@ type Snapshot struct {
 	ignored string
 	flagged string
 	stash   string
+	// branchRef is the ref HEAD points at ("" when detached) and tip the commit
+	// that ref points at: a branch can move while HEAD is taken elsewhere.
+	branchRef string
+	tip       string
 }
 
 // Capture reads a Snapshot.
@@ -340,7 +307,12 @@ func Capture(dir string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{State: st, working: working, ignored: strings.Join(ign, "\x00"), flagged: flaggedSet(lv), stash: stash}, nil
+	ref, tip, err := branchTip(dir)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{State: st, working: working, ignored: strings.Join(ign, "\x00"), flagged: flaggedSet(lv), stash: stash,
+		branchRef: ref, tip: tip}, nil
 }
 
 // CaptureAfter is the git_after for a run that ended, and the one place that
@@ -373,24 +345,34 @@ func stashRef(dir string) (string, error) {
 	if err == nil {
 		return strings.TrimSpace(out), nil
 	}
-	var ee *exec.ExitError
-	if errors.As(err, &ee) && ee.ExitCode() == 1 {
+	if exitIsOne(err) {
 		return "", nil
 	}
 	return "", err
 }
 
+func exitIsOne(err error) bool {
+	var ee *exec.ExitError
+	return errors.As(err, &ee) && ee.ExitCode() == 1
+}
+
 // After is the state to report once a run ended. With a baseline, dirty means
 // the run changed something since before: the working state (an edit, or a
 // new, deleted or staged file), the set of ignored files, of skip-worktree or
-// assume-unchanged files, or the stash. Edits that were already there, left by
+// assume-unchanged files, the stash, or the branch HEAD is on. Edits that were already there, left by
 // an earlier run, do not count. With no baseline only after's own state is
 // known.
 func After(before *Snapshot, after Snapshot) protocol.GitState {
 	st := after.State
 	if before != nil {
 		st.Dirty = before.working != after.working || before.ignored != after.ignored ||
-			before.flagged != after.flagged || before.stash != after.stash
+			before.flagged != after.flagged || before.stash != after.stash ||
+			// A run can commit and then detach HEAD or move to another branch, so that
+			// the head the server compares is where it was. A branch tip that moved
+			// shows as a head change when HEAD sits on it, so only a tip that is not
+			// HEAD counts here.
+			before.branchRef != after.branchRef ||
+			(before.tip != after.tip && (after.State.Head == nil || *after.State.Head != after.tip))
 	}
 	return st
 }

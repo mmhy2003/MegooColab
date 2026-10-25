@@ -236,6 +236,9 @@ func TestPinnedGitDirCannotBeRedirected(t *testing.T) {
 	main := repo(t)
 	wt := filepath.Join(t.TempDir(), "wt")
 	run(t, main, "worktree", "add", "-q", "-b", "wtb", wt)
+	if err := Pin(wt, main); err != nil {
+		t.Fatal(err)
+	}
 	good, err := Capture(wt)
 	if err != nil {
 		t.Fatal(err)

@@ -627,8 +627,8 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 
 	// Pinned before any agent runs: the git dir the runner reads is the one the
 	// worktree had now, whatever the agent later does to its .git file.
-	if err := gitstate.Pin(wt); err != nil {
-		return fail("worktree_failed", err)
+	if err := gitstate.Pin(wt, repo); err != nil {
+		return fail("git_state_unreadable", err)
 	}
 
 	// The states are read even when the run fails or is cancelled. A before

@@ -8,13 +8,15 @@ import (
 	"testing"
 )
 
-// A name ending in a dot or a space is rewritten by the Win32 path rules to a
-// different file; the fingerprint must read the file it was asked about.
+// A name ending in a dot is rewritten by the Win32 path rules to a different
+// file; the fingerprint must read the file it was asked about.
 func TestTrailingDotNameIsNotAliased(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(`\?\`+dir+`\a.`, []byte("dotted"), 0o644); err != nil {
-		t.Skipf("cannot create the name: %v", err)
+	dotted := `\\?\` + dir + `\a.`
+	if err := os.WriteFile(dotted, []byte("dotted"), 0o644); err != nil {
+		t.Fatalf("cannot create the name: %v", err)
 	}
+	defer os.Remove(dotted)
 	if err := os.WriteFile(dir+`\a`, []byte("plain"), 0o644); err != nil {
 		t.Fatal(err)
 	}

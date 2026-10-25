@@ -146,7 +146,13 @@ func walkInto(ctx context.Context, items *[]*fpItem, entry int, root string) err
 		rel, _ := filepath.Rel(root, p)
 		rel = filepath.ToSlash(rel)
 		if err != nil {
-			*items = append(*items, &fpItem{entry: entry, rel: rel, mark: "unreadable:" + errKind(err)})
+			mark := "unreadable:" + errKind(err)
+			if d != nil {
+				if fi, ierr := d.Info(); ierr == nil {
+					mark = stampMark(mark, fi)
+				}
+			}
+			*items = append(*items, &fpItem{entry: entry, rel: rel, mark: mark})
 			if d != nil && d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -160,6 +166,13 @@ func walkInto(ctx context.Context, items *[]*fpItem, entry int, root string) err
 			*items = append(*items, &fpItem{entry: entry, rel: rel, mark: "unreadable:" + errKind(err)})
 			return nil
 		}
+		if !isLink(fi) && fi.IsDir() && d.Name() == ".git" {
+			// A nested repository's own git dir is rewritten by the mere reading of
+			// its status (the index) and holds objects without end: its content is
+			// not hashed, its tree of names and sizes is.
+			*items = append(*items, &fpItem{entry: entry, rel: rel, mark: gitDirMark(ctx, p)})
+			return filepath.SkipDir
+		}
 		if !isLink(fi) && fi.IsDir() {
 			*items = append(*items, &fpItem{entry: entry, rel: rel, mark: "dir"})
 			return nil
@@ -167,6 +180,39 @@ func walkInto(ctx context.Context, items *[]*fpItem, entry int, root string) err
 		*items = append(*items, classify(&fpItem{entry: entry, rel: rel, path: p, fi: fi}))
 		return nil
 	})
+}
+
+// gitDirMark summarises a nested repository's git dir by the names and sizes of
+// what is in it.
+func gitDirMark(ctx context.Context, root string) string {
+	var lines []string
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+		rel, _ := filepath.Rel(root, p)
+		rel = filepath.ToSlash(rel)
+		if err != nil {
+			lines = append(lines, rel+":unreadable")
+			return nil
+		}
+		if d.IsDir() {
+			lines = append(lines, rel+"/")
+			return nil
+		}
+		size := int64(-1)
+		if fi, ierr := d.Info(); ierr == nil {
+			size = fi.Size()
+		}
+		lines = append(lines, fmt.Sprintf("%s:%d", rel, size))
+		return nil
+	})
+	if err != nil {
+		return "gitdir:unreadable"
+	}
+	sort.Strings(lines)
+	sum := sha256.Sum256([]byte(strings.Join(lines, "|")))
+	return "gitdir:" + hex.EncodeToString(sum[:])
 }
 
 // classify sets the mark of every object that is not a regular file; a regular
