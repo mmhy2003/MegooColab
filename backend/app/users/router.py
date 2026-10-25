@@ -18,7 +18,14 @@ from app.core.events import Event, publish
 from app.core.security import hash_password
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
 from app.users import service as users_service
-from app.users.schemas import CreateUserIn, InviteIn, InviteOut, ResetLinkOut, UpdateUserIn
+from app.users.schemas import (
+    CreateUserIn,
+    InviteIn,
+    InviteOut,
+    ResetLinkOut,
+    UpdateUserIn,
+)
+from app.workflow import engine
 
 admin_router = APIRouter(prefix="/api/admin/users", tags=["admin"])
 
@@ -127,6 +134,7 @@ async def deactivate_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -
     await cancel_user_runs(db, user.id)
     await audit.record(db, "user.deactivated", actor_id=admin.id, target_type="user", target_id=user.id)
     await publish(db, Event(type="user.deactivated", user_id=user.id))
+    await engine.dispatch_queued(db)  # a workflow they only started retries on its agent owner's runner
 
 
 @admin_router.post("/{user_id}/reactivate", status_code=status.HTTP_204_NO_CONTENT)

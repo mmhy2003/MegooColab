@@ -232,8 +232,11 @@ async def test_engine_moves_card_with_by_workflow(db, tc_factory):
         await engine.move_to_category(s, task, "review")
         await s.commit()
     assert tc.get(f"/api/tasks/{b.key}").json()["column_id"] == b.cols["review"]["id"]
-    [moved] = await _events(b.task_id, "moved")
-    assert moved.actor_user_id is None and moved.data["by"] == "workflow"
+    # the same kind as a human move, so the activity thread shows it
+    [moved] = [e for e in await _events(b.task_id, "status_changed") if e.data.get("by") == "workflow"]
+    assert moved.actor_user_id is None
+    assert moved.data["to_column"] == b.cols["review"]["id"] and moved.data["to_category"] == "review"
+    assert await _events(b.task_id, "moved") == []
 
 
 async def test_reassign_agent_while_active_409_and_paused_clears_sessions(db, tc_factory):
@@ -589,3 +592,131 @@ def test_git_state_accepts_sha256_and_truncates_branch():
                 "type": "run_finished", "run_id": str(uuid.uuid4()), "outcome": "completed", "summary": "",
                 "git_after": {"head": bad, "dirty": False},
             })
+
+
+# ---- review round 1 -------------------------------------------------------------
+
+
+async def _admin_client(db, tc_factory):
+    from app.auth.models import Role
+
+    ac = tc_factory()
+    _login(ac, await make_user(db, role=Role.admin))
+    return ac
+
+
+async def test_owner_deactivated_mid_run_pauses_without_retry(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    ac = await _admin_client(db, tc_factory)
+    b, run = await _started(db, tc)
+    await db.execute(update(AgentRun).where(AgentRun.id == run.id).values(status="running"))
+    await db.commit()
+    assert ac.post(f"/api/admin/users/{b.manager.id}/deactivate").status_code == 204
+    wf = await _wf(b.task_id)
+    assert wf.status == "paused" and wf.failures == 0
+    assert [(r.status, r.reason) for r in await _runs(b.task_id)] == [("cancelled", "user_deactivated")]
+    [paused] = await _events(b.task_id, "workflow.paused")
+    assert paused.data == {"reason": "owner_deactivated"} and paused.actor_user_id is None
+
+
+async def test_requester_deactivated_retry_is_dispatched(db, tc_factory):
+    from app.auth.models import Role
+
+    tc, rc = tc_factory(lifespan=True), tc_factory()
+    ac = await _admin_client(db, tc_factory)
+    b = await _board(db, tc)
+    requester = await make_user(db, role=Role.manager)
+    team_id = tc.get("/api/projects/PAY").json()["team_ids"][0]
+    db.add(TeamMember(team_id=uuid.UUID(team_id), user_id=requester.id))
+    await db.commit()
+    _login(rc, requester)
+    with tc.websocket_connect(URL, headers=b.token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello_v2(b.agent))
+        _wait_status(tc, b.agent["id"], "online")
+        assert _move(rc, b.key, b.cols["working"]).status_code == 200  # a manager starts it on the owner's agent
+        first = _next_of(ws, "run_start")
+        assert ac.post(f"/api/admin/users/{requester.id}/deactivate").status_code == 204
+        assert _next_of(ws, "run_cancel")["run_id"] == first["run_id"]
+        retry = _next_of(ws, "run_start")  # dispatched after the deactivation commits
+        assert retry["run_id"] != first["run_id"] and retry["role"] == "brainstorm"
+        runs = await _runs(b.task_id)
+        assert [r.status for r in runs] == ["cancelled", "running"] and runs[1].requested_by == b.manager.id
+        assert (await _wf(b.task_id)).failures == 1
+
+
+async def test_failed_read_only_run_that_changed_git_escalates_instead_of_retrying(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    await _finish(b.manager.id, run, "failed",
+                  git_before={"head": SHA_A, "branch": "megoo/PAY-1", "dirty": False},
+                  git_after={"head": SHA_B, "branch": "megoo/PAY-1", "dirty": False})
+    wf = await _wf(b.task_id)
+    assert wf.enforcement == "partially_enforced" and wf.escalation_reason == "enforcement_violation"
+    assert wf.failures == 0 and len(await _runs(b.task_id)) == 1  # not retried
+    [violation] = await _events(b.task_id, "enforcement.violation")
+    assert violation.data == {"stage": "brainstorm", "role": "brainstorm"}
+
+
+async def test_design_submitted_while_paused_waits_for_approval_on_resume(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    with tc.websocket_connect(URL, headers=b.token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello_v2(b.agent))
+        assert _next_of(ws, "run_start")["run_id"] == str(run.id)
+        assert tc.post(f"/api/tasks/{b.key}/workflow/pause").status_code == 200
+        assert _next_of(ws, "run_cancel")["run_id"] == str(run.id)
+        # the agent had already submitted its design and finishes before the cancel lands
+        await _submit(b.task_id, run.id, "design")
+        ws.send_json({"type": "run_finished", "run_id": str(run.id), "outcome": "completed", "summary": "done"})
+
+        async def ended():
+            return (await _runs(b.task_id))[0].status == "completed"
+
+        await _until(ended, "the run to complete")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.stage) == ("paused", "brainstorm")  # its handling waited for the resume
+    r = tc.post(f"/api/tasks/{b.key}/workflow/resume")
+    assert r.status_code == 200, r.text
+    assert (r.json()["status"], r.json()["needs"], r.json()["stage"]) == ("waiting_human", "design_approval", "design")
+    assert len(await _runs(b.task_id)) == 1  # nothing re-run
+    [stage] = await _events(b.task_id, "workflow.stage")
+    assert stage.data == {"from": "brainstorm", "to": "design"}
+
+
+async def test_nudge_without_a_session_is_appended_to_the_prompt(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    await _finish(b.manager.id, run, "completed")  # no session reported (an old runner, or none kept)
+    nudge = (await _runs(b.task_id))[-1]
+    assert nudge.resume_session_ref is None and nudge.resume_prompt is None
+    assert nudge.prompt.rstrip().endswith(
+        "ask the human with ask_human, or submit your design with submit_design."
+    )
+    assert len(nudge.prompt) <= 60_000
+
+
+async def test_member_who_cannot_use_agent_cannot_resume_by_dragging_403(db, tc_factory):
+    tc, other = tc_factory(lifespan=True), tc_factory()
+    b, _run = await _started(db, tc)
+    assert _move(tc, b.key, b.cols["before"]).json()["workflow"]["status"] == "paused"
+    _login(other, await _member(db, tc))
+    r = _move(other, b.key, b.cols["working"])
+    assert r.status_code == 403 and r.json()["detail"] == "cannot_use_agent"
+    assert (await _wf(b.task_id)).status == "paused"
+    assert tc.get(f"/api/tasks/{b.key}").json()["column_id"] == b.cols["before"]["id"]
+    assert len(await _runs(b.task_id)) == 1
+
+
+async def test_duplicate_run_finished_frame_enqueues_once(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    await _finish(b.manager.id, run, "failed")
+    msg = runner_message.validate_python(
+        {"type": "run_finished", "run_id": str(run.id), "outcome": "failed", "summary": ""}
+    )
+    async with SessionLocal() as s:  # the runner resends the same frame
+        await finish_run(s, b.manager.id, run.id, "failed", "", None, msg)
+    assert [r.status for r in await _runs(b.task_id)] == ["failed", "queued"]
+    assert (await _wf(b.task_id)).failures == 1

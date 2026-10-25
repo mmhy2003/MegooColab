@@ -30,7 +30,7 @@ from app.agent_runs.service import cancel_run, dispatch_pending
 from app.agents.models import Agent
 from app.agents.service import can_use_agent, is_usable_binding, publish_agents_updated
 from app.audit import service as audit
-from app.auth.models import User
+from app.auth.models import User, UserStatus
 from app.core.db import SessionLocal
 from app.core.events import Event, publish
 from app.projects.access import can_manage_project, project_team_ids
@@ -38,7 +38,7 @@ from app.projects.models import BoardColumn, Project
 from app.tasks.models import Task
 from app.tasks.service import apply_column, end_position, record_event
 from app.teams.service import user_team_ids
-from app.workflow.context import FIX_ROLES, build_prompt, resume_text
+from app.workflow.context import FIX_ROLES, MAX_PROMPT_CHARS, build_prompt, resume_text
 from app.workflow.models import (
     DocKind,
     DocStatus,
@@ -304,6 +304,10 @@ async def enqueue(
     key = session_key(role, step)
     session = wf.sessions.get(key) if key else None
     text = resume_text(resume_kind, payload) if resume_kind else resume_prompt
+    if resume_kind == "nudge" and not session:
+        # nothing to resume: the reminder goes at the end of the full prompt, within its size limit
+        note = "\n\n## Reminder\n" + text
+        prompt += note[: max(0, MAX_PROMPT_CHARS - len(prompt))]
     run = AgentRun(
         task_id=task.id,
         agent_id=agent.id,
@@ -365,6 +369,13 @@ async def _owner_id(db: AsyncSession, run: AgentRun) -> uuid.UUID:
     return await db.scalar(select(Agent.owner_id).where(Agent.id == run.agent_id))
 
 
+async def _owner_deactivated(db: AsyncSession, run: AgentRun) -> bool:
+    owner_status = await db.scalar(
+        select(User.status).join(Agent, Agent.owner_id == User.id).where(Agent.id == run.agent_id)
+    )
+    return owner_status == UserStatus.deactivated
+
+
 # ---- start / pause / resume (AGT-5: can_use_agent) -----------------------------------
 
 
@@ -420,7 +431,8 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
     )
     if open_q is not None:
         return Needs.question
-    kind = {Stage.design: DocKind.design, Stage.plan: DocKind.plan}.get(wf.stage)
+    # a design submitted by a run that ended while the workflow was paused left the stage at brainstorm
+    kind = {Stage.brainstorm: DocKind.design, Stage.design: DocKind.design, Stage.plan: DocKind.plan}.get(wf.stage)
     if kind is not None:
         submitted = await db.scalar(
             select(WorkflowDocument.id)
@@ -446,6 +458,8 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     wf.failures = 0
     await _event(db, task, user.id, "workflow.resumed")
     need = await _pending_need(db, wf)
+    if need == Needs.design_approval:
+        await set_stage(db, wf, task, Stage.design)  # what the brainstorm handler would have done
     if need is not None:
         wait_for(wf, need)
     else:
@@ -541,7 +555,8 @@ _handling: contextvars.ContextVar[bool] = contextvars.ContextVar("workflow_handl
 
 
 def _git_changed(run: AgentRun) -> bool:
-    """R1: a read-only run moved HEAD or left edits. Without both reports (an old runner) nothing is known."""
+    """R1: a read-only run moved HEAD or left edits. Without both reports (an old runner, or a run that never
+    reached the runner) nothing is known."""
     before, after = run.git_before, run.git_after
     if not before or not after:
         return False
@@ -589,7 +604,18 @@ async def _on_run_finished(db: AsyncSession, run: AgentRun) -> None:
         wf.status = WorkflowStatus.paused
         await _event(db, task, run.cancelled_by, "workflow.paused", {"run_id": str(run.id)})
         return
+    if role in READ_ONLY_ROLES and _git_changed(run):
+        # R1, whatever the outcome: an agent that commits and then errors out is caught too, never retried
+        wf.enforcement = Enforcement.partially_enforced
+        await _event(db, task, None, "enforcement.violation", {"stage": str(run.stage), "role": role.value})
+        await escalate(db, wf, "enforcement_violation")
+        return
     owner_id = await _owner_id(db, run)
+    if run.status == RunStatus.cancelled and run.reason == "user_deactivated" and await _owner_deactivated(db, run):
+        # the agent's owner is gone: nothing could ever run, so the workflow pauses instead of retrying
+        wf.status = WorkflowStatus.paused
+        await _event(db, task, None, "workflow.paused", {"reason": "owner_deactivated"})
+        return
     if run.status in (RunStatus.failed, RunStatus.cancelled):  # a cancel nobody asked for counts as a failure
         wf.failures += 1
         if wf.failures >= MAX_FAILURES:
@@ -598,11 +624,6 @@ async def _on_run_finished(db: AsyncSession, run: AgentRun) -> None:
             await _rerun(db, wf, task, last=run, requested_by=owner_id)
         return
     wf.failures = 0
-    if role in READ_ONLY_ROLES and _git_changed(run):
-        wf.enforcement = Enforcement.partially_enforced
-        await _event(db, task, None, "enforcement.violation", {"stage": str(run.stage), "role": role.value})
-        await escalate(db, wf, "enforcement_violation")
-        return
     handler = ROLE_HANDLERS.get(role)
     if handler is not None:
         await handler(db, wf, task, run)
@@ -660,7 +681,8 @@ ROLE_HANDLERS[RunRole.plan] = _handle_brainstorm_or_plan
 
 
 async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
-    """Move the card to the end of the first column of `category`; recorded as `moved` by the workflow."""
+    """Move the card to the end of the first column of `category`. Recorded like a human move
+    (`status_changed`), with no actor and `by: "workflow"`."""
     column = (
         await db.execute(
             select(BoardColumn)
@@ -675,6 +697,6 @@ async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
     task.position = await end_position(db, column.id)
     apply_column(task, column)
     task.updated_at = _now()
-    await _event(db, task, None, "moved", {
+    await _event(db, task, None, "status_changed", {
         "from_column": str(frm), "to_column": str(column.id), "to_category": str(column.category), "by": "workflow",
     })
