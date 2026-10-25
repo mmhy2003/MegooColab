@@ -1,6 +1,7 @@
 import logging
 import re
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
@@ -8,13 +9,12 @@ from sqlalchemy import func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunPolicy, RunStatus
+from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agent_runs.schemas import RunAgentOut, RunOut
 from app.agent_runs.tokens import issue_run_token
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import (
     can_use_agent,
-    is_usable_binding,
     owner_can_access,
     publish_agents_updated,
 )
@@ -37,7 +37,13 @@ from app.runner.protocol import (
 from app.runner.registry import WORKFLOW_CAPABILITY, RunnerClosed, RunnerConn, registry
 from app.tasks.models import Task
 from app.tasks.service import record_event
-from app.workflow.models import DocKind, DocStatus, RunRole, WorkflowDocument
+from app.workflow.models import (
+    DocKind,
+    DocStatus,
+    RunRole,
+    TaskWorkflow,
+    WorkflowDocument,
+)
 
 # roles whose runs carry the approved design and plan into the worktree
 DOC_ROLES = {
@@ -49,10 +55,6 @@ log = logging.getLogger(__name__)
 
 def _now() -> datetime:
     return datetime.now(UTC)
-
-
-def default_prompt(task_key: str, task: Task) -> str:
-    return f"Work on task {task_key}: {task.title}\n\n{task.description_md}"
 
 
 async def _announce(db: AsyncSession, task: Task, owner_id: uuid.UUID) -> None:
@@ -73,9 +75,10 @@ async def _transition(
     summary: str | None = None,
     extra: dict | None = None,
 ) -> None:
-    """Move a run to a terminal status, record it on the task and tell the browsers.
+    """Move a run to a terminal status, record it on the task, tell the browsers and the workflow engine.
 
-    The single exit from `running`, so the run's MCP token dies here whichever path got us here."""
+    The single exit from `running`, so the run's MCP token dies here whichever path got us here. For a workflow
+    run the caller holds the workflow lock (`_lock_workflow_of`) before the run lock."""
     run.status = to
     run.mcp_token_hash = None
     run.reason = reason
@@ -88,43 +91,18 @@ async def _transition(
         data["reason"] = reason
     await record_event(db, task, actor_id, event_kind, data)
     await _announce(db, task, owner_id)
+    from app.workflow import engine  # the engine imports this module
+
+    await engine.on_run_finished(db, run)  # a workflow run's end moves its workflow on (no-op otherwise)
 
 
-async def start_run(
-    db: AsyncSession, user: User, task: Task, project: Project, policy: RunPolicy, prompt: str | None
-) -> AgentRun:
-    if task.assignee_agent_id is None:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "task_not_assigned_to_agent")
-    agent = await db.get(Agent, task.assignee_agent_id)
-    if agent is None or not await can_use_agent(db, user, agent, project):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
-    if not await is_usable_binding(db, agent.id, project.id):  # also when its owner lost access
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agent_not_bound")
-    # one active run per task (they would share its worktree); the task row lock serialises racing starts
-    locked = await db.scalar(select(Task.id).where(Task.id == task.id).with_for_update(key_share=True))
-    if locked is None:  # deleted since it was loaded
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "task_not_found")
-    active = await db.scalar(
-        select(AgentRun.id).where(AgentRun.task_id == task.id, AgentRun.status.in_(ACTIVE_STATUSES)).limit(1)
-    )
-    if active is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "task_has_active_run")
-    text = (prompt or "").strip() or default_prompt(f"{project.key}-{task.number}", task)
-    run = AgentRun(
-        task_id=task.id, agent_id=agent.id, requested_by=user.id, policy=policy,
-        prompt=text, status=RunStatus.queued,
-    )
-    db.add(run)
-    await db.flush()
-    await record_event(
-        db, task, user.id, "agent_run_queued", {"run_id": str(run.id), "agent_id": str(agent.id), "policy": policy}
-    )
-    await _announce(db, task, agent.owner_id)
-    await db.commit()  # the queued run is durable before anything is sent to a runner
-    async with SessionLocal() as dispatch_db:
-        await dispatch_pending(dispatch_db, agent.owner_id)
-    await db.refresh(run)  # server defaults (created_at) and any dispatch changes
-    return run
+async def _lock_workflow_of(db: AsyncSession, run: AgentRun) -> None:
+    """For a workflow run, take its task's workflow lock before the run's own: the engine's lock order
+    (app/workflow/engine.py), since ending the run moves the workflow on under both."""
+    if run.workflow_role is not None:
+        from app.workflow import engine
+
+        await engine.lock_workflow(db, run.task_id)
 
 
 async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> AgentRun | None:
@@ -132,7 +110,7 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
 
     The agent row is locked FOR NO KEY UPDATE (serialises concurrent dispatches so max_concurrent_runs
     cannot be overshot) and the run row FOR UPDATE SKIP LOCKED. A queued run whose task already has a running
-    run is skipped (one active run per task; start_run already refuses a second one). The commit comes before
+    run is skipped (one active run per task; the workflow engine already refuses a second one). The commit comes before
     run_start is sent: a run the runner has can never be rolled back to queued and sent twice."""
     agent = (
         await db.execute(
@@ -228,6 +206,7 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     The run row stays locked from the re-check until the commit after the send, so a cancel_run that
     lands after the claim either committed first (the run is no longer running: nothing is sent) or
     waits, then finds the run in conn.run_ids and sends run_cancel after run_start."""
+    await _lock_workflow_of(db, run)
     run = await _lock_run(db, run.id)
     if run is None or run.status != RunStatus.running:  # cancelled between the claim and now
         await db.commit()
@@ -331,6 +310,7 @@ async def cancel_run(db: AsyncSession, user: User, run: AgentRun) -> None:
     project = await db.get(Project, task.project_id)
     if not await can_use_agent(db, user, agent, project):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
+    await _lock_workflow_of(db, run)
     run = await _lock_run(db, run.id)
     if run.status not in ACTIVE_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "run_not_active")
@@ -348,19 +328,35 @@ async def cancel_run(db: AsyncSession, user: User, run: AgentRun) -> None:
     )
 
 
+async def _lock_runs_one_by_one(
+    db: AsyncSession, statuses: tuple[RunStatus, ...], *where
+) -> AsyncIterator[tuple[AgentRun, uuid.UUID]]:
+    """Yield the runs in `statuses` that match `where`, with their agent's owner, each locked in the engine's
+    order (its workflow, then the run) and in task id order. A run whose status changed meanwhile is skipped."""
+    candidates = (
+        await db.execute(
+            select(AgentRun.id, AgentRun.task_id, AgentRun.workflow_role, Agent.owner_id)
+            .join(Agent, Agent.id == AgentRun.agent_id)
+            .where(AgentRun.status.in_(statuses), *where)
+            .order_by(AgentRun.task_id, AgentRun.created_at, AgentRun.id)
+        )
+    ).all()
+    for run_id, task_id, role, owner_id in candidates:
+        if role is not None:
+            from app.workflow import engine
+
+            await engine.lock_workflow(db, task_id)
+        run = await _lock_run(db, run_id)
+        if run is not None and run.status in statuses:
+            yield run, owner_id
+
+
 async def fail_disconnected_runs(db: AsyncSession, conn: RunnerConn) -> None:
     """The runner is gone: its running runs fail with runner_disconnected, or, if the server closed the
     socket because the token or user was revoked (4401), are cancelled with runner_unauthorized. If a newer
     connection already took over, only the runs this connection was given are touched."""
-    stmt = (
-        select(AgentRun, Agent.owner_id)
-        .join(Agent, Agent.id == AgentRun.agent_id)
-        .where(Agent.owner_id == conn.user_id, AgentRun.status == RunStatus.running)
-        .with_for_update(of=AgentRun)
-        .execution_options(populate_existing=True)
-    )
     superseded = registry.conn_for_user(conn.user_id) is not None
-    for run, owner_id in (await db.execute(stmt)).all():
+    async for run, owner_id in _lock_runs_one_by_one(db, (RunStatus.running,), Agent.owner_id == conn.user_id):
         if superseded and run.id not in conn.run_ids:
             continue
         if run.cancelled_by is not None:  # a user asked for the cancel: the runner going away completes it
@@ -380,14 +376,7 @@ async def fail_disconnected_runs(db: AsyncSession, conn: RunnerConn) -> None:
 async def fail_unclaimed_runs(db: AsyncSession, conn: RunnerConn) -> None:
     """On hello: running runs of this user that this connection was not given (left over from a server
     restart or an earlier connection) can never finish, so they fail with runner_disconnected."""
-    stmt = (
-        select(AgentRun, Agent.owner_id)
-        .join(Agent, Agent.id == AgentRun.agent_id)
-        .where(Agent.owner_id == conn.user_id, AgentRun.status == RunStatus.running)
-        .with_for_update(of=AgentRun)
-        .execution_options(populate_existing=True)
-    )
-    for run, owner_id in (await db.execute(stmt)).all():
+    async for run, owner_id in _lock_runs_one_by_one(db, (RunStatus.running,), Agent.owner_id == conn.user_id):
         if run.id in conn.run_ids:
             continue
         if run.cancelled_by is not None:
@@ -407,12 +396,19 @@ async def stop_runs_before_delete(db: AsyncSession, task_ids) -> None:
 
     The run rows are locked: a dispatch in flight finishes its send first (and the cancel follows it), and
     a queued run cannot be claimed and started before the delete commits."""
-    # Lock the tasks first, FOR NO KEY UPDATE (the mode start_run takes, so the two serialise): a start_run
-    # racing this delete either committed its run (seen below) or finds the task gone (404). Not FOR UPDATE:
+    # Lock the tasks first, FOR NO KEY UPDATE (the mode the workflow engine takes, so the two serialise): an
+    # enqueue racing this delete either committed its run (seen below) or finds the task gone (404). Not FOR UPDATE:
     # that would conflict with the FOR KEY SHARE that every TaskEvent insert (FK check) takes on the task
     # while holding a run row lock, and the two sides would deadlock.
     await db.execute(
         select(Task.id).where(Task.id.in_(task_ids)).order_by(Task.id).with_for_update(key_share=True)
+    )
+    # then their workflows (the engine's lock order): the cascade deletes those rows too
+    await db.execute(
+        select(TaskWorkflow.task_id)
+        .where(TaskWorkflow.task_id.in_(task_ids))
+        .order_by(TaskWorkflow.task_id)
+        .with_for_update()
     )
     rows = (
         await db.execute(
@@ -442,18 +438,8 @@ async def stop_runs_before_delete(db: AsyncSession, task_ids) -> None:
 async def cancel_user_runs(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Deactivation: cancel the user's queued and running runs, on their agents or requested by them.
     Running ones get a best-effort run_cancel on the agent owner's connection."""
-    stmt = (
-        select(AgentRun, Agent.owner_id)
-        .join(Agent, Agent.id == AgentRun.agent_id)
-        .where(
-            AgentRun.status.in_(ACTIVE_STATUSES),
-            (Agent.owner_id == user_id) | (AgentRun.requested_by == user_id),
-        )
-        .order_by(AgentRun.created_at)
-        .with_for_update(of=AgentRun)
-        .execution_options(populate_existing=True)
-    )
-    for run, owner_id in (await db.execute(stmt)).all():
+    theirs = (Agent.owner_id == user_id) | (AgentRun.requested_by == user_id)
+    async for run, owner_id in _lock_runs_one_by_one(db, ACTIVE_STATUSES, theirs):
         if run.status == RunStatus.running:
             conn = registry.conn_for_user(owner_id)
             if conn is not None:
@@ -633,6 +619,15 @@ async def finish_run(
     """The runner reports the end of a run. A running run takes the outcome; a run already terminal (e.g.
     cancelled by deactivation) keeps its status and only gets finished_at and summary if they are empty.
     Commits, then dispatches the owner's pending runs."""
+    peek = (
+        await db.execute(select(AgentRun.task_id, AgentRun.workflow_role).where(AgentRun.id == run_id))
+    ).first()
+    if peek is not None and peek.workflow_role is not None:
+        # the engine's lock order: the task (a completed run may move the card), its workflow, then the run
+        from app.workflow import engine
+
+        await engine.lock_task_row(db, peek.task_id)
+        await engine.lock_workflow(db, peek.task_id)
     run = await _lock_run(db, run_id)
     if run is None:  # deleted with its task: the slot it held is free, so the owner's queue moves on
         await db.rollback()
@@ -665,6 +660,12 @@ async def finish_run(
     else:
         run.finished_at = run.finished_at or _now()
         run.summary = run.summary or summary
+        if run.workflow_role is not None:
+            # a late report still carries the agent session (e.g. paused while the runner was away); the
+            # engine stores it and, the run being handled already, changes nothing else
+            from app.workflow import engine
+
+            await engine.on_run_finished(db, run)
     await db.commit()
     async with SessionLocal() as dispatch_db:
         await dispatch_pending(dispatch_db, agent.owner_id)

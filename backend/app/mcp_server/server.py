@@ -30,6 +30,7 @@ from app.tasks import service
 from app.tasks.activity import CommentIn, activity_items, create_comment
 from app.tasks.models import Priority, Task, TaskType
 from app.tasks.schemas import MoveIn, TaskCreate, TaskUpdate
+from app.workflow import engine
 
 MCP_PATH = "/api/mcp"
 ACTIVITY_LIMIT = 20
@@ -200,6 +201,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
             col = await _column_by_name(db, project, column)
             await service.move_task(db, user, project, task, MoveIn(column_id=col.id))
             await service.task_changed(db, task)
+            await engine.dispatch_queued(db)  # a move into working may have started the workflow
             return _json(await service.task_out(db, task))
 
     @mcp.tool()

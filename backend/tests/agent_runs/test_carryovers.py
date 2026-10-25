@@ -1,24 +1,24 @@
 """Plan 2 review carry-overs: NUL stripping, the cancel actor, and two delete/dispatch races."""
 
 import asyncio
+import time
 import uuid
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import delete, select
 
-from app.agent_runs.models import AgentRun, RunPolicy, RunStatus
+from app.agent_runs.models import AgentRun, RunStatus
 from app.agent_runs.service import (
     _lock_run,
     _transition,
-    start_run,
     stop_runs_before_delete,
 )
 from app.auth.models import Role, User
 from app.core.db import SessionLocal
-from app.projects.models import Project
 from app.tasks.activity import safe_filename
 from app.tasks.models import Comment, Task, TaskEvent
+from app.workflow import engine
 from tests.agent_runs.test_dispatch import (
     _avail,
     _offline_runs,
@@ -100,6 +100,14 @@ async def test_user_cancel_records_actor(db, tc_factory):
     assert row.cancelled_by == me.id
 
 
+async def _until_event(db, kind: str) -> None:
+    deadline = time.monotonic() + 3
+    while (await db.execute(select(TaskEvent.id).where(TaskEvent.kind == kind))).first() is None:
+        assert time.monotonic() < deadline, f"no {kind} event"
+        await db.rollback()
+        await asyncio.sleep(0.02)
+
+
 async def test_finish_of_deleted_run_dispatches_next_queued(db, tc_factory):
     tc = tc_factory(lifespan=True)
     await _manager_with_project(db, tc)
@@ -112,6 +120,9 @@ async def test_finish_of_deleted_run_dispatches_next_queued(db, tc_factory):
         ws.send_json(_hello([_avail(agent)]))
         assert _next_of(ws, "run_start")["run_id"] == first["id"]
         _wait_run(tc, t1, first["id"], "running")
+        # the socket handles messages in order: once this update is stored, the hello's dispatch has finished
+        ws.send_json({"type": "run_update", "run_id": first["id"], "seq": 1, "kind": "message", "data": {"text": "x"}})
+        await _until_event(db, "agent_message")
         assert tc.delete(f"/api/tasks/{t1['key']}").status_code == 204
         assert _next_of(ws, "run_cancel")["run_id"] == first["id"]
         # deleting dispatches nothing: the delete has returned, and the queued run was not claimed
@@ -128,13 +139,12 @@ async def test_start_run_on_deleted_task_404(client, db):
         await client.post("/api/projects/PAY/tasks", json={"title": "Gone", "assignee_agent_id": agent_id})
     ).json()
     task = (await db.execute(select(Task).where(Task.id == uuid.UUID(task_json["id"])))).scalar_one()
-    project = await db.get(Project, task.project_id)
     user = await db.get(User, me.id)
     async with SessionLocal() as other:  # deleted by someone else after this request loaded the task
         await other.execute(delete(Task).where(Task.id == task.id))
         await other.commit()
     with pytest.raises(HTTPException) as exc:
-        await start_run(db, user, task, project, RunPolicy.read_only, None)
+        await engine.start(db, user, task)  # runs start only through the workflow engine
     assert exc.value.status_code == 404 and exc.value.detail == "task_not_found"
 
 

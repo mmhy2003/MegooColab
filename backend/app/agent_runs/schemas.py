@@ -1,15 +1,10 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.agent_runs.models import RunPolicy, RunStatus
 from app.agents.models import AgentProgram
-
-
-class RunIn(BaseModel):
-    policy: RunPolicy
-    prompt: str | None = Field(default=None, max_length=20000)
 
 
 class RunAgentOut(BaseModel):

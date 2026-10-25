@@ -10,11 +10,15 @@ from sqlalchemy import select, update
 from starlette.websockets import WebSocketDisconnect
 
 from app.agent_runs.models import AgentRun
-from app.agent_runs.service import _claim_next, _send_start, dispatch_pending
+from app.agent_runs.service import _claim_next, _send_start, dispatch_pending, runs_out
+from app.agents.models import Agent
 from app.auth.models import Role
 from app.core.db import SessionLocal
-from app.runner.registry import RunnerConn, registry
-from app.tasks.models import TaskEvent
+from app.projects.models import Project
+from app.runner.registry import RunnerClosed, RunnerConn, registry
+from app.tasks.models import Task, TaskEvent
+from app.tasks.service import record_event
+from app.workflow import methodology
 from tests.factories import login, make_project, make_user
 from tests.runner.test_runner_ws import (  # noqa: F401  (tc_factory is a fixture)
     URL,
@@ -50,10 +54,38 @@ def _task(tc, agent, ref="PAY", title="T", **body):
     return r.json()
 
 
-def _start(tc, task, policy="read_only", **body):
-    r = tc.post(f"/api/tasks/{task['key']}/agent-runs", json={"policy": policy, **body})
-    assert r.status_code == 201, r.text
-    return r.json()
+async def queue_run(task_key: str, policy: str = "read_only", prompt: str | None = None) -> dict:
+    """A plan-2 style run (no workflow role) on an agent-assigned task: queued, recorded, then dispatched, as
+    the removed manual start endpoint did. Runs are otherwise started only by the workflow engine; these
+    tests exercise the run queue and dispatch themselves."""
+    project_key, number = task_key.split("-")
+    async with SessionLocal() as s:
+        task = (
+            await s.execute(
+                select(Task).join(Project, Project.id == Task.project_id)
+                .where(Project.key == project_key, Task.number == int(number))
+            )
+        ).scalar_one()
+        agent = await s.get(Agent, task.assignee_agent_id)
+        run = AgentRun(
+            task_id=task.id, agent_id=agent.id, requested_by=agent.owner_id, policy=policy, status="queued",
+            prompt=prompt or f"Work on task {task_key}: {task.title}\n\n{task.description_md}",
+        )
+        s.add(run)
+        await s.flush()
+        await record_event(s, task, None, "agent_run_queued", {"run_id": str(run.id), "agent_id": str(agent.id)})
+        await s.commit()
+    async with SessionLocal() as s:
+        await dispatch_pending(s, agent.owner_id)
+        await s.commit()
+    async with SessionLocal() as s:
+        run = await s.get(AgentRun, run.id)
+        return (await runs_out(s, [run]))[0].model_dump(mode="json")
+
+
+def _start(tc, task, policy="read_only", prompt=None):
+    """queue_run on the app's own event loop, where the runner sockets live."""
+    return tc.portal.call(queue_run, task["key"], policy, prompt)
 
 
 def _run_status(tc, task, run_id):
@@ -82,9 +114,12 @@ async def _event_kinds(db) -> list[str]:
 
 
 async def test_run_requires_agent_assignee_and_permission(client, client_factory, db):
+    """Runs start only through the workflow (the manual start endpoint is gone); its start keeps the guards."""
     me = await make_user(db)
     other = await make_user(db)
     _, manager, _team = await make_project(client, db, "PAY", me, other)
+    await methodology.seed_defaults(db)
+    await db.commit()
     await login(client, me)
     agent = (await client.post("/api/agents", json={"program": "claude_code"})).json()
     await client.put(
@@ -92,7 +127,7 @@ async def test_run_requires_agent_assignee_and_permission(client, client_factory
         json={"bindings": [{"project_ref": "PAY", "local_path": "/repo"}]},
     )
     plain = (await client.post("/api/projects/PAY/tasks", json={"title": "No agent"})).json()
-    r = await client.post(f"/api/tasks/{plain['key']}/agent-runs", json={"policy": "read_only"})
+    r = await client.post(f"/api/tasks/{plain['key']}/workflow/start")
     assert r.status_code == 422 and r.json()["detail"] == "task_not_assigned_to_agent"
 
     t = (
@@ -104,26 +139,26 @@ async def test_run_requires_agent_assignee_and_permission(client, client_factory
 
     oc = client_factory()
     await login(oc, other)
-    r = await oc.post(f"/api/tasks/{t['key']}/agent-runs", json={"policy": "read_only"})
+    r = await oc.post(f"/api/tasks/{t['key']}/workflow/start")
     assert r.status_code == 403 and r.json()["detail"] == "cannot_use_agent"
 
-    r = await client.post(f"/api/tasks/{t['key']}/agent-runs", json={"policy": "workspace", "prompt": "  "})
-    assert r.status_code == 201, r.text
-    run = r.json()
-    assert run["status"] == "queued" and run["policy"] == "workspace" and run["task_key"] == t["key"]
+    r = await client.post(f"/api/tasks/{t['key']}/workflow/start")
+    assert r.status_code == 200, r.text
+    [run] = (await client.get(f"/api/tasks/{t['key']}/agent-runs")).json()
+    assert run["status"] == "queued" and run["policy"] == "read_only" and run["task_key"] == t["key"]
     assert run["agent"] == {"id": agent["id"], "name": agent["name"], "program": "claude_code"}
     row = (await db.execute(select(AgentRun).where(AgentRun.id == uuid.UUID(run["id"])))).scalar_one()
-    assert row.prompt == f"Work on task {t['key']}: Fix login\n\nUsers cannot log in"
+    assert "Fix login\n\nUsers cannot log in" in row.prompt
 
     mc = client_factory()
     await login(mc, manager)
-    r = await mc.post(f"/api/tasks/{t['key']}/agent-runs", json={"policy": "read_only", "prompt": "Look only"})
-    assert r.status_code == 409 and r.json()["detail"] == "task_has_active_run"  # one active run per task
+    r = await mc.post(f"/api/tasks/{t['key']}/workflow/start")
+    assert r.status_code == 409 and r.json()["detail"] == "workflow_active"  # one active workflow (and run) per task
     assert (await client.post(f"/api/agent-runs/{run['id']}/cancel")).status_code == 204
-    r = await mc.post(f"/api/tasks/{t['key']}/agent-runs", json={"policy": "read_only", "prompt": "Look only"})
-    assert r.status_code == 201
+    r = await mc.post(f"/api/tasks/{t['key']}/workflow/resume")
+    assert r.status_code == 200, r.text
     listed = (await mc.get(f"/api/tasks/{t['key']}/agent-runs")).json()
-    assert listed[0]["id"] == r.json()["id"] and len(listed) == 2  # newest first
+    assert listed[1]["id"] == run["id"] and len(listed) == 2  # newest first
     assert "agent_run_queued" in await _event_kinds(db)
 
 
@@ -183,9 +218,7 @@ async def _offline_runs(client, db, n=1, max_runs=1):
     for i in range(n):
         body = {"title": f"T{i}", "assignee_agent_id": agent["id"]}
         t = (await client.post("/api/projects/PAY/tasks", json=body)).json()
-        r = await client.post(f"/api/tasks/{t['key']}/agent-runs", json={"policy": "read_only"})
-        assert r.status_code == 201
-        runs.append(r.json())
+        runs.append(await queue_run(t["key"]))
     return me, agent, runs
 
 
@@ -236,7 +269,7 @@ async def test_closed_connection_is_not_used(client, db):
         assert registry.conn_for_user(me.id) is None
         assert registry.available_agents(me.id) == set()
         await _dispatch_in_own_session(me.id)
-        with pytest.raises(Exception):
+        with pytest.raises(RunnerClosed):
             await conn.send({"type": "heartbeat"})
     finally:
         registry._conns.pop(me.id, None)

@@ -12,6 +12,7 @@ from app.tasks import service
 from app.tasks.models import Task, TaskLink, TaskType
 from app.tasks.schemas import LinkIn, MoveIn, TaskCreate, TaskOut, TaskUpdate
 from app.teams.service import user_team_ids
+from app.workflow import engine
 
 router = APIRouter(tags=["tasks"])
 
@@ -58,6 +59,7 @@ async def update_task(key: str, body: TaskUpdate, user: AuthedUser, db: DbSessio
     task, project = await service.get_task_for(db, user, key, write=True)
     await service.update_task(db, user, project, task, body)
     await _changed(db, task)
+    await engine.dispatch_queued(db)
     return await service.task_out(db, task)
 
 
@@ -80,6 +82,7 @@ async def move_task(key: str, body: MoveIn, user: AuthedUser, db: DbSession) -> 
     task, project = await service.get_task_for(db, user, key, write=True)
     await service.move_task(db, user, project, task, body)
     await _changed(db, task)
+    await engine.dispatch_queued(db)  # a move into working may have started or resumed the workflow
     return await service.task_out(db, task)
 
 

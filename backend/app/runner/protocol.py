@@ -80,8 +80,8 @@ class RunUpdate(_FromRunner):
 
 
 class GitState(_FromRunner):
-    head: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
-    branch: NoNulStr | None = Field(default=None, max_length=200)
+    head: str | None = Field(default=None, pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")  # SHA-1 or SHA-256 repos
+    branch: Annotated[str, _trunc(200)] | None = None
     dirty: bool
 
 

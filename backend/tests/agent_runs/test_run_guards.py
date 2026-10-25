@@ -13,6 +13,7 @@ from app.core.db import SessionLocal
 from app.runner.registry import registry
 from app.tasks.models import TaskEvent
 from app.teams.models import TeamMember
+from app.workflow import methodology
 from tests.agent_runs.test_dispatch import (
     _avail,
     _dispatch_in_own_session,
@@ -100,7 +101,7 @@ async def test_deleting_a_project_cancels_its_running_runs(db, tc_factory):
     tc, ac = tc_factory(lifespan=True), tc_factory()
     admin = await make_user(db, role=Role.admin)
     _login(ac, admin)
-    me, _ = await _manager_with_project(db, tc)
+    await _manager_with_project(db, tc)
     token, agent, task = _setup(tc)
     team_id = tc.get("/api/projects/PAY").json()["team_ids"][0]
     r = tc.post("/api/projects", json={"key": "QA", "name": "QA", "description": "", "team_ids": [team_id]})
@@ -181,7 +182,7 @@ async def test_ex_member_agent_is_not_assignable_runnable_or_listed(client, clie
     assert r.status_code == 422 and r.json()["detail"] == "agent_not_bound"
     r = await mc.post("/api/projects/PAY/tasks", json={"title": "C", "assignee_agent_id": agent["id"]})
     assert r.status_code == 422 and r.json()["detail"] == "agent_not_bound"
-    r = await mc.post(f"/api/tasks/{assigned['key']}/agent-runs", json={"policy": "read_only"})
+    r = await mc.post(f"/api/tasks/{assigned['key']}/workflow/start")
     assert r.status_code == 422 and r.json()["detail"] == "agent_not_bound"
     assert (await mc.get("/api/projects/PAY/agents")).json() == []
     assert (await db.execute(select(AgentRun))).first() is None
@@ -215,27 +216,28 @@ async def test_queued_run_of_an_ex_member_fails_instead_of_being_sent(client, db
 async def test_second_run_of_a_task_is_409_while_one_is_active(client, db):
     _me, _agent, runs = await _offline_runs(client, db)
     key = runs[0]["task_key"]
-    r = await client.post(f"/api/tasks/{key}/agent-runs", json={"policy": "read_only"})
+    await methodology.seed_defaults(db)
+    await db.commit()
+    r = await client.post(f"/api/tasks/{key}/workflow/start")
     assert r.status_code == 409 and r.json()["detail"] == "task_has_active_run"
     await db.execute(update(AgentRun).values(status="running"))
     await db.commit()
-    r = await client.post(f"/api/tasks/{key}/agent-runs", json={"policy": "workspace"})
+    r = await client.post(f"/api/tasks/{key}/workflow/start")
     assert r.status_code == 409 and r.json()["detail"] == "task_has_active_run"
     await db.execute(update(AgentRun).values(status="completed"))
     await db.commit()
-    assert (await client.post(f"/api/tasks/{key}/agent-runs", json={"policy": "read_only"})).status_code == 201
+    assert (await client.post(f"/api/tasks/{key}/workflow/start")).status_code == 200
     assert len((await db.execute(select(AgentRun))).all()) == 2
 
 
 async def test_concurrent_starts_of_one_task_make_one_run(client, db):
     _me, _agent, runs = await _offline_runs(client, db)
     key = runs[0]["task_key"]
+    await methodology.seed_defaults(db)
     await db.execute(update(AgentRun).values(status="completed"))
     await db.commit()
-    results = await asyncio.gather(
-        *[client.post(f"/api/tasks/{key}/agent-runs", json={"policy": "read_only"}) for _ in range(4)]
-    )
-    assert sorted(r.status_code for r in results) == [201, 409, 409, 409]
+    results = await asyncio.gather(*[client.post(f"/api/tasks/{key}/workflow/start") for _ in range(4)])
+    assert sorted(r.status_code for r in results) == [200, 409, 409, 409]
     assert (await db.execute(select(func.count()).select_from(AgentRun).where(AgentRun.status == "queued"))).scalar() == 1
 
 

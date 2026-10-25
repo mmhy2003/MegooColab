@@ -5,19 +5,13 @@ from sqlalchemy import select
 
 from app.agent_runs import service
 from app.agent_runs.models import AgentRun
-from app.agent_runs.schemas import RunIn, RunOut
+from app.agent_runs.schemas import RunOut
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
 from app.tasks.service import get_task_for
 
 router = APIRouter(tags=["agent-runs"])
-
-
-@router.post("/api/tasks/{key}/agent-runs", status_code=status.HTTP_201_CREATED)
-async def start_run(key: str, body: RunIn, user: AuthedUser, db: DbSession) -> RunOut:
-    task, project = await get_task_for(db, user, key, write=True)
-    run = await service.start_run(db, user, task, project, body.policy, body.prompt)
-    return (await service.runs_out(db, [run]))[0]
+# Runs are started only by the workflow engine (app/workflow/engine.py): there is no manual start.
 
 
 @router.get("/api/tasks/{key}/agent-runs")

@@ -1,5 +1,6 @@
 """Runner protocol v2: capabilities, workflow run_start fields, run tokens and run metadata."""
 
+import asyncio
 import json
 import time
 import uuid
@@ -366,7 +367,7 @@ async def test_run_token_never_authenticates_rest(db, tc_factory):
         h = {"Authorization": f"Bearer {raw}"}
         for method, path in (("get", "/api/projects"), ("get", f"/api/tasks/{task['key']}"),
                              ("get", "/api/auth/me"), ("get", "/api/tokens/self"),
-                             ("post", f"/api/tasks/{task['key']}/agent-runs")):
+                             ("post", f"/api/tasks/{task['key']}/workflow/start")):
             assert getattr(anon, method)(path, headers=h).status_code == 401, path
         # even with a logged-in cookie, a bearer header is refused on REST
         assert tc.get("/api/projects", headers=h).status_code == 401
@@ -472,6 +473,6 @@ async def test_hello_with_too_many_or_too_long_problems_is_truncated_not_rejecte
             if mine["problems"][:1] and len(mine["problems"]) > 1:
                 break
             assert time.monotonic() < deadline
-            time.sleep(0.02)
+            await asyncio.sleep(0.02)
         shown = [p for p in mine["problems"] if p != WORKFLOW_PROBLEM]
         assert len(shown) == 10 and all(len(p) <= 200 for p in shown)

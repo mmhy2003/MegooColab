@@ -16,8 +16,24 @@ from app.projects.models import BoardColumn, ColumnCategory, Label, Project, Pro
 from app.projects.schemas import LabelOut
 from app.sprints.service import snapshot_if_active
 from app.tasks import ordering
-from app.tasks.models import LinkKind, Task, TaskEvent, TaskLink, TaskType, task_labels, task_watchers
-from app.tasks.schemas import AssigneeAgentOut, LinkedTask, MoveIn, TaskCreate, TaskLinkOut, TaskOut, TaskUpdate
+from app.tasks.models import (
+    LinkKind,
+    Task,
+    TaskEvent,
+    TaskLink,
+    TaskType,
+    task_labels,
+    task_watchers,
+)
+from app.tasks.schemas import (
+    AssigneeAgentOut,
+    LinkedTask,
+    MoveIn,
+    TaskCreate,
+    TaskLinkOut,
+    TaskOut,
+    TaskUpdate,
+)
 from app.teams.models import TeamMember
 from app.workflow.models import DocKind, DocStatus, TaskWorkflow, WorkflowDocument
 from app.workflow.schemas import TaskWorkflowOut
@@ -253,12 +269,8 @@ async def validate_parent(
     def invalid() -> HTTPException:
         return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_parent")
 
-    if task_type == TaskType.epic:
-        if parent_id is not None:
-            raise invalid()
-    elif task_type == TaskType.subtask:
-        if parent_id is None:
-            raise invalid()
+    if (task_type == TaskType.epic and parent_id is not None) or (task_type == TaskType.subtask and parent_id is None):
+        raise invalid()
     if parent_id is None:
         return
     parent = await db.get(Task, parent_id)
@@ -419,6 +431,11 @@ async def update_task(db: AsyncSession, user: User, project: Project, task: Task
             new_agent = data.assignee_agent_id
             new_user = None if new_agent else new_user
         if (new_user, new_agent) != (task.assignee_user_id, task.assignee_agent_id):
+            if new_agent != task.assignee_agent_id:
+                # imported here: the workflow engine imports this module
+                from app.workflow import board
+
+                await board.before_reassign(db, task, new_agent)
             if new_user != task.assignee_user_id:
                 await check_assignee(db, project, new_user)
             if new_agent != task.assignee_agent_id:
@@ -556,6 +573,10 @@ async def move_task(db: AsyncSession, user: User, project: Project, task: Task, 
             t.position = n * ordering.STEP
         await db.flush()
         new_pos = ordering.position_between(pos(bi), pos(ai))
+    # imported here: the workflow engine imports this module
+    from app.workflow import board
+
+    await board.before_move(db, user, task, column)  # may refuse, or start, resume or pause the workflow
     task.position = new_pos
     if column.id != task.column_id:
         await record_event(db, task, user.id, "status_changed", {
