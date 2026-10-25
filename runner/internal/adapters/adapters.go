@@ -5,6 +5,7 @@ package adapters
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 
@@ -27,7 +28,16 @@ type Spec struct {
 // For returns the launch spec for a program. The environment variable
 // MEGOO_ADAPTER_<PROGRAM> (a full command line) replaces the npx command; tests
 // and the end-to-end run use it to start a fake agent.
-func For(program string) (Spec, error) { return forOS(runtime.GOOS, program, os.Getenv) }
+func For(program string) (Spec, error) {
+	spec, err := forOS(runtime.GOOS, program, os.Getenv)
+	// Some Node installs on Windows (nvm-style) ship npx.exe and no npx.cmd.
+	if err == nil && spec.Command == "npx.cmd" {
+		if _, lookErr := exec.LookPath("npx.cmd"); lookErr != nil {
+			spec.Command = "npx"
+		}
+	}
+	return spec, err
+}
 
 func forOS(goos, program string, getenv func(string) string) (Spec, error) {
 	var pkg string
