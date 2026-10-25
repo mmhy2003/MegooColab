@@ -520,3 +520,31 @@ async def test_human_review_requirement_survives_pause_reassign_resume(db, tc_fa
     await _finish(b.manager.id, run, "completed")
     wf = await _wf(b.task_id)
     assert (wf.status, wf.needs) == ("waiting_human", "human_code_review")
+
+
+async def test_board_without_review_column_still_leaves_build_and_finishes(db, tc_factory):
+    """I3: with no review column the engine's move is a no-op, recorded, and the workflow goes on."""
+    tc = tc_factory(lifespan=True)
+    b, run = await _building(db, tc)
+    for c in tc.get("/api/projects/PAY/columns").json():
+        if c["category"] == "review":
+            r = tc.delete(f"/api/projects/PAY/columns/{c['id']}")
+            assert r.status_code == 204, r.text
+    column_before = tc.get(f"/api/tasks/{b.key}").json()["column_id"]
+    for _ in STEPS:
+        run = await _pass_step(b, run)
+    assert run.workflow_role == "final_review"
+    wf = await _wf(b.task_id)
+    assert (wf.stage, wf.status) == ("review", "running")
+    [skipped] = await _events(b.task_id, "workflow.no_column")
+    assert skipped.data == {"category": "review"} and skipped.actor_user_id is None
+    assert tc.get(f"/api/tasks/{b.key}").json()["column_id"] == column_before
+
+    await _review(run, "approved")
+    await _finish(b.manager.id, run, "completed")
+    fin = await _last(b.task_id)
+    assert fin.workflow_role == "finish"
+    await _report(fin)
+    await _finish(b.manager.id, fin, "completed")
+    assert (await _wf(b.task_id)).status == "finished"
+    assert tc.get(f"/api/tasks/{b.key}").json()["column_id"] == b.cols["done"]["id"]

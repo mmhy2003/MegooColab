@@ -112,10 +112,14 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
       return "started the workflow";
     case "workflow.paused": {
       const reason = str(data.reason);
-      return reason ? `paused the workflow (${PAUSE_REASON[reason] ?? reason.replace(/_/g, " ")})` : "paused the workflow";
+      return reason && reason !== "manual"
+        ? `paused the workflow (${PAUSE_REASON[reason] ?? reason.replace(/_/g, " ")})`
+        : "paused the workflow";
     }
     case "workflow.resumed":
       return "resumed the workflow";
+    case "workflow.no_column":
+      return `The board has no ${str(data.category) ?? "matching"} column, so the card stayed where it was`;
     case "workflow.stage":
       return `Moved the workflow from ${stageName(data.from)} to ${stageName(data.to)}`;
     case "workflow.escalated":
@@ -172,6 +176,7 @@ const STANDALONE = new Set([
   "finish.reported",
   "enforcement.violation",
   "workflow.stage",
+  "workflow.no_column",
   "workflow.escalated",
   "workflow.finished",
 ]);

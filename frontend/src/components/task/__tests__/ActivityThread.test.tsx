@@ -204,6 +204,16 @@ describe("ActivityThread workflow events", () => {
     expect(screen.queryByRole("link", { name: "Open the pull request" })).toBeNull();
   });
 
+  it("says when the board has no column for the workflow's move, and a plain manual pause", () => {
+    const list = rows([
+      ev("1", "workflow.no_column", { category: "review" }),
+      ev("2", "workflow.paused", { reason: "manual" }, true),
+    ]).map((li) => li.textContent);
+    expect(list[0]).toContain("The board has no review column, so the card stayed where it was");
+    expect(list[1]).toContain("Ahmed Ali paused the workflow");
+    expect(list[1]).not.toContain("(manual)");
+  });
+
   it("links document events to the document section", () => {
     rows([ev("2", "document.approved", { kind: "plan", version: 1 }, true)]);
     expect(screen.getByRole("link", { name: "plan v1" })).toHaveAttribute("href", "#document-plan-v1");

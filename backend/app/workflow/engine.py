@@ -874,7 +874,8 @@ ROLE_HANDLERS[RunRole.plan] = _handle_brainstorm_or_plan
 
 async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
     """Move the card to the end of the first column of `category`. Recorded like a human move
-    (`status_changed`), with no actor and `by: "workflow"`."""
+    (`status_changed`), with no actor and `by: "workflow"`. A board without such a column (only before and done
+    are required) keeps the card where it is: recorded as `workflow.no_column`, and the workflow goes on."""
     column = (
         await db.execute(
             select(BoardColumn)
@@ -882,7 +883,10 @@ async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
             .order_by(BoardColumn.position)
             .limit(1)
         )
-    ).scalar_one()
+    ).scalar_one_or_none()
+    if column is None:
+        await record_workflow_event(db, task, None, "workflow.no_column", {"category": str(category)})
+        return
     if task.column_id == column.id:
         return
     frm = task.column_id
