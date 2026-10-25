@@ -97,14 +97,57 @@ describe("ActivityThread agent events", () => {
       ["agent_tool", { title: "Read a.ts", status: "completed" }, "Read a.ts (completed)"],
       ["agent_command", { command: "pytest", exit_code: 1 }, "ran pytest → exit 1"],
       ["agent_run_completed", { summary: "Done" }, "finished: Done"],
-      ["agent_run_failed", { reason: "runner_disconnected" }, "failed: runner_disconnected"],
+      ["agent_run_failed", { reason: "runner_disconnected" }, "failed: the runner disconnected"],
       ["agent_run_cancelled", {}, "was cancelled"],
+      ["agent_run_cancelled", { reason: "runner_unauthorized" }, "was cancelled: the runner's token was revoked"],
     ];
     for (const [kind, data, text] of cases) {
       const { unmount } = render1(agentEvent("x", kind, data));
       expect(screen.getByRole("listitem").textContent).toContain(text);
       unmount();
     }
+  });
+});
+
+describe("ActivityThread run outcomes", () => {
+  const event = (kind: string, data: Record<string, unknown>, who: ActivityItem["actor"] = null): ActivityItem => ({
+    type: "event",
+    id: "r",
+    at: "2026-10-22T10:00:00Z",
+    actor: who,
+    kind,
+    data: { agent_id: "a1", run_id: "r1", ...data },
+  });
+  const text = (item: ActivityItem) => {
+    render(<ActivityThread items={[item]} columnNames={new Map()} userNames={new Map()} agentNames={new Map([["a1", "Ann's Codex"]])} />);
+    return screen.getByRole("listitem").textContent ?? "";
+  };
+
+  it("says a person cancelled the run, not that they were cancelled", () => {
+    const row = text(event("agent_run_cancelled", {}, actor));
+    expect(row).toContain("Ahmed Ali cancelled the run");
+    expect(row).not.toContain("was cancelled");
+  });
+
+  it("drops the exit part of a command without an exit code", () => {
+    const row = text(event("agent_command", { command: "pytest", exit_code: null }));
+    expect(row).toContain("Ann's Codex ran pytest");
+    expect(row).not.toContain("exit");
+  });
+
+  it.each([
+    ["runner_disconnected", "the runner disconnected"],
+    ["runner_unauthorized", "the runner's token was revoked"],
+    ["owner_deactivated", "the owner was deactivated"],
+    ["user_deactivated", "the owner or requester was deactivated"],
+    ["owner_lost_access", "the owner lost access to this project"],
+    ["busy", "the agent was busy"],
+    ["agent_error", "the agent hit an error"],
+    ["not_bound", "the agent isn't set up for this project"],
+    ["agent_not_bound", "the agent isn't set up for this project"],
+    ["brand_new_code", "brand new code"],
+  ])("explains the failure reason %s", (reason, friendly) => {
+    expect(text(event("agent_run_failed", { reason }))).toContain(`Ann's Codex failed: ${friendly}`);
   });
 });
 

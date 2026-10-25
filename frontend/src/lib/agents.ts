@@ -21,6 +21,23 @@ export function isAbsolutePath(path: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\") || path.startsWith("/");
 }
 
+const RUN_REASON: Record<string, string> = {
+  runner_disconnected: "the runner disconnected",
+  runner_unauthorized: "the runner's token was revoked",
+  owner_deactivated: "the owner was deactivated",
+  user_deactivated: "the owner or requester was deactivated",
+  owner_lost_access: "the owner lost access to this project",
+  busy: "the agent was busy",
+  agent_error: "the agent hit an error",
+  not_bound: "the agent isn't set up for this project",
+  agent_not_bound: "the agent isn't set up for this project",
+};
+
+/** Plain words for a run's reason code; an unknown code stays readable. */
+export function runReasonText(code: string): string {
+  return RUN_REASON[code] ?? code.replace(/_/g, " ");
+}
+
 export function asAgentStatus(status: string): AgentStatus {
   return status === "online" || status === "busy" ? status : "offline";
 }

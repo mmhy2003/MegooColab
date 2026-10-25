@@ -1,5 +1,6 @@
 import { Avatar } from "@/components/ui/Avatar";
 import { Markdown } from "@/components/ui/Markdown";
+import { runReasonText } from "@/lib/agents";
 import type { ActivityItem } from "@/lib/types";
 
 type Names = { columnNames: Map<string, string>; userNames: Map<string, string>; agentNames?: Map<string, string> };
@@ -8,8 +9,14 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
-/** Sentence fragment describing an event; unknown kinds (from later features) fall back to the kind itself. */
-export function describeEvent(kind: string, data: Record<string, unknown>, { columnNames, userNames, agentNames }: Names): string {
+/** Sentence fragment describing an event; unknown kinds (from later features) fall back to the kind itself.
+ * `byPerson`: the event has a human actor (e.g. a user cancelled the run). */
+export function describeEvent(
+  kind: string,
+  data: Record<string, unknown>,
+  { columnNames, userNames, agentNames }: Names,
+  byPerson = false,
+): string {
   switch (kind) {
     case "created":
       return "created this task";
@@ -33,7 +40,7 @@ export function describeEvent(kind: string, data: Record<string, unknown>, { col
     case "sprint_changed":
       return data.to ? "moved this into a sprint" : "moved this to the backlog";
     default:
-      return describeAgentEvent(kind, data) ?? kind;
+      return describeAgentEvent(kind, data, byPerson) ?? kind;
   }
 }
 
@@ -42,7 +49,8 @@ function num(v: unknown): number {
 }
 
 /** Agent-produced fields are shown as plain text only, never as markup. */
-function describeAgentEvent(kind: string, data: Record<string, unknown>): string | undefined {
+function describeAgentEvent(kind: string, data: Record<string, unknown>, byPerson: boolean): string | undefined {
+  const reason = str(data.reason);
   switch (kind) {
     case "agent_run_queued":
       return "queued a run";
@@ -59,15 +67,16 @@ function describeAgentEvent(kind: string, data: Record<string, unknown>): string
     case "agent_file_change":
       return `changed ${str(data.path) ?? "a file"} (+${num(data.lines_added)} −${num(data.lines_removed)})`;
     case "agent_command":
-      return `ran ${str(data.command) ?? "a command"} → exit ${data.exit_code == null ? "?" : String(data.exit_code)}`;
+      return `ran ${str(data.command) ?? "a command"}${data.exit_code == null ? "" : ` → exit ${String(data.exit_code)}`}`;
     case "agent_permission":
       return `was ${data.decision === "allowed" ? "allowed" : "denied"}: ${str(data.title) ?? "a request"}`;
     case "agent_run_completed":
       return `finished: ${str(data.summary) ?? "done"}`;
     case "agent_run_failed":
-      return `failed: ${str(data.reason) ?? "unknown reason"}`;
+      return `failed: ${reason ? runReasonText(reason) : "unknown reason"}`;
     case "agent_run_cancelled":
-      return "was cancelled";
+      if (byPerson) return "cancelled the run";
+      return reason ? `was cancelled: ${runReasonText(reason)}` : "was cancelled";
     default:
       return undefined;
   }
@@ -115,7 +124,7 @@ export function ActivityThread({
           <li key={item.id} className="flex items-center gap-2 pl-1 text-xs text-muted">
             <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-cyan" />
             <span>
-              <span className="text-fg">{actor}</span> {describeEvent(item.kind ?? "", item.data ?? {}, { columnNames, userNames, agentNames })}
+              <span className="text-fg">{actor}</span> {describeEvent(item.kind ?? "", item.data ?? {}, { columnNames, userNames, agentNames }, !!item.actor)}
             </span>
             <span className="ml-auto whitespace-nowrap">{when(item.at)}</span>
           </li>

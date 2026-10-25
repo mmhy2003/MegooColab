@@ -94,6 +94,11 @@ describe("AgentRunPanel", () => {
     expect(screen.getByRole("button", { name: "Run agent" })).toBeEnabled();
   });
 
+  it("shows a failed run's reason in plain words", async () => {
+    setup(agent, [run("failed", { reason: "runner_disconnected" })]);
+    expect(await screen.findByText("failed · read-only · the runner disconnected")).toBeInTheDocument();
+  });
+
   it("explains a start that raced another run", async () => {
     const conflict = new Response(JSON.stringify({ detail: "task_has_active_run" }), { status: 409 });
     setup(agent, [], conflict);

@@ -7,7 +7,7 @@ import { useState } from "react";
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
-import { useAgentRuns } from "@/lib/agents";
+import { runReasonText, useAgentRuns } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AgentRun, ProjectAgent, RunPolicy } from "@/lib/types";
@@ -19,7 +19,7 @@ const POLICY_LABEL: Record<RunPolicy, string> = {
 const FIELD = "w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm disabled:opacity-60";
 
 function runLine(run: AgentRun): string {
-  const detail = run.summary ?? run.reason;
+  const detail = run.summary ?? (run.reason ? runReasonText(run.reason) : null);
   return `${run.status} · ${run.policy === "read_only" ? "read-only" : "workspace"}${detail ? ` · ${detail}` : ""}`;
 }
 
