@@ -35,6 +35,8 @@ const (
 	sessionIDLimit   = 200
 	logCap           = 5 << 20
 	shutdownWait     = 10 * time.Second
+	// reapWait is how long a killed adapter gets to exit before its run moves on.
+	reapWait = 5 * time.Second
 )
 
 var safeRunID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -86,6 +88,8 @@ type run struct {
 	m      *Manager
 	id     string
 	agent  string
+	task   string
+	prev   []*run // stopped runs of the same agent and task, still winding down
 	ctx    context.Context
 	abort  context.CancelFunc
 	done   chan struct{}
@@ -386,9 +390,15 @@ func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn
 	}
 	limit := max(agent.MaxConcurrentRuns, 1)
 	n := 0
+	var prev []*run
 	for _, r := range m.runs {
-		if r.agent == rs.AgentID && r.gen == m.gen {
+		if r.agent != rs.AgentID {
+			continue
+		}
+		if r.gen == m.gen {
 			n++
+		} else if r.task == rs.Task.Key {
+			prev = append(prev, r) // stopped with a lost connection: the new run waits for it, never busy
 		}
 	}
 	if n >= limit {
@@ -398,7 +408,8 @@ func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn
 	}
 	// The run outlives the message that started it; Shutdown is what stops it.
 	rctx, abort := context.WithCancel(context.WithoutCancel(ctx))
-	r := &run{secret: tokenOf(rs.Mcp), m: m, id: rs.RunID, agent: rs.AgentID, gen: m.gen, ctx: rctx, abort: abort, done: make(chan struct{})}
+	r := &run{secret: tokenOf(rs.Mcp), m: m, id: rs.RunID, agent: rs.AgentID, task: rs.Task.Key, prev: prev,
+		gen: m.gen, ctx: rctx, abort: abort, done: make(chan struct{})}
 	m.runs[rs.RunID] = r
 	m.wg.Add(1)
 	m.mu.Unlock()
@@ -601,6 +612,10 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if repo == "" {
 		return fail("not_bound", nil)
 	}
+	// The task's worktree is shared: a run stopped with a lost connection must be gone first.
+	if err := m.awaitPrevious(r, logf); err != nil {
+		return fail("worktree_failed", err)
+	}
 	wt, _, err := worktree.Ensure(r.ctx, logf, repo, m.cacheRoot, rs.AgentID, rs.Task.Key, rs.Task.Title)
 	if err != nil {
 		return fail("worktree_failed", err)
@@ -731,6 +746,43 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	return fail(stopReasonCode(resp.StopReason), fmt.Errorf("agent stop reason %q", resp.StopReason))
 }
 
+// awaitPrevious waits until the stopped runs of the same agent and task (a lost
+// connection's, still winding down) have fully ended, so two runs never share a
+// worktree. They were already cancelled, which kills them after CancelGrace;
+// past CancelGrace plus the reap time they are killed here, and then awaited:
+// every step of a run's ending is bounded. An error means r itself was stopped
+// meanwhile.
+func (m *Manager) awaitPrevious(r *run, logf io.Writer) error {
+	if len(r.prev) == 0 {
+		return nil
+	}
+	fmt.Fprintf(logf, "runner: waiting for the previous run of this task to end\n")
+	deadline := time.NewTimer(m.CancelGrace + reapWait)
+	defer deadline.Stop()
+	for _, old := range r.prev {
+		select {
+		case <-old.done:
+			continue
+		case <-r.ctx.Done():
+			return fmt.Errorf("stopped while waiting for run %s", old.id)
+		case <-deadline.C:
+		}
+		fmt.Fprintf(logf, "runner: run %s did not end in time; killing it\n", old.id)
+		old.abort()
+		old.mu.Lock()
+		cmd := old.cmd
+		old.mu.Unlock()
+		m.Kill(cmd)
+		select {
+		case <-old.done:
+		case <-r.ctx.Done():
+			return fmt.Errorf("stopped while waiting for run %s", old.id)
+		}
+	}
+	r.prev = nil
+	return nil
+}
+
 // reap ends the adapter process: after a finished turn it gets ExitGrace to
 // exit by itself once stdin closes; otherwise (or then) its tree is killed.
 func (m *Manager) reap(cmd *exec.Cmd, stdin io.Closer, graceful bool) {
@@ -747,7 +799,7 @@ func (m *Manager) reap(cmd *exec.Cmd, stdin io.Closer, graceful bool) {
 	m.Kill(cmd)
 	select {
 	case <-exited:
-	case <-time.After(5 * time.Second):
+	case <-time.After(reapWait):
 	}
 }
 

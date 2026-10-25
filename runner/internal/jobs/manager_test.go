@@ -876,3 +876,58 @@ func TestStashMadeBeforeTheRunIsNotTheRunsDoing(t *testing.T) {
 		t.Fatalf("a stash made before the run is not the run's doing: %+v", rf.GitAfter)
 	}
 }
+
+// I5: after a dropped connection the server retries the task's run under a new
+// id. That run must not share the worktree with the stopped one still winding
+// down: its adapter starts only once the old run has fully ended, and it is
+// never answered busy.
+func TestRetriedRunWaitsForTheStoppedRunOfTheSameTask(t *testing.T) {
+	var mu sync.Mutex
+	var killedAt time.Time
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	open := func() { releaseOnce.Do(func() { close(release) }) }
+	e := newEnvWithCache(t, sleeping, 1, t.TempDir(), func(m *Manager) {
+		m.CancelGrace = 100 * time.Millisecond
+		m.Kill = func(c *exec.Cmd) {
+			<-release
+			killTree(c)
+			mu.Lock()
+			if killedAt.IsZero() {
+				killedAt = time.Now()
+			}
+			mu.Unlock()
+		}
+	})
+	t.Cleanup(open)
+	t.Setenv("FAKEAGENT_IGNORE_CANCEL", "1") // the old run lingers until the kill
+	e.startRun("run-old", "MEG-9", "workspace")
+	e.waitUpdate("run-old")
+
+	e.srv.Close(1011, "network blip")
+	e.srv.WaitNthFrame(t, "hello", 2)
+	t.Setenv("FAKEAGENT_SCENARIO", `[{"say":"again"}]`)
+	e.welcome(1)
+	e.startRun("run-new", "MEG-9", "workspace") // the same task, retried
+
+	time.Sleep(700 * time.Millisecond)
+	if n := len(e.updates("run-new")); n != 0 {
+		t.Fatalf("the retried run started its adapter while the old one was still alive (%d updates)", n)
+	}
+	for _, f := range e.srv.Frames() {
+		if f.Type == protocol.TypeRunFinished && strings.Contains(string(f.Raw), `"run-new"`) {
+			t.Fatalf("the retried run was answered early: %s", f.Raw)
+		}
+	}
+
+	open()
+	rf := e.finished("run-new")
+	if rf.Outcome != "completed" || rf.Summary != "again" {
+		t.Fatalf("retried run = %+v", rf)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if killedAt.IsZero() {
+		t.Fatal("the old run's adapter was never killed")
+	}
+}
