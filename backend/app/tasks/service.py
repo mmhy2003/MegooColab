@@ -159,7 +159,7 @@ async def _workflows_for(
     db: AsyncSession, tasks: list[Task], viewer: User
 ) -> dict[uuid.UUID, TaskWorkflowOut]:
     """One query for every task workflow; steps_total is the step count of the latest approved plan.
-    can_act is the engine's WF-6 rule for the viewer, evaluated in bulk ."""
+    can_act is the engine's WF-6 rule for the viewer, evaluated in bulk."""
     ids = [t.id for t in tasks]
     plan_steps = (
         select(func.jsonb_array_length(WorkflowDocument.steps))

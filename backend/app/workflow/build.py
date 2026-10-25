@@ -239,7 +239,7 @@ async def _handle_work(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Agen
         await _warn_if_no_commit(db, wf, task, run)
         await _queue_review(db, wf, task, run.step, owner_id)
         return
-    pending =await questions.undelivered_answer(db, task.id, run.id)
+    pending = await questions.undelivered_answer(db, task.id, run.id)
     if pending is not None:  # answered while this run was still running: it gets the answer, not a nudge
         await questions.deliver(db, wf, task, pending, requested_by=owner_id)
         return
