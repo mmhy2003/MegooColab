@@ -516,3 +516,30 @@ async def test_cancel_during_send_waits_and_follows_run_start(client, db):
     # the runner is alive: the run stays running until its run_finished arrives
     row = (await db.execute(select(AgentRun).execution_options(populate_existing=True))).scalar_one()
     assert row.status == "running"
+
+
+RUNNER_FAILURE_CODES = [
+    "mcp_http_unsupported", "worktree_failed", "not_bound", "files_failed", "commit_failed",
+    "adapter_start_failed", "initialize_failed", "session_failed", "prompt_failed", "invalid_run_files", "busy",
+]
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [*((c, c) for c in RUNNER_FAILURE_CODES), ("stopped:max_tokens", "agent_error"), ("boom\x00 free text", "agent_error"),
+     (None, "agent_error")],
+)
+async def test_known_runner_failure_codes_become_the_runs_reason(db, tc_factory, error, reason):
+    from app.agent_runs.service import finish_run
+    from tests.workflow.test_engine import _started
+
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    async with SessionLocal() as s:
+        await s.execute(update(AgentRun).where(AgentRun.id == run.id).values(status="running"))
+        await s.commit()
+    async with SessionLocal() as s:
+        await finish_run(s, b.manager.id, run.id, "failed", "", error)
+    async with SessionLocal() as s:
+        failed = await s.get(AgentRun, run.id)
+        assert (failed.status, failed.reason) == ("failed", reason)

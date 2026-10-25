@@ -31,6 +31,16 @@ const RUN_REASON: Record<string, string> = {
   agent_error: "the agent hit an error",
   not_bound: "the agent isn't set up for this project",
   agent_not_bound: "the agent isn't set up for this project",
+  // the runner's failure codes
+  mcp_http_unsupported: "the agent can't reach MegooColab's MCP server over HTTP",
+  worktree_failed: "the runner couldn't prepare the task's worktree",
+  files_failed: "the runner couldn't write the design and plan files",
+  commit_failed: "the runner couldn't commit the design and plan documents",
+  adapter_start_failed: "the agent program didn't start",
+  initialize_failed: "the agent program didn't respond when starting",
+  session_failed: "the agent couldn't open a session",
+  prompt_failed: "the agent stopped while working",
+  invalid_run_files: "the run's files were not valid",
 };
 
 /** Plain words for a run's reason code; an unknown code stays readable. */

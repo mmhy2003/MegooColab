@@ -49,6 +49,11 @@ from app.workflow.models import (
 DOC_ROLES = {
     RunRole.implement, RunRole.step_review, RunRole.step_fix, RunRole.final_review, RunRole.final_fix, RunRole.finish,
 }
+# the runner's stable failure codes, kept as a failed run's reason; any other runner error is agent_error
+RUNNER_FAILURE_CODES = frozenset({
+    "mcp_http_unsupported", "worktree_failed", "not_bound", "files_failed", "commit_failed", "adapter_start_failed",
+    "initialize_failed", "session_failed", "prompt_failed", "invalid_run_files", "busy",
+})
 
 log = logging.getLogger(__name__)
 
@@ -659,7 +664,9 @@ async def finish_run(
     if run.status == RunStatus.running:
         reason = None
         if outcome == "failed":
-            reason = "agent_error"  # the runner's error text is logged, not stored: it is not allowed metadata
+            # a known runner failure code is the reason; any other runner text is logged, not stored (it is not
+            # allowed metadata)
+            reason = error if error in RUNNER_FAILURE_CODES else "agent_error"
             log.warning("run %s failed on the runner: %.200s", run.id, strip_nul(error or ""))
         await _transition(
             db, run, RunStatus(outcome), f"agent_run_{outcome}", owner_id=agent.owner_id,
