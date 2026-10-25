@@ -475,3 +475,8 @@ async def test_hello_with_too_many_or_too_long_problems_is_truncated_not_rejecte
             await asyncio.sleep(0.02)
         shown = [p for p in mine["problems"] if p != WORKFLOW_PROBLEM]
         assert len(shown) == 10 and all(len(p) <= 200 for p in shown)
+
+
+def test_files_size_cap_message_names_the_real_cap():
+    with pytest.raises(ValidationError, match="files exceed 2 MB"):
+        RunStart(**_start_kwargs(files=[RunFile(path=".megoocolab/a.md", content="x" * (2 * 1024 * 1024 + 1))]))

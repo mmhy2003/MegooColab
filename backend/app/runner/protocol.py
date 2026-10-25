@@ -192,7 +192,7 @@ class RunStart(BaseModel):
         for f in files:
             check_relative_path(f.path, FILES_PREFIX)
         if sum(len(f.content.encode()) for f in files) > MAX_FILES_BYTES:
-            raise ValueError("files exceed 1 MB")
+            raise ValueError("files exceed 2 MB")
         return files
 
     @field_validator("repo_files")
