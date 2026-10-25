@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -10,10 +10,11 @@ from app.audit import service as audit
 from app.auth.deps import AdminUser, AuthedUser
 from app.core.db import DbSession
 from app.core.text import NoNulStr
+from app.projects.access import get_project_for
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.tasks.service import get_task_for
-from app.workflow import engine, methodology
+from app.workflow import engine, methodology, questions
 from app.workflow.models import (
     DocKind,
     DocStatus,
@@ -21,6 +22,7 @@ from app.workflow.models import (
     Enforcement,
     FinishingOption,
     MethodologyVersion,
+    Mockup,
     QuestionStatus,
     RunRole,
     Stage,
@@ -242,3 +244,63 @@ async def set_manual_workflow(key: str, body: ManualWorkflowIn, user: AuthedUser
     task, _ = await get_task_for(db, user, key, write=True)
     await engine.set_manual(db, user, task, body.stage)
     return await workflow_out(db, task)
+
+
+# ---- questions and mockups (WF-6, WF-6d) ------------------------------------------------------------
+
+
+class AnswerIn(BaseModel):
+    choice: NoNulStr | None = None
+    text: NoNulStr | None = None
+
+
+class MockupOut(BaseModel):
+    id: uuid.UUID
+    version: int
+    title: str
+    choices: list[str]
+    created_at: datetime
+
+
+MOCKUP_HEADERS = {
+    "Content-Security-Policy": (
+        "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; "
+        "style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
+        "img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "private, no-store",
+}
+
+
+@router.post("/api/tasks/{key}/questions/{question_id}/answer")
+async def answer_question(
+    key: str, question_id: uuid.UUID, body: AnswerIn, user: AuthedUser, db: DbSession
+) -> WorkflowOut:
+    task, _ = await get_task_for(db, user, key, write=True)
+    await questions.answer(db, user, task, question_id, body.choice, body.text)
+    await engine.dispatch_queued(db)
+    return await workflow_out(db, task)
+
+
+@router.get("/api/tasks/{key}/mockups")
+async def list_mockups(key: str, user: AuthedUser, db: DbSession) -> list[MockupOut]:
+    task, _ = await get_task_for(db, user, key)
+    rows = (await db.execute(select(Mockup).where(Mockup.task_id == task.id).order_by(Mockup.version))).scalars()
+    return [
+        MockupOut(id=m.id, version=m.version, title=m.title, choices=list(m.choices or []), created_at=m.created_at)
+        for m in rows
+    ]
+
+
+@router.get("/api/mockups/{mockup_id}/view")
+async def view_mockup(mockup_id: uuid.UUID, user: AuthedUser, db: DbSession) -> Response:
+    mockup = await db.get(Mockup, mockup_id)
+    if mockup is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
+    task = await db.get(Task, mockup.task_id)
+    await get_project_for(db, user, str(task.project_id))
+    return Response(
+        questions.inject_choice_script(mockup.html), media_type="text/html; charset=utf-8", headers=MOCKUP_HEADERS
+    )

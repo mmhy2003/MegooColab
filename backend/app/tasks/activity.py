@@ -19,6 +19,7 @@ from app.core.text import NoNulStr, strip_nul
 from app.projects.access import get_project_for
 from app.tasks.models import Attachment, Comment, Task, TaskEvent
 from app.tasks.service import get_task_for
+from app.workflow.models import Mockup, WorkflowQuestion
 
 router = APIRouter(tags=["activity"])
 
@@ -42,7 +43,7 @@ class CommentOut(BaseModel):
 
 
 class ActivityItem(BaseModel):
-    type: Literal["comment", "event"]
+    type: Literal["comment", "event", "question"]
     id: uuid.UUID
     at: datetime
     actor: UserOut | None
@@ -50,6 +51,9 @@ class ActivityItem(BaseModel):
     edited_at: datetime | None = None
     kind: str | None = None
     data: dict | None = None
+    # type "question": {id, body, choices, status, mockup: {id, version, title}|None, answered_by,
+    # answer_choice, answer_text}
+    question: dict | None = None
 
 
 class AttachmentOut(BaseModel):
@@ -90,17 +94,31 @@ async def activity_items(
     db, task: Task, limit: int = 50, before: datetime | None = None, before_id: uuid.UUID | None = None
 ) -> list[ActivityItem]:
     c_stmt = select(Comment).where(Comment.task_id == task.id)
-    e_stmt = select(TaskEvent).where(TaskEvent.task_id == task.id)
+    # the question item shows its own asked/answered state, so those events are not repeated
+    e_stmt = select(TaskEvent).where(TaskEvent.task_id == task.id, TaskEvent.kind.not_like("question.%"))
+    q_stmt = select(WorkflowQuestion).where(WorkflowQuestion.task_id == task.id)
     if before and before_id:
         # (at, id) cursor: items written in one transaction share a timestamp
         cursor = (before, before_id)
         c_stmt = c_stmt.where(tuple_(Comment.created_at, Comment.id) < cursor)
         e_stmt = e_stmt.where(tuple_(TaskEvent.created_at, TaskEvent.id) < cursor)
+        q_stmt = q_stmt.where(tuple_(WorkflowQuestion.created_at, WorkflowQuestion.id) < cursor)
     elif before:
         c_stmt = c_stmt.where(Comment.created_at < before)
         e_stmt = e_stmt.where(TaskEvent.created_at < before)
+        q_stmt = q_stmt.where(WorkflowQuestion.created_at < before)
     comments = (await db.execute(c_stmt.order_by(Comment.created_at.desc(), Comment.id.desc()).limit(limit))).scalars().all()
     events = (await db.execute(e_stmt.order_by(TaskEvent.created_at.desc(), TaskEvent.id.desc()).limit(limit))).scalars().all()
+    questions = (
+        await db.execute(
+            q_stmt.order_by(WorkflowQuestion.created_at.desc(), WorkflowQuestion.id.desc()).limit(limit)
+        )
+    ).scalars().all()
+    mockup_ids = {q.mockup_id for q in questions if q.mockup_id}
+    mockups = {
+        m.id: {"id": str(m.id), "version": m.version, "title": m.title}
+        for m in (await db.execute(select(Mockup).where(Mockup.id.in_(mockup_ids)))).scalars()
+    } if mockup_ids else {}
     actor_ids = {c.author_user_id for c in comments} | {e.actor_user_id for e in events}
     actor_ids.discard(None)
     actors = {
@@ -115,6 +133,16 @@ async def activity_items(
         ActivityItem(type="event", id=e.id, at=e.created_at, actor=actors.get(e.actor_user_id),
                      kind=e.kind, data=e.data)
         for e in events
+    ] + [
+        ActivityItem(
+            type="question", id=q.id, at=q.created_at, actor=None,
+            question={
+                "id": str(q.id), "body": q.body, "choices": list(q.choices or []), "status": str(q.status),
+                "mockup": mockups.get(q.mockup_id), "answered_by": str(q.answered_by) if q.answered_by else None,
+                "answer_choice": q.answer_choice, "answer_text": q.answer_text,
+            },
+        )
+        for q in questions
     ]
     items.sort(key=lambda i: (i.at, i.id), reverse=True)
     return list(reversed(items[:limit]))
