@@ -545,7 +545,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if repo == "" {
 		return fail("not_bound", nil)
 	}
-	wt, _, err := worktree.Ensure(repo, m.cacheRoot, rs.AgentID, rs.Task.Key, rs.Task.Title)
+	wt, _, err := worktree.Ensure(r.ctx, logf, repo, m.cacheRoot, rs.AgentID, rs.Task.Key, rs.Task.Title)
 	if err != nil {
 		return fail("worktree_failed", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,7 +123,7 @@ func fixture(t *testing.T) baseline {
 	if err := initRepo(repo); err != nil {
 		t.Fatal(err)
 	}
-	wt, branch, err := worktree.Ensure(repo, filepath.Join(dir, "cache"), agentID, taskKey, taskTitle)
+	wt, branch, err := worktree.Ensure(context.Background(), io.Discard, repo, filepath.Join(dir, "cache"), agentID, taskKey, taskTitle)
 	if err != nil {
 		t.Fatal(err)
 	}

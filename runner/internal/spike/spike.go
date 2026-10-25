@@ -248,7 +248,7 @@ func runPolicy(ctx context.Context, o Options, pol, prompt, dir string) (PolicyR
 	}
 	// Create the worktree up front: Ensure reuses it during the run, so what
 	// Ensure itself changes in the repository is already in the baseline.
-	wt, branch, err := worktree.Ensure(repo, cache, agentID, taskKey, taskTitle)
+	wt, branch, err := worktree.Ensure(ctx, io.Discard, repo, cache, agentID, taskKey, taskTitle)
 	if err != nil {
 		return res, err
 	}

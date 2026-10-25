@@ -1,6 +1,8 @@
 package worktree
 
 import (
+	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,7 +59,7 @@ func TestSlug(t *testing.T) {
 
 func TestEnsureCreatesThenReuses(t *testing.T) {
 	repo, cache := newRepo(t), t.TempDir()
-	path, branch, err := Ensure(repo, cache, "agent1", "MEG-7", "Sync Orders w/ ERP!")
+	path, branch, err := Ensure(context.Background(), io.Discard, repo, cache, "agent1", "MEG-7", "Sync Orders w/ ERP!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +75,7 @@ func TestEnsureCreatesThenReuses(t *testing.T) {
 	if got := runGit(t, path, "rev-parse", "--abbrev-ref", "HEAD"); got != branch {
 		t.Fatalf("HEAD = %q", got)
 	}
-	p2, b2, err := Ensure(repo, cache, "agent1", "MEG-7", "Sync Orders w/ ERP!")
+	p2, b2, err := Ensure(context.Background(), io.Discard, repo, cache, "agent1", "MEG-7", "Sync Orders w/ ERP!")
 	if err != nil || p2 != path || b2 != branch {
 		t.Fatalf("reuse = %q %q %v", p2, b2, err)
 	}
@@ -82,7 +84,7 @@ func TestEnsureCreatesThenReuses(t *testing.T) {
 func TestEnsureExistingBranchWithoutWorktree(t *testing.T) {
 	repo, cache := newRepo(t), t.TempDir()
 	runGit(t, repo, "branch", "megoo/MEG-8-x")
-	path, branch, err := Ensure(repo, cache, "a", "MEG-8", "x")
+	path, branch, err := Ensure(context.Background(), io.Discard, repo, cache, "a", "MEG-8", "x")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +94,7 @@ func TestEnsureExistingBranchWithoutWorktree(t *testing.T) {
 }
 
 func TestEnsureRejectsNonRepo(t *testing.T) {
-	if _, _, err := Ensure(t.TempDir(), t.TempDir(), "a", "MEG-1", "t"); err == nil {
+	if _, _, err := Ensure(context.Background(), io.Discard, t.TempDir(), t.TempDir(), "a", "MEG-1", "t"); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -105,7 +107,7 @@ func TestEnsureRefusesStaleDirectory(t *testing.T) {
 	}
 	marker := filepath.Join(stale, "keep.txt")
 	os.WriteFile(marker, []byte("x"), 0o644)
-	if _, _, err := Ensure(repo, cache, "a", "MEG-9", "t"); err == nil {
+	if _, _, err := Ensure(context.Background(), io.Discard, repo, cache, "a", "MEG-9", "t"); err == nil {
 		t.Fatal("expected error")
 	}
 	if _, err := os.Stat(marker); err != nil {
@@ -124,7 +126,7 @@ func TestEnsureRejectsUnsafeIDs(t *testing.T) {
 			} else {
 				agent = v
 			}
-			if _, _, err := Ensure(repo, cache, agent, key, "t"); err == nil {
+			if _, _, err := Ensure(context.Background(), io.Discard, repo, cache, agent, key, "t"); err == nil {
 				t.Errorf("%s=%q: expected error", which, v)
 			}
 			if _, err := os.Stat(cache); err == nil {
@@ -141,7 +143,7 @@ func TestEnsureRunsNoRepoHooks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".git", "hooks", "post-checkout"), []byte(hook), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Ensure(repo, t.TempDir(), "agent-1", "MEG-1", "Title"); err != nil {
+	if _, _, err := Ensure(context.Background(), io.Discard, repo, t.TempDir(), "agent-1", "MEG-1", "Title"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(marker); err == nil {
@@ -155,6 +157,15 @@ func TestMain(m *testing.M) {
 		time.Sleep(time.Minute)
 		os.Exit(0)
 	}
+	// It is also a smudge filter that hangs, so a real git worktree add stalls
+	// mid-checkout, after git registered the worktree with an initializing lock.
+	if os.Getenv("WORKTREE_HANG_SMUDGE") == "1" {
+		if m := os.Getenv("WORKTREE_SMUDGE_STARTED"); m != "" {
+			_ = os.WriteFile(m, []byte("x"), 0o644)
+		}
+		time.Sleep(time.Minute)
+		os.Exit(0)
+	}
 	os.Exit(m.Run())
 }
 
@@ -164,7 +175,7 @@ func TestEnsureTimesOutOnAHangingGit(t *testing.T) {
 	restore := gitstate.OverrideForTest(os.Args[0], 300*time.Millisecond)
 	defer restore()
 	start := time.Now()
-	if _, _, err := Ensure(repo, t.TempDir(), "agent-1", "MEG-1", "Title"); err == nil {
+	if _, _, err := Ensure(context.Background(), io.Discard, repo, t.TempDir(), "agent-1", "MEG-1", "Title"); err == nil {
 		t.Fatal("a hanging git must make Ensure fail")
 	}
 	if time.Since(start) > 10*time.Second {

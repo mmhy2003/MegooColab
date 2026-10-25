@@ -139,24 +139,40 @@ func OverrideForTest(bin string, d time.Duration) (restore func()) {
 	return func() { gitBin, timeout = oldBin, oldTimeout }
 }
 
-// Run runs git in dir with the hardened options and a timeout, returning its
-// stdout. Every runner git call goes through it.
+// Run runs git in dir with the hardened options and the default timeout,
+// returning its stdout. Every runner git call goes through it or RunContext.
 func Run(dir string, args ...string) (string, error) { return git(dir, args...) }
 
-// git runs git in dir with a timeout.
+// RunContext is Run for a call that may legitimately outlast the default
+// timeout (git worktree add): it gives up after d, or as soon as ctx is
+// cancelled.
+func RunContext(ctx context.Context, d time.Duration, dir string, args ...string) (string, error) {
+	return gitCtx(ctx, d, dir, args...)
+}
+
+// git runs git in dir with the default timeout.
 func git(dir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return gitCtx(context.Background(), timeout, dir, args...)
+}
+
+func gitCtx(parent context.Context, d time.Duration, dir string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, d)
 	defer cancel()
 	full := append(append([]string{"-C", dir}, HardenedArgs()...), args...)
 	cmd := exec.CommandContext(ctx, gitBin, full...)
 	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0",
-		"GIT_NO_REPLACE_OBJECTS=1") // git replace could make an old HEAD read as new content
+		"GIT_NO_REPLACE_OBJECTS=1", // git replace could make an old HEAD read as new content
+		"LC_ALL=C")                 // untranslated messages; worktree add writes its "initializing" lock in English
+	killTreeOnCancel(cmd)
 	cmd.WaitDelay = time.Second // a grandchild holding a pipe cannot block forever
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return out.String(), fmt.Errorf("git %s: timed out after %v", args[0], timeout)
+		switch {
+		case parent.Err() != nil:
+			return out.String(), fmt.Errorf("git %s: cancelled: %w", args[0], parent.Err())
+		case ctx.Err() != nil:
+			return out.String(), fmt.Errorf("git %s: timed out after %v", args[0], d)
 		}
 		return out.String(), fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(errb.String()))
 	}
