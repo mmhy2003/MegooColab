@@ -4,7 +4,7 @@ Task text, thread items, answers, comments and findings are untrusted (NFR-3): e
 <untrusted source="...">, and the content cannot close the wrapper from inside.
 """
 
-import re
+import unicodedata
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -50,16 +50,20 @@ BUILD_ROLES = {
 STEP_ROLES = {RunRole.implement, RunRole.step_fix, RunRole.step_review}
 FIX_ROLES = {RunRole.step_fix, RunRole.final_fix}
 
-# an opening or closing untrusted tag, with optional whitespace tricks; the optional > is escaped too
-_UNTRUSTED_TAG = re.compile(r"<(\s*/?\s*untrusted[^<>]*)(>?)", re.IGNORECASE)
+# every angle bracket (ASCII, fullwidth and small forms) becomes an entity, so no tag can form at all
+_BRACKET_TABLE = str.maketrans(
+    {"<": "&lt;", ">": "&gt;", "＜": "&lt;", "＞": "&gt;", "﹤": "&lt;", "﹥": "&gt;"}
+)
+_CLOSE = "\n</untrusted>"
 
 
 def _escape(text: str) -> str:
-    return _UNTRUSTED_TAG.sub(lambda m: "&lt;" + m.group(1) + ("&gt;" if m.group(2) else ""), text)
+    """Neutralise text for the prompt: drop Unicode format (Cf) characters, escape every angle bracket."""
+    return "".join(c for c in text if unicodedata.category(c) != "Cf").translate(_BRACKET_TABLE)
 
 
 def wrap_untrusted(source: str, text: str) -> str:
-    return f'<untrusted source="{source}">\n{_escape(text)}\n</untrusted>'
+    return f'<untrusted source="{source}">\n{_escape(text)}{_CLOSE}'
 
 
 def _cut(text: str, overshoot: int) -> str:
@@ -78,19 +82,37 @@ def _findings_text(findings: list[dict]) -> str:
     return "\n".join(_finding_line(f) for f in findings)
 
 
+def _get(obj: Any, name: str) -> Any:
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def _question_text(q: Any) -> str:
+    """A question as its body, its choices as labels and, once answered, the answer."""
+    choices = _get(q, "choices") or []
+    labels = {_get(c, "id"): _get(c, "label") for c in choices}
+    lines = [str(_get(q, "body") or "")]
+    if choices:
+        lines.append("Choices: " + ", ".join(str(_get(c, "label") or _get(c, "id")) for c in choices))
+    choice, text = _get(q, "answer_choice"), _get(q, "answer_text")
+    if choice or text:
+        answer = str(labels.get(choice) or choice or "")
+        lines.append("Answer: " + " — ".join(p for p in (answer, str(text or "")) if p))
+    return "\n".join(lines)
+
+
 def _item_text(item: Any) -> str:
     who = getattr(getattr(item, "actor", None), "name", None) or "system"
-    body = getattr(item, "body_md", None)
-    if body is None:
-        data = getattr(item, "data", None) or {}
-        body = str(data.get("body") or data.get("text") or data.get("body_md") or "")
+    if item.type == "question":
+        body = _question_text(_get(item, "question"))
+    else:
+        body = getattr(item, "body_md", None) or ""
     return f"[{item.type} by {who} at {item.at:%Y-%m-%d %H:%M}]\n{body}"
 
 
 async def _thread(db: AsyncSession, task: Task) -> list[str]:
     # events are bookkeeping, not conversation: fetch wider so they cannot crowd out the latest 50 items
     items = await activity_items(db, task, limit=MAX_THREAD_ITEMS * 4)
-    texts = [_item_text(i) for i in items if i.type in ("comment", "question", "answer")]
+    texts = [_item_text(i) for i in items if i.type in ("comment", "question")]
     return texts[-MAX_THREAD_ITEMS:]
 
 
@@ -127,7 +149,7 @@ async def build_prompt(
     plan = await _approved(db, task.id, DocKind.plan) if role in BUILD_ROLES else None
     design_body = design.body_md if design and role == RunRole.plan else None
 
-    docs: list[str] = []  # reference / inline sections after the thread
+    docs: list[str] = []  # reference sections after the thread
     for title, doc, name in (("Approved design", design, "design"), ("Approved plan", plan, "plan")):
         if doc is not None and role in BUILD_ROLES:
             docs.append(
@@ -137,15 +159,17 @@ async def build_prompt(
 
     step_section = None
     if role in STEP_ROLES and step is not None:
-        steps = (plan.steps if plan else None) or []
+        if plan is None:
+            raise ValueError("no approved plan")
+        steps = plan.steps or []
         step_section = f"## Step {step} of {len(steps)}"
         if 1 <= step <= len(steps):
             s = steps[step - 1]
-            step_section += f"\n{s.get('title', '')}\n\n{s.get('detail', '')}".rstrip()
+            # approved by a human, so not wrapped; escaped so it cannot open a fake wrapper
+            step_section += _escape(f"\n{s.get('title', '')}\n\n{s.get('detail', '')}").rstrip()
 
-    findings_section = None
-    if role in FIX_ROLES and findings is not None:
-        findings_section = "## Review findings\n" + wrap_untrusted("findings", _findings_text(findings))
+    finding_lines = [_finding_line(f) for f in findings] if role in FIX_ROLES and findings is not None else None
+    shown = len(finding_lines) if finding_lines is not None else 0
 
     extra = [s for p in context_providers if (s := await p(db, task, role))]
 
@@ -166,12 +190,14 @@ async def build_prompt(
         parts.append("## Thread\n" + body + thread_note)
         if role == RunRole.plan and design_body is not None:
             note = "\n(Design truncated to fit the prompt size limit.)" if "design" in notes else ""
-            parts.append("## Approved design\n" + design_body + note)
+            parts.append("## Approved design\n" + _escape(design_body) + note)
         parts.extend(docs)
         if step_section:
             parts.append(step_section)
-        if findings_section:
-            parts.append(findings_section)
+        if finding_lines is not None:
+            omitted = len(finding_lines) - shown
+            note = f"\n({omitted} more findings omitted to fit the prompt size limit.)" if omitted else ""
+            parts.append("## Review findings\n" + wrap_untrusted("findings", "\n".join(finding_lines[:shown])) + note)
         parts.extend(extra)
         return "\n\n".join(parts)
 
@@ -181,6 +207,8 @@ async def build_prompt(
         if thread:
             thread.pop(0)
             dropped += 1
+        elif shown:
+            shown -= 1
         elif design_body:
             design_body = _cut(design_body, over)
             notes.add("design")
@@ -190,8 +218,12 @@ async def build_prompt(
         else:
             break
         prompt = render()
-    if len(prompt) > MAX_PROMPT_CHARS:  # methodology / providers alone are too big: last-resort guard
-        prompt = prompt[:MAX_PROMPT_CHARS]
+    if len(prompt) > MAX_PROMPT_CHARS:
+        # methodology / providers alone are too big: slice, but never leave a wrapper open
+        prompt = prompt[: MAX_PROMPT_CHARS - len(_CLOSE)]
+        body = prompt[len(meth.body_md.rstrip()):]  # the methodology prose mentions the tags itself
+        if body.count("<untrusted") > body.count("</untrusted"):
+            prompt += _CLOSE
     return prompt, meth
 
 
