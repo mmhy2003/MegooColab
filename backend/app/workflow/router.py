@@ -25,9 +25,9 @@ from app.workflow.models import (
     MethodologyVersion,
     Mockup,
     QuestionStatus,
-    StepReview,
     RunRole,
     Stage,
+    StepReview,
     TaskWorkflow,
     WorkflowDocument,
     WorkflowQuestion,
@@ -41,6 +41,7 @@ from app.workflow.schemas import (
     FinishingIn,
     HumanReviewIn,
     ManualWorkflowIn,
+    ReviewOut,
     WorkflowDocumentBrief,
     WorkflowOut,
     WorkflowStepOut,
@@ -327,14 +328,6 @@ async def list_mockups(key: str, user: AuthedUser, db: DbSession) -> list[Mockup
     ]
 
 
-class ReviewOut(BaseModel):
-    scope: str
-    step: int | None
-    round: int
-    verdict: str
-    findings: list[dict]
-
-
 @router.get("/api/tasks/{key}/reviews/{review_id}")
 async def get_review(key: str, review_id: uuid.UUID, user: AuthedUser, db: DbSession) -> ReviewOut:
     task, _ = await get_task_for(db, user, key)
@@ -342,7 +335,7 @@ async def get_review(key: str, review_id: uuid.UUID, user: AuthedUser, db: DbSes
     if review is None or review.task_id != task.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
     return ReviewOut(
-        scope=str(review.scope), step=review.step, round=review.round, verdict=str(review.verdict),
+        scope=review.scope, step=review.step, round=review.round, verdict=review.verdict,
         findings=list(review.findings or []),
     )
 

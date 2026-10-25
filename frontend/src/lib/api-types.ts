@@ -1890,6 +1890,20 @@ export interface components {
              */
             action: "retry" | "accept" | "pause";
         };
+        /** Finding */
+        Finding: {
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "critical" | "important" | "minor";
+            /** File */
+            file: string | null;
+            /** Line */
+            line: number | null;
+            /** Summary */
+            summary: string;
+        };
         /** FinishingIn */
         FinishingIn: {
             option: components["schemas"]["FinishingOption"] | null;
@@ -2257,18 +2271,22 @@ export interface components {
         };
         /** ReviewOut */
         ReviewOut: {
-            /** Scope */
-            scope: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "step" | "final";
             /** Step */
             step: number | null;
             /** Round */
             round: number;
-            /** Verdict */
-            verdict: string;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "approved" | "changes_requested";
             /** Findings */
-            findings: {
-                [key: string]: unknown;
-            }[];
+            findings: components["schemas"]["Finding"][];
         };
         /**
          * Role

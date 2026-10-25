@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Markdown } from "@/components/ui/Markdown";
@@ -37,6 +37,19 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // a thread link `#document-<kind>-v<n>` selects that version, also when the hash changes later
+  useEffect(() => {
+    const fromHash = () => {
+      const m = new RegExp(`^#document-${kind}-v(\\d+)$`).exec(window.location.hash);
+      if (!m) return;
+      setPicked(Number(m[1]));
+      setError(null);
+      document.getElementById(`document-${kind}`)?.scrollIntoView?.();
+    };
+    fromHash();
+    window.addEventListener("hashchange", fromHash);
+    return () => window.removeEventListener("hashchange", fromHash);
+  }, [kind]);
   const selected = versions.find((v) => v.version === picked) ?? versions[versions.length - 1];
   const detail = useQuery({
     queryKey: qk.document(taskKey, kind, selected?.version ?? 0),

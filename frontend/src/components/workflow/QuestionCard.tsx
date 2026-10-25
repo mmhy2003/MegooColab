@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Markdown } from "@/components/ui/Markdown";
@@ -15,15 +15,34 @@ import { MockupFrame } from "./MockupFrame";
 const MAX_ANSWER = 4000;
 const OTHER = "\u0000other"; // cannot collide with a choice id ([a-z0-9_-])
 
-export function QuestionCard({ item, taskKey, canAct }: { item: ActivityItem; taskKey: string; canAct: boolean }) {
+export function QuestionCard({
+  item,
+  taskKey,
+  canAct,
+  readOnly = false,
+  onAnswered,
+}: {
+  item: ActivityItem;
+  taskKey: string;
+  /** the viewer may answer (workflow.can_act) */
+  canAct: boolean;
+  /** a read-only view: nobody answers from here */
+  readOnly?: boolean;
+  /** called after every answer attempt, also a conflicting one, so the thread can refetch */
+  onAnswered?: () => void;
+}) {
   const q = item.question as unknown as ActivityQuestion;
   const client = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
   const [text, setText] = useState("");
+  const textRef = useRef("");
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const open = q.status === "open";
-  const answerable = canAct && open;
+  const answerable = canAct && !readOnly && open;
 
   const mockups = useQuery({
     queryKey: qk.mockups(taskKey),
@@ -31,24 +50,24 @@ export function QuestionCard({ item, taskKey, canAct }: { item: ActivityItem; ta
     enabled: !!q.mockup,
   });
   const mockup = q.mockup ? mockups.data?.find((m) => m.id === q.mockup!.id) : undefined;
-  // a mockup click only preselects; a person has to press "Send answer"
-  const preselect = useCallback((choice: string) => setSelected(choice), []);
+  // a mockup click only preselects; a person has to press "Send answer". It never replaces typed text.
+  const preselect = useCallback((choice: string) => setSelected((cur) => (cur === OTHER && textRef.current.trim() ? cur : choice)), []);
 
   // recommended first, otherwise the agent's order
   const choices = [...q.choices].sort((a, b) => Number(!!b.recommended) - Number(!!a.recommended));
   const label = (id: string) => q.choices.find((c) => c.id === id)?.label ?? id;
   const other = selected === OTHER;
   const ready = selected !== null && (!other || text.trim().length > 0);
+  const sendSelected = () => {
+    if (ready) void send(other ? { text: text.trim() } : { choice: selected! });
+  };
 
-  const send = async () => {
-    if (!ready || busy) return;
+  const send = async (json: { choice: string } | { text: string }) => {
+    if (busy) return;
     setError(null);
     setBusy(true);
     try {
-      await api(`/api/tasks/${taskKey}/questions/${q.id}/answer`, {
-        method: "POST",
-        json: other ? { text: text.trim() } : { choice: selected },
-      });
+      await api(`/api/tasks/${taskKey}/questions/${q.id}/answer`, { method: "POST", json });
     } catch (err) {
       setError(err instanceof ApiError && err.detail === "already_decided" ? "Someone already answered." : errorMessage(err));
     } finally {
@@ -60,6 +79,7 @@ export function QuestionCard({ item, taskKey, canAct }: { item: ActivityItem; ta
         client.invalidateQueries({ queryKey: qk.task(taskKey) }),
       ]);
       setBusy(false);
+      onAnswered?.();
     }
   };
 
@@ -71,6 +91,7 @@ export function QuestionCard({ item, taskKey, canAct }: { item: ActivityItem; ta
         {q.status === "answered" && <> · answered</>}
       </p>
       <Markdown>{q.body}</Markdown>
+      {q.mockup && mockups.error && <p className="text-xs text-pink">Couldn&apos;t load the mockup.</p>}
       {q.mockup && mockup && (
         <MockupFrame mockupId={mockup.id} version={mockup.version} title={mockup.title} choices={mockup.choices} onChoice={answerable ? preselect : noop} />
       )}
@@ -84,7 +105,7 @@ export function QuestionCard({ item, taskKey, canAct }: { item: ActivityItem; ta
                   type="button"
                   aria-pressed={selected === c.id}
                   disabled={busy}
-                  onClick={() => setSelected(c.id)}
+                  onClick={() => void send({ choice: c.id })}
                   className={`w-full rounded border px-2 py-1 text-left text-sm ${selected === c.id ? "border-cyan bg-surface-2" : "border-line hover:border-cyan"}`}
                 >
                   <span className="font-semibold">{c.label}</span>
@@ -123,7 +144,7 @@ export function QuestionCard({ item, taskKey, canAct }: { item: ActivityItem; ta
               </p>
             </div>
           )}
-          <Button disabled={!ready || busy} onClick={() => void send()}>
+          <Button disabled={!ready || busy} onClick={sendSelected}>
             Send answer
           </Button>
         </div>
@@ -140,9 +161,9 @@ export function QuestionCard({ item, taskKey, canAct }: { item: ActivityItem; ta
               ))}
             </ul>
           )}
-          {q.status === "open" && (
+          {open && (
             <p className="text-xs text-muted">
-              {canAct ? "" : "Waiting on the agent’s owner or a project manager to answer."}
+              {canAct ? "This is a read-only view." : "Waiting on the agent's owner, a project manager or an admin to answer."}
             </p>
           )}
         </>

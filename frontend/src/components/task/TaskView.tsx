@@ -195,7 +195,16 @@ export function TaskView({
               userNames={userNames}
               agentNames={agentNames}
               taskKey={taskKey}
-              canAct={workflow.data?.can_act === true && !disabled}
+              canAct={workflow.data?.can_act === true}
+              readOnly={disabled}
+              onAnswered={async () => {
+                // older pages are local state: reload the same range so an answered question does not stay open
+                const first = activity.data?.[0];
+                if (older.items.length === 0 || !first) return;
+                const params = new URLSearchParams({ limit: String(older.items.length), before: first.at, before_id: first.id });
+                const page = await api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?${params}`);
+                setOlder((o) => ({ ...o, items: page }));
+              }}
               hasMore={older.more && (older.items.length > 0 || (activity.data?.length ?? 0) >= ACTIVITY_PAGE)}
               onLoadEarlier={async () => {
                 const first = older.items[0] ?? activity.data?.[0];

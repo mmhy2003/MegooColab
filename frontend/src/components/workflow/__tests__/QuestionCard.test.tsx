@@ -31,11 +31,12 @@ const item = (q: Partial<ActivityQuestion> = {}): ActivityItem => ({
   question: { ...base, ...q },
 });
 
-function setup(q: Partial<ActivityQuestion> = {}, canAct = true, answer?: Response) {
+function setup(q: Partial<ActivityQuestion> = {}, canAct = true, answer?: Response, extra: { readOnly?: boolean; mockupsFail?: boolean; onAnswered?: () => void } = {}) {
   const fetchMock = vi.fn(async (...args: [url: string, init?: RequestInit]) => {
     const url = args[0];
     if (url.endsWith("/answer")) return (answer ?? new Response("{}", { status: 200 })).clone();
     if (url.endsWith("/mockups")) {
+      if (extra.mockupsFail) return new Response("{}", { status: 500 });
       return new Response(JSON.stringify([{ id: "m1", version: 2, title: "Login", choices: ["a", "b"], created_at: "x" }]), { status: 200 });
     }
     return new Response("[]", { status: 200 });
@@ -43,7 +44,7 @@ function setup(q: Partial<ActivityQuestion> = {}, canAct = true, answer?: Respon
   vi.stubGlobal("fetch", fetchMock);
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <QuestionCard item={item(q)} taskKey="PAY-1" canAct={canAct} />
+      <QuestionCard item={item(q)} taskKey="PAY-1" canAct={canAct} readOnly={extra.readOnly} onAnswered={extra.onAnswered} />
     </QueryClientProvider>,
   );
   const answers = () => fetchMock.mock.calls.filter(([u]) => String(u).endsWith("/answer"));
@@ -69,12 +70,9 @@ describe("QuestionCard", () => {
     expect(screen.getByRole("link", { name: "x" })).toHaveAttribute("href", "https://evil.example/p.png");
   });
 
-  it("sends the choice id when a choice is picked and sent", async () => {
+  it("sends the choice id as soon as one of its own choice buttons is clicked", async () => {
     const { answers, sentBody } = setup();
-    const send = screen.getByRole("button", { name: "Send answer" });
-    expect(send).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: /SQLite/ }));
-    fireEvent.click(send);
     await waitFor(() => expect(answers()).toHaveLength(1));
     expect(answers()[0][0]).toBe("/api/tasks/PAY-1/questions/q1/answer");
     expect(sentBody()).toEqual({ choice: "sqlite" });
@@ -96,14 +94,17 @@ describe("QuestionCard", () => {
   it("says someone already answered on a 409", async () => {
     setup({}, true, new Response(JSON.stringify({ detail: "already_decided" }), { status: 409 }));
     fireEvent.click(screen.getByRole("button", { name: /SQLite/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Someone already answered.");
   });
 
   it("shows no answer controls without permission, and who answered afterwards", () => {
     setup({}, false);
     expect(screen.queryByRole("button")).toBeNull();
-    expect(screen.getByText(/Waiting on the agent/)).toBeInTheDocument();
+    expect(screen.getByText("Waiting on the agent's owner, a project manager or an admin to answer.")).toBeInTheDocument();
+    cleanup();
+    setup({}, true, undefined, { readOnly: true });
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("This is a read-only view.")).toBeInTheDocument();
     cleanup();
     setup({ status: "answered", answered_by: { id: "u1", name: "Sara Kim" }, answer_choice: "pg" });
     expect(screen.queryByRole("button")).toBeNull();
@@ -137,5 +138,38 @@ describe("QuestionCard", () => {
     mockupMessage(frame, "a");
     expect(answers()).toHaveLength(0);
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("does not let a mockup replace text typed under Other", async () => {
+    setup({ mockup: { id: "m1", version: 2, title: "Login" } });
+    const frame = (await screen.findByTitle("Mockup v2: Login")) as HTMLIFrameElement;
+    fireEvent.click(screen.getByRole("button", { name: "Other" }));
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "my own words" } });
+    mockupMessage(frame, "a");
+    expect(screen.getByLabelText("Your answer")).toHaveValue("my own words");
+    expect(screen.getByRole("button", { name: "Other" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("can preselect and send a choice id that only the mockup declares", async () => {
+    const { answers, sentBody } = setup({ mockup: { id: "m1", version: 2, title: "Login" }, choices: [{ id: "x", label: "X" }] });
+    const frame = (await screen.findByTitle("Mockup v2: Login")) as HTMLIFrameElement;
+    mockupMessage(frame, "b");
+    expect(screen.getByText("Selected in the mockup: b")).toBeInTheDocument();
+    expect(answers()).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    await waitFor(() => expect(answers()).toHaveLength(1));
+    expect(sentBody()).toEqual({ choice: "b" });
+  });
+
+  it("says so when the mockup cannot be loaded", async () => {
+    setup({ mockup: { id: "m1", version: 2, title: "Login" } }, true, undefined, { mockupsFail: true });
+    expect(await screen.findByText("Couldn't load the mockup.")).toBeInTheDocument();
+  });
+
+  it("tells the thread after an answer, also when it conflicts", async () => {
+    const onAnswered = vi.fn();
+    setup({}, true, new Response(JSON.stringify({ detail: "already_decided" }), { status: 409 }), { onAnswered });
+    fireEvent.click(screen.getByRole("button", { name: /SQLite/ }));
+    await waitFor(() => expect(onAnswered).toHaveBeenCalled());
   });
 });

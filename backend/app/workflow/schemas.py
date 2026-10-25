@@ -93,3 +93,18 @@ class DocumentOut(DocumentInfo):
 class DocumentDecisionIn(BaseModel):
     approve: bool
     comment: NoNulStr | None = None
+
+
+class Finding(BaseModel):
+    severity: Literal["critical", "important", "minor"]
+    file: str | None
+    line: int | None
+    summary: str
+
+
+class ReviewOut(BaseModel):
+    scope: Literal["step", "final"]
+    step: int | None
+    round: int
+    verdict: Literal["approved", "changes_requested"]
+    findings: list[Finding]

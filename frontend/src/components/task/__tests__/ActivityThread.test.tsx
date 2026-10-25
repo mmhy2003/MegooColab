@@ -206,7 +206,7 @@ describe("ActivityThread workflow events", () => {
 
   it("links document events to the document section", () => {
     rows([ev("2", "document.approved", { kind: "plan", version: 1 }, true)]);
-    expect(screen.getByRole("link", { name: "plan v1" })).toHaveAttribute("href", "#document-plan");
+    expect(screen.getByRole("link", { name: "plan v1" })).toHaveAttribute("href", "#document-plan-v1");
   });
 
   it("renders a question item as a card", () => {

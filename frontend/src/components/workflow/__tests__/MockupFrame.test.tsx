@@ -53,4 +53,21 @@ describe("MockupFrame", () => {
     send({ data: null });
     expect(onChoice).not.toHaveBeenCalled();
   });
+
+  it("never passes a message from one frame to another frame's handler", () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    render(
+      <>
+        <MockupFrame mockupId="m1" version={1} title="One" choices={["a"]} onChoice={first} />
+        <MockupFrame mockupId="m2" version={1} title="Two" choices={["a"]} onChoice={second} />
+      </>,
+    );
+    const frameA = screen.getByTitle("Mockup v1: One") as HTMLIFrameElement;
+    act(() => {
+      window.dispatchEvent(new MessageEvent("message", { source: frameA.contentWindow, origin: "null", data: { type: "megoo-choice", choice: "a" } }));
+    });
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled();
+  });
 });

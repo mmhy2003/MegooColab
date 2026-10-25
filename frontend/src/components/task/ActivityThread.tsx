@@ -157,7 +157,6 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
     case "enforcement.violation":
       return `Enforcement violation during ${stageName(data.stage)}: the repository changed`;
     case "human_review.approved":
-    case "human_review_approved":
       return "approved the pull request";
     default:
       return undefined;
@@ -194,13 +193,18 @@ export function ActivityThread({
   onLoadEarlier,
   taskKey = "",
   canAct = false,
+  readOnly = false,
+  onAnswered,
 }: {
   items: ActivityItem[];
   hasMore?: boolean;
   onLoadEarlier?: () => void;
   taskKey?: string;
-  /** the viewer may answer questions (workflow.can_act, and not a read-only view) */
+  /** the viewer may answer questions (workflow.can_act) */
   canAct?: boolean;
+  readOnly?: boolean;
+  /** an answer was attempted: refetch what the thread shows */
+  onAnswered?: () => void;
 } & Names) {
   return (
     <>
@@ -218,7 +222,7 @@ export function ActivityThread({
           return (
             <li key={item.id} className="flex gap-2">
               <Avatar name="Agent" size={24} />
-              <QuestionCard item={item} taskKey={taskKey} canAct={canAct} />
+              <QuestionCard item={item} taskKey={taskKey} canAct={canAct} readOnly={readOnly} onAnswered={onAnswered} />
             </li>
           );
         }
@@ -250,7 +254,7 @@ export function ActivityThread({
         const reviewId = kind === "review.result" ? str(data.review_id) : undefined;
         const prUrl = kind === "finish.reported" ? str(data.pr_url) : undefined;
         return (
-          <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind}>
+          <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind} docVersion={num(data.version)}>
             {isSafeUrl(prUrl) && (
               <>
                 {" — "}
@@ -274,6 +278,7 @@ function EventRow({
   lead = null,
   violation = false,
   docKind,
+  docVersion = 0,
   children,
 }: {
   at: string;
@@ -282,6 +287,7 @@ function EventRow({
   violation?: boolean;
   /** document events link to the design or plan section of the task */
   docKind?: string;
+  docVersion?: number;
   children?: React.ReactNode;
 }) {
   return (
@@ -293,7 +299,7 @@ function EventRow({
       )}
       <span className="min-w-0 break-words">
         {lead && <span className="text-fg">{lead} </span>}
-        {docKind ? <DocText text={text} kind={docKind} /> : text}
+        {docKind ? <DocText text={text} kind={docKind} version={docVersion} /> : text}
         {children}
       </span>
       <span className="ml-auto whitespace-nowrap">{when(at)}</span>
@@ -302,7 +308,7 @@ function EventRow({
 }
 
 /** "approved the plan v1": the "plan v1" part links to the document section of the task. */
-function DocText({ text, kind }: { text: string; kind: string }) {
+function DocText({ text, kind, version }: { text: string; kind: string; version: number }) {
   const start = text.indexOf(kind);
   if (start < 0) return <>{text}</>;
   const colon = text.indexOf(":", start);
@@ -310,7 +316,7 @@ function DocText({ text, kind }: { text: string; kind: string }) {
   return (
     <>
       {text.slice(0, start)}
-      <a href={`#document-${kind}`} className="text-cyan-ink underline">
+      <a href={`#document-${kind}-v${version}`} className="text-cyan-ink underline">
         {text.slice(start, end)}
       </a>
       {text.slice(end)}

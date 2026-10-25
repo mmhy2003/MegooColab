@@ -47,6 +47,7 @@ function setup(opts: { decision?: Response; can_act?: boolean; disabled?: boolea
 }
 
 afterEach(() => {
+  window.location.hash = "";
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -57,6 +58,17 @@ describe("DocumentView", () => {
     expect(await screen.findByRole("heading", { name: "Second design" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /v1/ })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Chosen mockup v3" })).toHaveAttribute("href", "/api/mockups/m1/view");
+  });
+
+  it("selects the version named by the link hash, now and when it changes", async () => {
+    window.location.hash = "#document-design-v1";
+    setup();
+    expect(await screen.findByRole("heading", { name: "First design" })).toBeInTheDocument();
+    window.location.hash = "#document-design-v2";
+    expect(await screen.findByRole("heading", { name: "Second design" })).toBeInTheDocument();
+    window.location.hash = "#document-plan-v1"; // another kind: unchanged
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByRole("heading", { name: "Second design" })).toBeInTheDocument();
   });
 
   it("renders plan steps as a numbered list", async () => {

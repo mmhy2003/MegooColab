@@ -53,10 +53,4 @@ export type ActivityQuestion = {
   answer_text: string | null;
 };
 export type MockupInfo = { id: string; version: number; title: string; choices: string[]; created_at: string };
-export type ReviewDetail = {
-  scope: "step" | "final";
-  step: number | null;
-  round: number;
-  verdict: "approved" | "changes_requested";
-  findings: { severity: "critical" | "important" | "minor"; file: string | null; line: number | null; summary: string }[];
-};
+export type ReviewDetail = S["ReviewOut"];
