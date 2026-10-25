@@ -210,6 +210,53 @@ describe("MethodologyEditor", () => {
     expect(dirty.defaultPrevented).toBe(true);
   });
 
+  it("sends the version a draft started from, even after another key's save refetched the list", async () => {
+    const versions: Record<string, number> = Object.fromEntries(KEYS.map(([k]) => [k, 1]));
+    versions.plan = 3;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") {
+        const key = url.split("/").pop()!;
+        const { base_version } = JSON.parse(init.body as string);
+        if (base_version !== versions[key]) {
+          return new Response(JSON.stringify({ detail: "methodology_conflict" }), { status: 409 });
+        }
+        versions[key] += 1;
+        return new Response(JSON.stringify({ version: versions[key] }), { status: 200 });
+      }
+      if (url === "/api/methodology") {
+        const list = KEYS.map(([key, stage]) => ({
+          key, stage, version: versions[key], body_md: `${key} text v${versions[key]}`,
+          updated_at: "2026-10-25T10:00:00Z", updated_by: "u1",
+        }));
+        return new Response(JSON.stringify(list), { status: 200 });
+      }
+      return new Response("[]", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MethodologyEditor />
+      </QueryClientProvider>,
+    );
+    const plan = await planBox();
+    fireEvent.change(plan, { target: { value: "My plan edit" } }); // the draft of key A starts at v3
+    versions.plan = 4; // meanwhile another admin saves plan
+    const brainstorm = within(screen.getByRole("region", { name: "brainstorm" }));
+    fireEvent.change(brainstorm.getByRole("textbox"), { target: { value: "Brainstorm edit" } });
+    fireEvent.click(brainstorm.getByRole("button", { name: "Save" })); // key B: the list is refetched
+    expect(await brainstorm.findByText("Saved as v2")).toBeInTheDocument();
+    await waitFor(() => expect(within(planCard()).getByText("v4")).toBeInTheDocument());
+
+    fireEvent.click(within(planCard()).getByRole("button", { name: "Save" }));
+    expect(await within(planCard()).findByText(/Someone else saved this text first/)).toBeInTheDocument();
+    const planPuts = fetchMock.mock.calls.filter(
+      (c) => c[0] === "/api/methodology/plan" && (c[1] as RequestInit | undefined)?.method === "PUT",
+    );
+    expect(JSON.parse((planPuts[0][1] as RequestInit).body as string)).toEqual({ body_md: "My plan edit", base_version: 3 });
+    expect(plan).toHaveValue("My plan edit");
+  });
+
   it("attributes obra/superpowers", async () => {
     setup();
     const link = await screen.findByRole("link", { name: "obra/superpowers" });

@@ -83,14 +83,15 @@ function History({
 
 function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, string> }) {
   const client = useQueryClient();
-  // null = no edits yet: the textarea follows the saved text
-  const [draft, setDraft] = useState<string | null>(null);
+  // null = no edits yet: the textarea follows the saved text. `base` is the version the draft started from (its
+  // first edit, or a restore): a save sends it, so a version saved meanwhile is a conflict, even after a refetch.
+  const [draft, setDraft] = useState<{ text: string; base: number } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string; conflict?: boolean } | null>(null);
 
-  const text = draft ?? item.body_md;
-  const dirty = draft !== null && draft !== item.body_md;
+  const text = draft?.text ?? item.body_md;
+  const dirty = draft !== null && draft.text !== item.body_md;
   const length = Array.from(text).length;
   const tooLong = length > MAX_CHARS;
 
@@ -129,11 +130,12 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
     try {
       const saved = await api<{ version: number }>(`/api/methodology/${item.key}`, {
         method: "PUT",
-        json: { body_md: sent, base_version: item.version },
+        json: { body_md: sent, base_version: draft?.base ?? item.version },
       });
       await refresh();
       await client.invalidateQueries({ queryKey: mqk.versions(item.key) });
-      setDraft((d) => (d === sent ? null : d));
+      // text typed while saving stays a draft, now on top of the version just saved
+      setDraft((d) => (d === null || d.text === sent ? null : { ...d, base: saved.version }));
       setMsg({ ok: true, text: `Saved as v${saved.version}` });
     } catch (err) {
       setMsg({ ok: false, text: errorMessage(err), conflict: err instanceof ApiError && err.status === 409 });
@@ -155,7 +157,10 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
         aria-label={`Instructions for ${item.key}`}
         className="mt-2 min-h-48 w-full rounded border border-line bg-surface-2 px-2 py-1 font-mono text-sm"
         value={text}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => {
+          const value = e.target.value;
+          setDraft((d) => ({ text: value, base: d?.base ?? item.version }));
+        }}
       />
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <Button type="button" disabled={!dirty || length === 0 || tooLong || saving} onClick={save}>
@@ -193,7 +198,7 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
           names={names}
           onRestore={(body) => {
             if (dirty && !window.confirm(DISCARD)) return;
-            setDraft(body);
+            setDraft({ text: body, base: item.version });
             setMsg(null);
           }}
         />
