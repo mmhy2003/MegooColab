@@ -10,11 +10,8 @@ package gitstate
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -131,6 +128,10 @@ func HardenedArgs() []string {
 		"-c", "core.hooksPath=" + emptyHooksDir(),
 		"-c", "core.fsmonitor=false",
 		"-c", "core.untrackedCache=false",
+		// the worktree's config is the agent's: keep it from loosening the stat
+		// comparison that decides whether git re-reads a file
+		"-c", "core.checkStat=default",
+		"-c", "core.trustctime=true",
 	}
 }
 
@@ -181,13 +182,64 @@ func gitIn(parent context.Context, d time.Duration, dir, stdin string, args ...s
 	if err := cmd.Run(); err != nil {
 		switch {
 		case parent.Err() != nil:
-			return out.String(), fmt.Errorf("git %s: cancelled: %w", args[0], parent.Err())
+			return out.String(), fmt.Errorf("git %s: cancelled: %w", verb(args), parent.Err())
 		case ctx.Err() != nil:
-			return out.String(), fmt.Errorf("git %s: timed out after %v", args[0], d)
+			return out.String(), fmt.Errorf("git %s: timed out after %v", verb(args), d)
 		}
-		return out.String(), fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(errb.String()))
+		return out.String(), fmt.Errorf("git %s: %w: %s", verb(args), err, strings.TrimSpace(errb.String()))
 	}
 	return out.String(), nil
+}
+
+// verb is the git subcommand in args, for error messages: the first argument
+// that is not an option.
+func verb(args []string) string {
+	for _, a := range args {
+		if !strings.HasPrefix(a, "-") {
+			return a
+		}
+	}
+	return ""
+}
+
+// pinned is a worktree's git dirs as they were when the worktree was first
+// used: the per-worktree dir and the common dir.
+type pinned struct{ gitdir, common string }
+
+var pins sync.Map // filepath.Clean(worktree) -> pinned
+
+// Pin validates the worktree's git dir and remembers it (the manager calls it
+// right after the worktree is ensured, before any agent runs). From then on
+// every gitstate git call for that worktree passes --git-dir and --work-tree
+// explicitly, so an agent that rewrites the worktree's .git file cannot make
+// the runner read another repository. A pin whose directory has vanished (the
+// worktree was recreated) is taken again.
+func Pin(worktree string) error {
+	_, err := pinFor(worktree)
+	return err
+}
+
+func pinFor(worktree string) (pinned, error) {
+	key := filepath.Clean(worktree)
+	if v, ok := pins.Load(key); ok && isDir(v.(pinned).gitdir) {
+		return v.(pinned), nil
+	}
+	gitdir, common, err := ownedGitDirs(worktree)
+	if err != nil {
+		return pinned{}, err
+	}
+	p := pinned{gitdir, common}
+	pins.Store(key, p)
+	return p, nil
+}
+
+// wgit is git for a worktree, pinned to its validated git dir.
+func wgit(worktree string, args ...string) (string, error) {
+	p, err := pinFor(worktree)
+	if err != nil {
+		return "", err
+	}
+	return git(worktree, append([]string{"--git-dir=" + p.gitdir, "--work-tree=" + worktree}, args...)...)
 }
 
 // Read returns the worktree's HEAD, branch and whether it has changes outside
@@ -202,26 +254,26 @@ func Read(dir string) (protocol.GitState, error) {
 // read is Read that also returns the raw `status --porcelain -z` output.
 func read(dir string) (protocol.GitState, string, error) {
 	var st protocol.GitState
-	if _, err := git(dir, "rev-parse", "--git-dir"); err != nil {
+	if _, err := wgit(dir, "rev-parse", "--git-dir"); err != nil {
 		return st, "", err
 	}
-	if out, err := git(dir, "rev-parse", "--verify", "-q", "HEAD"); err == nil {
+	if out, err := wgit(dir, "rev-parse", "--verify", "-q", "HEAD"); err == nil {
 		h := strings.TrimSpace(out)
 		if !headRe.MatchString(h) {
 			return st, "", fmt.Errorf("unexpected HEAD %q", h)
 		}
 		st.Head = &h
-		br, err := git(dir, "rev-parse", "--abbrev-ref", "HEAD")
+		br, err := wgit(dir, "rev-parse", "--abbrev-ref", "HEAD")
 		if err != nil {
 			return st, "", err
 		}
 		b := truncateRunes(strings.TrimSpace(br), MaxBranchRunes)
 		st.Branch = &b
-	} else if br, err := git(dir, "symbolic-ref", "--short", "-q", "HEAD"); err == nil && strings.TrimSpace(br) != "" {
+	} else if br, err := wgit(dir, "symbolic-ref", "--short", "-q", "HEAD"); err == nil && strings.TrimSpace(br) != "" {
 		b := truncateRunes(strings.TrimSpace(br), MaxBranchRunes) // unborn branch
 		st.Branch = &b
 	}
-	out, err := git(dir, "status", "--porcelain", "-z", "--untracked-files=all")
+	out, err := wgit(dir, "status", "--porcelain", "-z", "--untracked-files=all")
 	if err != nil {
 		return st, "", err
 	}
@@ -269,7 +321,7 @@ func Capture(dir string) (Snapshot, error) {
 	// --directory: the ignored set is compared at directory granularity on
 	// purpose, so huge ignored trees (node_modules, build output) stay cheap. A
 	// new file inside an already-ignored directory is therefore not noticed.
-	out, err := git(dir, "ls-files", "-o", "-i", "--exclude-standard", "--directory", "-z")
+	out, err := wgit(dir, "ls-files", "-o", "-i", "--exclude-standard", "--directory", "-z")
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -280,7 +332,7 @@ func Capture(dir string) (Snapshot, error) {
 		}
 	}
 	sort.Strings(ign)
-	lv, err := git(dir, "ls-files", "-v", "-z")
+	lv, err := wgit(dir, "ls-files", "-v", "-z")
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -290,80 +342,6 @@ func Capture(dir string) (Snapshot, error) {
 	}
 	return Snapshot{State: st, working: working, ignored: strings.Join(ign, "\x00"), flagged: flaggedSet(lv), stash: stash}, nil
 }
-
-// fingerprint is the working state: each status entry outside .megoocolab/
-// with a SHA-256 of its path's current content, or a marker for a path that is
-// gone, a link, a directory (a submodule), too big to hash or unreadable.
-// Sorted, so equal states give equal fingerprints. The content is hashed in Go,
-// as a stream, with no filters and no git process: git's --stdin-paths mode
-// C-unquotes names starting with a quote and splits names holding a newline,
-// which made the whole fingerprint fail and blinded check R1. The values only
-// have to compare equal between two snapshots, so they are not git object ids.
-// A file over maxFileBytes, or any file once maxTotalBytes were hashed, is
-// marked size:<n>:mtime:<unixnano>; a read error marks only that entry.
-func fingerprint(dir string, entries []statusEntry) (string, error) {
-	lines := make([]string, len(entries))
-	var total int64
-	for i, e := range entries {
-		p := filepath.Join(dir, filepath.FromSlash(e.path))
-		var mark string
-		fi, err := os.Lstat(p)
-		switch {
-		case errors.Is(err, os.ErrNotExist):
-			mark = "deleted"
-		case err != nil:
-			mark = "unreadable:" + errKind(err)
-		case isLink(fi):
-			if target, err := os.Readlink(p); err != nil {
-				mark = "unreadable:" + errKind(err)
-			} else {
-				mark = "link:" + target
-			}
-		case fi.IsDir():
-			mark = "dir"
-		case fi.Size() > maxFileBytes || total+fi.Size() > maxTotalBytes:
-			mark = fmt.Sprintf("size:%d:mtime:%d", fi.Size(), fi.ModTime().UnixNano())
-		default:
-			var n int64
-			mark, n = hashFile(p)
-			total += n
-		}
-		lines[i] = e.raw + "\x00" + mark
-	}
-	sort.Strings(lines)
-	return strings.Join(lines, "\x00\x00"), nil
-}
-
-// hashFile streams p through SHA-256. A read error gives an unreadable marker.
-func hashFile(p string) (string, int64) {
-	f, err := os.Open(p)
-	if err != nil {
-		return "unreadable:" + errKind(err), 0
-	}
-	defer f.Close()
-	h := sha256.New()
-	n, err := io.Copy(h, f)
-	if err != nil {
-		return "unreadable:" + errKind(err), n
-	}
-	return hex.EncodeToString(h.Sum(nil)), n
-}
-
-func errKind(err error) string {
-	switch {
-	case errors.Is(err, os.ErrPermission):
-		return "permission"
-	case errors.Is(err, os.ErrNotExist):
-		return "notexist"
-	default:
-		return "io"
-	}
-}
-
-var (
-	maxFileBytes  int64 = 256 << 20
-	maxTotalBytes int64 = 1 << 30
-)
 
 // CaptureAfter is the git_after for a run that ended, and the one place that
 // fails closed: when the after snapshot cannot be taken (git timeout or error)
@@ -391,7 +369,7 @@ func CaptureAfter(dir string, before *Snapshot) (protocol.GitState, error) {
 // stash. Only git's "no such ref" answer (exit status 1) counts as absent; a
 // timeout or any other failure is an error.
 func stashRef(dir string) (string, error) {
-	out, err := git(dir, "rev-parse", "--verify", "-q", "refs/stash")
+	out, err := wgit(dir, "rev-parse", "--verify", "-q", "refs/stash")
 	if err == nil {
 		return strings.TrimSpace(out), nil
 	}
@@ -459,7 +437,6 @@ func statusEntries(out string) []statusEntry {
 	return res
 }
 
-// resolve joins a validated relative path onto root, refusing to pass through
 // isLink reports a symlink or a Windows junction/mount point.
 func isLink(fi os.FileInfo) bool { return fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 }
 
@@ -609,6 +586,13 @@ func sameFile(a, b string) bool {
 // worktree whose admin dir points back at <worktree>/.git. An agent can edit
 // the .git file, and the exclude file must not be written into another repo.
 func gitCommonDir(worktree string) (string, error) {
+	p, err := pinFor(worktree)
+	return p.common, err
+}
+
+// ownedGitDirs reads the worktree's git dir and common dir and checks that they
+// belong to it. It is the one place that trusts the worktree's .git.
+func ownedGitDirs(worktree string) (gitdir, common string, err error) {
 	abs := func(args ...string) (string, error) {
 		out, err := git(worktree, args...)
 		if err != nil {
@@ -620,27 +604,25 @@ func gitCommonDir(worktree string) (string, error) {
 		}
 		return filepath.Clean(d), nil
 	}
-	gitdir, err := abs("rev-parse", "--git-dir")
-	if err != nil {
-		return "", err
+	if gitdir, err = abs("rev-parse", "--git-dir"); err != nil {
+		return "", "", err
 	}
-	common, err := abs("rev-parse", "--git-common-dir")
-	if err != nil {
-		return "", err
+	if common, err = abs("rev-parse", "--git-common-dir"); err != nil {
+		return "", "", err
 	}
 	dotgit := filepath.Join(worktree, ".git")
 	if sameFile(gitdir, common) {
 		if !sameFile(common, dotgit) {
-			return "", errors.New("git dir does not belong to this worktree")
+			return "", "", errors.New("git dir does not belong to this worktree")
 		}
-		return common, nil
+		return gitdir, common, nil
 	}
 	back, err := os.ReadFile(filepath.Join(gitdir, "gitdir"))
 	if err != nil || !sameFile(strings.TrimSpace(string(back)), dotgit) ||
 		filepath.Base(filepath.Dir(gitdir)) != "worktrees" || !sameFile(filepath.Dir(filepath.Dir(gitdir)), common) {
-		return "", errors.New("git dir does not belong to this worktree")
+		return "", "", errors.New("git dir does not belong to this worktree")
 	}
-	return common, nil
+	return gitdir, common, nil
 }
 
 // ensureExcluded adds /.megoocolab/ to <git-common-dir>/info/exclude once.
@@ -713,10 +695,10 @@ func CommitRepoFiles(worktree string, files []protocol.File, message string) err
 		paths = append(paths, f.Path)
 	}
 	// -f: the paths are validated and ours; a .gitignore must not stop them.
-	if _, err := git(worktree, append([]string{"--literal-pathspecs", "add", "-f", "--"}, paths...)...); err != nil {
+	if _, err := wgit(worktree, append([]string{"--literal-pathspecs", "add", "-f", "--"}, paths...)...); err != nil {
 		return err
 	}
-	if _, err := git(worktree, append([]string{"--literal-pathspecs", "diff", "--cached", "--quiet", "--"}, paths...)...); err == nil {
+	if _, err := wgit(worktree, append([]string{"--literal-pathspecs", "diff", "--cached", "--quiet", "--"}, paths...)...); err == nil {
 		return nil // nothing changed
 	}
 	// --no-verify skips pre-commit and commit-msg; every runner git call also
@@ -724,11 +706,11 @@ func CommitRepoFiles(worktree string, files []protocol.File, message string) err
 	// no repo hook (prepare-commit-msg, post-commit, ...) runs as part of our
 	// own commit.
 	args := []string{"--literal-pathspecs"}
-	if out, _ := git(worktree, "config", "user.email"); strings.TrimSpace(out) == "" {
+	if out, _ := wgit(worktree, "config", "user.email"); strings.TrimSpace(out) == "" {
 		args = append(args, "-c", "user.name=MegooColab", "-c", "user.email=megoocolab@localhost")
 	}
 	args = append(args, "-c", "commit.gpgsign=false", "commit", "--no-verify", "-m", message, "--")
 	args = append(args, paths...)
-	_, err := git(worktree, args...)
+	_, err := wgit(worktree, args...)
 	return err
 }

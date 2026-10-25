@@ -98,7 +98,9 @@ func TestTotalBudgetFallsBackToSizeMtime(t *testing.T) {
 	t.Cleanup(func() { maxFileBytes, maxTotalBytes = oldF, oldT })
 	dir := repo(t)
 	for _, n := range []string{"f1", "f2"} {
-		os.WriteFile(filepath.Join(dir, n), []byte("0123456789"), 0o644)
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("0123456789"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	fp, err := fingerprint(dir, statusEntries(mustStatus(t, dir)))
 	if err != nil || strings.Count(fp, "size:10:mtime:") != 1 {
@@ -142,17 +144,126 @@ func TestCaptureAfterFailsClosedWhenGitFails(t *testing.T) {
 
 func TestCaptureAfterKeepsReadableHeadAndBranch(t *testing.T) {
 	dir := repo(t)
-	before, _ := Capture(dir)
-	// a stash probe that fails after Read works: make the fingerprint fail via an unreadable-free path is hard,
-	// so fail only the later calls by pointing at a repo where refs/stash lookup errors.
-	if err := os.WriteFile(filepath.Join(dir, ".git", "refs", "stash"), []byte("garbage\n"), 0o644); err != nil {
+	before, err := Capture(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// git works except ls-files: Read succeeds, Capture does not
+	t.Setenv("GITSTATE_FAKE_GIT", "fail-ls-files")
+	restore := OverrideForTest(os.Args[0], 20*time.Second)
+	defer restore()
+	st, err := CaptureAfter(dir, &before)
+	if err == nil {
+		t.Fatal("the injected failure must surface")
+	}
+	if !st.Dirty || st.Head == nil || st.Branch == nil || *st.Head != *before.State.Head {
+		t.Fatalf("%+v", st)
+	}
+}
+
+func TestSmallestFilesAreHashedFirst(t *testing.T) {
+	oldF, oldT := maxFileBytes, maxTotalBytes
+	maxFileBytes, maxTotalBytes = 1000, 100
+	t.Cleanup(func() { maxFileBytes, maxTotalBytes = oldF, oldT })
+	dir := repo(t)
+	junk, small := filepath.Join(dir, "aaa-junk"), filepath.Join(dir, "zzz-small")
+	if err := os.WriteFile(junk, []byte(strings.Repeat("j", 90)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(small, []byte("0123456789abcdefghij"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := Capture(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(small)
+	if err := os.WriteFile(small, []byte("ABCDEFGHIJabcdefghij"), 0o644); err != nil { // same size
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(small, fi.ModTime(), fi.ModTime()); err != nil { // same mtime
 		t.Fatal(err)
 	}
 	st, err := CaptureAfter(dir, &before)
-	if err == nil {
-		t.Skip("git tolerated the bad stash ref")
+	if err != nil || !st.Dirty {
+		t.Fatalf("an edit of a small file hid behind a big one: dirty=%v err=%v", st.Dirty, err)
 	}
-	if !st.Dirty || st.Head == nil || st.Branch == nil {
-		t.Fatalf("%+v", st)
+}
+
+func TestEditsInsideANestedRepoAreSeen(t *testing.T) {
+	dir := repo(t)
+	sub := filepath.Join(dir, "sub")
+	run(t, dir, "init", "-q", "sub")
+	if err := os.WriteFile(filepath.Join(sub, "f.txt"), []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := Capture(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := CaptureAfter(dir, &before)
+	if err != nil || st.Dirty {
+		t.Fatalf("untouched: dirty=%v err=%v", st.Dirty, err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "f.txt"), []byte("two"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err = CaptureAfter(dir, &before)
+	if err != nil || !st.Dirty {
+		t.Fatalf("edit inside sub/: dirty=%v err=%v", st.Dirty, err)
+	}
+}
+
+func TestFingerprintDeadlineFailsClosed(t *testing.T) {
+	dir := repo(t)
+	if err := os.WriteFile(filepath.Join(dir, "n.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, err := Capture(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := fingerprintTimeout
+	fingerprintTimeout = -time.Second
+	defer func() { fingerprintTimeout = old }()
+	st, err := CaptureAfter(dir, &before)
+	if err == nil || !st.Dirty {
+		t.Fatalf("an expired deadline must fail closed: %+v %v", st, err)
+	}
+}
+
+func TestPinnedGitDirCannotBeRedirected(t *testing.T) {
+	main := repo(t)
+	wt := filepath.Join(t.TempDir(), "wt")
+	run(t, main, "worktree", "add", "-q", "-b", "wtb", wt)
+	good, err := Capture(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a crafted repository with a different HEAD
+	evil := repo(t)
+	if err := os.WriteFile(filepath.Join(evil, "b.txt"), []byte("b"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, evil, "add", ".")
+	run(t, evil, "commit", "-q", "-m", "evil")
+	if err := os.WriteFile(filepath.Join(wt, ".git"), []byte("gitdir: "+filepath.ToSlash(filepath.Join(evil, ".git"))+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := Capture(wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *snap.State.Head != *good.State.Head || *snap.State.Branch != "wtb" {
+		t.Fatalf("capture followed the rewritten .git: %+v", snap.State)
+	}
+}
+
+func TestHardenedArgsPinStatCaching(t *testing.T) {
+	a := strings.Join(HardenedArgs(), " ")
+	for _, want := range []string{"core.checkStat=default", "core.trustctime=true"} {
+		if !strings.Contains(a, want) {
+			t.Fatalf("missing %s in %s", want, a)
+		}
 	}
 }

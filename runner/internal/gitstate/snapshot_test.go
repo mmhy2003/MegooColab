@@ -1,13 +1,19 @@
 package gitstate
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("GITSTATE_FAKE_GIT") == "fail-ls-files" {
+		os.Exit(fakeGitFailingLsFiles())
+	}
 	// The test binary doubles as a git that hangs, for the timeout test.
 	if os.Getenv("GITSTATE_FAKE_GIT") == "1" {
 		time.Sleep(time.Minute)
@@ -290,4 +296,29 @@ func TestDirtLeftByAnEarlierRunIsNotTheReviewsChange(t *testing.T) {
 			t.Fatal("without a baseline the state decides")
 		}
 	})
+}
+
+// fakeGitFailingLsFiles is the test binary acting as git: the real git for
+// everything except ls-files, which exits 128.
+func fakeGitFailingLsFiles() int {
+	for _, a := range os.Args[1:] {
+		if a == "ls-files" {
+			fmt.Fprintln(os.Stderr, "fatal: injected ls-files failure")
+			return 128
+		}
+	}
+	real, err := exec.LookPath("git")
+	if err != nil {
+		return 127
+	}
+	cmd := exec.Command(real, os.Args[1:]...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return ee.ExitCode()
+		}
+		return 127
+	}
+	return 0
 }

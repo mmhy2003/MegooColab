@@ -625,8 +625,17 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return fail("policy_failed", err)
 	}
 
-	// The states are read even when the run fails or is cancelled. A side that
-	// cannot be read is left out: the server never gets a guessed state.
+	// Pinned before any agent runs: the git dir the runner reads is the one the
+	// worktree had now, whatever the agent later does to its .git file.
+	if err := gitstate.Pin(wt); err != nil {
+		return fail("worktree_failed", err)
+	}
+
+	// The states are read even when the run fails or is cancelled. A before
+	// state that cannot be read is left out, and then so is the after state
+	// unless the capture fails: the server never gets a guessed state. (An
+	// after capture that fails with a before state present is sent as dirty,
+	// see gitstate.CaptureAfter.)
 	readBefore := func() {
 		snap, err := gitstate.Capture(wt)
 		if err != nil {
@@ -669,6 +678,15 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		}
 	}
 	readBefore()
+	// R1 compares the before and after states. A read-only run without a before
+	// state could not be checked at all, and an agent could cause that itself,
+	// so it does not start.
+	r.mu.Lock()
+	unchecked := kind == policy.ReadOnly && r.snapBefore == nil
+	r.mu.Unlock()
+	if unchecked {
+		return fail("git_state_unreadable", nil)
+	}
 
 	proc, err := startAdapter(spec, wt, stderrLog)
 	if err != nil {

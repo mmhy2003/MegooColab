@@ -21,31 +21,48 @@ var (
 // removed (there is no per-binary teardown hook outside TestMain).
 func BuildFakeAgent(t testing.TB) string {
 	t.Helper()
-	fakeOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "fakeagent-")
+	return buildOnce(t, &fakeOnce, &fakePath, &fakeErr, "fakeagent")
+}
+
+var (
+	gitOnce sync.Once
+	gitPath string
+	gitErr  error
+)
+
+// BuildFakeGit is BuildFakeAgent for ./internal/fakegit.
+func BuildFakeGit(t testing.TB) string {
+	t.Helper()
+	return buildOnce(t, &gitOnce, &gitPath, &gitErr, "fakegit")
+}
+
+func buildOnce(t testing.TB, once *sync.Once, path *string, berr *error, cmdName string) string {
+	t.Helper()
+	once.Do(func() {
+		dir, err := os.MkdirTemp("", cmdName+"-")
 		if err != nil {
-			fakeErr = err
+			*berr = err
 			return
 		}
-		name := "fakeagent"
+		name := cmdName
 		if runtime.GOOS == "windows" {
 			name += ".exe"
 		}
 		out := filepath.Join(dir, name)
 		_, file, _, _ := runtime.Caller(0)
 		root := filepath.Join(filepath.Dir(file), "..", "..") // runner module root
-		cmd := exec.Command("go", "build", "-o", out, "./internal/fakeagent")
+		cmd := exec.Command("go", "build", "-o", out, "./internal/"+cmdName)
 		cmd.Dir = root
 		if b, err := cmd.CombinedOutput(); err != nil {
-			fakeErr = &buildError{err: err, out: string(b)}
+			*berr = &buildError{err: err, out: string(b)}
 			return
 		}
-		fakePath = out
+		*path = out
 	})
-	if fakeErr != nil {
-		t.Fatalf("build fake agent: %v", fakeErr)
+	if *berr != nil {
+		t.Fatalf("build %s: %v", cmdName, *berr)
 	}
-	return fakePath
+	return *path
 }
 
 type buildError struct {

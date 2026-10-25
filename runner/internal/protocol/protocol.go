@@ -81,8 +81,9 @@ type GitState struct {
 }
 
 // RunFinished ends a run. Outcome is completed, failed or cancelled.
-// GitBefore/GitAfter are omitted when git could not be read; SessionID when
-// the agent session never started.
+// GitBefore is omitted when git could not be read before the run; GitAfter when
+// it could not be read after it and there was no GitBefore either (with one, a
+// failed read is sent as dirty); SessionID when the agent session never started.
 type RunFinished struct {
 	Type      string    `json:"type"`
 	RunID     string    `json:"run_id"`
