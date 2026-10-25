@@ -26,6 +26,7 @@ class TaskWorkflowOut(BaseModel):
     current_step: int | None
     steps_total: int | None
     escalation_reason: str | None
+    can_act: bool = False  # for the viewing user (WF-6)
 
 
 class WorkflowDocumentBrief(BaseModel):

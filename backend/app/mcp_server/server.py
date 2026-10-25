@@ -120,7 +120,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
         async with _tool_session() as (db, user):
             await require_run_task(db, key)
             task, _ = await service.get_task_for(db, user, key)
-            out = _json(await service.task_out(db, task))
+            out = _json(await service.task_out(db, task, user))
             out["activity"] = [_json(i) for i in await activity_items(db, task, ACTIVITY_LIMIT)]
             return out
 
@@ -153,7 +153,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
                 data.parent_id = parent.id
             task = await service.create_task(db, user, project, data)
             await service.task_changed(db, task, "task.created")
-            return _json(await service.task_out(db, task))
+            return _json(await service.task_out(db, task, user))
 
     @mcp.tool()
     async def update_task(
@@ -179,7 +179,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
                 raise ToolError("invalid_input") from None
             await service.update_task(db, user, project, task, data)
             await service.task_changed(db, task)
-            return _json(await service.task_out(db, task))
+            return _json(await service.task_out(db, task, user))
 
     @mcp.tool()
     async def move_task(key: str, column: str) -> dict[str, Any]:
@@ -191,7 +191,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
             await service.move_task(db, user, project, task, MoveIn(column_id=col.id))
             await service.task_changed(db, task)
             await engine.dispatch_queued(db)  # a move into working may have started the workflow
-            return _json(await service.task_out(db, task))
+            return _json(await service.task_out(db, task, user))
 
     @mcp.tool()
     async def comment_on_task(key: str, body_md: str) -> dict[str, str]:

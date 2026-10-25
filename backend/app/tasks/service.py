@@ -11,7 +11,7 @@ from app.agents.models import Agent
 from app.agents.service import agent_statuses, can_use_agent, is_usable_binding
 from app.auth.models import Role, User, UserStatus
 from app.core.events import Event, publish
-from app.projects.access import get_project_for
+from app.projects.access import can_manage_project, get_project_for, project_team_ids
 from app.projects.models import BoardColumn, ColumnCategory, Label, Project, ProjectTeam
 from app.projects.schemas import LabelOut
 from app.sprints.service import snapshot_if_active
@@ -35,6 +35,7 @@ from app.tasks.schemas import (
     TaskUpdate,
 )
 from app.teams.models import TeamMember
+from app.teams.service import user_team_ids
 from app.workflow.models import DocKind, DocStatus, TaskWorkflow, WorkflowDocument
 from app.workflow.schemas import TaskWorkflowOut
 
@@ -74,7 +75,7 @@ async def task_changed(db: AsyncSession, task: Task, kind: str = "task.updated")
         await snapshot_if_active(db, task.sprint_id)
 
 
-async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
+async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User | None = None) -> list[TaskOut]:
     if not tasks:
         return []
     ids = [t.id for t in tasks]
@@ -108,7 +109,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
     ):
         watchers[task_id].append(user_id)
     links = await _links_for(db, ids)
-    workflows = await _workflows_for(db, ids)
+    workflows = await _workflows_for(db, tasks, viewer)
     agent_ids = {t.assignee_agent_id for t in tasks if t.assignee_agent_id}
     agents: dict[uuid.UUID, AssigneeAgentOut] = {}
     if agent_ids:
@@ -153,8 +154,14 @@ async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
     ]
 
 
-async def _workflows_for(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, TaskWorkflowOut]:
-    """One query for every task workflow; steps_total is the step count of the latest approved plan."""
+async def _workflows_for(
+    db: AsyncSession, tasks: list[Task], viewer: User | None
+) -> dict[uuid.UUID, TaskWorkflowOut]:
+    """One query for every task workflow; steps_total is the step count of the latest approved plan.
+    can_act is the engine's WF-6 rule for the viewer, evaluated in bulk (false without a viewer)."""
+    from app.workflow.engine import can_act  # the engine imports this module
+
+    ids = [t.id for t in tasks]
     plan_steps = (
         select(func.jsonb_array_length(WorkflowDocument.steps))
         .where(
@@ -166,7 +173,24 @@ async def _workflows_for(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UU
         .limit(1)
         .scalar_subquery()
     )
-    rows = await db.execute(select(TaskWorkflow, plan_steps).where(TaskWorkflow.task_id.in_(ids)))
+    rows = list(await db.execute(select(TaskWorkflow, plan_steps).where(TaskWorkflow.task_id.in_(ids))))
+    by_task = {t.id: t for t in tasks}
+    owners: dict[uuid.UUID, uuid.UUID] = {}
+    manages: dict[uuid.UUID, bool] = {}
+    if viewer is not None and rows:
+        agent_ids = {by_task[wf.task_id].assignee_agent_id or wf.agent_id for wf, _ in rows} - {None}
+        if agent_ids:
+            owners = dict((await db.execute(select(Agent.id, Agent.owner_id).where(Agent.id.in_(agent_ids)))).all())
+        my_teams = await user_team_ids(db, viewer.id)
+        for project_id in {t.project_id for t in tasks}:
+            manages[project_id] = can_manage_project(viewer, await project_team_ids(db, project_id), my_teams)
+
+    def viewer_can_act(wf: TaskWorkflow) -> bool:
+        task = by_task[wf.task_id]
+        return viewer is not None and can_act(
+            viewer, task, wf, manages.get(task.project_id, False), owners.get(task.assignee_agent_id or wf.agent_id)
+        )
+
     return {
         wf.task_id: TaskWorkflowOut(
             driver=wf.driver,
@@ -177,6 +201,7 @@ async def _workflows_for(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UU
             current_step=wf.current_step,
             steps_total=total,
             escalation_reason=wf.escalation_reason,
+            can_act=viewer_can_act(wf),
         )
         for wf, total in rows
     }
@@ -211,10 +236,10 @@ async def _links_for(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, 
     return out
 
 
-async def task_out(db: AsyncSession, task: Task) -> TaskOut:
+async def task_out(db: AsyncSession, task: Task, viewer: User | None = None) -> TaskOut:
     await db.flush()
     await db.refresh(task)
-    return (await tasks_out(db, [task]))[0]
+    return (await tasks_out(db, [task], viewer))[0]
 
 
 async def record_event(

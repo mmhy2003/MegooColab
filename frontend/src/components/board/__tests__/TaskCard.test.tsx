@@ -63,4 +63,28 @@ describe("TaskCardView", () => {
     expect(screen.getByRole("img", { name: "Agent Ann's Codex" })).toBeInTheDocument();
     expect(screen.getByText("Busy")).toBeInTheDocument();
   });
+
+  const wf = {
+    driver: "runner", stage: "plan", status: "waiting_human", needs: "plan_approval", enforcement: "enforced",
+    current_step: null, steps_total: null, escalation_reason: null, can_act: true,
+  } as const;
+
+  it("shows NEEDS YOU only when can_act", () => {
+    const { rerender } = render(<TaskCardView task={{ ...task, workflow: wf }} />);
+    expect(screen.getByText("NEEDS YOU")).toHaveAttribute("title", "Approve the plan");
+    expect(screen.getByLabelText("Stage: Plan (3 of 6)")).toBeInTheDocument();
+    rerender(<TaskCardView task={{ ...task, workflow: { ...wf, can_act: false } }} />);
+    expect(screen.queryByText("NEEDS YOU")).not.toBeInTheDocument();
+  });
+
+  it("shows enforcement chip and build progress", () => {
+    const build = { ...wf, stage: "build", status: "running", needs: null, current_step: 2, steps_total: 5 } as const;
+    const { rerender } = render(<TaskCardView task={{ ...task, workflow: { ...build, enforcement: "unenforced" } }} />);
+    expect(screen.getByText("unenforced")).toHaveAttribute("title");
+    expect(screen.getByText("2 of 5 steps")).toBeInTheDocument();
+    rerender(<TaskCardView task={{ ...task, workflow: { ...build, enforcement: "partially_enforced" } }} />);
+    expect(screen.getByText("partially enforced")).toBeInTheDocument();
+    rerender(<TaskCardView task={{ ...task, workflow: build }} />);
+    expect(screen.queryByText(/enforced/)).not.toBeInTheDocument();
+  });
 });

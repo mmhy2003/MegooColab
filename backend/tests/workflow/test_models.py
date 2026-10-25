@@ -61,7 +61,7 @@ async def test_task_out_includes_workflow_and_steps_total(client, db):
     got = (await client.get(f"/api/tasks/{t['key']}")).json()["workflow"]
     assert got == {
         "driver": "runner", "stage": "brainstorm", "status": "idle", "needs": None,
-        "enforcement": "enforced", "current_step": 1, "steps_total": 3, "escalation_reason": None,
+        "enforcement": "enforced", "current_step": 1, "steps_total": 3, "escalation_reason": None, "can_act": True,
     }
     assert (await client.get(f"/api/tasks/{t2['key']}")).json()["workflow"] is None
 

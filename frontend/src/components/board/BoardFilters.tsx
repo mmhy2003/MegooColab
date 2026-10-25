@@ -4,7 +4,7 @@ import { Search } from "lucide-react";
 
 import type { Label, Task, User } from "@/lib/types";
 
-export type BoardFilterState = { assignee?: string; label?: string; epic?: string; q?: string };
+export type BoardFilterState = { assignee?: string; label?: string; epic?: string; q?: string; needs_you?: string };
 
 const FIELD = "rounded border border-line bg-surface-2 px-2 py-1.5 text-sm";
 
@@ -51,6 +51,14 @@ export function BoardFilters({
           <option key={t.id} value={t.id}>{t.key} {t.title}</option>
         ))}
       </select>
+      <label className="inline-flex items-center gap-1.5 text-sm">
+        <input
+          type="checkbox"
+          checked={value.needs_you === "true"}
+          onChange={(e) => onChange({ ...value, needs_you: e.target.checked ? "true" : undefined })}
+        />
+        Needs you
+      </label>
     </div>
   );
 }

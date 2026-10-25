@@ -10,6 +10,7 @@ export const qk = {
   repositories: (ref: string) => ["repositories", ref] as const,
   tasks: (ref: string, filters: Record<string, string | undefined> = {}) => ["tasks", ref, filters] as const,
   task: (key: string) => ["task", key] as const,
+  workflow: (key: string) => ["workflow", key] as const,
   activity: (key: string) => ["activity", key] as const,
   attachments: (key: string) => ["attachments", key] as const,
   sprints: (ref: string) => ["sprints", ref] as const,

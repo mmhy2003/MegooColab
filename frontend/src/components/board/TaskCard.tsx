@@ -7,7 +7,9 @@ import { Bookmark, Bot, Bug, CheckSquare, ChevronDown, ChevronsDown, ChevronsUp,
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { LabelChip } from "@/components/project/LabelEditor";
 import { Avatar } from "@/components/ui/Avatar";
+import { StageTrack } from "@/components/workflow/StageTrack";
 import type { Priority, Task, TaskType } from "@/lib/types";
+import { needsText } from "@/lib/workflow";
 
 const PRIORITY_ICON: Record<Priority, { icon: typeof ChevronUp; className: string }> = {
   highest: { icon: ChevronsUp, className: "text-pink" },
@@ -25,6 +27,12 @@ export const TYPE_ICON: Record<TaskType, typeof Bookmark> = {
   subtask: CheckSquare,
 };
 
+const ENFORCEMENT_HELP = {
+  unenforced: "MegooColab can't enforce the workflow rules here: the agent or a person works outside the runner.",
+  partially_enforced: "The agent changed the repository when it shouldn't have, so some workflow rules were not enforced.",
+  enforced: "",
+} as const;
+
 export function TaskCardView({
   task,
   assigneeName,
@@ -36,6 +44,7 @@ export function TaskCardView({
 }) {
   const P = PRIORITY_ICON[task.priority];
   const TypeIcon = TYPE_ICON[task.type];
+  const wf = task.workflow;
   return (
     <div
       className={`card space-y-2 p-2.5 text-sm transition-shadow hover:border-cyan ${dragging ? "glow-box border-cyan" : ""}`}
@@ -47,6 +56,34 @@ export function TaskCardView({
         <P.icon size={14} className={P.className} aria-label={`Priority: ${task.priority}`} />
       </div>
       <p className="leading-snug break-words">{task.title}</p>
+      {wf && (
+        <div className="space-y-1">
+          <StageTrack stage={wf.stage} status={wf.status} compact />
+          <div className="flex flex-wrap items-center gap-1 text-[11px]">
+            {wf.needs && wf.can_act && (
+              <span
+                className="rounded-full border-2 border-pink px-1.5 font-semibold tracking-wide text-pink"
+                title={needsText(wf.needs)}
+              >
+                NEEDS YOU
+              </span>
+            )}
+            {wf.stage === "build" && wf.current_step != null && wf.steps_total != null && (
+              <span className="text-muted">
+                {wf.current_step} of {wf.steps_total} steps
+              </span>
+            )}
+            {wf.enforcement !== "enforced" && (
+              <span
+                className="rounded-full border border-line px-1.5 text-muted"
+                title={ENFORCEMENT_HELP[wf.enforcement]}
+              >
+                {wf.enforcement === "unenforced" ? "unenforced" : "partially enforced"}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
       {task.labels.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {task.labels.map((l) => (

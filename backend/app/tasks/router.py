@@ -13,6 +13,7 @@ from app.tasks.models import Task, TaskLink, TaskType
 from app.tasks.schemas import LinkIn, MoveIn, TaskCreate, TaskOut, TaskUpdate
 from app.teams.service import user_team_ids
 from app.workflow import engine
+from app.workflow.models import WorkflowStatus
 
 router = APIRouter(tags=["tasks"])
 
@@ -25,7 +26,7 @@ async def create_task(ref: str, body: TaskCreate, user: AuthedUser, db: DbSessio
     project = await get_project_for(db, user, ref, write=True)
     task = await service.create_task(db, user, project, body)
     await _changed(db, task, "task.created")
-    return await service.task_out(db, task)
+    return await service.task_out(db, task, user)
 
 
 @router.get("/api/projects/{ref}/tasks")
@@ -40,18 +41,22 @@ async def list_tasks(
     sprint: str | None = None,
     column: uuid.UUID | None = None,
     q: str | None = None,
+    needs_you: bool = False,
 ) -> list[TaskOut]:
     project = await get_project_for(db, user, ref)
     tasks = await service.list_tasks(
         db, project, type_=type_, assignee=assignee, label=label, epic=epic, sprint=sprint, column=column, q=q
     )
-    return await service.tasks_out(db, tasks)
+    out = await service.tasks_out(db, tasks, user)
+    if needs_you:  # PROJ-7: waiting on a human the caller may answer for (same rule as WF-6)
+        out = [t for t in out if t.workflow and t.workflow.status == WorkflowStatus.waiting_human and t.workflow.can_act]
+    return out
 
 
 @router.get("/api/tasks/{key}")
 async def get_task(key: str, user: AuthedUser, db: DbSession) -> TaskOut:
     task, _ = await service.get_task_for(db, user, key)
-    return (await service.tasks_out(db, [task]))[0]
+    return (await service.tasks_out(db, [task], user))[0]
 
 
 @router.patch("/api/tasks/{key}")
@@ -60,7 +65,7 @@ async def update_task(key: str, body: TaskUpdate, user: AuthedUser, db: DbSessio
     await service.update_task(db, user, project, task, body)
     await _changed(db, task)
     await engine.dispatch_queued(db)
-    return await service.task_out(db, task)
+    return await service.task_out(db, task, user)
 
 
 @router.delete("/api/tasks/{key}", status_code=status.HTTP_204_NO_CONTENT)
@@ -83,7 +88,7 @@ async def move_task(key: str, body: MoveIn, user: AuthedUser, db: DbSession) -> 
     await service.move_task(db, user, project, task, body)
     await _changed(db, task)
     await engine.dispatch_queued(db)  # a move into working may have started or resumed the workflow
-    return await service.task_out(db, task)
+    return await service.task_out(db, task, user)
 
 
 @router.post("/api/tasks/{key}/links", status_code=status.HTTP_201_CREATED)
@@ -93,7 +98,7 @@ async def add_link(key: str, body: LinkIn, user: AuthedUser, db: DbSession) -> T
     await _changed(db, task)
     target = await db.get(Task, link.target_id)
     await _changed(db, target)
-    return await service.task_out(db, task)
+    return await service.task_out(db, task, user)
 
 
 @router.delete("/api/tasks/{key}/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)

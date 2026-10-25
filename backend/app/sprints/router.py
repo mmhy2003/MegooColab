@@ -134,4 +134,4 @@ async def set_task_sprint(key: str, body: TaskSprintIn, user: AuthedUser, db: Db
         await service.snapshot_if_active(db, previous)
         await service.snapshot_if_active(db, body.sprint_id)
     await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
-    return await task_service.task_out(db, task)
+    return await task_service.task_out(db, task, user)

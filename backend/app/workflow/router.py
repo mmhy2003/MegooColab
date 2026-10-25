@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from app.agents.models import Agent
 from app.audit import service as audit
+from app.auth.models import User
 from app.auth.deps import AdminUser, AuthedUser
 from app.core.db import DbSession
 from app.core.text import NoNulStr
@@ -141,7 +143,7 @@ async def update_methodology(key: str, body: MethodologyIn, user: AdminUser, db:
 _STEP_RUN_STATE = {RunRole.implement: "running", RunRole.step_fix: "running", RunRole.step_review: "in_review"}
 
 
-async def workflow_out(db, task: Task) -> WorkflowOut:
+async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOut:
     wf = (
         await db.execute(
             select(TaskWorkflow).where(TaskWorkflow.task_id == task.id).execution_options(populate_existing=True)
@@ -171,6 +173,11 @@ async def workflow_out(db, task: Task) -> WorkflowOut:
         .limit(1)
     )
     active = await engine.active_run(db, task.id)
+    viewer_can_act = False
+    if viewer is not None:
+        agent_id = task.assignee_agent_id or wf.agent_id
+        owner_id = await db.scalar(select(Agent.owner_id).where(Agent.id == agent_id)) if agent_id else None
+        viewer_can_act = engine.can_act(viewer, task, wf, await engine._manages(db, viewer, project), owner_id)
     steps = []
     for n, step in enumerate((plan.steps or []) if plan else [], start=1):
         if wf.status == WorkflowStatus.finished or wf.stage in (Stage.review, Stage.done):
@@ -193,6 +200,7 @@ async def workflow_out(db, task: Task) -> WorkflowOut:
         current_step=wf.current_step,
         steps_total=len(plan.steps or []) if plan else None,
         escalation_reason=wf.escalation_reason,
+        can_act=viewer_can_act,
         finishing_option=finishing,
         branch=wf.branch,
         pr_url=wf.pr_url,
@@ -205,7 +213,7 @@ async def workflow_out(db, task: Task) -> WorkflowOut:
 @router.get("/api/tasks/{key}/workflow")
 async def get_workflow(key: str, user: AuthedUser, db: DbSession) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key)
-    return await workflow_out(db, task)
+    return await workflow_out(db, task, user)
 
 
 @router.post("/api/tasks/{key}/workflow/start")
@@ -213,14 +221,14 @@ async def start_workflow(key: str, user: AuthedUser, db: DbSession) -> WorkflowO
     task, _ = await get_task_for(db, user, key, write=True)
     await engine.start(db, user, task)
     await engine.dispatch_queued(db)
-    return await workflow_out(db, task)
+    return await workflow_out(db, task, user)
 
 
 @router.post("/api/tasks/{key}/workflow/pause")
 async def pause_workflow(key: str, user: AuthedUser, db: DbSession) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)
     await engine.pause(db, user, task)
-    return await workflow_out(db, task)
+    return await workflow_out(db, task, user)
 
 
 @router.post("/api/tasks/{key}/workflow/resume")
@@ -228,7 +236,7 @@ async def resume_workflow(key: str, user: AuthedUser, db: DbSession) -> Workflow
     task, _ = await get_task_for(db, user, key, write=True)
     await engine.resume(db, user, task)
     await engine.dispatch_queued(db)
-    return await workflow_out(db, task)
+    return await workflow_out(db, task, user)
 
 
 @router.post("/api/tasks/{key}/workflow/escalation")
@@ -236,21 +244,21 @@ async def decide_escalation(key: str, body: EscalationDecisionIn, user: AuthedUs
     task, _ = await get_task_for(db, user, key, write=True)
     await engine.decide_escalation(db, user, task, body.action)
     await engine.dispatch_queued(db)
-    return await workflow_out(db, task)
+    return await workflow_out(db, task, user)
 
 
 @router.post("/api/tasks/{key}/workflow/human-review")
 async def approve_human_review(key: str, body: HumanReviewIn, user: AuthedUser, db: DbSession) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)
     await finish.approve_human_review(db, user, task)
-    return await workflow_out(db, task)
+    return await workflow_out(db, task, user)
 
 
 @router.put("/api/tasks/{key}/workflow/finishing")
 async def set_finishing(key: str, body: FinishingIn, user: AuthedUser, db: DbSession) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)
     await finish.set_finishing(db, user, task, body.option)
-    return await workflow_out(db, task)
+    return await workflow_out(db, task, user)
 
 
 @router.patch("/api/tasks/{key}/workflow")
@@ -258,7 +266,7 @@ async def set_manual_workflow(key: str, body: ManualWorkflowIn, user: AuthedUser
     """WF-11: a human's checklist on their own (or an unassigned) task."""
     task, _ = await get_task_for(db, user, key, write=True)
     await engine.set_manual(db, user, task, body.stage)
-    return await workflow_out(db, task)
+    return await workflow_out(db, task, user)
 
 
 # ---- questions and mockups (WF-6, WF-6d) ------------------------------------------------------------
@@ -296,7 +304,7 @@ async def answer_question(
     task, _ = await get_task_for(db, user, key, write=True)
     await questions.answer(db, user, task, question_id, body.choice, body.text)
     await engine.dispatch_queued(db)
-    return await workflow_out(db, task)
+    return await workflow_out(db, task, user)
 
 
 @router.get("/api/tasks/{key}/mockups")
@@ -370,4 +378,4 @@ async def decide_document(
     task, _ = await get_task_for(db, user, key, write=True)
     await documents.decide(db, user, task, kind, version, body.approve, body.comment)
     await engine.dispatch_queued(db)
-    return await workflow_out(db, task)
+    return await workflow_out(db, task, user)

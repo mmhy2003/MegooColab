@@ -155,14 +155,25 @@ async def _manages(db: AsyncSession, user: User, project: Project) -> bool:
     return can_manage_project(user, await project_team_ids(db, project.id), await user_team_ids(db, user.id))
 
 
+def can_act(
+    user: User, task: Task, wf: TaskWorkflow | None, manages: bool, agent_owner_id: uuid.UUID | None
+) -> bool:
+    """WF-6, the pure rule: the owner of the task's agent, a manager of the project (`manages`, admins
+    included), or, for connect_only (AGT-32), the human assignee."""
+    if agent_owner_id is not None and agent_owner_id == user.id:
+        return True
+    if wf is not None and wf.driver == Driver.connect_only and task.assignee_user_id == user.id:
+        return True
+    return manages
+
+
 async def require_actor(db: AsyncSession, user: User, task: Task, wf: TaskWorkflow | None = None) -> None:
-    """WF-6: the owner of the task's agent, a manager of the project, or an admin; else 403."""
+    """WF-6: see can_act; else 403."""
     agent_id = task.assignee_agent_id or (wf.agent_id if wf else None)
     agent = await db.get(Agent, agent_id) if agent_id else None
-    if agent is not None and agent.owner_id == user.id:
+    owner_id = agent.owner_id if agent is not None else None
+    if can_act(user, task, wf, False, owner_id):
         return
-    if wf is not None and wf.driver == Driver.connect_only and task.assignee_user_id == user.id:
-        return  # connect-only (AGT-32): the assignee owns the agent working through their personal token
     if not await _manages(db, user, await db.get(Project, task.project_id)):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_act_on_workflow")
 

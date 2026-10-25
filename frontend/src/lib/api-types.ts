@@ -1112,8 +1112,7 @@ export interface paths {
         /** List Runs */
         get: operations["list_runs_api_tasks__key__agent_runs_get"];
         put?: never;
-        /** Start Run */
-        post: operations["start_run_api_tasks__key__agent_runs_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1137,6 +1136,299 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/methodology": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Methodology */
+        get: operations["list_methodology_api_methodology_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/methodology/{key}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Versions */
+        get: operations["list_versions_api_methodology__key__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/methodology/{key}/versions/{v}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Version */
+        get: operations["get_version_api_methodology__key__versions__v__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/methodology/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Methodology */
+        put: operations["update_methodology_api_methodology__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workflow */
+        get: operations["get_workflow_api_tasks__key__workflow_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set Manual Workflow
+         * @description WF-11: a human's checklist on their own (or an unassigned) task.
+         */
+        patch: operations["set_manual_workflow_api_tasks__key__workflow_patch"];
+        trace?: never;
+    };
+    "/api/tasks/{key}/workflow/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Workflow */
+        post: operations["start_workflow_api_tasks__key__workflow_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/workflow/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Workflow */
+        post: operations["pause_workflow_api_tasks__key__workflow_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/workflow/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Workflow */
+        post: operations["resume_workflow_api_tasks__key__workflow_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/workflow/escalation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Escalation */
+        post: operations["decide_escalation_api_tasks__key__workflow_escalation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/workflow/human-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Human Review */
+        post: operations["approve_human_review_api_tasks__key__workflow_human_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/workflow/finishing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Finishing */
+        put: operations["set_finishing_api_tasks__key__workflow_finishing_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/questions/{question_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer Question */
+        post: operations["answer_question_api_tasks__key__questions__question_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/mockups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Mockups */
+        get: operations["list_mockups_api_tasks__key__mockups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mockups/{mockup_id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** View Mockup */
+        get: operations["view_mockup_api_mockups__mockup_id__view_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Documents */
+        get: operations["list_documents_api_tasks__key__documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/documents/{kind}/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document */
+        get: operations["get_document_api_tasks__key__documents__kind___version__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/documents/{kind}/{version}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Document */
+        post: operations["decide_document_api_tasks__key__documents__kind___version__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1147,7 +1439,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "comment" | "event";
+            type: "comment" | "event" | "question";
             /**
              * Id
              * Format: uuid
@@ -1169,6 +1461,10 @@ export interface components {
             data?: {
                 [key: string]: unknown;
             } | null;
+            /** Question */
+            question?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** AdminAgentOut */
         AdminAgentOut: {
@@ -1186,6 +1482,11 @@ export interface components {
             owner: components["schemas"]["UserOut"];
             /** Status */
             status: string;
+            /**
+             * Problems
+             * @default []
+             */
+            problems: string[];
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
             /** Current Run */
@@ -1234,6 +1535,11 @@ export interface components {
             owner: components["schemas"]["UserOut"];
             /** Status */
             status: string;
+            /**
+             * Problems
+             * @default []
+             */
+            problems: string[];
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
         };
@@ -1250,6 +1556,13 @@ export interface components {
          * @enum {string}
          */
         AgentProgram: "claude_code" | "codex";
+        /** AnswerIn */
+        AnswerIn: {
+            /** Choice */
+            choice?: string | null;
+            /** Text */
+            text?: string | null;
+        };
         /**
          * AnswerMode
          * @enum {string}
@@ -1478,6 +1791,97 @@ export interface components {
             /** Secret */
             secret: string;
         };
+        /**
+         * DocKind
+         * @enum {string}
+         */
+        DocKind: "design" | "plan";
+        /**
+         * DocStatus
+         * @enum {string}
+         */
+        DocStatus: "submitted" | "approved" | "rejected" | "superseded";
+        /** DocumentDecisionIn */
+        DocumentDecisionIn: {
+            /** Approve */
+            approve: boolean;
+            /** Comment */
+            comment?: string | null;
+        };
+        /** DocumentInfo */
+        DocumentInfo: {
+            kind: components["schemas"]["DocKind"];
+            /** Version */
+            version: number;
+            status: components["schemas"]["DocStatus"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided By */
+            decided_by: string | null;
+            /** Decision Comment */
+            decision_comment: string | null;
+        };
+        /** DocumentOut */
+        DocumentOut: {
+            kind: components["schemas"]["DocKind"];
+            /** Version */
+            version: number;
+            status: components["schemas"]["DocStatus"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided By */
+            decided_by: string | null;
+            /** Decision Comment */
+            decision_comment: string | null;
+            /** Body Md */
+            body_md: string;
+            /** Steps */
+            steps: components["schemas"]["DocumentStepOut"][] | null;
+            /** Attached Mockup Ids */
+            attached_mockup_ids: string[];
+        };
+        /** DocumentStepOut */
+        DocumentStepOut: {
+            /** Title */
+            title: string;
+            /** Detail */
+            detail: string;
+            /** Subtask Id */
+            subtask_id: string | null;
+        };
+        /**
+         * Driver
+         * @enum {string}
+         */
+        Driver: "runner" | "connect_only" | "manual";
+        /**
+         * Enforcement
+         * @enum {string}
+         */
+        Enforcement: "enforced" | "partially_enforced" | "unenforced";
+        /** EscalationDecisionIn */
+        EscalationDecisionIn: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "retry" | "accept" | "pause";
+        };
+        /** FinishingIn */
+        FinishingIn: {
+            option: components["schemas"]["FinishingOption"] | null;
+        };
+        /**
+         * FinishingOption
+         * @enum {string}
+         */
+        FinishingOption: "merge_local" | "pull_request" | "keep_branch";
         /** ForgotIn */
         ForgotIn: {
             /**
@@ -1490,6 +1894,14 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HumanReviewIn */
+        HumanReviewIn: {
+            /**
+             * Approved
+             * @constant
+             */
+            approved: true;
         };
         /** InviteIn */
         InviteIn: {
@@ -1567,10 +1979,88 @@ export interface components {
             /** Totp Code */
             totp_code?: string | null;
         };
+        /** ManualWorkflowIn */
+        ManualWorkflowIn: {
+            /**
+             * Driver
+             * @constant
+             */
+            driver: "manual";
+            stage: components["schemas"]["Stage"];
+        };
         /** MembersIn */
         MembersIn: {
             /** User Ids */
             user_ids: string[];
+        };
+        /** MethodologyIn */
+        MethodologyIn: {
+            /** Body Md */
+            body_md: string;
+        };
+        /** MethodologyOut */
+        MethodologyOut: {
+            /** Key */
+            key: string;
+            stage: components["schemas"]["Stage"];
+            /** Version */
+            version: number;
+            /** Body Md */
+            body_md: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Updated By */
+            updated_by: string | null;
+        };
+        /** MethodologyVersionInfo */
+        MethodologyVersionInfo: {
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+        };
+        /** MethodologyVersionOut */
+        MethodologyVersionOut: {
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Key */
+            key: string;
+            /** Body Md */
+            body_md: string;
+        };
+        /** MockupOut */
+        MockupOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /** Title */
+            title: string;
+            /** Choices */
+            choices: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** MoveIn */
         MoveIn: {
@@ -1584,6 +2074,11 @@ export interface components {
             /** After Key */
             after_key?: string | null;
         };
+        /**
+         * Needs
+         * @enum {string}
+         */
+        Needs: "question" | "design_approval" | "plan_approval" | "escalation" | "human_code_review";
         /** OrgOut */
         OrgOut: {
             /** Name */
@@ -1615,6 +2110,11 @@ export interface components {
             owner: components["schemas"]["UserOut"];
             /** Status */
             status: string;
+            /**
+             * Problems
+             * @default []
+             */
+            problems: string[];
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
             /** Can Use */
@@ -1649,6 +2149,11 @@ export interface components {
             description: string;
             /** Sprints Enabled */
             sprints_enabled: boolean;
+            finishing_option: components["schemas"]["FinishingOption"];
+            /** Require Human Code Review */
+            require_human_code_review: boolean;
+            /** Commit Docs To Repo */
+            commit_docs_to_repo: boolean;
             /** Team Ids */
             team_ids: string[];
             /**
@@ -1665,6 +2170,11 @@ export interface components {
             description?: string | null;
             /** Sprints Enabled */
             sprints_enabled?: boolean | null;
+            finishing_option?: components["schemas"]["FinishingOption"] | null;
+            /** Require Human Code Review */
+            require_human_code_review?: boolean | null;
+            /** Commit Docs To Repo */
+            commit_docs_to_repo?: boolean | null;
             /** Team Ids */
             team_ids?: string[] | null;
         };
@@ -1743,12 +2253,6 @@ export interface components {
             /** Name */
             name: string;
             program: components["schemas"]["AgentProgram"];
-        };
-        /** RunIn */
-        RunIn: {
-            policy: components["schemas"]["RunPolicy"];
-            /** Prompt */
-            prompt?: string | null;
         };
         /** RunOut */
         RunOut: {
@@ -1909,6 +2413,11 @@ export interface components {
          * @enum {string}
          */
         SprintState: "planned" | "active" | "completed";
+        /**
+         * Stage
+         * @enum {string}
+         */
+        Stage: "brainstorm" | "design" | "plan" | "build" | "review" | "done";
         /** TaskCreate */
         TaskCreate: {
             /** Title */
@@ -2027,6 +2536,7 @@ export interface components {
              * @default []
              */
             watcher_ids: string[];
+            workflow?: components["schemas"]["TaskWorkflowOut"] | null;
         };
         /** TaskSprintIn */
         TaskSprintIn: {
@@ -2061,6 +2571,25 @@ export interface components {
             parent_id?: string | null;
             /** Label Ids */
             label_ids?: string[] | null;
+        };
+        /** TaskWorkflowOut */
+        TaskWorkflowOut: {
+            driver: components["schemas"]["Driver"];
+            stage: components["schemas"]["Stage"];
+            status: components["schemas"]["WorkflowStatus"];
+            needs: components["schemas"]["Needs"] | null;
+            enforcement: components["schemas"]["Enforcement"];
+            /** Current Step */
+            current_step: number | null;
+            /** Steps Total */
+            steps_total: number | null;
+            /** Escalation Reason */
+            escalation_reason: string | null;
+            /**
+             * Can Act
+             * @default false
+             */
+            can_act: boolean;
         };
         /** TeamDetail */
         TeamDetail: {
@@ -2256,6 +2785,60 @@ export interface components {
             committed_points: number;
             /** Completed Points */
             completed_points: number;
+        };
+        /** WorkflowDocumentBrief */
+        WorkflowDocumentBrief: {
+            kind: components["schemas"]["DocKind"];
+            /** Version */
+            version: number;
+            status: components["schemas"]["DocStatus"];
+        };
+        /** WorkflowOut */
+        WorkflowOut: {
+            driver: components["schemas"]["Driver"];
+            stage: components["schemas"]["Stage"];
+            status: components["schemas"]["WorkflowStatus"];
+            needs: components["schemas"]["Needs"] | null;
+            enforcement: components["schemas"]["Enforcement"];
+            /** Current Step */
+            current_step: number | null;
+            /** Steps Total */
+            steps_total: number | null;
+            /** Escalation Reason */
+            escalation_reason: string | null;
+            /**
+             * Can Act
+             * @default false
+             */
+            can_act: boolean;
+            finishing_option: components["schemas"]["FinishingOption"];
+            /** Branch */
+            branch: string | null;
+            /** Pr Url */
+            pr_url: string | null;
+            /** Documents */
+            documents: components["schemas"]["WorkflowDocumentBrief"][];
+            /** Open Question Id */
+            open_question_id: string | null;
+            /** Steps */
+            steps: components["schemas"]["WorkflowStepOut"][];
+        };
+        /**
+         * WorkflowStatus
+         * @enum {string}
+         */
+        WorkflowStatus: "idle" | "running" | "waiting_human" | "paused" | "finished";
+        /** WorkflowStepOut */
+        WorkflowStepOut: {
+            /** N */
+            n: number;
+            /** Title */
+            title: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "running" | "in_review" | "done";
         };
     };
     responses: never;
@@ -4094,6 +4677,7 @@ export interface operations {
                 sprint?: string | null;
                 column?: string | null;
                 q?: string | null;
+                needs_you?: boolean;
             };
             header?: never;
             path: {
@@ -4968,41 +5552,6 @@ export interface operations {
             };
         };
     };
-    start_run_api_tasks__key__agent_runs_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                key: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RunIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RunOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     cancel_run_api_agent_runs__run_id__cancel_post: {
         parameters: {
             query?: never;
@@ -5020,6 +5569,587 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_methodology_api_methodology_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MethodologyOut"][];
+                };
+            };
+        };
+    };
+    list_versions_api_methodology__key__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MethodologyVersionInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_version_api_methodology__key__versions__v__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                v: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MethodologyVersionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_methodology_api_methodology__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MethodologyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MethodologyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workflow_api_tasks__key__workflow_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_manual_workflow_api_tasks__key__workflow_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualWorkflowIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_workflow_api_tasks__key__workflow_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_workflow_api_tasks__key__workflow_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_workflow_api_tasks__key__workflow_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_escalation_api_tasks__key__workflow_escalation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EscalationDecisionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_human_review_api_tasks__key__workflow_human_review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HumanReviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_finishing_api_tasks__key__workflow_finishing_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FinishingIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_question_api_tasks__key__questions__question_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mockups_api_tasks__key__mockups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MockupOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_mockup_api_mockups__mockup_id__view_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mockup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_documents_api_tasks__key__documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_api_tasks__key__documents__kind___version__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                kind: components["schemas"]["DocKind"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_document_api_tasks__key__documents__kind___version__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                kind: components["schemas"]["DocKind"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentDecisionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
             };
             /** @description Validation Error */
             422: {
