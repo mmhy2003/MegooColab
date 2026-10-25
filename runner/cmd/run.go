@@ -7,12 +7,13 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mmhy2003/megoocolab/runner/internal/config"
 	"github.com/mmhy2003/megoocolab/runner/internal/conn"
-	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
+	"github.com/mmhy2003/megoocolab/runner/internal/jobs"
 )
 
 func newRunCmd(version string) *cobra.Command {
@@ -32,26 +33,25 @@ func newRunCmd(version string) *cobra.Command {
 	}
 }
 
-// runConnection connects, prints state changes and logs received messages by
-// type. It returns nil on cancellation and the friendly error when the server
-// ends the session (revoked token, replaced by another runner).
+// runConnection connects, prints state changes and executes the runs the
+// server sends. It returns nil on cancellation and the friendly error when the
+// server ends the session (revoked token, replaced by another runner); in both
+// cases every run is stopped first.
 func runConnection(ctx context.Context, out io.Writer, cfg config.Config, version string) error {
-	c := conn.New(cfg, version, func() []protocol.AgentAvailability { return nil })
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return fmt.Errorf("cannot find the cache directory: %w", err)
+	}
+	cacheRoot := filepath.Join(cacheDir, "megoocolab")
+
+	var c *conn.Client
+	mgr := jobs.New(func(v any) error { return c.Send(v) }, cacheRoot)
+	c = conn.New(cfg, version, mgr.Probe)
 	c.OnState = func(s string) { fmt.Fprintln(out, s) }
 
-	done := make(chan error, 1)
-	go func() { done <- c.Run(ctx) }()
-	for {
-		select {
-		case env, ok := <-c.Messages():
-			if ok {
-				fmt.Fprintf(out, "received %s\n", env.Type)
-			}
-		case err := <-done:
-			if errors.Is(err, context.Canceled) {
-				return nil
-			}
-			return err
-		}
+	err = mgr.Serve(ctx, c)
+	if errors.Is(err, context.Canceled) {
+		return nil
 	}
+	return err
 }

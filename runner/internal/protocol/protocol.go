@@ -173,3 +173,12 @@ func Decode(data []byte) (Envelope, error) {
 
 // Into unmarshals the envelope into v (e.g. *RunStart).
 func (e Envelope) Into(v any) error { return json.Unmarshal(e.Raw, v) }
+
+// NewRunUpdate builds a run_update whose data is never null (the server
+// rejects null).
+func NewRunUpdate(runID string, seq int, kind string, data map[string]any) RunUpdate {
+	if data == nil {
+		data = map[string]any{}
+	}
+	return RunUpdate{Type: TypeRunUpdate, RunID: runID, Seq: seq, Kind: kind, Data: data}
+}

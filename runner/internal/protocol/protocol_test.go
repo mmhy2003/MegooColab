@@ -89,3 +89,14 @@ func TestEnvelope(t *testing.T) {
 		t.Fatal("want error for bad json")
 	}
 }
+
+func TestNewRunUpdateDefaultsDataToEmptyMap(t *testing.T) {
+	data, _ := json.Marshal(NewRunUpdate("r1", 1, "message", nil))
+	if string(data) != `{"type":"run_update","run_id":"r1","seq":1,"kind":"message","data":{}}` {
+		t.Fatalf("run_update = %s", data)
+	}
+	data, _ = json.Marshal(NewRunUpdate("r1", 2, "message", map[string]any{"text": "hi"}))
+	if !strings.Contains(string(data), `"data":{"text":"hi"}`) {
+		t.Fatalf("run_update = %s", data)
+	}
+}
