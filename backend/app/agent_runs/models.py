@@ -3,9 +3,11 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, IdMixin
+from app.workflow.models import RunRole, Stage
 
 
 class RunStatus(StrEnum):
@@ -38,6 +40,17 @@ class AgentRun(IdMixin, Base):
     summary: Mapped[str | None] = mapped_column(Text)
     cancelled_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     last_seq: Mapped[int] = mapped_column(default=0)
+    workflow_role: Mapped[RunRole | None] = mapped_column(String(20))
+    stage: Mapped[Stage | None] = mapped_column(String(20))
+    step: Mapped[int | None]
+    session_ref: Mapped[str | None] = mapped_column(String(200))
+    resume_session_ref: Mapped[str | None] = mapped_column(String(200))
+    mcp_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
+    methodology_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("methodology_versions.id", ondelete="SET NULL")
+    )
+    git_before: Mapped[dict | None] = mapped_column(JSONB)
+    git_after: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

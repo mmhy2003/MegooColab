@@ -8,6 +8,7 @@ from app.core.text import NoNulStr
 from app.projects.models import ColumnCategory
 from app.projects.schemas import LabelOut
 from app.tasks.models import LinkKind, Priority, TaskType
+from app.workflow.schemas import TaskWorkflowOut
 
 
 class TaskCreate(BaseModel):
@@ -75,6 +76,7 @@ class TaskOut(BaseModel):
     subtask_done_count: int
     links: list["TaskLinkOut"] = []
     watcher_ids: list[uuid.UUID] = []
+    workflow: TaskWorkflowOut | None = None
 
 
 class LinkedTask(BaseModel):

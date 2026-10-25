@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.core.text import NoNulStr
 from app.projects.models import ColumnCategory, RepoProvider
+from app.workflow.models import FinishingOption
 
 ProjectKey = Annotated[str, StringConstraints(pattern=r"^[A-Z][A-Z0-9]{1,9}$")]
 HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
@@ -22,6 +23,9 @@ class ProjectPatch(BaseModel):
     name: NoNulStr | None = Field(default=None, min_length=1, max_length=200)
     description: NoNulStr | None = None
     sprints_enabled: bool | None = None
+    finishing_option: FinishingOption | None = None
+    require_human_code_review: bool | None = None
+    commit_docs_to_repo: bool | None = None
     team_ids: list[uuid.UUID] | None = Field(default=None, min_length=1)
 
 
@@ -31,6 +35,9 @@ class ProjectOut(BaseModel):
     name: str
     description: str
     sprints_enabled: bool
+    finishing_option: FinishingOption
+    require_human_code_review: bool
+    commit_docs_to_repo: bool
     team_ids: list[uuid.UUID]
     created_at: datetime
 

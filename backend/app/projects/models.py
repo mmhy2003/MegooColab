@@ -1,10 +1,11 @@
 import uuid
 from enum import StrEnum
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, IdMixin, TimestampMixin
+from app.workflow.models import FinishingOption
 
 
 class ColumnCategory(StrEnum):
@@ -38,6 +39,11 @@ class Project(IdMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(Text, default="")
     sprints_enabled: Mapped[bool] = mapped_column(default=True)
     next_task_number: Mapped[int] = mapped_column(default=1)
+    finishing_option: Mapped[FinishingOption] = mapped_column(
+        String(20), default=FinishingOption.pull_request, server_default=FinishingOption.pull_request.value
+    )
+    require_human_code_review: Mapped[bool] = mapped_column(default=False, server_default=false())
+    commit_docs_to_repo: Mapped[bool] = mapped_column(default=False, server_default=false())
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
 

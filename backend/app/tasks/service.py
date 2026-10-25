@@ -19,6 +19,8 @@ from app.tasks import ordering
 from app.tasks.models import LinkKind, Task, TaskEvent, TaskLink, TaskType, task_labels, task_watchers
 from app.tasks.schemas import AssigneeAgentOut, LinkedTask, MoveIn, TaskCreate, TaskLinkOut, TaskOut, TaskUpdate
 from app.teams.models import TeamMember
+from app.workflow.models import DocKind, DocStatus, TaskWorkflow, WorkflowDocument
+from app.workflow.schemas import TaskWorkflowOut
 
 KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$")
 POSITION_STEP = 1024.0
@@ -90,6 +92,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
     ):
         watchers[task_id].append(user_id)
     links = await _links_for(db, ids)
+    workflows = await _workflows_for(db, ids)
     agent_ids = {t.assignee_agent_id for t in tasks if t.assignee_agent_id}
     agents: dict[uuid.UUID, AssigneeAgentOut] = {}
     if agent_ids:
@@ -128,9 +131,39 @@ async def tasks_out(db: AsyncSession, tasks: list[Task]) -> list[TaskOut]:
             subtask_done_count=sub_counts.get(t.id, (0, 0))[1],
             links=links.get(t.id, []),
             watcher_ids=watchers.get(t.id, []),
+            workflow=workflows.get(t.id),
         )
         for t in tasks
     ]
+
+
+async def _workflows_for(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, TaskWorkflowOut]:
+    """One query for every task workflow; steps_total is the step count of the latest approved plan."""
+    plan_steps = (
+        select(func.jsonb_array_length(WorkflowDocument.steps))
+        .where(
+            WorkflowDocument.task_id == TaskWorkflow.task_id,
+            WorkflowDocument.kind == DocKind.plan,
+            WorkflowDocument.status == DocStatus.approved,
+        )
+        .order_by(WorkflowDocument.version.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    rows = await db.execute(select(TaskWorkflow, plan_steps).where(TaskWorkflow.task_id.in_(ids)))
+    return {
+        wf.task_id: TaskWorkflowOut(
+            driver=wf.driver,
+            stage=wf.stage,
+            status=wf.status,
+            needs=wf.needs,
+            enforcement=wf.enforcement,
+            current_step=wf.current_step,
+            steps_total=total,
+            escalation_reason=wf.escalation_reason,
+        )
+        for wf, total in rows
+    }
 
 
 async def _links_for(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, list[TaskLinkOut]]:

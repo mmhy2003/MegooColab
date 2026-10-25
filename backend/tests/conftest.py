@@ -1,11 +1,21 @@
 import asyncio
 import os
 import tempfile
+from urllib.parse import urlsplit
 from pathlib import Path
 
-os.environ["DATABASE_URL"] = os.environ.get(
+# Only TEST_DATABASE_URL (or the default test DB) decides the database; an exported DATABASE_URL
+# is overwritten. The session fixture below drops the public schema, so refuse any non-test DB.
+TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://megoo:megoo@localhost:5433/megoo_test"
 )
+_db_name = urlsplit(TEST_DATABASE_URL).path.rsplit("/", 1)[-1]
+if not _db_name.endswith("_test"):
+    raise RuntimeError(
+        f"Refusing to run tests: database name {_db_name!r} does not end in '_test' "
+        "(the suite drops the public schema). Fix TEST_DATABASE_URL."
+    )
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789abcdef")
 os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
 os.environ["DB_NULL_POOL"] = "true"
@@ -34,6 +44,7 @@ def _alembic_config() -> Config:
 
 @pytest.fixture(scope="session", autouse=True)
 async def _migrated_database():
+    assert engine.url.database and engine.url.database.endswith("_test"), engine.url.database
     async with engine.begin() as conn:
         await conn.execute(text("DROP SCHEMA public CASCADE"))
         await conn.execute(text("CREATE SCHEMA public"))

@@ -94,6 +94,12 @@ async def update_project(ref: str, body: ProjectPatch, user: AuthedUser, db: DbS
         project.description = body.description
     if body.sprints_enabled is not None:
         project.sprints_enabled = body.sprints_enabled
+    if body.finishing_option is not None:
+        project.finishing_option = body.finishing_option
+    if body.require_human_code_review is not None:
+        project.require_human_code_review = body.require_human_code_review
+    if body.commit_docs_to_repo is not None:
+        project.commit_docs_to_repo = body.commit_docs_to_repo
     if body.team_ids is not None:
         new_ids = set(body.team_ids)
         added = new_ids - await service.project_team_ids(db, project.id)
