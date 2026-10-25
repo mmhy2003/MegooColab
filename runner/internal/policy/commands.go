@@ -55,6 +55,10 @@ const (
 	bs = rune(92) // backslash
 )
 
+// literalStart: a glob in a word starting with one of these only matches names
+// starting with the same character, never an option.
+const literalStart = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./"
+
 // plainCommand accepts only text that bash, PowerShell and cmd all split into
 // the same words and leave unexpanded (no globs, braces, ~, variables, escapes):
 //   - unquoted text uses only [A-Za-z0-9._/:,+=-], and the space character is the only
@@ -65,9 +69,12 @@ const (
 //     turns ",--output=x" into an option. Interior commas ("1,5") are kept;
 //   - PowerShell drops the quotes of a single-quoted word, and MSYS programs
 //     (git's find, grep, ls ...) then brace-, tilde- and glob-expand it, so a
-//     quoted segment holds no "{", "}" or "~", and one that starts a word may
-//     not start with "*", "?" or "[" (it could expand to a worktree file named
-//     "-delete"). After "=" a glob is fine: every match starts with the option;
+//     quoted segment holds no "{", "}" or "~", and holds a glob character
+//     ("*", "?", "[", "]") only when every match is sure not to be an option:
+//     the word starts with a literal [A-Za-z0-9_./] ("'x*.go'", "'.*'"), or the
+//     quote follows "=" in a word starting with "--" ("--glob='*.go'"). A word
+//     starting with "-" (or with a glob) could match a worktree file named
+//     "-a" or "-delete", even in a value position ("find . -name '-*'");
 //   - a single-quoted segment starts a word (or follows "=") and ends it, is not
 //     empty, and holds no whitespace, quote or backslash, so cmd (which keeps the
 //     quotes literally) still sees one word.
@@ -82,7 +89,19 @@ func plainCommand(cmd string) bool {
 	in := false
 	wordQuote := false // the current quoted segment starts its word (not after "=")
 	n := 0             // length of the current quoted content
+	var first rune     // first character of the current word (quotes excluded)
+	longFlag := false  // the current word starts with "--"
+	wlen := 0          // characters of the current word so far (quotes excluded)
 	for _, r := range cmd {
+		if r != sq && r != ' ' {
+			switch wlen {
+			case 0:
+				first = r
+			case 1:
+				longFlag = first == '-' && r == '-'
+			}
+			wlen++
+		}
 		if in {
 			switch {
 			case r == sq:
@@ -92,7 +111,9 @@ func plainCommand(cmd string) bool {
 				in = false
 			case r <= ' ' || r == 0x7f || r == '"' || r == bs || r > 0x7e, strings.ContainsRune("{}~", r):
 				return false
-			case n == 0 && (r == ',' || wordQuote && strings.ContainsRune("*?[", r)):
+			case n == 0 && r == ',':
+				return false
+			case strings.ContainsRune("*?[]", r) && !strings.ContainsRune(literalStart, first) && (wordQuote || !longFlag):
 				return false
 			default:
 				n++
@@ -102,7 +123,7 @@ func plainCommand(cmd string) bool {
 		}
 		switch {
 		case r == ' ':
-			atWordStart = true
+			atWordStart, wlen, first, longFlag = true, 0, 0, false
 		case r == sq:
 			if !atWordStart && prev != '=' {
 				return false

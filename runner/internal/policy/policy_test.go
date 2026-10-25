@@ -131,6 +131,8 @@ func TestReadOnlyCommands(t *testing.T) {
 		`'git' status`, "GIT.EXE status", "C:/Git/bin/git.exe status", "/usr/bin/cat a.txt",
 		"  git   status  ", "git grep -in foo", "git grep -efoo a.go", "git log -n 5", "git log --pretty", "git log --pretty=oneline", "git diff -U3", "git diff --unified=5", "head -n5 a", "find . -name x -o -type d", "git blame -L1,5 a.go", "git log -5", "git log --since=2020-01-01 --author=bob", "git diff --stat HEAD",
 		"git status -sb", "git blame -L 1,5 a.go", "ls -lah", "git log a,-O", "git log 1,2", "git log --since=1,2", "git log 'a,b'", "tail -n 20 a.log", "head -5 a", "find . -type f -maxdepth 2 -name x", "rg -n --hidden foo src", "wc -lw a", "cat -n a",
+		"find . -mtime -5", "find . -size -10k", "find . -mmin +30", "find . -size +1M", "find . -name '.*'", "find . -name '_*'", "find . -path './src/*'",
+		"grep --include='-*' -rn foo .", "rg --glob='-*' foo", "git log '-p'", "rg 'a[0-9]+' src",
 	}
 	for _, c := range allowed {
 		if !policy.ReadOnlyCommand(c) {
@@ -171,6 +173,13 @@ func TestReadOnlyCommands(t *testing.T) {
 		// and a word-initial glob can expand to a planted file named like an option ("-fprint", "-delete")
 		"find '{.,-fprint,zz}'", "find '.' '{-fprint,zz}'", "rg 'a{2}' x", "rg --glob='{a,b}'", "cat '~'", "cat '~/x'", "rg 'a~b'",
 		"find . '[-]fprint' zz", "find . -name x -o '[-]delete'", "find . -name '*'", "find . -name '*.go'", "ls '*'", "grep -r foo '*'", "cat '?'", "git log '*'",
+		// round 5: a glob in a word that starts with "-" (or with anything but [A-Za-z0-9_./]) can match a planted
+		// file named "-a"/"-delete"; find's value position hid it ("find . -name '-*'" deleted "-a" via MSYS find)
+		"find . -name '-*'", "find . -iname '-[ad]*'", "find . -newer '-*'", "find . -path '-?'", "find . -ipath '-*'", "find . -regex '-.*'",
+		"find . -user '-*'", "find . -name '-x]'", "rg '-*' x", "git log '-?'", "git grep -e='*' foo", "git log -S='*'", "git log -S='-*'",
+		"find . -name ':*'", "find . -name '+*'", "find . -name '=*'", "find . -name ']*'", "find . -name '-'*", "git log =a='*'",
+		// round 5: find's value position never carries a non-numeric "-" word (only "-mtime -5" style counts)
+		"find . -name -delete", "find . -path -fprint", "find . -newer -o", "find . -iname -exec", "find . -type -d", "find . -mtime -5x5", "find . -name -",
 	}
 	for _, c := range denied {
 		if policy.ReadOnlyCommand(c) {

@@ -12,7 +12,8 @@ import "strings"
 // end-of-options handling), and a flag's value is only ever accepted attached
 // to the flag ("--format=x", "-n5"). The token after a flag is never treated as
 // that flag's value, so it is always judged as an argument of its own. (find is
-// the exception: its operators really do take the next token.)
+// the exception: its operators really do take the next token, which then may
+// start with "-" only as a signed count such as "-5" or "-10k".)
 type flagSpec struct {
 	short    string   // bundleable boolean short flags, e.g. "inv" for -i -n -v and -inv
 	shortVal string   // short flags with an attached free-form value ("-efoo"): the rest of the cluster is that value
@@ -44,8 +45,8 @@ func (f flagSpec) accepts(args []string) bool {
 		case has(f.words, a):
 		case has(f.wordsVal, a):
 			i++ // find's real syntax: the operator's argument is the next token
-			if i >= len(args) {
-				return false
+			if i >= len(args) || strings.HasPrefix(args[i], "-") && !signedCount(args[i]) {
+				return false // a skipped value never looks like an option ("-mtime -5" and "-size -10k" do not)
 			}
 		case find:
 			return false // find: single-dash operators from the lists only
@@ -88,6 +89,15 @@ func numericValue(cluster string, flag rune) bool {
 		}
 	}
 	return true
+}
+
+// signedCount matches find's "-5" / "-10k" numeric arguments: "-", digits, at most one letter.
+func signedCount(s string) bool {
+	s = strings.TrimPrefix(s, "-")
+	if n := len(s); n > 1 && (s[n-1] >= 'a' && s[n-1] <= 'z' || s[n-1] >= 'A' && s[n-1] <= 'Z') {
+		s = s[:n-1]
+	}
+	return allDigits(s)
 }
 
 func allDigits(s string) bool {
