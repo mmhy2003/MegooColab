@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, update
-from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunPolicy, RunStatus
 from app.agent_runs.schemas import RunAgentOut, RunOut
