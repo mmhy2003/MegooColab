@@ -349,3 +349,22 @@ func TestFakeAgentCommitAllStagesChanges(t *testing.T) {
 		t.Fatalf("status = %q", st)
 	}
 }
+
+// FAKEAGENT_REPORT names one file and wins over FAKEAGENT_REPORT_DIR.
+func TestFakeAgentReportFileWinsOverReportDir(t *testing.T) {
+	bin := testutil.BuildFakeAgent(t)
+	dir := filepath.Join(t.TempDir(), "reports")
+	file := filepath.Join(t.TempDir(), "report.json")
+	cmd := exec.Command(bin)
+	cmd.Env = append(os.Environ(), "FAKEAGENT_REPORT="+file, "FAKEAGENT_REPORT_DIR="+dir)
+	cmd.Stdin = strings.NewReader("")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if _, err := os.Stat(file); err != nil {
+		t.Fatalf("report file: %v", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("report dir exists: %v", err)
+	}
+}

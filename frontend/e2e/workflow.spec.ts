@@ -11,6 +11,7 @@ import {
   mcp,
   onPrompt,
   readReports,
+  say,
   startRunner,
   type FakeAgentReport,
   type RunnerHandle,
@@ -52,6 +53,7 @@ const GOOD_MOCKUP = `<!doctype html><html><body style="font-family:sans-serif">
 const PROBE_MOCKUP = `<!doctype html><html><body>
 <div id="probe">probing</div>
 <button id="undeclared" data-megoo-choice="zzz">Undeclared choice</button>
+<button id="declared" data-megoo-choice="a">Declared choice</button>
 <script>
 var probe = document.getElementById("probe");
 function mark(k, v) { probe.setAttribute("data-" + k, String(v)); }
@@ -67,7 +69,7 @@ function probeFetch(name, url) {
   } catch (e) { mark(name, "blocked " + e.name); done(); }
 }
 probeFetch("fetch-relative", "/api/auth/me");
-probeFetch("fetch-absolute", "http://localhost:8080/api/auth/me");
+probeFetch("fetch-absolute", "${BASE}/api/auth/me");
 try { mark("cookie", "LEAKED " + JSON.stringify(document.cookie)); } catch (e) { mark("cookie", "blocked " + e.name); }
 try { top.location = "/"; mark("top", "attempted"); } catch (e) { mark("top", "blocked " + e.name); }
 parent.postMessage({ type: "megoo-choice", choice: "zzz" }, "*");
@@ -134,11 +136,13 @@ const SCENARIO = [
     IMPLEMENT,
     onPrompt(
       STEP(1),
+      { sleep_ms: 4_000 }, // holds Build at "1 of 2 steps" for the test to see
       { report_file: { path: ".megoocolab/plan.md" } },
       { report_file: { path: ".megoocolab/design.md" } },
       { write: { path: "step1.txt", content: "Hi there!\n" } },
       { commit: { message: "step 1: the greeting", all: true } },
       mcp("complete_step", { key: KEY, step: 1, summary: "Greeting written", tests_passed: true, test_command: "make test" }),
+      say("Step 1 is done"), // the run's summary
     ),
     onPrompt(
       STEP(2),
@@ -150,7 +154,7 @@ const SCENARIO = [
   ),
   onPrompt(
     FIX,
-    { write: { path: "step1.txt", content: "Hi there!\nBye!\n" } },
+    { write: { path: "step1.txt", content: "Hi there, and bye!\n" } },
     { commit: { message: "step 1: address review", all: true } },
     mcp("complete_step", { key: KEY, step: 1, summary: "Added the farewell", tests_passed: true }),
   ),
@@ -338,8 +342,9 @@ test("workflow end to end", async ({ browser }) => {
   const panel = drawer.getByRole("region", { name: "Workflow" });
   await expect(drawer.getByText("Which greeting style should the app use?")).toBeVisible({ timeout: 30_000 });
   const friendly = drawer.getByRole("button", { name: /^Friendly/ });
-  await expect(friendly).toBeVisible();
-  await expect(drawer.getByRole("button", { name: /^Formal/ })).toBeVisible();
+  // exactly the agent's 2 choices (recommended first), plus MegooColab's own "Other"
+  const question = drawer.getByRole("listitem").filter({ has: page.getByText("Which greeting style should the app use?") });
+  await expect(question.getByRole("list").getByRole("button")).toHaveText([/^Friendly/, /^Formal/, "Other"]);
   const mockup = drawer.frameLocator('iframe[title="Mockup v1: Greeting styles"]');
   await mockup.locator('[data-megoo-choice="a"]').click();
   await expect(friendly).toHaveAttribute("aria-pressed", "true");
@@ -374,6 +379,16 @@ test("workflow end to end", async ({ browser }) => {
   await expect(drawer.getByText("approved the plan v2")).toBeVisible();
   await expect(drawer.getByText("Subtasks (0/2)")).toBeVisible();
   await expect(drawer.getByText("Write the greeting").first()).toBeVisible();
+  type Sub = { key: string; title: string; type: string; parent_id: string | null };
+  const all: (Sub & { id: string })[] = await (await page.request.get("/api/projects/WFL/tasks")).json();
+  const parentId = all.find((t) => t.key === KEY)!.id;
+  const subs = all.filter((t) => t.parent_id === parentId).map((t) => [t.key, t.type, t.title]);
+  expect(subs.sort()).toEqual([
+    ["WFL-2", "subtask", "Step 1: Write the greeting"],
+    ["WFL-3", "subtask", "Step 2: Wire it up"],
+  ]);
+  // Build starts with step 1, whose implement run holds for 4 s (see the scenario)
+  await expect(card.getByText("1 of 2 steps")).toBeVisible({ timeout: 4_000 });
 
   // 6. thread links to a document version select that version in the plan view, inside the drawer
   // the first "plan v1" link is "submitted plan v1"; the last "plan v2" one is "approved the plan v2"
@@ -386,12 +401,15 @@ test("workflow end to end", async ({ browser }) => {
   await expect(planSection.getByRole("button", { name: "v2 · approved (selected)" })).toHaveAttribute("aria-pressed", "true");
   await expect(planSection.getByText("Greeting plan v2")).toBeVisible();
 
-  // 7. Build: 1 of 2 steps; step 1's review asks for a change, the fix and a fresh re-review approve it
-  await expect(card.getByText("1 of 2 steps")).toBeVisible({ timeout: 30_000 });
+  // 7. Build: step 1's run reaches the thread; its review asks for a change, the fix and a fresh re-review
+  // approve it
+  await expect(drawer.getByText("changed step1.txt (+1 −0)")).toBeVisible({ timeout: 30_000 });
+  await expect(drawer.getByText("finished: Step 1 is done")).toBeVisible({ timeout: 30_000 });
   await expect(drawer.getByText("Review of step 1 (round 1): changes requested — 1 important")).toBeVisible({ timeout: 30_000 });
   await drawer.getByRole("button", { name: "Show findings (1)" }).click();
   const findings = drawer.getByRole("region", { name: "Important findings" });
   await expect(findings.getByRole("listitem")).toHaveText("step1.txt:1The greeting has no farewell");
+  await expect(drawer.getByText("changed step1.txt (+1 −1)")).toBeVisible({ timeout: 30_000 }); // the fix
   await expect(drawer.getByText("Review of step 1 (round 2): approved")).toBeVisible({ timeout: 30_000 });
   await expect(card.getByText("2 of 2 steps")).toBeVisible({ timeout: 15_000 });
 
@@ -419,6 +437,7 @@ test("workflow end to end", async ({ browser }) => {
   await expect(drawer.getByText("Moved to In Review by the workflow")).toBeVisible();
   await expect(drawer.getByText("Moved to Done by the workflow")).toBeVisible();
   await expect(drawer.getByText("Subtasks (2/2)")).toBeVisible();
+  await expect(drawer.getByText("changed step2.txt (+1 −0)")).toHaveCount(1); // the killed attempt wrote nothing
 
   // every run, in order: the runner restart re-ran step 2's implement once and nothing before it
   expect((await runs(page, KEY)).map(runLabel)).toEqual([
@@ -453,7 +472,7 @@ test("workflow end to end", async ({ browser }) => {
   expect(verdicts[1].error ?? verdicts[1].result).toContain("already_submitted");
 
   // the work is in the worktree on the task branch; the developer's checkout is untouched
-  expect(readFileSync(join(worktree, "step1.txt"), "utf8")).toBe("Hi there!\nBye!\n");
+  expect(readFileSync(join(worktree, "step1.txt"), "utf8")).toBe("Hi there, and bye!\n");
   expect(readFileSync(join(worktree, "step2.txt"), "utf8")).toBe("uses step1\n");
   expect(git(worktree, "log", "--format=%s", `${repoHead}..HEAD`).split("\n")).toEqual([
     "step 2: wire it up",
@@ -509,4 +528,11 @@ test("workflow end to end", async ({ browser }) => {
   expect(questions.map((q) => [q.question?.status, q.question?.answer_choice])).toEqual([["open", null]]);
   const probeWf = await (await page.request.get(`/api/tasks/${PROBE_KEY}/workflow`)).json();
   expect([probeWf.status, probeWf.needs]).toEqual(["waiting_human", "question"]);
+  // positive control: the frame's choice channel was live all along. A declared choice preselects "Yes" (and,
+  // as always, only preselects: still no answer)
+  await frame.locator("#declared").click();
+  await expect(probeDrawer.getByRole("button", { name: /^Yes/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(probeDrawer.getByRole("button", { name: "Send answer" })).toBeEnabled();
+  const after: ActivityItem[] = await (await page.request.get(`/api/tasks/${PROBE_KEY}/activity?limit=200`)).json();
+  expect(after.filter((i) => i.type === "question").map((q) => q.question?.status)).toEqual(["open"]);
 });

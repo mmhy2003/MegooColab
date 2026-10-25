@@ -193,7 +193,8 @@ test("agents end to end", async ({ browser, request }) => {
   await expect(panel.getByText("Waiting: Answer the agent's question")).toBeVisible();
   await expect(drawer.getByText("started working")).toHaveCount(1);
   await shot(page, "task-run");
-  expect(existsSync(join(worktree, "notes.txt"))).toBe(false);
+  expect(existsSync(join(worktree, "README.md"))).toBe(true); // the run's worktree exists...
+  expect(existsSync(join(worktree, "notes.txt"))).toBe(false); // ...and the denied write left nothing in it
   expect(existsSync(join(repo, "notes.txt"))).toBe(false);
   // and on the server: exactly 1 run, started and completed once, none failed or cancelled
   const runs: { id: string; status: string; workflow_role: string | null }[] = await (
