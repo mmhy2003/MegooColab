@@ -1,8 +1,10 @@
 import uuid
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from app.core.text import NoNulStr
 from app.workflow.models import (
     DocKind,
     DocStatus,
@@ -54,3 +56,29 @@ class EscalationDecisionIn(BaseModel):
 class ManualWorkflowIn(BaseModel):
     driver: Literal["manual"]
     stage: Stage
+
+
+class DocumentInfo(BaseModel):
+    kind: DocKind
+    version: int
+    status: DocStatus
+    created_at: datetime
+    decided_by: uuid.UUID | None
+    decision_comment: str | None
+
+
+class DocumentStepOut(BaseModel):
+    title: str
+    detail: str
+    subtask_id: uuid.UUID | None
+
+
+class DocumentOut(DocumentInfo):
+    body_md: str
+    steps: list[DocumentStepOut] | None
+    attached_mockup_ids: list[uuid.UUID]
+
+
+class DocumentDecisionIn(BaseModel):
+    approve: bool
+    comment: NoNulStr | None = Field(default=None, max_length=4_000)

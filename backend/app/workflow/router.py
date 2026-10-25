@@ -14,7 +14,7 @@ from app.projects.access import get_project_for
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.tasks.service import get_task_for
-from app.workflow import engine, methodology, questions
+from app.workflow import documents, engine, methodology, questions
 from app.workflow.models import (
     DocKind,
     DocStatus,
@@ -32,6 +32,9 @@ from app.workflow.models import (
     WorkflowStatus,
 )
 from app.workflow.schemas import (
+    DocumentDecisionIn,
+    DocumentInfo,
+    DocumentOut,
     EscalationDecisionIn,
     ManualWorkflowIn,
     WorkflowDocumentBrief,
@@ -306,3 +309,53 @@ async def view_mockup(mockup_id: uuid.UUID, user: AuthedUser, db: DbSession) -> 
     return Response(
         questions.inject_choice_script(mockup.html), media_type="text/html; charset=utf-8", headers=MOCKUP_HEADERS
     )
+
+
+# ---- design and plan documents (WF-5, WF-7, WF-9) ---------------------------------------------------------
+
+
+def _doc_info(d: WorkflowDocument) -> DocumentInfo:
+    return DocumentInfo(
+        kind=d.kind, version=d.version, status=d.status, created_at=d.created_at, decided_by=d.decided_by,
+        decision_comment=d.decision_comment,
+    )
+
+
+@router.get("/api/tasks/{key}/documents")
+async def list_documents(key: str, user: AuthedUser, db: DbSession) -> list[DocumentInfo]:
+    task, _ = await get_task_for(db, user, key)
+    rows = (
+        await db.execute(
+            select(WorkflowDocument)
+            .where(WorkflowDocument.task_id == task.id)
+            .order_by(WorkflowDocument.kind, WorkflowDocument.version)
+        )
+    ).scalars()
+    return [_doc_info(d) for d in rows]
+
+
+@router.get("/api/tasks/{key}/documents/{kind}/{version}")
+async def get_document(key: str, kind: DocKind, version: int, user: AuthedUser, db: DbSession) -> DocumentOut:
+    task, _ = await get_task_for(db, user, key)
+    d = (
+        await db.execute(
+            select(WorkflowDocument).where(
+                WorkflowDocument.task_id == task.id, WorkflowDocument.kind == kind, WorkflowDocument.version == version
+            )
+        )
+    ).scalar_one_or_none()
+    if d is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "document_not_found")
+    return DocumentOut(
+        **_doc_info(d).model_dump(), body_md=d.body_md, steps=d.steps, attached_mockup_ids=d.attached_mockup_ids or []
+    )
+
+
+@router.post("/api/tasks/{key}/documents/{kind}/{version}/decision")
+async def decide_document(
+    key: str, kind: DocKind, version: int, body: DocumentDecisionIn, user: AuthedUser, db: DbSession
+) -> WorkflowOut:
+    task, _ = await get_task_for(db, user, key, write=True)
+    await documents.decide(db, user, task, kind, version, body.approve, body.comment)
+    await engine.dispatch_queued(db)
+    return await workflow_out(db, task)
