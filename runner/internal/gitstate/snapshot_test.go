@@ -11,6 +11,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	allowImplicitPin = true
 	if os.Getenv("GITSTATE_FAKE_GIT") == "fail-ls-files" {
 		os.Exit(fakeGitFailingLsFiles())
 	}

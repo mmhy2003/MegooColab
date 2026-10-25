@@ -682,7 +682,11 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	// state could not be checked at all, and an agent could cause that itself,
 	// so it does not start.
 	r.mu.Lock()
-	unchecked := kind == policy.ReadOnly && r.snapBefore == nil
+	// It must also start on the task's branch: with HEAD detached (or on another
+	// branch) a commit on the task branch followed by a detach would go unseen.
+	// The prefix, not Ensure's exact name: a worktree is reused when the task's
+	// title, and so the slug, changed.
+	unchecked := kind == policy.ReadOnly && (r.snapBefore == nil || !r.snapBefore.OnBranchPrefix("megoo/"+rs.Task.Key+"-"))
 	r.mu.Unlock()
 	if unchecked {
 		return fail("git_state_unreadable", nil)

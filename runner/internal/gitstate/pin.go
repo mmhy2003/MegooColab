@@ -2,7 +2,10 @@ package gitstate
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,28 +54,35 @@ func derivePin(worktree, repo string) (pinned, error) {
 		return pinned{common, common}, nil
 	}
 	entries, _ := os.ReadDir(filepath.Join(common, "worktrees"))
+	var admins []string
 	for _, e := range entries {
 		admin := filepath.Join(common, "worktrees", e.Name())
 		back, err := os.ReadFile(filepath.Join(admin, "gitdir"))
-		if err != nil || !sameFile(strings.TrimSpace(string(back)), dotgit) {
-			continue
+		if err == nil && sameFile(strings.TrimSpace(string(back)), dotgit) {
+			admins = append(admins, admin)
 		}
-		p := pinned{admin, common}
-		if err := checkPin(worktree, p); err != nil {
-			return pinned{}, err
-		}
-		pointer, err := os.ReadFile(dotgit)
-		target, ok := strings.CutPrefix(strings.TrimSpace(string(pointer)), "gitdir:")
-		target = strings.TrimSpace(target)
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(worktree, target)
-		}
-		if err != nil || !ok || !sameFile(target, admin) {
-			return pinned{}, errors.New("the worktree's .git does not point at its registered git dir")
-		}
-		return p, nil
 	}
-	return pinned{}, errors.New("the worktree is not registered with its repository")
+	switch len(admins) {
+	case 0:
+		return pinned{}, errors.New("the worktree is not registered with its repository")
+	case 1:
+	default:
+		return pinned{}, errors.New("more than one git dir is registered for the worktree")
+	}
+	p := pinned{admins[0], common}
+	if err := checkPin(worktree, p); err != nil {
+		return pinned{}, err
+	}
+	pointer, err := os.ReadFile(dotgit)
+	target, ok := strings.CutPrefix(strings.TrimSpace(string(pointer)), "gitdir:")
+	target = strings.TrimSpace(target)
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(worktree, target)
+	}
+	if err != nil || !ok || !sameFile(target, p.gitdir) {
+		return pinned{}, errors.New("the worktree's .git does not point at its registered git dir")
+	}
+	return p, nil
 }
 
 // checkPin re-validates a pin before it is used: the admin dir is still there,
@@ -108,12 +118,16 @@ func checkPin(worktree string, p pinned) error {
 	return nil
 }
 
-// pinFor returns the pin of a worktree. A worktree nobody pinned (tests, and
-// callers before Pin) is pinned from itself, once: that trusts its .git file.
+// pinFor returns the pin of a worktree. A worktree nobody pinned is an error:
+// reading it from its own .git file would trust what the agent can write. Only
+// tests (allowImplicitPin) pin a worktree from itself.
 func pinFor(worktree string) (pinned, error) {
 	key := filepath.Clean(worktree)
 	v, ok := pins.Load(key)
 	if !ok {
+		if !allowImplicitPin {
+			return pinned{}, errors.New("the worktree's git dir was never pinned")
+		}
 		if err := Pin(worktree, worktree); err != nil {
 			return pinned{}, err
 		}
@@ -134,24 +148,92 @@ func wgit(worktree string, args ...string) (string, error) {
 		append([]string{"--git-dir=" + p.gitdir, "--work-tree=" + worktree}, args...)...)
 }
 
-// branchTip returns the ref HEAD points at and the commit it points at. Both are
-// "" for a detached HEAD, the tip for an unborn branch. Only git's exit status 1
-// ("not a symbolic ref", "no such ref") counts as absent.
-func branchTip(dir string) (ref, tip string, err error) {
+// branchRef returns the ref HEAD points at, or "" for a detached HEAD. Only
+// git's exit status 1 ("not a symbolic ref") counts as detached.
+func branchRef(dir string) (string, error) {
 	out, err := wgit(dir, "symbolic-ref", "-q", "HEAD")
 	if err != nil {
 		if exitIsOne(err) {
-			return "", "", nil
+			return "", nil
 		}
-		return "", "", err
+		return "", err
 	}
-	ref = strings.TrimSpace(out)
-	out, err = wgit(dir, "rev-parse", "--verify", "-q", ref)
+	return strings.TrimSpace(out), nil
+}
+
+// hiddenGitFiles hashes the files in the git dirs that decide what status
+// shows, or run code while it does: the shared config and attributes, the
+// worktree's own config, and the exclude file without the runner's own line.
+// All are read through the pinned dirs. A run that changes any of them is
+// dirty: a clean filter plus an attribute hides a same-size edit.
+func hiddenGitFiles(dir string) (string, error) {
+	p, err := pinFor(dir)
 	if err != nil {
-		if exitIsOne(err) {
-			return ref, "", nil
-		}
-		return "", "", err
+		return "", err
 	}
-	return ref, strings.TrimSpace(out), nil
+	h := sha256.New()
+	for _, f := range []string{
+		filepath.Join(p.common, "config"),
+		filepath.Join(p.common, "info", "attributes"),
+		filepath.Join(p.gitdir, "config.worktree"),
+		filepath.Join(p.common, "info", "exclude"),
+	} {
+		b, err := os.ReadFile(f)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			b = []byte("<absent>")
+		case err != nil:
+			return "", err
+		}
+		if filepath.Base(f) == "exclude" {
+			var keep []string
+			for _, l := range strings.Split(string(b), "\n") {
+				if strings.TrimSpace(l) != excludeLine {
+					keep = append(keep, l)
+				}
+			}
+			b = []byte(strings.Join(keep, "\n"))
+		}
+		fmt.Fprintf(h, "%s:%d:", filepath.Base(f), len(b))
+		h.Write(b)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// wgitNoFilters is wgit with every filter driver defined in the pinned config
+// switched off (clean, smudge, process, required), so that a filter the agent
+// configured never runs inside the runner's status call and cannot make a
+// changed file look unchanged. This narrows the earlier ruling that filters
+// stay enabled: that still holds for checkout (worktree add), not for the
+// runner's own capture.
+func wgitNoFilters(dir string, args ...string) (string, error) {
+	out, err := wgit(dir, "config", "--name-only", "--get-regexp", "^filter[.]")
+	if err != nil && !exitIsOne(err) {
+		return "", err
+	}
+	seen := map[string]bool{}
+	var off []string
+	for _, key := range strings.Fields(out) {
+		rest := strings.TrimPrefix(key, "filter.")
+		i := strings.LastIndex(rest, ".")
+		if i <= 0 || seen[rest[:i]] {
+			continue
+		}
+		name := rest[:i]
+		seen[name] = true
+		for _, v := range []string{"clean", "smudge", "process"} {
+			off = append(off, "-c", "filter."+name+"."+v+"=")
+		}
+		off = append(off, "-c", "filter."+name+".required=false")
+	}
+	return wgit(dir, append(off, args...)...)
+}
+
+// allowImplicitPin lets tests use a worktree nobody pinned. Production never sets it.
+var allowImplicitPin = false
+
+// OnBranchPrefix reports whether HEAD was on a local branch whose name starts
+// with prefix when the snapshot was taken.
+func (s Snapshot) OnBranchPrefix(prefix string) bool {
+	return strings.HasPrefix(s.branchRef, "refs/heads/"+prefix)
 }

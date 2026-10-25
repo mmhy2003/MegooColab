@@ -236,7 +236,7 @@ func read(dir string) (protocol.GitState, string, error) {
 		b := truncateRunes(strings.TrimSpace(br), MaxBranchRunes) // unborn branch
 		st.Branch = &b
 	}
-	out, err := wgit(dir, "status", "--porcelain", "-z", "--untracked-files=all")
+	out, err := wgitNoFilters(dir, "status", "--porcelain", "-z", "--untracked-files=all")
 	if err != nil {
 		return st, "", err
 	}
@@ -269,10 +269,11 @@ type Snapshot struct {
 	ignored string
 	flagged string
 	stash   string
-	// branchRef is the ref HEAD points at ("" when detached) and tip the commit
-	// that ref points at: a branch can move while HEAD is taken elsewhere.
+	// branchRef is the ref HEAD points at ("" when detached): a run can commit
+	// and then detach HEAD or switch branch. hidden hashes the git files that
+	// decide what status shows (see hiddenGitFiles).
 	branchRef string
-	tip       string
+	hidden    string
 }
 
 // Capture reads a Snapshot.
@@ -307,12 +308,16 @@ func Capture(dir string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	ref, tip, err := branchTip(dir)
+	ref, err := branchRef(dir)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	hidden, err := hiddenGitFiles(dir)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	return Snapshot{State: st, working: working, ignored: strings.Join(ign, "\x00"), flagged: flaggedSet(lv), stash: stash,
-		branchRef: ref, tip: tip}, nil
+		branchRef: ref, hidden: hidden}, nil
 }
 
 // CaptureAfter is the git_after for a run that ended, and the one place that
@@ -359,7 +364,8 @@ func exitIsOne(err error) bool {
 // After is the state to report once a run ended. With a baseline, dirty means
 // the run changed something since before: the working state (an edit, or a
 // new, deleted or staged file), the set of ignored files, of skip-worktree or
-// assume-unchanged files, the stash, or the branch HEAD is on. Edits that were already there, left by
+// assume-unchanged files, the stash, the branch HEAD is on, or the git config,
+// attributes and exclude files. Edits that were already there, left by
 // an earlier run, do not count. With no baseline only after's own state is
 // known.
 func After(before *Snapshot, after Snapshot) protocol.GitState {
@@ -367,12 +373,10 @@ func After(before *Snapshot, after Snapshot) protocol.GitState {
 	if before != nil {
 		st.Dirty = before.working != after.working || before.ignored != after.ignored ||
 			before.flagged != after.flagged || before.stash != after.stash ||
-			// A run can commit and then detach HEAD or move to another branch, so that
-			// the head the server compares is where it was. A branch tip that moved
-			// shows as a head change when HEAD sits on it, so only a tip that is not
-			// HEAD counts here.
-			before.branchRef != after.branchRef ||
-			(before.tip != after.tip && (after.State.Head == nil || *after.State.Head != after.tip))
+			// A read-only run starts on its task branch (the manager checks), so a
+			// commit followed by a detach or a switch changes the ref. A tip moved
+			// under an unchanged ref is a head change, which the server sees.
+			before.branchRef != after.branchRef || before.hidden != after.hidden
 	}
 	return st
 }
