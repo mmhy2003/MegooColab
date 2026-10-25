@@ -7,8 +7,11 @@ import uuid
 from sqlalchemy import delete, func, select, update
 
 from app.agent_runs.models import AgentRun
+from app.agent_runs.service import cancel_user_runs, fail_disconnected_runs
 from app.auth.models import Role
+from app.core.db import SessionLocal
 from app.runner.registry import registry
+from app.tasks.models import TaskEvent
 from app.teams.models import TeamMember
 from tests.agent_runs.test_dispatch import (
     _avail,
@@ -255,3 +258,29 @@ async def test_dispatch_skips_a_queued_run_whose_task_is_already_running(client,
     assert started == [str(second)]  # the duplicate for the running task stays queued
     statuses = sorted((await db.execute(select(AgentRun.status))).scalars())
     assert statuses == ["queued", "running", "running"]
+
+
+# ---- M10: every agent_run_* event names its agent -----------------------------
+
+
+async def test_every_agent_run_event_carries_the_agent_id(client, db):
+    me, agent, runs = await _offline_runs(client, db, n=3, max_runs=3)
+    conn = _fake_conn(me, agent, _FakeSocket())
+    try:
+        await _dispatch_in_own_session(me.id)  # started x3
+        registry._conns.pop(me.id, None)
+        # user cancel with the runner gone; runner disconnect; owner deactivation
+        assert (await client.post(f"/api/agent-runs/{runs[0]['id']}/cancel")).status_code == 204
+        async with SessionLocal() as s:
+            await s.execute(update(AgentRun).where(AgentRun.id == uuid.UUID(runs[1]["id"])).values(status="running"))
+            conn.run_ids.discard(uuid.UUID(runs[2]["id"]))
+            await s.execute(update(AgentRun).where(AgentRun.id == uuid.UUID(runs[2]["id"])).values(status="queued"))
+            await fail_disconnected_runs(s, conn)
+            await cancel_user_runs(s, me.id)
+            await s.commit()
+    finally:
+        registry._conns.pop(me.id, None)
+    rows = (await db.execute(select(TaskEvent).where(TaskEvent.kind.like("agent_run_%")))).scalars().all()
+    kinds = {e.kind for e in rows}
+    assert kinds == {"agent_run_queued", "agent_run_started", "agent_run_cancelled", "agent_run_failed"}
+    assert [e.kind for e in rows if e.data.get("agent_id") != agent["id"]] == []

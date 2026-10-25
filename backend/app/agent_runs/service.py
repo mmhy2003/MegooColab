@@ -57,7 +57,7 @@ async def _transition(
     if summary is not None:
         run.summary = summary
     task = await db.get(Task, run.task_id)
-    data = {"run_id": str(run.id), **(extra or {})}
+    data = {"run_id": str(run.id), "agent_id": str(run.agent_id), **(extra or {})}
     if reason:
         data["reason"] = reason
     await record_event(db, task, actor_id, event_kind, data)
@@ -88,7 +88,9 @@ async def start_run(
     )
     db.add(run)
     await db.flush()
-    await record_event(db, task, user.id, "agent_run_queued", {"run_id": str(run.id), "policy": policy})
+    await record_event(
+        db, task, user.id, "agent_run_queued", {"run_id": str(run.id), "agent_id": str(agent.id), "policy": policy}
+    )
     await _announce(db, task, agent.owner_id)
     await db.commit()  # the queued run is durable before anything is sent to a runner
     async with SessionLocal() as dispatch_db:
@@ -201,7 +203,7 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
         run.started_at = None
         await db.commit()
         return False
-    await record_event(db, task, None, "agent_run_started", {"run_id": str(run.id)})
+    await record_event(db, task, None, "agent_run_started", {"run_id": str(run.id), "agent_id": str(agent_id)})
     await _announce(db, task, owner_id)
     await db.commit()
     return True
@@ -538,7 +540,7 @@ async def finish_run(
             log.warning("run %s failed on the runner: %.200s", run.id, error or "")
         await _transition(
             db, run, RunStatus(outcome), f"agent_run_{outcome}", owner_id=agent.owner_id,
-            reason=reason, summary=summary, extra={"agent_id": str(agent.id), "summary": summary},
+            reason=reason, summary=summary, extra={"summary": summary},
         )
     else:
         run.finished_at = run.finished_at or _now()
