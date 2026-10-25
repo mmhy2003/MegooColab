@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/coder/acp-go-sdk"
@@ -45,22 +44,11 @@ func ProbeCapabilities(ctx context.Context, program string) (Capabilities, error
 		return Capabilities{}, err
 	}
 
-	cmd := exec.Command(spec.Command, spec.Args...)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), spec.Env...)
-	cmd.WaitDelay = 5 * time.Second
-	ownProcessGroup(cmd)
-	stdin, err := cmd.StdinPipe()
+	proc, err := startAdapter(spec, dir, nil)
 	if err != nil {
 		return Capabilities{}, err
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return Capabilities{}, err
-	}
-	if err := cmd.Start(); err != nil {
-		return Capabilities{}, fmt.Errorf("cannot start the adapter: %w", err)
-	}
+	cmd, stdin, stdout := proc.cmd, proc.stdin, proc.stdout
 	defer func() {
 		_ = stdin.Close()
 		killTree(cmd)
@@ -74,12 +62,7 @@ func ProbeCapabilities(ctx context.Context, program string) (Capabilities, error
 
 	ac := acp.NewClientSideConnection(acpclient.New(pol, dir, func(string, map[string]any) {}), stdin, stdout)
 	ac.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	resp, err := ac.Initialize(ctx, acp.InitializeRequest{
-		ProtocolVersion: acp.ProtocolVersionNumber,
-		ClientCapabilities: acp.ClientCapabilities{
-			Fs: acp.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
-		},
-	})
+	resp, err := ac.Initialize(ctx, initRequest())
 	if err != nil {
 		return Capabilities{}, fmt.Errorf("initialize: %w", err)
 	}

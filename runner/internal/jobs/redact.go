@@ -52,3 +52,41 @@ func heldBack(s, secret string) int {
 	}
 	return 0
 }
+
+// redactMap returns a copy of data with the secret replaced in every string,
+// however deep (plan entries are lists of maps).
+func redactMap(data map[string]any, secret string) map[string]any {
+	out := make(map[string]any, len(data))
+	for k, v := range data {
+		out[k] = redactValue(v, secret)
+	}
+	return out
+}
+
+func redactValue(v any, secret string) any {
+	switch x := v.(type) {
+	case string:
+		return strings.ReplaceAll(x, secret, redacted)
+	case map[string]any:
+		return redactMap(x, secret)
+	case []map[string]any:
+		out := make([]map[string]any, len(x))
+		for i, m := range x {
+			out[i] = redactMap(m, secret)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = redactValue(e, secret)
+		}
+		return out
+	case []string:
+		out := make([]string, len(x))
+		for i, e := range x {
+			out[i] = strings.ReplaceAll(e, secret, redacted)
+		}
+		return out
+	}
+	return v
+}

@@ -94,3 +94,11 @@ func resumeSession(ctx context.Context, q sessionRequest) (openedSession, error)
 	}
 	return openedSession{}, errors.New("the agent supports neither session/resume nor session/load")
 }
+
+// tokenOf is the run's MCP token, or "" for a run without MCP.
+func tokenOf(a *protocol.McpAccess) string {
+	if a == nil {
+		return ""
+	}
+	return a.Token
+}

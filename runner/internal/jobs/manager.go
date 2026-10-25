@@ -103,6 +103,11 @@ type run struct {
 	gitBefore       *protocol.GitState
 	gitAfter        *protocol.GitState
 	snapBefore      *gitstate.Snapshot
+
+	// secret is the run's MCP token; it never leaves in an update or the summary.
+	// held is the end of the message text so far that may be the start of it.
+	secret string
+	held   string // guarded by emitMu
 }
 
 // emit sends one metadata update with the next seq. The acpclient calls it in order.
@@ -112,6 +117,21 @@ func (r *run) emit(kind string, data map[string]any) {
 	if r.closed || r.stale() {
 		return
 	}
+	if r.secret != "" {
+		if kind == "message" {
+			data = r.redactMessage(data)
+			if data == nil {
+				return
+			}
+		} else {
+			data = redactMap(data, r.secret)
+		}
+	}
+	r.sendLocked(kind, data)
+}
+
+// sendLocked sends one update; emitMu is held.
+func (r *run) sendLocked(kind string, data map[string]any) {
 	r.seq++
 	if kind == "message" {
 		if text, ok := data["text"].(string); ok {
@@ -123,9 +143,43 @@ func (r *run) emit(kind string, data map[string]any) {
 	_ = r.m.send(protocol.NewRunUpdate(r.id, r.seq, kind, data))
 }
 
+// redactMessage replaces the token in message text, also when it is split
+// across two flushes: the end of the text that could still become the token is
+// held back until more text arrives. nil means there is nothing to send yet.
+func (r *run) redactMessage(data map[string]any) map[string]any {
+	text, _ := data["text"].(string)
+	s := strings.ReplaceAll(r.held+text, r.secret, redacted)
+	keep := heldBack(s, r.secret)
+	r.held = s[len(s)-keep:]
+	if s = s[:len(s)-keep]; s == "" {
+		return nil
+	}
+	out := make(map[string]any, len(data))
+	for k, v := range data {
+		out[k] = v
+	}
+	out["text"] = s
+	return out
+}
+
 // closeEmit makes every later emit a no-op; run_finished is the last message.
 func (r *run) closeEmit() {
 	r.emitMu.Lock()
+	if held := r.held; held != "" && !r.closed && !r.stale() {
+		// The text ended on something that looks like the start of the token: a
+		// few characters pass, a longer start is withheld.
+		r.held = ""
+		if len(held) > 4 {
+			held = redacted
+		}
+		r.mu.Lock()
+		prev := r.summary
+		r.mu.Unlock()
+		r.sendLocked("message", map[string]any{"text": held})
+		r.mu.Lock() // the tail belongs to the last message; it is not a message of its own
+		r.summary = truncate(prev+held, summaryLimit)
+		r.mu.Unlock()
+	}
 	r.closed = true
 	r.emitMu.Unlock()
 }
@@ -344,7 +398,7 @@ func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn
 	}
 	// The run outlives the message that started it; Shutdown is what stops it.
 	rctx, abort := context.WithCancel(context.WithoutCancel(ctx))
-	r := &run{m: m, id: rs.RunID, agent: rs.AgentID, gen: m.gen, ctx: rctx, abort: abort, done: make(chan struct{})}
+	r := &run{secret: tokenOf(rs.Mcp), m: m, id: rs.RunID, agent: rs.AgentID, gen: m.gen, ctx: rctx, abort: abort, done: make(chan struct{})}
 	m.runs[rs.RunID] = r
 	m.wg.Add(1)
 	m.mu.Unlock()
@@ -520,9 +574,9 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return "failed", "log_failed"
 	}
 	defer file.Close()
-	var logf io.Writer = file
-	if rs.Mcp != nil && rs.Mcp.Token != "" { // the run token never reaches the log
-		rd := newRedactor(file, rs.Mcp.Token)
+	var logf io.Writer = &cappedWriter{w: file, left: logCap}
+	if rs.Mcp != nil && rs.Mcp.Token != "" { // the run token never reaches the log; redact before the cap can cut it
+		rd := newRedactor(logf, rs.Mcp.Token)
 		defer rd.Close() // runs before file.Close
 		logf = rd
 	}
@@ -599,23 +653,11 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	}
 	readBefore()
 
-	cmd := exec.Command(spec.Command, spec.Args...)
-	cmd.Dir = wt
-	cmd.Env = append(os.Environ(), spec.Env...)
-	cmd.Stderr = &cappedWriter{w: logf, left: logCap}
-	cmd.WaitDelay = 5 * time.Second // a grandchild holding a pipe cannot block Wait forever
-	ownProcessGroup(cmd)
-	stdin, err := cmd.StdinPipe()
+	proc, err := startAdapter(spec, wt, logf)
 	if err != nil {
 		return fail("adapter_start_failed", err)
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fail("adapter_start_failed", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return fail("adapter_start_failed", err)
-	}
+	cmd, stdin, stdout := proc.cmd, proc.stdin, proc.stdout
 	r.mu.Lock()
 	r.cmd = cmd
 	r.mu.Unlock()
@@ -631,13 +673,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	ac := acp.NewClientSideConnection(client, stdin, stdout)
 	ac.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	initResp, err := ac.Initialize(r.ctx, acp.InitializeRequest{
-		ProtocolVersion: acp.ProtocolVersionNumber,
-		ClientCapabilities: acp.ClientCapabilities{
-			Fs:       acp.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
-			Terminal: false,
-		},
-	})
+	initResp, err := ac.Initialize(r.ctx, initRequest())
 	if err != nil {
 		return fail("initialize_failed", err)
 	}
@@ -721,11 +757,14 @@ func (m *Manager) reap(cmd *exec.Cmd, stdin io.Closer, graceful bool) {
 // cappedWriter passes at most left bytes to w, then drops the rest, so a
 // chatty adapter cannot fill the disk.
 type cappedWriter struct {
+	mu   sync.Mutex
 	w    io.Writer
 	left int
 }
 
 func (c *cappedWriter) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.left <= 0 {
 		return len(p), nil
 	}

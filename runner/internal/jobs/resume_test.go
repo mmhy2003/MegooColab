@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -65,6 +66,8 @@ type fullReport struct {
 	SessionEvents []string        `json:"session_events"`
 	Replayed      int             `json:"replayed"`
 	McpServers    json.RawMessage `json:"mcp_servers"`
+	Meta          json.RawMessage `json:"meta"`
+	ModesSet      []string        `json:"modes_set"`
 	Steps         []struct {
 		Type   string `json:"type"`
 		Tool   string `json:"tool"`
@@ -251,9 +254,9 @@ func TestResumeWithEmptyResumePromptUsesPrompt(t *testing.T) {
 
 func TestResumeFallbackToNewSessionWithFullPrompt(t *testing.T) {
 	cases := map[string]struct{ env, id string }{
-		"load fails":         {"", "fake-session-404"},
-		"no load or resume":  {"FAKEAGENT_NO_LOAD", "fake-session-1"},
-		"load of unknown id": {"FAKEAGENT_RESUME", "fake-session-404"},
+		"session/load fails":   {"", "fake-session-404"},
+		"no load or resume":    {"FAKEAGENT_NO_LOAD", "fake-session-404"},
+		"session/resume fails": {"FAKEAGENT_RESUME", "fake-session-404"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -322,5 +325,95 @@ func TestRedactingWriterCatchesATokenSplitAcrossWrites(t *testing.T) {
 	}
 	if got := sb.String(); got != "x [redacted] y abc z" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func compact(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	var b bytes.Buffer
+	if err := json.Compact(&b, raw); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+// A resumed session gets the same isolation _meta and the same mode as a new one.
+func TestResumedSessionGetsMetaAndModeLikeANewOne(t *testing.T) {
+	for name, env := range map[string]string{"session/load": "", "session/resume": "FAKEAGENT_RESUME"} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("FAKEAGENT_SESSIONS_DIR", t.TempDir())
+			if env != "" {
+				t.Setenv(env, "1")
+			}
+			e := newEnvWithCache(t, twoTurns, 1, t.TempDir())
+			e.startRunWith("run-a", "MEG-9", func(rs *protocol.RunStart) { rs.Prompt = "first turn" })
+			first := e.finished("run-a")
+			fresh := e.finalReport()
+			if len(fresh.Meta) == 0 || len(fresh.ModesSet) != 1 {
+				t.Fatalf("new session report = %+v", fresh)
+			}
+			e.startRunWith("run-b", "MEG-9", func(rs *protocol.RunStart) {
+				rs.ResumeSessionID, rs.ResumePrompt = *first.SessionID, "continue please"
+			})
+			e.finished("run-b")
+			got := e.finalReport()
+			if compact(t, got.Meta) != compact(t, fresh.Meta) {
+				t.Fatalf("meta = %s, new session had %s", got.Meta, fresh.Meta)
+			}
+			if strings.Join(got.ModesSet, ",") != strings.Join(fresh.ModesSet, ",") {
+				t.Fatalf("modes set = %v, new session had %v", got.ModesSet, fresh.ModesSet)
+			}
+		})
+	}
+}
+
+// Whatever the agent says, the run token never leaves the runner in a
+// run_update or in run_finished, whole or split across flushes.
+func TestTokenNotInRunUpdatesOrSummary(t *testing.T) {
+	scenarios := map[string]string{
+		"one chunk": `[{"say":"the token is ` + runToken + ` ok"}]`,
+		"split across flushes": `[{"say":"the token is ` + runToken[:12] + `"},{"plan":[["a","pending"]]},` +
+			`{"say":"` + runToken[12:] + ` ok"}]`,
+		"ends on a token prefix": `[{"say":"all done ` + runToken[:20] + `"}]`,
+		"tool title":             `[{"tool":{"kind":"other","title":"echo ` + runToken + `"}}]`,
+	}
+	for name, sc := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			e := newEnvWithCache(t, sc, 1, t.TempDir())
+			e.startRunWith("run-leak", "MEG-10", withMcp("http://127.0.0.1:1/api/mcp"))
+			rf := e.finished("run-leak")
+			if rf.Outcome != "completed" {
+				t.Fatalf("finished = %+v", rf)
+			}
+			frames := 0
+			for _, f := range e.srv.Frames() {
+				if f.Type == protocol.TypeRunUpdate || f.Type == protocol.TypeRunFinished {
+					frames++
+					if strings.Contains(string(f.Raw), runToken) || strings.Contains(string(f.Raw), runToken[:20]) {
+						t.Fatalf("frame leaks the token: %s", f.Raw)
+					}
+				}
+			}
+			if strings.Contains(messages(e, "run-leak"), runToken) {
+				t.Fatalf("messages put together hold the token: %q", messages(e, "run-leak"))
+			}
+			if frames < 2 {
+				t.Fatalf("only %d frames", frames)
+			}
+			if name == "one chunk" && !strings.Contains(messages(e, "run-leak"), "[redacted]") {
+				t.Fatalf("messages = %q", messages(e, "run-leak"))
+			}
+		})
+	}
+}
+
+func TestLogCapDoesNotCutAHeldBackTokenPrefix(t *testing.T) {
+	var sb strings.Builder
+	capped := &cappedWriter{w: &sb, left: 10}
+	w := newRedactor(capped, "abcdef")
+	_, _ = w.Write([]byte("0123456789 abc"))
+	_ = w.Close()
+	if strings.Contains(sb.String(), "abc") {
+		t.Fatalf("log = %q", sb.String())
 	}
 }

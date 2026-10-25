@@ -103,3 +103,8 @@ The file is truncated at start when it exceeds 5 MiB. Interactive `run` prints t
 - **Isolation.** Your own Claude settings cannot pre-approve tools for MegooColab runs.
 - It never runs anything unless your account's agent is assigned a run by someone
   allowed to use it (owner, project manager or admin).
+- **Run token.** A workflow run gets its own MCP token. It is valid only while that run is
+  running and is scoped to one task and one role. The runner keeps it out of its run log
+  and out of everything it sends to the server. The Claude adapter, however, passes it to
+  the `claude` process on its command line, so other local processes of the same machine
+  (and the same user) can read it while the run lasts.
