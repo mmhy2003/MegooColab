@@ -51,7 +51,10 @@ export function isolatedEnv(home: string): NodeJS.ProcessEnv {
   };
 }
 
-/** Logs the runner in with an isolated config, then runs it. Resolves once the process is running. */
+/**
+ * Logs the runner in with an isolated config, then starts `run` in the background and returns
+ * its handle right away: it does not wait for the runner to connect (wait for "Online" in the UI).
+ */
 export function startRunner(opts: StartRunnerOptions): RunnerHandle {
   const env = {
     ...isolatedEnv(opts.home),
@@ -68,12 +71,15 @@ export function startRunner(opts: StartRunnerOptions): RunnerHandle {
   let log = "";
   child.stdout?.on("data", (d) => (log += d));
   child.stderr?.on("data", (d) => (log += d));
+  // a failed spawn (or kill) emits "error"; without a listener it would crash the test process
+  child.on("error", (err) => (log += `\n[runner process error] ${err.message}\n`));
   const exited = new Promise<void>((done) => child.once("exit", () => done()));
 
   return {
     output: () => log,
     async stop() {
-      if (child.exitCode !== null || child.pid === undefined) return;
+      // never started, or already exited (with a code, or by a signal)
+      if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
       try {
         if (WIN) execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
         else process.kill(-child.pid, "SIGKILL");

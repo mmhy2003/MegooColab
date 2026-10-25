@@ -75,7 +75,7 @@ docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers
 
 ### Agents end-to-end test
 
-`frontend/e2e/agents.spec.ts` drives the whole path (UI, server, runner, agent) against the same stack as above. It needs the Go toolchain and `git` on the PATH. The test builds the runner and the fake agent itself into a temp directory (`go build -o <tmp>/megoocolab-runner ./runner`, `go build -o <tmp>/fakeagent ./runner/internal/fakeagent`), runs the runner on the host with an isolated config and cache directory (HOME, USERPROFILE, APPDATA, LOCALAPPDATA, XDG_CONFIG_HOME and XDG_CACHE_HOME all point at a temp dir), and points `MEGOO_ADAPTER_CLAUDE_CODE` at the fake agent. It needs a fresh stack (it runs first-run setup), so bring the stack down with `down -v` before each run:
+`frontend/e2e/agents.spec.ts` drives the whole path (UI, server, runner, agent) against the same stack as above. It needs the Go toolchain and `git` on the PATH. The test builds the runner and the fake agent itself into a temp directory (`go build -o <tmp>/megoocolab-runner ./runner`, `go build -o <tmp>/fakeagent ./runner/internal/fakeagent`), runs the runner on the host with an isolated config and cache directory (HOME, USERPROFILE, APPDATA, LOCALAPPDATA, XDG_CONFIG_HOME and XDG_CACHE_HOME all point at a temp dir), and points `MEGOO_ADAPTER_CLAUDE_CODE` at the fake agent. It needs a fresh stack: it creates the "Agents Team" team and the AGT project, which already exist on a stack it has run against, so bring the stack down with `down -v` before each run. When it ends, pass or fail, it removes its temp directory (binaries, repository, worktree and the runner config with the token). To run it:
 
 ```bash
 cd frontend && npx playwright test e2e/agents.spec.ts
