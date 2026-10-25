@@ -11,7 +11,7 @@ const FIELD = "w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm 
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[6.5rem_1fr] items-center gap-2">
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2">
       <span className="text-[11px] tracking-wider text-muted uppercase">{label}</span>
       {children}
     </div>
@@ -49,6 +49,11 @@ export function TaskFields({
 }) {
   const watching = meId ? task.watcher_ids.includes(meId) : false;
   const selectedLabels = new Set(task.labels.map((l) => l.id));
+  const assigneeName = task.assignee_agent_id
+    ? (agents.find((a) => a.id === task.assignee_agent_id)?.name ?? task.assignee_agent?.name)
+    : task.assignee_user_id
+      ? users.find((u) => u.id === task.assignee_user_id)?.name
+      : "Unassigned";
   return (
     <div className="space-y-2.5">
       <Row label="Status">
@@ -68,6 +73,7 @@ export function TaskFields({
       <Row label="Assignee">
         <select
           aria-label="Assignee"
+          title={assigneeName}
           className={FIELD}
           disabled={disabled}
           value={task.assignee_agent_id ? `agent:${task.assignee_agent_id}` : task.assignee_user_id ? `user:${task.assignee_user_id}` : ""}

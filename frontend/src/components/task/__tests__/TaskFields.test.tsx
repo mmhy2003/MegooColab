@@ -33,6 +33,11 @@ describe("TaskFields assignee", () => {
     expect(onPatch).toHaveBeenLastCalledWith({ assignee_user_id: null, assignee_agent_id: null });
   });
 
+  it("shows the full name of the chosen assignee on hover", () => {
+    setup();
+    expect(screen.getByLabelText("Assignee")).toHaveAttribute("title", "Ann's Codex");
+  });
+
   it("lists agents the caller cannot use as disabled", () => {
     setup();
     expect(screen.getByRole("option", { name: "Bob's Codex" })).toBeDisabled();

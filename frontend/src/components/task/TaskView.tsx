@@ -136,7 +136,7 @@ export function TaskView({
         {headerExtra}
       </header>
       {error && <p role="alert" className="px-4 pt-2 text-sm text-pink">{error}</p>}
-      <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto p-4 lg:grid-cols-[1fr_17rem]">
+      <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-6">
           <Section title="Description">
             <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />

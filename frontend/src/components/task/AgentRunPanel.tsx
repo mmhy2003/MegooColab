@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Bot } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { Button } from "@/components/ui/Button";
@@ -12,9 +12,10 @@ import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AgentRun, ProjectAgent, RunPolicy } from "@/lib/types";
 
-const POLICY_LABEL: Record<RunPolicy, string> = {
-  read_only: "Read-only: analyse, no edits",
-  workspace: "Workspace: may edit inside a task worktree",
+// Short labels keep the chosen value readable in the narrow side column; the hint explains it.
+const POLICY: Record<RunPolicy, { label: string; hint: string }> = {
+  read_only: { label: "Read-only", hint: "Analyses the code. No edits, only read-only commands." },
+  workspace: { label: "Workspace", hint: "May edit files and run commands inside the task's own worktree." },
 };
 const FIELD = "w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm disabled:opacity-60";
 
@@ -30,6 +31,7 @@ export function AgentRunPanel({ taskKey, agent, disabled }: { taskKey: string; a
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const policyHintId = useId();
   const latest = runs.data?.[0];
   const active = latest && (latest.status === "queued" || latest.status === "running") ? latest : undefined;
 
@@ -76,14 +78,24 @@ export function AgentRunPanel({ taskKey, agent, disabled }: { taskKey: string; a
           Cancel run
         </Button>
       )}
-      <label className="block space-y-1 text-xs text-muted">
-        Run policy
-        <select aria-label="Run policy" className={FIELD} disabled={!canRun} value={policy} onChange={(e) => setPolicy(e.target.value as RunPolicy)}>
-          {(Object.keys(POLICY_LABEL) as RunPolicy[]).map((p) => (
-            <option key={p} value={p}>{POLICY_LABEL[p]}</option>
-          ))}
-        </select>
-      </label>
+      <div className="space-y-1">
+        <label className="block space-y-1 text-xs text-muted">
+          Run policy
+          <select
+            aria-label="Run policy"
+            aria-describedby={policyHintId}
+            className={FIELD}
+            disabled={!canRun}
+            value={policy}
+            onChange={(e) => setPolicy(e.target.value as RunPolicy)}
+          >
+            {(Object.keys(POLICY) as RunPolicy[]).map((p) => (
+              <option key={p} value={p}>{POLICY[p].label}</option>
+            ))}
+          </select>
+        </label>
+        <p id={policyHintId} className="text-xs text-muted">{POLICY[policy].hint}</p>
+      </div>
       <label className="block space-y-1 text-xs text-muted">
         Prompt (optional)
         <textarea aria-label="Prompt (optional)" rows={3} maxLength={4000} className={FIELD} disabled={!canRun} value={prompt} onChange={(e) => setPrompt(e.target.value)} />

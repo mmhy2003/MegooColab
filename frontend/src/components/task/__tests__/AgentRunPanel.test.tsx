@@ -72,6 +72,15 @@ describe("AgentRunPanel", () => {
     expect(JSON.parse(String(init!.body))).toEqual({ policy: "workspace", prompt: "Fix the flaky test" });
   });
 
+  it("keeps the policy options short and describes the chosen one below the select", async () => {
+    setup(agent, []);
+    const select = await screen.findByLabelText("Run policy");
+    expect([...(select as HTMLSelectElement).options].map((o) => o.text)).toEqual(["Read-only", "Workspace"]);
+    expect(select).toHaveAccessibleDescription("Analyses the code. No edits, only read-only commands.");
+    fireEvent.change(select, { target: { value: "workspace" } });
+    expect(select).toHaveAccessibleDescription("May edit files and run commands inside the task's own worktree.");
+  });
+
   it("disables Run agent when the caller cannot use the agent", async () => {
     setup({ ...agent, can_use: false }, []);
     expect(await screen.findByRole("button", { name: "Run agent" })).toBeDisabled();
