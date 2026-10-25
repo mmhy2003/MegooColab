@@ -3,10 +3,11 @@
 The Go runner (Task 11) mirrors these shapes exactly.
 """
 
+import posixpath
 import uuid
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 CLOSE_UNAUTHORIZED = 4401  # missing, invalid or revoked token / deactivated user
 CLOSE_REPLACED = 4409  # a newer connection for the same user took over
@@ -30,6 +31,7 @@ class Hello(_FromRunner):
     os: str
     arch: str
     agents: list[AgentReport] = []
+    capabilities: list[Annotated[str, Field(max_length=50)]] = Field(default=[], max_length=50)
 
 
 class Heartbeat(_FromRunner):
@@ -51,12 +53,21 @@ class RunUpdate(_FromRunner):
     data: dict[str, Any]
 
 
+class GitState(_FromRunner):
+    head: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    branch: str | None = Field(default=None, max_length=200)
+    dirty: bool
+
+
 class RunFinished(_FromRunner):
     type: Literal["run_finished"]
     run_id: uuid.UUID
     outcome: Literal["completed", "failed", "cancelled"]
     summary: str = Field(max_length=2000)
     error: str | None = None
+    session_id: str | None = Field(default=None, max_length=200)
+    git_before: GitState | None = None
+    git_after: GitState | None = None
 
 
 RunnerMessage = Annotated[
@@ -91,6 +102,36 @@ class RunTask(BaseModel):
     project_key: str
 
 
+MAX_FILES_BYTES = 1024 * 1024
+FILES_PREFIX = ".megoocolab/"
+REPO_FILES_PREFIX = "docs/superpowers/"
+
+
+def check_relative_path(path: str, prefix: str) -> str:
+    """A normalised relative path strictly below `prefix`; ValueError otherwise."""
+    if (
+        "\\" in path
+        or "\x00" in path
+        or path.startswith("/")
+        or not path.startswith(prefix)
+        or len(path) == len(prefix)
+        or posixpath.normpath(path) != path
+        or ".." in path.split("/")
+    ):
+        raise ValueError(f"path not allowed: {path!r}")
+    return path
+
+
+class RunFile(BaseModel):
+    path: str
+    content: str
+
+
+class McpAccess(BaseModel):
+    url: str
+    token: str
+
+
 class RunStart(BaseModel):
     type: Literal["run_start"] = "run_start"
     run_id: uuid.UUID
@@ -99,6 +140,37 @@ class RunStart(BaseModel):
     local_path: str
     policy: Literal["read_only", "workspace"]
     prompt: str
+    # protocol v2: only sent for workflow runs
+    role: str | None = None
+    stage: str | None = None
+    step: int | None = None
+    resume_session_id: str | None = None
+    resume_prompt: str | None = None
+    mcp: McpAccess | None = None
+    files: list[RunFile] = []
+    repo_files: list[RunFile] = []
+    commit_message: str | None = None
+
+    @field_validator("files")
+    @classmethod
+    def _files_ok(cls, files: list[RunFile]) -> list[RunFile]:
+        for f in files:
+            check_relative_path(f.path, FILES_PREFIX)
+        if sum(len(f.content.encode()) for f in files) > MAX_FILES_BYTES:
+            raise ValueError("files exceed 1 MB")
+        return files
+
+    @field_validator("repo_files")
+    @classmethod
+    def _repo_files_ok(cls, files: list[RunFile]) -> list[RunFile]:
+        for f in files:
+            check_relative_path(f.path, REPO_FILES_PREFIX)
+        return files
+
+
+V2_START_FIELDS = {
+    "role", "stage", "step", "resume_session_id", "resume_prompt", "mcp", "files", "repo_files", "commit_message",
+}
 
 
 class RunCancel(BaseModel):

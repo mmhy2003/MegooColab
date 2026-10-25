@@ -8,8 +8,8 @@ commit them).
 ## Tools
 
 - `complete_step(key, step, summary, tests_passed, test_command?)`: report the fixed step. `step` is the same step
-  number as before; `summary` (up to 2,000 characters) says what you changed per finding; `tests_passed` is true
-  pass `true` only after you ran the tests and they passed; `test_command` (up to 200 characters) is what you ran.
+  number as before; `summary` (up to 2,000 characters) says what you changed per finding; `tests_passed`: pass
+  `true` only after you ran the tests and they passed; `test_command` (up to 200 characters) is what you ran.
 - `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: when you are blocked.
 - `get_workflow(key)`, `get_document(key, kind, version?)`.
 

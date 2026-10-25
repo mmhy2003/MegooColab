@@ -46,6 +46,7 @@ class AgentOut(BaseModel):
     max_concurrent_runs: int
     owner: UserOut
     status: str
+    problems: list[str] = []
     bindings: list[BindingOut]
 
 

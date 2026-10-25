@@ -13,6 +13,9 @@ from fastapi import WebSocket
 
 from app.runner.protocol import CLOSE_REPLACED, ServerMessage
 
+WORKFLOW_CAPABILITY = "workflow/1"
+WORKFLOW_PROBLEM = "runner too old for workflows — update megoocolab-runner"
+
 
 class RunnerClosed(Exception):
     """The connection is closed (or the peer is gone): the message was not delivered."""
@@ -29,6 +32,7 @@ class RunnerConn:
         self.last_welcome: dict | None = None
         self.close_code: int | None = None  # why the server closed it, if it did
         self.closed = asyncio.Event()  # set once the server has closed this connection
+        self.capabilities: set[str] = set()  # from the runner's hello; empty for a v1 runner
         self.run_ids: set[uuid.UUID] = set()  # runs dispatched over this connection
 
     @property
@@ -94,6 +98,10 @@ class RunnerRegistry:
         """The user's live connection; one that is closed but not yet unregistered does not count."""
         conn = self._conns.get(user_id)
         return conn if conn is not None and not conn.closed.is_set() else None
+
+    def supports(self, user_id: uuid.UUID, capability: str) -> bool:
+        conn = self.conn_for_user(user_id)
+        return conn is not None and capability in conn.capabilities
 
     def available_agents(self, user_id: uuid.UUID) -> set[uuid.UUID]:
         conn = self.conn_for_user(user_id)

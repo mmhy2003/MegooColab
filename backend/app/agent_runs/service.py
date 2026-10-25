@@ -4,12 +4,13 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunPolicy, RunStatus
 from app.agent_runs.schemas import RunAgentOut, RunOut
+from app.agent_runs.tokens import issue_run_token
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import (
     can_use_agent,
@@ -18,14 +19,30 @@ from app.agents.service import (
     publish_agents_updated,
 )
 from app.auth.models import User
+from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.events import Event, publish
 from app.core.text import strip_nul
 from app.projects.models import Project
-from app.runner.protocol import CLOSE_UNAUTHORIZED, RunCancel, RunStart, RunTask
-from app.runner.registry import RunnerClosed, RunnerConn, registry
+from app.runner.protocol import (
+    CLOSE_UNAUTHORIZED,
+    V2_START_FIELDS,
+    McpAccess,
+    RunCancel,
+    RunFile,
+    RunFinished,
+    RunStart,
+    RunTask,
+)
+from app.runner.registry import WORKFLOW_CAPABILITY, RunnerClosed, RunnerConn, registry
 from app.tasks.models import Task
 from app.tasks.service import record_event
+from app.workflow.models import DocKind, DocStatus, RunRole, WorkflowDocument
+
+# roles whose runs carry the approved design and plan into the worktree
+DOC_ROLES = {
+    RunRole.implement, RunRole.step_review, RunRole.step_fix, RunRole.final_review, RunRole.final_fix, RunRole.finish,
+}
 
 log = logging.getLogger(__name__)
 
@@ -56,8 +73,11 @@ async def _transition(
     summary: str | None = None,
     extra: dict | None = None,
 ) -> None:
-    """Move a run to a terminal status, record it on the task and tell the browsers."""
+    """Move a run to a terminal status, record it on the task and tell the browsers.
+
+    The single exit from `running`, so the run's MCP token dies here whichever path got us here."""
     run.status = to
+    run.mcp_token_hash = None
     run.reason = reason
     run.finished_at = _now()
     if summary is not None:
@@ -132,6 +152,8 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
     )
     run = None
     if agent.max_concurrent_runs > (running or 0):
+        # a runner without workflow/1 leaves workflow runs queued
+        runnable = true() if registry.supports(owner_id, WORKFLOW_CAPABILITY) else AgentRun.workflow_role.is_(None)
         sibling = aliased(AgentRun)
         task_running = (
             select(sibling.id)
@@ -141,7 +163,7 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
         run = (
             await db.execute(
                 select(AgentRun)
-                .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued, ~task_running)
+                .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued, ~task_running, runnable)
                 .order_by(AgentRun.created_at, AgentRun.id)
                 .limit(1)
                 .with_for_update(skip_locked=True)
@@ -153,6 +175,50 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
         run.started_at = _now()
     await db.commit()
     return run
+
+
+async def _approved_body(db: AsyncSession, task_id: uuid.UUID, kind: DocKind) -> str | None:
+    return await db.scalar(
+        select(WorkflowDocument.body_md)
+        .where(
+            WorkflowDocument.task_id == task_id,
+            WorkflowDocument.kind == kind,
+            WorkflowDocument.status == DocStatus.approved,
+        )
+        .order_by(WorkflowDocument.version.desc())
+        .limit(1)
+    )
+
+
+async def _v2_start_fields(db: AsyncSession, run: AgentRun, task: Task, task_key: str) -> dict:
+    """The run_start fields for a workflow run. Issues the run's MCP token: the caller holds the run row
+    lock and sends right after, and must clear the hash again if the send fails."""
+    role = RunRole(run.workflow_role)
+    fields: dict = {
+        "role": role.value,
+        "stage": run.stage,
+        "step": run.step,
+        "resume_session_id": run.resume_session_ref,
+        "resume_prompt": run.resume_prompt,
+        "mcp": McpAccess(url=get_settings().public_url.rstrip("/") + "/api/mcp", token=issue_run_token(run)),
+    }
+    design = plan = None
+    if role in DOC_ROLES:
+        design = await _approved_body(db, task.id, DocKind.design)
+        plan = await _approved_body(db, task.id, DocKind.plan)
+        fields["files"] = [
+            RunFile(path=f".megoocolab/{name}.md", content=body)
+            for name, body in (("design", design), ("plan", plan))
+            if body is not None
+        ]
+    if role == RunRole.finish and (await db.get(Project, task.project_id)).commit_docs_to_repo:
+        fields["repo_files"] = [
+            RunFile(path=f"docs/superpowers/{folder}/{task_key}-{name}.md", content=body)
+            for folder, name, body in (("specs", "design", design), ("plans", "plan", plan))
+            if body is not None
+        ]
+        fields["commit_message"] = f"docs: {task_key} design and plan"
+    return fields
 
 
 async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, run: AgentRun) -> bool:
@@ -188,27 +254,39 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
         await _transition(db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="owner_lost_access")
         await db.commit()
         return True
+    task_key = f"{project_key}-{task.number}"
+    try:
+        v2 = await _v2_start_fields(db, run, task, task_key) if run.workflow_role else {}
+        message = RunStart(
+            run_id=run.id,
+            agent_id=agent_id,
+            task=RunTask(
+                key=task_key, title=task.title, description_md=task.description_md, project_key=project_key
+            ),
+            local_path=local_path,
+            policy=run.policy,
+            prompt=run.prompt,
+            **v2,
+        )
+    except ValueError:  # e.g. the documents are too large to hand to the runner
+        log.exception("run %s: building run_start failed", run.id)
+        await _transition(db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="invalid_run_files")
+        await db.commit()
+        return True
+    # a plan-2 style run keeps the v1 shape
+    payload = (
+        message.model_dump(mode="json")
+        if run.workflow_role
+        else message.model_dump(mode="json", exclude=V2_START_FIELDS)
+    )
     conn.run_ids.add(run.id)
     try:
-        await conn.send(
-            RunStart(
-                run_id=run.id,
-                agent_id=agent_id,
-                task=RunTask(
-                    key=f"{project_key}-{task.number}",
-                    title=task.title,
-                    description_md=task.description_md,
-                    project_key=project_key,
-                ),
-                local_path=local_path,
-                policy=run.policy,
-                prompt=run.prompt,
-            )
-        )
+        await conn.send(payload)
     except RunnerClosed:
         conn.run_ids.discard(run.id)
         run.status = RunStatus.queued
         run.started_at = None
+        run.mcp_token_hash = None
         await db.commit()
         return False
     await record_event(db, task, None, "agent_run_started", {"run_id": str(run.id), "agent_id": str(agent_id)})
@@ -550,6 +628,7 @@ async def finish_run(
     outcome: str,
     summary: str,
     error: str | None,
+    finished: RunFinished | None = None,
 ) -> None:
     """The runner reports the end of a run. A running run takes the outcome; a run already terminal (e.g.
     cancelled by deactivation) keeps its status and only gets finished_at and summary if they are empty.
@@ -566,6 +645,13 @@ async def finish_run(
         await db.rollback()
         return
     summary = strip_nul(summary)[:2000]
+    if finished is not None:  # protocol v2: the agent session and the worktree's git state
+        if finished.session_id:
+            run.session_ref = strip_nul(finished.session_id)
+        if finished.git_before is not None:
+            run.git_before = finished.git_before.model_dump(mode="json")
+        if finished.git_after is not None:
+            run.git_after = finished.git_after.model_dump(mode="json")
     if run.status == RunStatus.running:
         reason = None
         if outcome == "failed":

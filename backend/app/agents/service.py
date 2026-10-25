@@ -13,7 +13,7 @@ from app.auth.schemas import UserOut
 from app.core.events import Event, publish
 from app.projects.access import accessible_project_ids, can_manage_project, project_team_ids
 from app.projects.models import Project, ProjectTeam
-from app.runner.registry import registry
+from app.runner.registry import WORKFLOW_CAPABILITY, WORKFLOW_PROBLEM, registry
 from app.tasks.models import Task
 from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
@@ -50,6 +50,17 @@ async def agent_statuses(db: AsyncSession, agents: list[tuple[uuid.UUID, uuid.UU
         else "offline"
         for agent_id, owner_id in agents
     }
+
+
+def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID) -> list[str]:
+    """What the owner's live runner reports as wrong with the agent, plus a too-old-runner notice."""
+    conn = registry.conn_for_user(owner_id)
+    if conn is None:
+        return []
+    problems = list(conn.problems.get(agent_id, []))
+    if WORKFLOW_CAPABILITY not in conn.capabilities:
+        problems.append(WORKFLOW_PROBLEM)
+    return problems
 
 
 async def agent_status(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> str:
@@ -163,6 +174,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "max_concurrent_runs": a.max_concurrent_runs,
             "owner": UserOut.model_validate(owners[a.owner_id]),
             "status": statuses[a.id],
+            "problems": agent_problems(a.id, a.owner_id),
             "bindings": bindings.get(a.id, []),
         }
         for a in agents

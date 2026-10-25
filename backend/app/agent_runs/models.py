@@ -45,6 +45,7 @@ class AgentRun(IdMixin, Base):
     step: Mapped[int | None]
     session_ref: Mapped[str | None] = mapped_column(String(200))
     resume_session_ref: Mapped[str | None] = mapped_column(String(200))
+    resume_prompt: Mapped[str | None] = mapped_column(Text)
     mcp_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
     methodology_version_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("methodology_versions.id", ondelete="SET NULL")

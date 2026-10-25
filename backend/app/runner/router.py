@@ -30,7 +30,6 @@ from app.runner.protocol import (
     AgentReport,
     AgentStatus,
     ConfigChanged,
-    Heartbeat,
     Hello,
     RunFinished,
     RunUpdate,
@@ -175,6 +174,7 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
         return False
     conn.touch()
     if isinstance(msg, Hello):
+        conn.capabilities = set(msg.capabilities)
         await _fail_unclaimed(conn)
         await _apply_reports(conn, msg.agents)
     elif isinstance(msg, AgentStatus):
@@ -182,7 +182,7 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
     elif isinstance(msg, RunUpdate):
         await _run_message(apply_update, conn.user_id, msg.run_id, msg.seq, msg.kind, msg.data)
     elif isinstance(msg, RunFinished):
-        await _run_message(finish_run, conn.user_id, msg.run_id, msg.outcome, msg.summary, msg.error)
+        await _run_message(finish_run, conn.user_id, msg.run_id, msg.outcome, msg.summary, msg.error, msg)
         conn.run_ids.discard(msg.run_id)
     # Heartbeat only refreshes last_seen
     return True
