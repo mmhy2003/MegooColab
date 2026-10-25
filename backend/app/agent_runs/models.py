@@ -52,6 +52,8 @@ class AgentRun(IdMixin, Base):
     )
     git_before: Mapped[dict | None] = mapped_column(JSONB)
     git_after: Mapped[dict | None] = mapped_column(JSONB)
+    # build runs: the agent's last complete_step report {summary, tests_passed, test_command}
+    step_result: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -389,6 +389,9 @@ async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
     agent = await _usable_agent(db, user, task)
     wf = await lock_task(db, task, create=True)
+    # again under the task lock: a concurrent PATCH may have made it an epic since `task` was loaded
+    if await db.scalar(select(Task.type).where(Task.id == task.id)) not in WORKFLOW_TYPES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
     if wf.status in (*ACTIVE, WorkflowStatus.paused):
         raise HTTPException(status.HTTP_409_CONFLICT, "workflow_active")
     if wf.status == WorkflowStatus.finished:
@@ -721,3 +724,8 @@ async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
     await record_workflow_event(db, task, None, "status_changed", {
         "from_column": str(frm), "to_column": str(column.id), "to_category": str(column.category), "by": "workflow",
     })
+
+
+# The build stage registers its role and accept handlers on import; importing it here means every user of the
+# engine (run ends, escalation decisions) has them. Last, as build imports this module.
+from app.workflow import build  # noqa: F401
