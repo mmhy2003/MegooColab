@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, update
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunPolicy, RunStatus
@@ -73,6 +74,13 @@ async def start_run(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
     if not await is_usable_binding(db, agent.id, project.id):  # also when its owner lost access
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agent_not_bound")
+    # one active run per task (they would share its worktree); the task row lock serialises racing starts
+    await db.execute(select(Task.id).where(Task.id == task.id).with_for_update(key_share=True))
+    active = await db.scalar(
+        select(AgentRun.id).where(AgentRun.task_id == task.id, AgentRun.status.in_(ACTIVE_STATUSES)).limit(1)
+    )
+    if active is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "task_has_active_run")
     text = (prompt or "").strip() or default_prompt(f"{project.key}-{task.number}", task)
     run = AgentRun(
         task_id=task.id, agent_id=agent.id, requested_by=user.id, policy=policy,
@@ -93,8 +101,9 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
     """Under the agent lock, mark its oldest queued run running and COMMIT, if a slot is free.
 
     The agent row is locked FOR NO KEY UPDATE (serialises concurrent dispatches so max_concurrent_runs
-    cannot be overshot) and the run row FOR UPDATE SKIP LOCKED. The commit comes before run_start is sent:
-    a run the runner has can never be rolled back to queued and sent twice."""
+    cannot be overshot) and the run row FOR UPDATE SKIP LOCKED. A queued run whose task already has a running
+    run is skipped (one active run per task; start_run already refuses a second one). The commit comes before
+    run_start is sent: a run the runner has can never be rolled back to queued and sent twice."""
     agent = (
         await db.execute(
             select(Agent)
@@ -113,10 +122,16 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
     )
     run = None
     if agent.max_concurrent_runs > (running or 0):
+        sibling = aliased(AgentRun)
+        task_running = (
+            select(sibling.id)
+            .where(sibling.task_id == AgentRun.task_id, sibling.status == RunStatus.running)
+            .exists()
+        )
         run = (
             await db.execute(
                 select(AgentRun)
-                .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued)
+                .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued, ~task_running)
                 .order_by(AgentRun.created_at, AgentRun.id)
                 .limit(1)
                 .with_for_update(skip_locked=True)

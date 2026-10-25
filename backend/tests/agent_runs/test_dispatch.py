@@ -118,6 +118,9 @@ async def test_run_requires_agent_assignee_and_permission(client, client_factory
     mc = client_factory()
     await login(mc, manager)
     r = await mc.post(f"/api/tasks/{t['key']}/agent-runs", json={"policy": "read_only", "prompt": "Look only"})
+    assert r.status_code == 409 and r.json()["detail"] == "task_has_active_run"  # one active run per task
+    assert (await client.post(f"/api/agent-runs/{run['id']}/cancel")).status_code == 204
+    r = await mc.post(f"/api/tasks/{t['key']}/agent-runs", json={"policy": "read_only", "prompt": "Look only"})
     assert r.status_code == 201
     listed = (await mc.get(f"/api/tasks/{t['key']}/agent-runs")).json()
     assert listed[0]["id"] == r.json()["id"] and len(listed) == 2  # newest first
@@ -303,6 +306,8 @@ async def test_cancel_queued_and_running(db, tc_factory):
         # the runner is alive: the run stays running until its run_finished arrives (Task 6)
         assert _run_status(tc, task, running["id"]) == "running"
 
+    _wait_run(tc, task, running["id"], "failed")  # the runner disconnected before its run_finished
+
     # runner gone and the row still marked running (e.g. after a server restart): cancel is immediate
     orphan = _start(tc, task)
     await db.execute(update(AgentRun).where(AgentRun.id == uuid.UUID(orphan["id"])).values(status="running"))
@@ -323,7 +328,7 @@ async def test_deactivation_cancels_runs(db, tc_factory):
         ws.send_json(_hello([_avail(agent)]))
         assert ws.receive_json()["run_id"] == running["id"]
         _wait_run(tc, task, running["id"], "running")
-        queued = _start(tc, task)
+        queued = _start(tc, _task(tc, agent, title="Second"))
         assert ac.post(f"/api/admin/users/{me.id}/deactivate").status_code == 204
         seen = []
         with pytest.raises(WebSocketDisconnect) as exc:

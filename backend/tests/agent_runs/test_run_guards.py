@@ -1,9 +1,10 @@
 """Final review guards: deleting mid-run (I3), lost project access (I4), one active run per task (I5)."""
 
+import asyncio
 import json
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 
 from app.agent_runs.models import AgentRun
 from app.auth.models import Role
@@ -203,3 +204,54 @@ async def test_queued_run_of_an_ex_member_fails_instead_of_being_sent(client, db
     row = (await db.execute(select(AgentRun).where(AgentRun.id == uuid.UUID(runs[0]["id"])))).scalar_one()
     assert row.status == "failed" and row.reason == "owner_lost_access"
     assert "agent_run_failed" in await _event_kinds(db)
+
+
+# ---- I5: one active run per task ---------------------------------------------
+
+
+async def test_second_run_of_a_task_is_409_while_one_is_active(client, db):
+    _me, _agent, runs = await _offline_runs(client, db)
+    key = runs[0]["task_key"]
+    r = await client.post(f"/api/tasks/{key}/agent-runs", json={"policy": "read_only"})
+    assert r.status_code == 409 and r.json()["detail"] == "task_has_active_run"
+    await db.execute(update(AgentRun).values(status="running"))
+    await db.commit()
+    r = await client.post(f"/api/tasks/{key}/agent-runs", json={"policy": "workspace"})
+    assert r.status_code == 409 and r.json()["detail"] == "task_has_active_run"
+    await db.execute(update(AgentRun).values(status="completed"))
+    await db.commit()
+    assert (await client.post(f"/api/tasks/{key}/agent-runs", json={"policy": "read_only"})).status_code == 201
+    assert len((await db.execute(select(AgentRun))).all()) == 2
+
+
+async def test_concurrent_starts_of_one_task_make_one_run(client, db):
+    _me, _agent, runs = await _offline_runs(client, db)
+    key = runs[0]["task_key"]
+    await db.execute(update(AgentRun).values(status="completed"))
+    await db.commit()
+    results = await asyncio.gather(
+        *[client.post(f"/api/tasks/{key}/agent-runs", json={"policy": "read_only"}) for _ in range(4)]
+    )
+    assert sorted(r.status_code for r in results) == [201, 409, 409, 409]
+    assert (await db.execute(select(func.count()).select_from(AgentRun).where(AgentRun.status == "queued"))).scalar() == 1
+
+
+async def test_dispatch_skips_a_queued_run_whose_task_is_already_running(client, db):
+    me, agent, runs = await _offline_runs(client, db, n=2, max_runs=3)
+    first, second = (uuid.UUID(r["id"]) for r in runs)
+    # forced past the API's 409: the first task now has a running run and a second queued one
+    await db.execute(update(AgentRun).where(AgentRun.id == first).values(status="running"))
+    row = await db.get(AgentRun, second)
+    db.add(AgentRun(task_id=(await db.get(AgentRun, first)).task_id, agent_id=row.agent_id,
+                    requested_by=row.requested_by, policy="read_only", prompt="again"))
+    await db.commit()
+    sock = _FakeSocket()
+    _fake_conn(me, agent, sock)
+    try:
+        await _dispatch_in_own_session(me.id)
+    finally:
+        registry._conns.pop(me.id, None)
+    started = [f["run_id"] for f in map(json.loads, sock.sent) if f["type"] == "run_start"]
+    assert started == [str(second)]  # the duplicate for the running task stays queued
+    statuses = sorted((await db.execute(select(AgentRun.status))).scalars())
+    assert statuses == ["queued", "running", "running"]
