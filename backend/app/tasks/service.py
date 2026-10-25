@@ -435,11 +435,10 @@ async def update_task(db: AsyncSession, user: User, project: Project, task: Task
             new_agent = data.assignee_agent_id
             new_user = None if new_agent else new_user
         if (new_user, new_agent) != (task.assignee_user_id, task.assignee_agent_id):
-            if new_agent != task.assignee_agent_id:
-                # imported here: the workflow engine imports this module
-                from app.workflow import board
+            # imported here: the workflow engine imports this module
+            from app.workflow import board
 
-                await board.before_reassign(db, task, new_agent)
+            await board.before_reassign(db, task, new_agent, new_user)
             if new_user != task.assignee_user_id:
                 await check_assignee(db, project, new_user)
             if new_agent != task.assignee_agent_id:

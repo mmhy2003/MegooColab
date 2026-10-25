@@ -9,14 +9,15 @@ import contextvars
 import uuid
 from collections.abc import AsyncIterator
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from mcp.server.mcpserver.exceptions import ToolError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from app.agent_runs.models import AgentRun
+from app.agent_runs.models import AgentRun, RunStatus
 from app.agent_runs.tokens import RUN_TOKEN_PREFIX, resolve_run_token
 from app.auth.deps import require_password_ok
 from app.auth.models import TokenScope, User, UserStatus
@@ -24,6 +25,7 @@ from app.auth.tokens import resolve_bearer
 from app.core.db import SessionLocal
 from app.projects.models import Project
 from app.tasks.models import Task
+from app.workflow import engine
 
 current_mcp_user_id: contextvars.ContextVar[uuid.UUID | None] = contextvars.ContextVar(
     "current_mcp_user_id", default=None
@@ -70,6 +72,24 @@ async def require_run_task(db: AsyncSession, key: str) -> None:
     project = await db.get(Project, task.project_id) if task is not None else None
     if project is None or not isinstance(key, str) or key.strip().upper() != f"{project.key}-{task.number}".upper():
         raise ToolError("wrong_task")
+
+
+async def live_run(db: AsyncSession, task: Task) -> AgentRun:
+    """The calling run, re-read under the workflow lock (taken here, in the engine's order: task, workflow, then
+    the run row), so it cannot end while the tool acts. The token resolver checked it when the request arrived,
+    but a run can end mid-call: it must still be running (run_not_running)."""
+    await engine.lock_task(db, task)
+    run = (
+        await db.execute(
+            select(AgentRun)
+            .where(AgentRun.id == current_run.get().id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if run is None or run.status != RunStatus.running:
+        raise HTTPException(status.HTTP_409_CONFLICT, "run_not_running")
+    return run
 
 
 class McpBearerAuth:

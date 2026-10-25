@@ -19,7 +19,13 @@ from starlette.routing import Route
 from starlette.types import ASGIApp
 
 from app.agents.models import Agent
-from app.mcp_server.auth import McpBearerAuth, refuse_run_token, require_run_task
+from app.mcp_server.auth import (
+    McpBearerAuth,
+    current_run,
+    live_run,
+    refuse_run_token,
+    require_run_task,
+)
 from app.mcp_server.auth import tool_session as _tool_session
 from app.mcp_server.workflow_tools import register_workflow_tools
 from app.projects.access import accessible_project_ids, get_project_for
@@ -196,6 +202,9 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
             raise ToolError("invalid_input") from None
         async with _tool_session() as (db, user):
             await require_run_task(db, key)
+            if current_run.get() is not None:  # a run that ended mid-call no longer speaks on the task
+                task, _ = await service.get_task_for(db, user, key, write=True)
+                await live_run(db, task)
             comment = await create_comment(db, user, key, body)
             return {"comment_id": str(comment.id)}
 

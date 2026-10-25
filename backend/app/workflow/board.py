@@ -1,7 +1,8 @@
 """Board rules (WF-2, AGT-12): what dragging a card or changing its agent does to the task's workflow.
 
 Called by app/tasks/service.py before the move or reassignment is applied, so a refusal changes nothing.
-Only runner-driven workflows are governed here; a manual checklist (WF-11) never holds the card.
+Runner-driven workflows are governed here, and an active connect-only one (AGT-32) holds its card and its
+assignee too; a manual checklist (WF-11) never holds the card.
 """
 
 import uuid
@@ -27,8 +28,9 @@ async def before_move(db: AsyncSession, user: User, task: Task, to: BoardColumn)
     frm = (await db.get(BoardColumn, task.column_id)).category
     wf = await engine.lock_task(db, task)
     runner = wf is not None and wf.driver == Driver.runner and wf.status != WorkflowStatus.idle
+    connect_only = wf is not None and wf.driver == Driver.connect_only and wf.status in engine.ACTIVE
     if to.category in (ColumnCategory.review, ColumnCategory.done):
-        if runner and wf.status != WorkflowStatus.finished:
+        if (runner and wf.status != WorkflowStatus.finished) or connect_only:
             raise HTTPException(status.HTTP_409_CONFLICT, "workflow_controls_column")
         return
     if to.category == ColumnCategory.working and frm != ColumnCategory.working:
@@ -45,13 +47,20 @@ async def before_move(db: AsyncSession, user: User, task: Task, to: BoardColumn)
         await engine.pause(db, user, task)
 
 
-async def before_reassign(db: AsyncSession, task: Task, new_agent_id: uuid.UUID | None) -> None:
-    """The task's agent assignee changes: 409 workflow_active while the workflow runs or waits; a paused
-    workflow forgets its sessions (they belong to the old agent)."""
-    if new_agent_id == task.assignee_agent_id:
+async def before_reassign(
+    db: AsyncSession, task: Task, new_agent_id: uuid.UUID | None, new_user_id: uuid.UUID | None
+) -> None:
+    """The task's assignee changes:
+    - an active connect-only workflow (AGT-32): 409 workflow_active for any change, as its assignee drives it
+      and may act on it (WF-6);
+    - a runner-driven workflow, when the agent changes: 409 workflow_active while it runs or waits; a paused
+      workflow forgets its sessions (they belong to the old agent)."""
+    if (new_agent_id, new_user_id) == (task.assignee_agent_id, task.assignee_user_id):
         return
     wf = await engine.lock_task(db, task)
-    if wf is None or wf.driver != Driver.runner:
+    if wf is not None and wf.driver == Driver.connect_only and wf.status in engine.ACTIVE:
+        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_active")
+    if wf is None or wf.driver != Driver.runner or new_agent_id == task.assignee_agent_id:
         return
     if wf.status in engine.ACTIVE:
         raise HTTPException(status.HTTP_409_CONFLICT, "workflow_active")

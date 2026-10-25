@@ -19,9 +19,10 @@ from app.core.db import SessionLocal
 from app.core.security import hash_token
 from app.mcp_server.auth import current_mcp_user_id, current_run
 from app.projects.models import BoardColumn
-from app.tasks.models import Comment, Task
+from app.tasks.models import Comment, Task, TaskEvent
 from app.workflow import engine, methodology
 from app.workflow.models import (
+    MethodologyVersion,
     Mockup,
     RunRole,
     StepReview,
@@ -32,7 +33,7 @@ from app.workflow.models import (
 from tests.agent_runs.test_dispatch import _task
 from tests.runner.test_protocol_v2 import MCP_HEADERS
 from tests.runner.test_runner_ws import _login
-from tests.workflow.test_documents import STEPS
+from tests.workflow.test_documents import STEPS, _design_waiting
 from tests.workflow.test_engine import _finish, _member, _started, _wf
 
 ASKED = "Question posted. End your turn now; the answer arrives as your next message."
@@ -162,8 +163,10 @@ async def test_run_token_wrong_task_refused(db, tc_factory):
         "get_task": {},
         "comment_on_task": {"body_md": "hi"},
     }
+    # another task, an unknown project, garbage, a zero-padded number and a task id are all another key
+    own_padded = b.key.replace("-", "-0")
     for name, args in calls.items():
-        for key in (other["key"], "NOPE-1", "garbage"):
+        for key in (other["key"], "NOPE-1", "garbage", own_padded, b.task["id"], other["id"]):
             err, text = _tool(tc, token, name, key=key, **args)
             assert err and "wrong_task" in text, (name, key, text)
     other_id = uuid.UUID(other["id"])
@@ -175,6 +178,11 @@ async def test_run_token_wrong_task_refused(db, tc_factory):
     assert not err and task["key"] == b.key
     err, out = _tool(tc, token, "comment_on_task", key=b.key, body_md="Working on it")
     assert not err and out["comment_id"]
+    # keys are case-insensitive, as over REST: its own key lowercased is still its own task
+    err, task = _tool(tc, token, "get_task", key=b.key.lower())
+    assert not err and task["key"] == b.key
+    err, out = _tool(tc, token, "get_workflow", key=b.key.lower())
+    assert not err and out["stage"] == "brainstorm"
 
 
 async def test_tool_outside_role_refused(db, tc_factory):
@@ -264,6 +272,7 @@ async def test_run_that_ends_mid_call_is_refused_under_the_lock(app, db, tc_fact
         for name, args in (
             ("submit_design", {"markdown": "# Late"}),
             ("ask_human", {"question": "Late?"}),
+            ("comment_on_task", {"body_md": "Late"}),
         ):
             with pytest.raises(ToolError, match="run_not_running"):
                 await app.state.mcp.call_tool(name, {"key": b.key, **args})
@@ -271,6 +280,7 @@ async def test_run_that_ends_mid_call_is_refused_under_the_lock(app, db, tc_fact
         current_run.reset(run_reset)
         current_mcp_user_id.reset(user_reset)
     assert await _count(WorkflowDocument) == 0 and await _count(WorkflowQuestion) == 0
+    assert await _count(Comment) == 0
     wf = await _wf(b.task_id)
     assert (wf.stage, wf.status, wf.needs) == (wf_before.stage, wf_before.status, wf_before.needs)
 
@@ -375,13 +385,24 @@ async def test_connect_only_flow_marks_unenforced_and_never_enqueues(db, tc_fact
         assert not _tool(tc, token, "complete_step", key=key, step=n, summary=f"Step {n}", tests_passed=True)[0]
         assert (await _wf(task_id)).current_step == n + 1
         assert await _category(subtasks[n - 1].id) == "done"
-    assert not _tool(tc, token, "complete_step", key=key, step=3, summary="Step 3", tests_passed=True)[0]
+    assert not _tool(tc, token, "complete_step", key=key, step=3, summary="Step\x00 3", tests_passed=True,
+                     test_command="uv run pytest")[0]
+    async with SessionLocal() as s:
+        events = (await s.execute(
+            select(TaskEvent).where(TaskEvent.task_id == task_id, TaskEvent.kind == "step.completed")
+            .order_by(TaskEvent.created_at, TaskEvent.id)
+        )).scalars().all()
+    assert events[-1].data == {"step": 3, "summary": "Step 3", "tests_passed": True, "test_command": "uv run pytest"}
+    assert [e.data["summary"] for e in events] == ["tests red", "Step 1", "Step 2", "Step 3"]
     wf = await _wf(task_id)
     assert (wf.stage, wf.status, wf.needs, wf.enforcement) == ("done", "finished", None, "unenforced")
     assert await _category(task_id) == "done"
     err, text = _tool(tc, token, "ask_human", key=key, question="Anything else?")
     assert err and "workflow_finished" in text
 
+    # finished, the task can change hands again
+    member = await _member(db, tc)
+    assert tc.patch(f"/api/tasks/{key}", json={"assignee_user_id": str(member.id)}).status_code == 200
     assert await _count(AgentRun) == runs_before  # nothing was ever queued for it
     with pytest.raises(HTTPException) as e:  # and the engine would refuse to
         async with SessionLocal() as s:
@@ -454,11 +475,10 @@ async def test_get_workflow_returns_stage_instructions(db, tc_factory):
     assert out["documents"] == []
     assert out["instructions"] == (await methodology.current(db, "brainstorm")).body_md
     assert out["next"] == "Ask questions with ask_human, then submit_design."
-    # an implement run gets its role's text
+    # an implement run gets its role's hint
     await _set_role(run, "implement", step=1)
     err, out = _tool(tc, token, "get_workflow", key=b.key)
-    assert out["instructions"] == (await methodology.current(db, "build_implement")).body_md
-    assert "complete_step" in out["next"]
+    assert "complete_step" in out["next"] and "step=1" in out["next"]
 
     # a personal token in Build: every Build key, each under its heading
     key, personal = await _connect_only_building(tc, b.manager)
@@ -513,3 +533,105 @@ async def test_oversized_and_nul_payloads_capped_or_rejected(db, tc_factory):
     err, text = _tool(tc, personal, "submit_design", key=mine["key"], markdown="y" * 200_001)
     assert err and "too_large" in text
     assert await _wf(uuid.UUID(mine["id"])) is None  # the refused call started nothing
+
+
+# ---- round 1: reassignment, column guard, stage preconditions, methodology version --------------------
+
+
+async def _questions(task_id) -> list[WorkflowQuestion]:
+    async with SessionLocal() as s:
+        rows = await s.execute(
+            select(WorkflowQuestion).where(WorkflowQuestion.task_id == task_id).order_by(WorkflowQuestion.created_at)
+        )
+        return list(rows.scalars())
+
+
+def _answer_open(tc, key: str, questions: list[WorkflowQuestion], text: str) -> None:
+    [q] = [q for q in questions if q.status == "open"]
+    r = tc.post(f"/api/tasks/{key}/questions/{q.id}/answer", json={"text": text})
+    assert r.status_code == 200, r.text
+
+
+async def test_active_connect_only_workflow_refuses_reassignment_and_column_drags(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _started(db, tc)
+    member = await _member(db, tc)
+    mine = _my_task(tc, b.manager)
+    key, task_id = mine["key"], uuid.UUID(mine["id"])
+    token = _personal(tc)
+    assert not _tool(tc, token, "ask_human", key=key, question="?")[0]  # waiting_human: active
+    for body in ({"assignee_agent_id": b.agent["id"]}, {"assignee_user_id": str(member.id)}):
+        r = tc.patch(f"/api/tasks/{key}", json=body)
+        assert r.status_code == 409 and r.json()["detail"] == "workflow_active", (body, r.text)
+    _answer_open(tc, key, await _questions(task_id), "ok")
+    assert (await _wf(task_id)).status == "running"  # running: active too
+    for body in ({"assignee_agent_id": b.agent["id"]}, {"assignee_user_id": str(member.id)}):
+        r = tc.patch(f"/api/tasks/{key}", json=body)
+        assert r.status_code == 409 and r.json()["detail"] == "workflow_active", (body, r.text)
+    # the workflow moves its own card: no drag into review or done, by hand or over MCP
+    for category in ("review", "done"):
+        r = tc.post(f"/api/tasks/{key}/move", json={"column_id": b.cols[category]["id"]})
+        assert r.status_code == 409 and r.json()["detail"] == "workflow_controls_column", category
+        err, text = _tool(tc, token, "move_task", key=key, column=b.cols[category]["name"])
+        assert err and "workflow_controls_column" in text, category
+    task = tc.get(f"/api/tasks/{key}").json()
+    assert (task["assignee_user_id"], task["assignee_agent_id"]) == (str(b.manager.id), None)
+    assert task["column_id"] == mine["column_id"]
+    assert (await _wf(task_id)).driver == "connect_only"
+    # moving into a working column stays free
+    r = tc.post(f"/api/tasks/{key}/move", json={"column_id": b.cols["working"]["id"]})
+    assert r.status_code == 200, r.text
+
+
+async def test_connect_only_stage_tools_need_a_running_workflow_without_open_question(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _started(db, tc)
+    mine = _my_task(tc, b.manager)
+    key, task_id = mine["key"], uuid.UUID(mine["id"])
+    token = _personal(tc)
+    assert not _tool(tc, token, "ask_human", key=key, question="Which DB?")[0]
+    err, text = _tool(tc, token, "submit_design", key=key, markdown="# D")
+    assert err and "question_open" in text
+    _answer_open(tc, key, await _questions(task_id), "Postgres")
+    assert not _tool(tc, token, "submit_design", key=key, markdown="# D")[0]
+    # waiting for the approval: not running, so no resubmission until a human decides
+    err, text = _tool(tc, token, "submit_design", key=key, markdown="# D2")
+    assert err and "workflow_not_running" in text
+    # a question asked while the approval is pending stays open, and blocks the next submission
+    assert not _tool(tc, token, "ask_human", key=key, question="Also?")[0]
+    assert (await _wf(task_id)).needs == "design_approval"
+    _approve(tc, key, "design", 1)
+    err, text = _tool(tc, token, "submit_plan", key=key, markdown="# P", steps=STEPS)
+    assert err and "question_open" in text
+    _answer_open(tc, key, await _questions(task_id), "Yes")
+    assert not _tool(tc, token, "submit_plan", key=key, markdown="# P", steps=STEPS)[0]
+    _approve(tc, key, "plan", 1)
+    assert not _tool(tc, token, "ask_human", key=key, question="Blocked?")[0]
+    err, text = _tool(tc, token, "complete_step", key=key, step=1, summary="s", tests_passed=True)
+    assert err and "question_open" in text
+    wf = await _wf(task_id)
+    assert (wf.stage, wf.current_step, wf.status, wf.needs) == ("build", 1, "waiting_human", "question")
+    assert [(d.kind, d.version) for d in await _docs(task_id)] == [("design", 1), ("plan", 1)]
+
+
+async def test_get_workflow_gives_the_runs_recorded_methodology_version(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _design_waiting(db, tc)
+    r = tc.post(f"/api/tasks/{b.key}/documents/design/1/decision", json={"approve": False, "comment": "Simpler"})
+    assert r.status_code == 200, r.text
+    async with SessionLocal() as s:
+        revision = (await s.execute(
+            select(AgentRun).where(AgentRun.task_id == b.task_id).order_by(AgentRun.created_at.desc()).limit(1)
+        )).scalar_one()
+    assert (revision.workflow_role, revision.stage) == ("brainstorm", "design")
+    token = await _run_token(revision)
+    meth = await methodology.current(db, "design_revision")
+    assert revision.methodology_version_id == meth.id
+    # an admin edits the text mid-run: the run keeps the version it started with
+    async with SessionLocal() as s:
+        s.add(MethodologyVersion(key="design_revision", version=meth.version + 1, body_md="Edited text"))
+        await s.commit()
+    err, out = _tool(tc, token, "get_workflow", key=b.key)
+    assert not err, out
+    assert out["instructions"] == meth.body_md != "Edited text"
+    assert (out["stage"], out["role"]) == ("design", "brainstorm")

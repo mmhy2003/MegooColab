@@ -670,6 +670,23 @@ async def lock_connect_only(db: AsyncSession, user: User, task: Task) -> TaskWor
     return wf
 
 
+async def require_connect_only_running(db: AsyncSession, wf: TaskWorkflow) -> None:
+    """Before a connect-only agent submits a document or completes a step: the workflow is running (not
+    finished, not waiting for a human) and no question of the task is still open. An open question is refused
+    rather than withdrawn: the human may be answering it."""
+    if wf.status == WorkflowStatus.finished:
+        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
+    open_q = await db.scalar(
+        select(WorkflowQuestion.id)
+        .where(WorkflowQuestion.task_id == wf.task_id, WorkflowQuestion.status == QuestionStatus.open)
+        .limit(1)
+    )
+    if open_q is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "question_open")  # answer or withdraw it first
+    if wf.status != WorkflowStatus.running:
+        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_not_running")
+
+
 # ---- run outcomes ------------------------------------------------------------------------
 
 RoleHandler = Callable[[AsyncSession, TaskWorkflow, Task, AgentRun], Awaitable[None]]

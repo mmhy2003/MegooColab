@@ -36,6 +36,8 @@ MAX_COMMENT = 4_000
 MAX_SUBTASK_TITLE = 500
 
 NEEDS_OF = {DocKind.design: Needs.design_approval, DocKind.plan: Needs.plan_approval}
+# where a connect-only agent may submit each kind (AGT-32)
+SUBMIT_STAGES = {DocKind.design: (Stage.brainstorm, Stage.design), DocKind.plan: (Stage.plan,)}
 
 
 def _422(code: str) -> HTTPException:
@@ -126,18 +128,15 @@ async def submit(
     return doc
 
 
-SUBMIT_STAGES = {DocKind.design: (Stage.brainstorm, Stage.design), DocKind.plan: (Stage.plan,)}
-
-
 async def submit_connect_only(
     db, wf: TaskWorkflow, task: Task, kind: DocKind | str, body_md: str, steps: list[dict] | None = None
 ) -> WorkflowDocument:
-    """AGT-32: a connect-only agent submits its design (Brainstorm or Design) or plan (Plan). The stage is
-    checked here, as `submit` does not; the workflow then waits for approval, as the runner-driven handler
-    would. The caller holds the workflow lock (engine.lock_connect_only) and commits."""
+    """AGT-32: a connect-only agent submits its design (Brainstorm or Design) or plan (Plan) while the workflow
+    runs with no open question. The stage is checked here, as `submit` does not; the workflow then waits for
+    approval, as the runner-driven handler would. The caller holds the workflow lock (engine.lock_connect_only)
+    and commits."""
     kind = DocKind(kind)
-    if wf.status == WorkflowStatus.finished:
-        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
+    await engine.require_connect_only_running(db, wf)
     if wf.stage not in SUBMIT_STAGES[kind]:
         raise HTTPException(status.HTTP_409_CONFLICT, "wrong_stage")
     doc = await submit(db, None, task, kind, body_md, steps)

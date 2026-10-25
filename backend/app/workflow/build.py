@@ -39,7 +39,6 @@ from app.workflow.models import (
     TaskWorkflow,
     Verdict,
     WorkflowDocument,
-    WorkflowStatus,
 )
 
 MAX_REVIEW_ROUNDS = 3
@@ -105,18 +104,18 @@ async def complete_step_connect_only(
     db: AsyncSession, wf: TaskWorkflow, task: Task, step: int, summary: str, tests_passed: bool,
     test_command: str | None,
 ) -> None:
-    """AGT-32: a connect-only agent reports the current step done. There are no review runs: passing tests
-    complete the step (its subtask moves to done) and the next one begins; after the last step the workflow
-    finishes and the card moves to done. Failing tests are recorded and the step stays. The caller holds the
-    workflow lock (engine.lock_connect_only) and commits."""
-    if wf.status == WorkflowStatus.finished:
-        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
+    """AGT-32: a connect-only agent reports the current step done, while the workflow runs with no open
+    question. There are no review runs: passing tests complete the step (its subtask moves to done) and the next
+    one begins; after the last step the workflow finishes and the card moves to done. Failing tests are recorded
+    and the step stays. With no run to hold it, the result goes into the `step.completed` event. The caller holds
+    the workflow lock (engine.lock_connect_only) and commits."""
+    await engine.require_connect_only_running(db, wf)
     if wf.stage != Stage.build:
         raise HTTPException(status.HTTP_409_CONFLICT, "wrong_stage")
     if isinstance(step, bool) or not isinstance(step, int) or step != wf.current_step:
         raise _422("wrong_step")
-    _clean_step_result(summary, tests_passed, test_command)
-    await engine.record_workflow_event(db, task, None, "step.completed", {"step": step, "tests_passed": tests_passed})
+    result = _clean_step_result(summary, tests_passed, test_command)
+    await engine.record_workflow_event(db, task, None, "step.completed", {"step": step, **result})
     if not tests_passed:
         return
     steps = await _plan_steps(db, task.id)

@@ -23,9 +23,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent_runs.models import AgentRun, RunStatus
 from app.auth.models import User
-from app.mcp_server.auth import current_run, require_run_task, tool_session
+from app.mcp_server.auth import current_run, live_run, require_run_task, tool_session
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.tasks.service import get_task_for
@@ -34,6 +33,7 @@ from app.workflow.context import ROLE_KEY
 from app.workflow.models import (
     DocKind,
     DocStatus,
+    MethodologyVersion,
     Needs,
     RunRole,
     Stage,
@@ -93,24 +93,9 @@ async def _task(db: AsyncSession, user: User, key: str, tool: str, *, write: boo
     elif tool in RUNNER_ONLY:
         raise ToolError("not_allowed_in_role")
     task, _ = await get_task_for(db, user, key, write=write)
+    if run is not None and task.id != run.task_id:  # defence in depth: require_run_task compared the keys
+        raise ToolError("wrong_task")
     return task
-
-
-async def _live_run(db: AsyncSession, task: Task) -> AgentRun:
-    """The calling run, re-read under the workflow lock (taken here, in the engine's order: task, workflow,
-    then the run row), so it cannot end while the tool acts. It must still be running."""
-    await engine.lock_task(db, task)
-    run = (
-        await db.execute(
-            select(AgentRun)
-            .where(AgentRun.id == current_run.get().id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-    ).scalar_one_or_none()
-    if run is None or run.status != RunStatus.running:
-        raise HTTPException(status.HTTP_409_CONFLICT, "run_not_running")
-    return run
 
 
 async def _readable(db: AsyncSession, user: User, key: str, tool: str) -> tuple[Task, TaskWorkflow | None]:
@@ -144,11 +129,13 @@ async def _workflow_view(db: AsyncSession, task: Task, wf: TaskWorkflow | None) 
         "documents": [{"kind": str(d.kind), "version": d.version} for d in approved],
     }
     run = current_run.get()
-    if run is not None:  # a run follows its role's text, as in its prompt
+    if run is not None:
         role = RunRole(run.workflow_role)
         option = engine.finishing_option(await db.get(Project, task.project_id), wf) if wf else None
+        # the very text its prompt was built from (a design revision's own, unchanged by a later admin edit)
+        meth = await db.get(MethodologyVersion, run.methodology_version_id) if run.methodology_version_id else None
         out["role"] = role.value
-        out["instructions"] = (await methodology.current(db, ROLE_KEY[role])).body_md
+        out["instructions"] = (meth or await methodology.current(db, ROLE_KEY[role])).body_md
         out["next"] = RUN_NEXT[role].format(step=run.step, option=option.value if option else "")
         return out
     texts = [(k, (await methodology.current(db, k)).body_md.strip()) for k in methodology.KEYS[stage]]
@@ -211,7 +198,7 @@ def register_workflow_tools(mcp: MCPServer) -> None:
                 mockup = {"html": mockup_html, "title": mockup_title, "choices": mockup_choices}
             # the workflow lock before the question rows: the order questions.answer takes them in
             if current_run.get() is not None:
-                await questions.ask(db, await _live_run(db, task), task, question, choices, mockup)
+                await questions.ask(db, await live_run(db, task), task, question, choices, mockup)
             else:
                 wf = await engine.lock_connect_only(db, user, task)
                 if wf.status == WorkflowStatus.finished:
@@ -246,7 +233,7 @@ def register_workflow_tools(mcp: MCPServer) -> None:
         async with tool_session() as (db, user):
             task = await _task(db, user, key, "complete_step", write=True)
             if current_run.get() is not None:
-                run = await _live_run(db, task)
+                run = await live_run(db, task)
                 await build.complete_step(db, run, step, summary, tests_passed, test_command)
             else:
                 wf = await engine.lock_connect_only(db, user, task)
@@ -259,7 +246,7 @@ def register_workflow_tools(mcp: MCPServer) -> None:
         (critical, important or minor), file, line, summary}."""
         async with tool_session() as (db, user):
             task = await _task(db, user, key, "submit_review", write=True)
-            review = await build.submit_review(db, await _live_run(db, task), verdict, findings)
+            review = await build.submit_review(db, await live_run(db, task), verdict, findings)
             return {"review_id": str(review.id), "verdict": str(review.verdict), "round": review.round}
 
     @mcp.tool()
@@ -270,7 +257,7 @@ def register_workflow_tools(mcp: MCPServer) -> None:
         says), the branch, the pull request URL for pr_opened, and whether the tests pass."""
         async with tool_session() as (db, user):
             task = await _task(db, user, key, "report_finish", write=True)
-            await finish.report_finish(db, await _live_run(db, task), outcome, branch, pr_url, tests_passed)
+            await finish.report_finish(db, await live_run(db, task), outcome, branch, pr_url, tests_passed)
             return {"outcome": outcome, "branch": branch, "tests_passed": tests_passed}
 
 
@@ -278,6 +265,6 @@ async def _submit(
     db: AsyncSession, user: User, task: Task, kind: DocKind, markdown: str, steps: list[dict] | None
 ) -> WorkflowDocument:
     if current_run.get() is not None:
-        return await documents.submit(db, await _live_run(db, task), task, kind, markdown, steps)
+        return await documents.submit(db, await live_run(db, task), task, kind, markdown, steps)
     wf = await engine.lock_connect_only(db, user, task)
     return await documents.submit_connect_only(db, wf, task, kind, markdown, steps)
