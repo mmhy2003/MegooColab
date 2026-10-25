@@ -79,12 +79,14 @@ func (a *fakeAgent) SetSessionMode(_ context.Context, p acp.SetSessionModeReques
 
 func (a *fakeAgent) Cancel(_ context.Context, _ acp.CancelNotification) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.cancelled = true
 	a.report.Cancelled = true
-	if a.cancelTurn != nil {
+	// FAKEAGENT_IGNORE_CANCEL=1: keep working, like a stuck adapter.
+	if a.cancelTurn != nil && os.Getenv("FAKEAGENT_IGNORE_CANCEL") != "1" {
 		a.cancelTurn()
 	}
+	a.mu.Unlock()
+	a.flush() // so tests can see the cancel even if the process is killed afterwards
 	return nil
 }
 

@@ -56,6 +56,7 @@ type Manager struct {
 	early    []string // run ids cancelled before they started, oldest first
 	reported map[string]string
 	closed   bool
+	gen      int // connection generation; bumped by StopAll
 	wg       sync.WaitGroup
 }
 
@@ -82,8 +83,11 @@ type run struct {
 	ctx    context.Context
 	abort  context.CancelFunc
 	done   chan struct{}
+	gen    int // the manager's generation when the run started
+	client *acpclient.Client
 	emitMu sync.Mutex // serializes seq assignment and sending
 	seq    int
+	closed bool // no more updates once run_finished is due
 
 	mu              sync.Mutex
 	cancelRequested bool
@@ -97,6 +101,9 @@ type run struct {
 func (r *run) emit(kind string, data map[string]any) {
 	r.emitMu.Lock()
 	defer r.emitMu.Unlock()
+	if r.closed || r.stale() {
+		return
+	}
 	r.seq++
 	if kind == "message" {
 		if text, ok := data["text"].(string); ok {
@@ -106,6 +113,21 @@ func (r *run) emit(kind string, data map[string]any) {
 		}
 	}
 	_ = r.m.send(protocol.NewRunUpdate(r.id, r.seq, kind, data))
+}
+
+// closeEmit makes every later emit a no-op; run_finished is the last message.
+func (r *run) closeEmit() {
+	r.emitMu.Lock()
+	r.closed = true
+	r.emitMu.Unlock()
+}
+
+// stale reports that the connection this run belongs to is gone. The server
+// has already failed the run, so nothing more is sent for it.
+func (r *run) stale() bool {
+	r.m.mu.Lock()
+	defer r.m.mu.Unlock()
+	return r.gen != r.m.gen
 }
 
 func (r *run) cancelled() bool {
@@ -125,6 +147,9 @@ func truncate(s string, n int) string {
 // Whatever ends it (cancellation, 4401, replaced), every run is stopped before
 // it returns, and the connection's error is returned.
 func (m *Manager) Serve(ctx context.Context, c *conn.Client) error {
+	// The server fails a run when its runner disconnects, so any loss of the
+	// connection stops the in-flight runs; new ones are accepted after reconnect.
+	c.OnDisconnect = func(error) { m.StopAll() }
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 	for env := range c.Messages() {
@@ -217,7 +242,9 @@ func (m *Manager) probe() []protocol.AgentAvailability {
 	for _, a := range agents {
 		problems := append([]string{}, shared...)
 		for _, b := range a.Bindings {
-			if !isGitWorkTree(b.LocalPath) {
+			if b.LocalPath == "" || !filepath.IsAbs(b.LocalPath) {
+				problems = append(problems, fmt.Sprintf("binding path %q is not an absolute path", b.LocalPath))
+			} else if !isGitWorkTree(b.LocalPath) {
 				problems = append(problems, b.LocalPath+" is not a git repository")
 			}
 		}
@@ -261,8 +288,12 @@ func (m *Manager) HandleRunStart(ctx context.Context, rs protocol.RunStart) {
 		m.finish(rs.RunID, "cancelled", "", "")
 		return
 	}
-	if _, dup := m.runs[rs.RunID]; dup {
+	if old, dup := m.runs[rs.RunID]; dup {
+		stale := old.gen != m.gen
 		m.mu.Unlock()
+		if stale { // the predecessor from the lost connection is still winding down
+			m.finish(rs.RunID, "failed", "", "busy")
+		}
 		return
 	}
 	agent, ok := m.agents[rs.AgentID]
@@ -274,7 +305,7 @@ func (m *Manager) HandleRunStart(ctx context.Context, rs protocol.RunStart) {
 	limit := max(agent.MaxConcurrentRuns, 1)
 	n := 0
 	for _, r := range m.runs {
-		if r.agent == rs.AgentID {
+		if r.agent == rs.AgentID && r.gen == m.gen {
 			n++
 		}
 	}
@@ -285,7 +316,7 @@ func (m *Manager) HandleRunStart(ctx context.Context, rs protocol.RunStart) {
 	}
 	// The run outlives the message that started it; Shutdown is what stops it.
 	rctx, abort := context.WithCancel(context.WithoutCancel(ctx))
-	r := &run{m: m, id: rs.RunID, agent: rs.AgentID, ctx: rctx, abort: abort, done: make(chan struct{})}
+	r := &run{m: m, id: rs.RunID, agent: rs.AgentID, gen: m.gen, ctx: rctx, abort: abort, done: make(chan struct{})}
 	m.runs[rs.RunID] = r
 	m.wg.Add(1)
 	m.mu.Unlock()
@@ -353,20 +384,30 @@ func (m *Manager) requestCancel(r *run) {
 	}()
 }
 
-// Shutdown cancels every run and waits for them to end. Runs still alive when
-// ctx expires have their process trees killed.
-func (m *Manager) Shutdown(ctx context.Context) {
+// StopAll cancels every run in flight (ACP cancel, then a kill after
+// CancelGrace) and detaches them from the connection: they stop counting toward
+// the concurrency limit and send nothing more. New runs are still accepted.
+func (m *Manager) StopAll() []*run {
 	m.mu.Lock()
-	m.closed = true
+	m.gen++
 	runs := make([]*run, 0, len(m.runs))
 	for _, r := range m.runs {
 		runs = append(runs, r)
 	}
 	m.mu.Unlock()
-
 	for _, r := range runs {
 		m.requestCancel(r)
 	}
+	return runs
+}
+
+// Shutdown cancels every run and waits for them to end. Runs still alive when
+// ctx expires have their process trees killed.
+func (m *Manager) Shutdown(ctx context.Context) {
+	m.mu.Lock()
+	m.closed = true
+	m.mu.Unlock()
+	runs := m.StopAll()
 	finished := make(chan struct{})
 	go func() { m.wg.Wait(); close(finished) }()
 	select {
@@ -390,6 +431,10 @@ func (m *Manager) Shutdown(ctx context.Context) {
 func (m *Manager) execute(r *run, rs protocol.RunStart, agent protocol.WelcomeAgent) {
 	defer m.wg.Done()
 	outcome, errMsg := m.drive(r, rs, agent)
+	if r.client != nil { // the process is gone; send what the agent said last
+		r.client.Flush()
+	}
+	r.closeEmit()
 	r.mu.Lock()
 	summary := r.summary
 	r.mu.Unlock()
@@ -399,22 +444,27 @@ func (m *Manager) execute(r *run, rs protocol.RunStart, agent protocol.WelcomeAg
 	m.mu.Lock()
 	delete(m.runs, r.id)
 	m.mu.Unlock()
-	m.finish(r.id, outcome, summary, errMsg)
+	if !r.stale() {
+		m.finish(r.id, outcome, summary, errMsg)
+	}
 }
 
+// bindingPath is the repository for the run's project. An agent with bindings
+// but none for this project is not bound to it; only an agent with no bindings
+// at all falls back to the path in run_start.
 func (m *Manager) bindingPath(agent protocol.WelcomeAgent, rs protocol.RunStart) string {
 	for _, b := range agent.Bindings {
 		if b.ProjectKey == rs.Task.ProjectKey {
 			return b.LocalPath
 		}
 	}
+	if len(agent.Bindings) > 0 {
+		return ""
+	}
 	return rs.LocalPath
 }
 
 func (m *Manager) openLog(runID string) (*os.File, error) {
-	if !safeRunID.MatchString(runID) {
-		return nil, fmt.Errorf("unsafe run id")
-	}
 	dir := filepath.Join(m.cacheRoot, "logs")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
@@ -422,56 +472,75 @@ func (m *Manager) openLog(runID string) (*os.File, error) {
 	return os.OpenFile(filepath.Join(dir, runID+".log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 }
 
-// drive performs the run and returns its outcome and, for failures, an error text.
-func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgent) (outcome, errMsg string) {
-	fail := func(format string, args ...any) (string, string) {
-		if r.cancelled() {
-			return "cancelled", ""
-		}
-		return "failed", fmt.Sprintf(format, args...)
+// stopReasonCode keeps agent-supplied text out of run_finished.
+func stopReasonCode(r acp.StopReason) string {
+	switch r {
+	case acp.StopReasonMaxTokens, acp.StopReasonMaxTurnRequests, acp.StopReasonRefusal:
+		return "stopped:" + string(r)
 	}
+	return "stopped:other"
+}
 
-	kind := policy.Kind(rs.Policy)
-	if kind != policy.ReadOnly && kind != policy.Workspace {
-		return fail("unknown_policy")
-	}
-	repo := m.bindingPath(agent, rs)
-	if repo == "" {
-		return fail("no_binding")
-	}
-	wt, _, err := worktree.Ensure(repo, m.cacheRoot, rs.AgentID, rs.Task.Key, rs.Task.Title)
-	if err != nil {
-		return fail("worktree_failed: %v", err)
-	}
-	pol, err := policy.New(kind, wt)
-	if err != nil {
-		return fail("policy_failed: %v", err)
-	}
-	spec, err := adapters.For(agent.Program)
-	if err != nil {
-		return fail("%v", err)
+// drive performs the run and returns its outcome and, for failures, a stable
+// error code. The details of a failure go to the run's log file, never to the
+// server.
+func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgent) (outcome, errMsg string) {
+	if !safeRunID.MatchString(rs.RunID) {
+		return "failed", "log_failed"
 	}
 	logf, err := m.openLog(rs.RunID)
 	if err != nil {
-		return fail("log_failed: %v", err)
+		return "failed", "log_failed"
 	}
 	defer logf.Close()
+	fail := func(code string, cause error) (string, string) {
+		if cause != nil {
+			fmt.Fprintf(logf, "runner: %s: %v\n", code, cause)
+		}
+		if r.cancelled() {
+			return "cancelled", ""
+		}
+		return "failed", code
+	}
+
+	// Cheap checks first, so a bad run leaves no worktree or branch behind.
+	kind := policy.Kind(rs.Policy)
+	if kind != policy.ReadOnly && kind != policy.Workspace {
+		return fail("unknown_policy", nil)
+	}
+	spec, err := adapters.For(agent.Program)
+	if err != nil {
+		return fail("unsupported_program", err)
+	}
+	repo := m.bindingPath(agent, rs)
+	if repo == "" {
+		return fail("not_bound", nil)
+	}
+	wt, _, err := worktree.Ensure(repo, m.cacheRoot, rs.AgentID, rs.Task.Key, rs.Task.Title)
+	if err != nil {
+		return fail("worktree_failed", err)
+	}
+	pol, err := policy.New(kind, wt)
+	if err != nil {
+		return fail("policy_failed", err)
+	}
 
 	cmd := exec.Command(spec.Command, spec.Args...)
 	cmd.Dir = wt
 	cmd.Env = append(os.Environ(), spec.Env...)
 	cmd.Stderr = &cappedWriter{w: logf, left: logCap}
+	cmd.WaitDelay = 5 * time.Second // a grandchild holding a pipe cannot block Wait forever
 	ownProcessGroup(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return fail("adapter_start_failed: %v", err)
+		return fail("adapter_start_failed", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return fail("adapter_start_failed: %v", err)
+		return fail("adapter_start_failed", err)
 	}
 	if err := cmd.Start(); err != nil {
-		return fail("adapter_start_failed: %v", err)
+		return fail("adapter_start_failed", err)
 	}
 	r.mu.Lock()
 	r.cmd = cmd
@@ -484,6 +553,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		opts = append(opts, acpclient.WithFlushInterval(m.FlushInterval))
 	}
 	client := acpclient.New(pol, wt, r.emit, opts...)
+	r.client = client
 	ac := acp.NewClientSideConnection(client, stdin, stdout)
 	ac.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
@@ -494,7 +564,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 			Terminal: false,
 		},
 	}); err != nil {
-		return fail("initialize_failed: %v", err)
+		return fail("initialize_failed", err)
 	}
 	sess, err := ac.NewSession(r.ctx, acp.NewSessionRequest{
 		Cwd:        wt,
@@ -502,7 +572,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		Meta:       adapters.SessionMeta(agent.Program, kind),
 	})
 	if err != nil {
-		return fail("session_failed: %v", err)
+		return fail("session_failed", err)
 	}
 	var available []string
 	if sess.Modes != nil {
@@ -531,7 +601,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	})
 	client.Flush()
 	if err != nil {
-		return fail("prompt_failed: %v", err)
+		return fail("prompt_failed", err)
 	}
 	graceful = true
 	switch resp.StopReason {
@@ -540,7 +610,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	case acp.StopReasonCancelled:
 		return "cancelled", ""
 	}
-	return fail("stopped: %s", resp.StopReason)
+	return fail(stopReasonCode(resp.StopReason), nil)
 }
 
 // reap ends the adapter process: after a finished turn it gets ExitGrace to

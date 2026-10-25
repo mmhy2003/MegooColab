@@ -46,6 +46,11 @@ type Client struct {
 	// OnState, if set, is told about "connected", "reconnecting in 2s" and
 	// "stopped: <reason>". It is called from the Run goroutine.
 	OnState func(string)
+	// OnDisconnect, if set, is called from the Run goroutine whenever a session
+	// ends with an error that will be retried, before "reconnecting in ..." is
+	// announced. The server fails a run when its runner disconnects, so callers
+	// stop their in-flight work here.
+	OnDisconnect func(error)
 
 	cfg      config.Config
 	version  string
@@ -120,6 +125,9 @@ func (c *Client) Run(ctx context.Context) error {
 		}
 		if gotWelcome {
 			attempt = 0
+		}
+		if c.OnDisconnect != nil {
+			c.OnDisconnect(err)
 		}
 		delay := backoffDelay(c.BackoffBase, c.BackoffMax, attempt, c.Jitter())
 		attempt++

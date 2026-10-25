@@ -83,6 +83,7 @@ func newEnvWithCache(t *testing.T, scenario string, maxRuns int, cache string, t
 	}
 	client = conn.New(config.Config{URL: e.srv.URL(), Token: token}, "test", e.mgr.Probe)
 	client.HeartbeatInterval = time.Hour
+	client.BackoffBase, client.BackoffMax = 10*time.Millisecond, 50*time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	go func() { e.serveErr <- e.mgr.Serve(ctx, client) }()
@@ -501,5 +502,150 @@ func TestWelcomeReportsAvailabilityChanges(t *testing.T) {
 	second := e.srv.WaitNthFrame(t, "agent_status", 2)
 	if err := json.Unmarshal(second.Raw, &s); err != nil || s.Available || len(s.Problems) != 1 {
 		t.Fatalf("second agent_status = %+v, %v", s, err)
+	}
+}
+
+func TestDisconnectStopsRuns(t *testing.T) {
+	var mu sync.Mutex
+	var killed int
+	e := newEnvWithCache(t, sleeping, 1, t.TempDir(), func(m *Manager) {
+		m.CancelGrace = time.Second
+		m.Kill = func(c *exec.Cmd) { mu.Lock(); killed++; mu.Unlock(); killTree(c) }
+	})
+	t.Setenv("FAKEAGENT_IGNORE_CANCEL", "1") // the old run lingers until the kill
+	e.startRun("run-d", "MEG-9", "workspace")
+	e.waitUpdate("run-d")
+
+	e.srv.Close(1011, "network blip") // not terminal: the client reconnects
+	e.srv.WaitNthFrame(t, "hello", 2)
+	select {
+	case err := <-e.serveErr:
+		t.Fatalf("Serve returned after a reconnectable loss: %v", err)
+	default:
+	}
+	if !e.readReport().Cancelled {
+		t.Error("the agent was not told to cancel after the disconnect")
+	}
+
+	t.Setenv("FAKEAGENT_SCENARIO", `[{"say":"again"}]`)
+	e.welcome(1)
+	// The stopped run still occupies its id: the same id is refused, not dropped.
+	e.startRun("run-d", "MEG-9", "workspace")
+	if rf := e.finished("run-d"); rf.Outcome != "failed" || rf.Error == nil || *rf.Error != "busy" {
+		t.Fatalf("re-sent id = %+v", rf)
+	}
+	// A different run is not blocked by the stopped one (no busy while it winds down).
+	e.startRun("run-e", "MEG-10", "workspace")
+	if rf := e.finished("run-e"); rf.Outcome != "completed" || rf.Summary != "again" {
+		t.Fatalf("run after reconnect = %+v", rf)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for e.mgr.Active() != 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if n := e.mgr.Active(); n != 0 {
+		t.Fatalf("%d runs still active", n)
+	}
+	mu.Lock()
+	if killed == 0 {
+		t.Error("the lingering adapter was never killed")
+	}
+	mu.Unlock()
+	time.Sleep(100 * time.Millisecond)
+	for _, f := range e.srv.Frames() {
+		if f.Conn != 2 || (f.Type != protocol.TypeRunUpdate && f.Type != protocol.TypeRunFinished) {
+			continue
+		}
+		var h struct {
+			RunID string  `json:"run_id"`
+			Error *string `json:"error"`
+		}
+		_ = json.Unmarshal(f.Raw, &h)
+		if h.RunID == "run-d" && !(f.Type == protocol.TypeRunFinished && h.Error != nil && *h.Error == "busy") {
+			t.Errorf("stale run sent %s on the new connection", f.Type)
+		}
+	}
+}
+
+func TestCancelKillsAgentThatIgnoresCancel(t *testing.T) {
+	var mu sync.Mutex
+	var killed int
+	e := newEnvWithCache(t, sleeping, 1, t.TempDir(), func(m *Manager) {
+		m.CancelGrace = 200 * time.Millisecond
+		m.Kill = func(c *exec.Cmd) { mu.Lock(); killed++; mu.Unlock(); killTree(c) }
+	})
+	t.Setenv("FAKEAGENT_IGNORE_CANCEL", "1")
+	e.startRun("run-i", "MEG-11", "workspace")
+	e.waitUpdate("run-i")
+	if err := e.srv.Send(protocol.RunCancel{Type: protocol.TypeRunCancel, RunID: "run-i"}); err != nil {
+		t.Fatal(err)
+	}
+	if rf := e.finished("run-i"); rf.Outcome != "cancelled" {
+		t.Fatalf("finished = %+v", rf)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if killed == 0 {
+		t.Fatal("the adapter that ignored session/cancel was not killed")
+	}
+}
+
+func TestRunFailuresReportStableCodesOnly(t *testing.T) {
+	e := newEnvWithCache(t, "[]", 1, t.TempDir())
+	// A binding exists for another project only.
+	if err := e.srv.Send(protocol.RunStart{Type: protocol.TypeRunStart, RunID: "run-n", AgentID: "agent-1",
+		Task: protocol.RunTask{Key: "MEG-1", Title: "t", ProjectKey: "OTHER"}, LocalPath: e.repo, Policy: "workspace", Prompt: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	if rf := e.finished("run-n"); rf.Error == nil || *rf.Error != "not_bound" {
+		t.Fatalf("finished = %+v", rf)
+	}
+	// Bad policy: stable code, and no worktree or branch is left behind.
+	e.startRun("run-p", "MEG-2", "bogus")
+	if rf := e.finished("run-p"); rf.Error == nil || *rf.Error != "unknown_policy" {
+		t.Fatalf("finished = %+v", rf)
+	}
+	if _, err := os.Stat(e.worktree("MEG-2")); err == nil {
+		t.Error("a run with an unknown policy created a worktree")
+	}
+	// A worktree failure (unsafe task key) reports a code with no git or path text.
+	e.startRun("run-w", "../evil", "workspace")
+	rf := e.finished("run-w")
+	if rf.Error == nil || *rf.Error != "worktree_failed" {
+		t.Fatalf("finished = %+v", rf)
+	}
+	b, err := os.ReadFile(filepath.Join(e.cache, "logs", "run-w.log"))
+	if err != nil || !strings.Contains(string(b), "worktree") {
+		t.Errorf("the full error should be in the run log: %q, %v", b, err)
+	}
+}
+
+func TestNoUpdateAfterFinish(t *testing.T) {
+	var mu sync.Mutex
+	var sent []any
+	m := New(func(v any) error { mu.Lock(); sent = append(sent, v); mu.Unlock(); return nil }, t.TempDir())
+	r := &run{m: m, id: "r"}
+	r.emit("message", map[string]any{"text": "a"})
+	r.closeEmit()
+	r.emit("message", map[string]any{"text": "late"})
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d messages, want 1 (nothing after close)", len(sent))
+	}
+}
+
+func TestProbeRejectsEmptyOrRelativeBindingPath(t *testing.T) {
+	m := New(func(any) error { return nil }, t.TempDir())
+	m.LookPath = func(string) (string, error) { return "x", nil }
+	m.HandleWelcome(protocol.Welcome{Agents: []protocol.WelcomeAgent{
+		{AgentID: "e", Bindings: []protocol.WelcomeBinding{{ProjectKey: "A", LocalPath: ""}}},
+		{AgentID: "r", Bindings: []protocol.WelcomeBinding{{ProjectKey: "A", LocalPath: "."}}},
+	}})
+	for _, a := range m.Probe() {
+		if a.Available || len(a.Problems) != 1 || !strings.Contains(a.Problems[0], "not an absolute path") {
+			t.Errorf("agent %s = %+v", a.AgentID, a)
+		}
 	}
 }

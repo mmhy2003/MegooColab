@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -272,4 +274,36 @@ func TestWSURL(t *testing.T) {
 	if _, err := WSURL("ftp://x"); err == nil {
 		t.Error("WSURL(ftp) should fail")
 	}
+}
+
+func TestOnDisconnectCalledOnReconnectableLoss(t *testing.T) {
+	s := testserver.New(t, token)
+	c := newTestClient(t, s, token)
+	got := make(chan error, 4)
+	var states []string
+	var mu sync.Mutex
+	c.OnState = func(st string) { mu.Lock(); states = append(states, st); mu.Unlock() }
+	c.OnDisconnect = func(err error) {
+		mu.Lock()
+		// it must run before the "reconnecting" state is announced
+		for _, st := range states {
+			if strings.HasPrefix(st, "reconnecting") {
+				err = errors.New("called after reconnecting state")
+			}
+		}
+		mu.Unlock()
+		got <- err
+	}
+	start(t, c)
+	s.WaitFrame(t, "hello")
+	s.Close(1011, "bye")
+	select {
+	case err := <-got:
+		if err == nil || strings.Contains(err.Error(), "after reconnecting") {
+			t.Fatalf("OnDisconnect err = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnDisconnect not called")
+	}
+	s.WaitNthFrame(t, "hello", 2)
 }
