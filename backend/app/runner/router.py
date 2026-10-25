@@ -39,7 +39,7 @@ from app.runner.protocol import (
     WelcomeBinding,
     runner_message,
 )
-from app.runner.registry import RunnerConn, registry
+from app.runner.registry import RunnerClosed, RunnerConn, registry
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -211,7 +211,7 @@ async def runner_socket(websocket: WebSocket) -> None:
         conn = await registry.connect(user_id, websocket)
         await _send_welcome(conn, announce_change=False)
         await _serve(conn, queue, raw)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RunnerClosed):  # the runner went away
         pass
     finally:
         hub.unsubscribe(queue)
@@ -265,7 +265,10 @@ async def _serve(conn: RunnerConn, queue: asyncio.Queue[Event], raw: str | None)
                     if ev.type in RECHECK_EVENTS:
                         recheck = True
                     elif ev.type == "agents.updated":
-                        await _send_welcome(conn, announce_change=True)
+                        try:
+                            await _send_welcome(conn, announce_change=True)
+                        except RunnerClosed:
+                            return  # the runner is gone; the caller cleans up
             if time.monotonic() - conn.last_seen >= IDLE_TIMEOUT_SECONDS:
                 await conn.close(CLOSE_IDLE)
                 return

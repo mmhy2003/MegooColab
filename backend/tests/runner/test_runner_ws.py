@@ -1,5 +1,6 @@
 """Runner WebSocket tests; same TestClient setup as tests/realtime/test_ws.py."""
 
+import asyncio
 import time
 
 import pytest
@@ -321,3 +322,29 @@ async def test_failed_publish_on_disconnect_is_logged(db, tc_factory, monkeypatc
         time.sleep(0.02)
     assert "runner disconnect: publishing availability failed" in caplog.text
     _wait_status(tc, a["id"], "offline")  # the registry was still cleaned up
+
+
+class _GoneSocket:
+    """A peer that vanished: nothing arrives and every send fails."""
+
+    async def receive(self):
+        await asyncio.Event().wait()
+
+    async def send_text(self, text):
+        raise RuntimeError("socket closed")
+
+    async def close(self, code=1000):
+        pass
+
+
+async def test_failed_welcome_send_ends_serve_quietly(db):
+    """agents.updated while the peer is already gone: _serve ends instead of raising RunnerClosed."""
+    from app.core.events import Event
+    from app.runner.registry import RunnerConn
+    from app.runner.router import _serve
+
+    user = await make_user(db)
+    conn = RunnerConn(user.id, _GoneSocket())
+    queue: asyncio.Queue = asyncio.Queue()
+    queue.put_nowait(Event(type="agents.updated", user_id=user.id))
+    await asyncio.wait_for(_serve(conn, queue, None), 5)
