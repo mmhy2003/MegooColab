@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/kardianos/service"
@@ -17,9 +18,11 @@ const (
 	maxLogBytes = 5 << 20
 )
 
-// systemdUserScript is kardianos' systemd template with one change: a user
+// systemdUserScript is kardianos' systemd template with two changes: a user
 // unit must be wanted by default.target, because user managers never reach
-// multi-user.target and `systemctl --user enable` would not autostart it.
+// multi-user.target and `systemctl --user enable` would not autostart it; and
+// it is not restarted after the server ended the session for good (revoked
+// token, replaced runner), which would otherwise loop every RestartSec.
 const systemdUserScript = `[Unit]
 Description={{Description}}
 ConditionFileIsExecutable={{Path | cmdEscape}}
@@ -39,7 +42,8 @@ StandardError=file:{{LogDirectory}}/{{Name}}.err
 {{end}}{{if LimitNOFILE}}LimitNOFILE={{LimitNOFILE}}
 {{end}}{{if Restart}}Restart={{Restart}}
 {{end}}{{if SuccessExitStatus}}SuccessExitStatus={{SuccessExitStatus}}
-{{end}}RestartSec=120
+{{end}}RestartPreventExitStatus={{EXIT_STOPPED}}
+RestartSec=120
 EnvironmentFile=-/etc/sysconfig/{{Name}}
 
 {{ENV}}[Install]
@@ -54,6 +58,7 @@ WantedBy=default.target
 // would not find npx.
 func serviceConfig(path string) *service.Config {
 	script := strings.Replace(systemdUserScript, "{{ENV}}", systemdEnvLine(path), 1)
+	script = strings.Replace(script, "{{EXIT_STOPPED}}", strconv.Itoa(exitStoppedByServer), 1)
 	c := &service.Config{
 		Name:        serviceName,
 		DisplayName: "MegooColab Runner",

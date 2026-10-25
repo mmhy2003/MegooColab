@@ -63,7 +63,9 @@ The service runs as you, because the adapters need your agent logins and reposit
 
 - **Linux:** a systemd user unit, enabled for `default.target`, so it starts when your user
   manager does. Run `loginctl enable-linger $USER` once to keep it running when you are
-  logged out.
+  logged out. When the server ends the session for good (the token was revoked, or another
+  runner signed in with your account) the runner exits with status 78 and systemd does not
+  restart it: run `login` again, then `service start`.
 - **macOS:** a LaunchAgent in `~/Library/LaunchAgents`, loaded at login.
 - **Windows:** an `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry that starts `megoocolab-runner run --background`
   at logon; it restarts itself once without a console window, so you may see a brief console flash at logon. `service start` launches it detached right away,
