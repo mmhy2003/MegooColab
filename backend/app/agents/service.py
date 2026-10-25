@@ -21,6 +21,7 @@ from app.runner.registry import WORKFLOW_CAPABILITY, WORKFLOW_PROBLEM, registry
 from app.tasks.models import Task
 from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
+from app.workflow.models import TaskWorkflow, WorkflowStatus
 
 PROGRAM_LABELS = {AgentProgram.claude_code: "Claude Code", AgentProgram.codex: "Codex"}
 
@@ -78,6 +79,20 @@ async def has_active_runs(db: AsyncSession, agent_id: uuid.UUID) -> bool:
     return (
         await db.scalar(
             select(AgentRun.id).where(AgentRun.agent_id == agent_id, AgentRun.status.in_(ACTIVE_STATUSES)).limit(1)
+        )
+    ) is not None
+
+
+async def has_active_workflows(db: AsyncSession, agent_id: uuid.UUID) -> bool:
+    """True if a workflow the agent drives is under way (neither idle nor finished)."""
+    return (
+        await db.scalar(
+            select(TaskWorkflow.task_id)
+            .where(
+                TaskWorkflow.agent_id == agent_id,
+                TaskWorkflow.status.not_in((WorkflowStatus.idle, WorkflowStatus.finished)),
+            )
+            .limit(1)
         )
     ) is not None
 

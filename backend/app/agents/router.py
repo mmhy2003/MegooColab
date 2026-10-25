@@ -78,6 +78,8 @@ async def delete_agent(agent_id: uuid.UUID, user: AuthedUser, db: DbSession) -> 
     agent = await service.get_owned_agent(db, user, agent_id)
     if await service.has_active_runs(db, agent.id):
         raise HTTPException(status.HTTP_409_CONFLICT, "agent_has_active_runs")
+    if await service.has_active_workflows(db, agent.id):
+        raise HTTPException(status.HTTP_409_CONFLICT, "agent_has_active_workflows")
     affected = await service.bound_project_ids(db, agent.id)
     await db.delete(agent)
     await audit.record(

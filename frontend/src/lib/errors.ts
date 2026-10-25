@@ -31,6 +31,7 @@ const MESSAGES: Record<string, string> = {
   agent_not_bound: "That agent isn't set up for this project. Add the project to the agent first.",
   unknown_agent: "That agent no longer exists.",
   agent_has_active_runs: "This agent is working on a task. Cancel its runs first.",
+  agent_has_active_workflows: "This agent still drives a workflow. Finish it or assign the task to someone else first.",
   agent_name_taken: "You already have an agent with that name.",
   project_not_accessible: "You don't have access to that project.",
   local_path_not_absolute: "Enter the full path to the repository, such as C:\\code\\payments or /home/me/code/payments.",

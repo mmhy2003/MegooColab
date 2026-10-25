@@ -24,8 +24,8 @@ async def test_register_agent_defaults_name(client, db):
 
 async def test_bind_requires_project_access_and_absolute_path(client, db):
     me = await make_user(db)
-    project, _, _ = await make_project(client, db, "PAY", me)
-    other, _, _ = await make_project(client, db, "OTH")
+    _project, _, _ = await make_project(client, db, "PAY", me)
+    _other, _, _ = await make_project(client, db, "OTH")
     await login(client, me)
     a = await _agent(client)
     url = f"/api/agents/{a['id']}/bindings"
@@ -46,7 +46,7 @@ async def test_bind_requires_project_access_and_absolute_path(client, db):
 async def test_local_path_hidden_from_non_owners(client, client_factory, db):
     me = await make_user(db)
     teammate = await make_user(db)
-    project, manager, _ = await make_project(client, db, "PAY", me, teammate)
+    _project, _manager, _ = await make_project(client, db, "PAY", me, teammate)
     await login(client, me)
     a = await _agent(client)
     await client.put(
@@ -68,7 +68,7 @@ async def test_project_agents_list_shows_can_use(client, client_factory, db):
     owner = await make_user(db)
     member = await make_user(db)
     admin = await make_user(db, role=Role.admin)
-    project, manager, _ = await make_project(client, db, "PAY", owner, member)
+    _project, manager, _ = await make_project(client, db, "PAY", owner, member)
     outsider_mgr = await make_user(db, role=Role.manager)
     await make_team(db, outsider_mgr)
 
@@ -135,7 +135,7 @@ async def test_duplicate_agent_name_409(client, client_factory, db):
 async def test_team_detail_lists_member_agents(client, client_factory, db):
     member = await make_user(db, name="Mia")
     outsider = await make_user(db, name="Zed")
-    project, manager, team = await make_project(client, db, "PAY", member)
+    _project, manager, team = await make_project(client, db, "PAY", member)
     await login(client, member)
     a = await _agent(client)
     await client.put(
@@ -191,3 +191,20 @@ async def test_can_use_agent_rule(client, db):
     assert await can_use_agent(db, member, agent, project) is False
     assert may_use_agent(member, owner.id, manages=False) is False
     assert may_use_agent(admin, owner.id, manages=False) is True
+
+
+async def test_delete_agent_with_an_unfinished_workflow_409(db, tc_factory):
+    """A workflow the agent drives would be left without its agent: finish or reassign it first."""
+    from sqlalchemy import update
+
+    from app.workflow.models import TaskWorkflow
+    from tests.workflow.test_engine import _started
+
+    tc = tc_factory(lifespan=True)
+    b, _ = await _started(db, tc)
+    assert tc.post(f"/api/tasks/{b.key}/workflow/pause").json()["status"] == "paused"  # no active run left
+    r = tc.delete(f"/api/agents/{b.agent['id']}")
+    assert r.status_code == 409 and r.json()["detail"] == "agent_has_active_workflows"
+    await db.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == b.task_id).values(status="finished"))
+    await db.commit()
+    assert tc.delete(f"/api/agents/{b.agent['id']}").status_code == 204
