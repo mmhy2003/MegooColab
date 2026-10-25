@@ -300,6 +300,8 @@ async def view_mockup(mockup_id: uuid.UUID, user: AuthedUser, db: DbSession) -> 
     if mockup is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
     task = await db.get(Task, mockup.task_id)
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
     await get_project_for(db, user, str(task.project_id))
     return Response(
         questions.inject_choice_script(mockup.html), media_type="text/html; charset=utf-8", headers=MOCKUP_HEADERS

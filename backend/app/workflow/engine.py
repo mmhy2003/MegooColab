@@ -463,7 +463,13 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     if need is not None:
         wait_for(wf, need)
     else:
-        await _rerun(db, wf, task, requested_by=user.id)
+        from app.workflow import questions  # local: questions imports this module
+
+        pending = await questions.undelivered_answer(db, task.id)  # answered while paused
+        if pending is not None:
+            await questions.deliver(db, wf, task, pending, requested_by=user.id)
+        else:
+            await _rerun(db, wf, task, requested_by=user.id)
     return wf
 
 
@@ -662,6 +668,12 @@ async def _handle_brainstorm_or_plan(db: AsyncSession, wf: TaskWorkflow, task: T
             wait_for(wf, Needs.design_approval)
         else:
             wait_for(wf, Needs.plan_approval)
+        return
+    from app.workflow import questions  # local: questions imports this module
+
+    pending = await questions.undelivered_answer(db, task.id)
+    if pending is not None:  # answered while this run was still running: it gets the answer, not a nudge
+        await questions.deliver(db, wf, task, pending, requested_by=await _owner_id(db, run))
         return
     if not wf.nudged:
         wf.nudged = True

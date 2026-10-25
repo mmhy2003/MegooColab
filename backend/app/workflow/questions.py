@@ -65,7 +65,9 @@ def _clean_choices(choices: list[dict] | None) -> list[dict]:
         if len(label) > MAX_LABEL or len(description) > MAX_DESCRIPTION:
             raise _422("too_large")
         seen.add(cid)
-        rec = bool(c.get("recommended", False))
+        rec = c.get("recommended", False)
+        if not isinstance(rec, bool):
+            raise _422("invalid_choice")
         recommended += rec
         out.append({"id": cid, "label": label, "description": description, "recommended": rec})
     if recommended > 1:
@@ -75,9 +77,9 @@ def _clean_choices(choices: list[dict] | None) -> list[dict]:
 
 def _clean_mockup(mockup: dict[str, Any]) -> dict[str, Any]:
     html = mockup.get("html")
-    if not isinstance(html, str) or not html.strip():
+    html = strip_nul(html) if isinstance(html, str) else None
+    if not html or not html.strip():
         raise _422("invalid_mockup")
-    html = strip_nul(html)
     if len(html.encode("utf-8")) > MAX_MOCKUP_BYTES:
         raise _422("too_large")
     title = strip_nul(str(mockup.get("title") or "")).strip()
@@ -155,16 +157,16 @@ async def answer(db, user: User, task: Task, question_id: uuid.UUID, choice: str
         raise HTTPException(status.HTTP_404_NOT_FOUND, "question_not_found")
     if q.status != QuestionStatus.open:
         raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")
-    label = None
     if choice:
-        by_id = {c["id"]: c for c in q.choices or []}
-        mockup = await db.get(Mockup, q.mockup_id) if q.mockup_id else None
-        if choice in by_id:
-            label = by_id[choice]["label"]
-        elif mockup is not None and choice in (mockup.choices or []):
-            label = choice  # a mockup choice has no label: its id stands in
-        else:
-            raise _422("unknown_choice")
+        await _choice_label(db, q, choice)  # 422 unknown_choice
+    # Only the task's latest open question is "current". ask() withdraws older ones under the same row lock
+    # order, so this holds whenever q is open; it is checked explicitly so a delivery never targets a stale one.
+    current = await db.scalar(
+        select(WorkflowQuestion.id)
+        .where(WorkflowQuestion.task_id == task.id, WorkflowQuestion.status == QuestionStatus.open)
+        .order_by(WorkflowQuestion.created_at.desc(), WorkflowQuestion.id.desc())
+        .limit(1)
+    )
     q.status = QuestionStatus.answered
     q.answered_by = user.id
     q.answer_choice = choice
@@ -176,17 +178,53 @@ async def answer(db, user: User, task: Task, question_id: uuid.UUID, choice: str
     await audit.record(
         db, "workflow.answer", actor_id=user.id, target_type="question", target_id=q.id, data={"task_id": str(task.id)}
     )
-    if wf is None or wf.status != WorkflowStatus.waiting_human or wf.needs != Needs.question:
-        return
+    # Delivered now only when the workflow is waiting on this very question. Otherwise (the asking run is still
+    # running, or the workflow is paused) the answer waits: undelivered_answer() hands it over when that run
+    # ends or the workflow resumes.
+    if wf is not None and wf.status == WorkflowStatus.waiting_human and wf.needs == Needs.question and current == q.id:
+        await deliver(db, wf, task, q, requested_by=user.id)
+
+
+async def _choice_label(db, q: WorkflowQuestion, choice: str) -> str:
+    by_id = {c["id"]: c for c in q.choices or []}
+    if choice in by_id:
+        return by_id[choice]["label"]
+    mockup = await db.get(Mockup, q.mockup_id) if q.mockup_id else None
+    if mockup is not None and choice in (mockup.choices or []):
+        return choice  # a mockup choice has no label: its id stands in
+    raise _422("unknown_choice")
+
+
+async def undelivered_answer(db, task_id: uuid.UUID) -> WorkflowQuestion | None:
+    """The latest answered question whose answer never reached the agent (withdrawn ones never count)."""
+    return (
+        await db.execute(
+            select(WorkflowQuestion)
+            .where(
+                WorkflowQuestion.task_id == task_id,
+                WorkflowQuestion.status == QuestionStatus.answered,
+                WorkflowQuestion.delivered_at.is_(None),
+            )
+            .order_by(WorkflowQuestion.answered_at.desc(), WorkflowQuestion.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
+async def deliver(db, wf: TaskWorkflow, task: Task, q: WorkflowQuestion, *, requested_by: uuid.UUID):
+    """Resume the asking role's session with the answer and mark it delivered. The caller holds the locks."""
+    label = await _choice_label(db, q, q.answer_choice) if q.answer_choice else None
     asked_by = await db.get(AgentRun, q.run_id) if q.run_id else None
     if asked_by is not None and asked_by.workflow_role:
         role, step = RunRole(asked_by.workflow_role), asked_by.step
     else:
         role, step = (RunRole.plan if wf.stage == Stage.plan else RunRole.brainstorm), None
-    await engine.enqueue(
+    run = await engine.enqueue(
         db, wf, task, role, step=step, resume_kind="answer",
-        payload={"choice_label": label, "text": text}, requested_by=user.id,
+        payload={"choice_label": label, "text": q.answer_text}, requested_by=requested_by,
     )
+    q.delivered_at = datetime.now(UTC)
+    return run
 
 
 def inject_choice_script(html: str) -> str:

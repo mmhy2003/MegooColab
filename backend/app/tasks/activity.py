@@ -119,6 +119,12 @@ async def activity_items(
         m.id: {"id": str(m.id), "version": m.version, "title": m.title}
         for m in (await db.execute(select(Mockup).where(Mockup.id.in_(mockup_ids)))).scalars()
     } if mockup_ids else {}
+    answerers = {
+        u.id: {"id": str(u.id), "name": u.name}
+        for u in (
+            await db.execute(select(User).where(User.id.in_({q.answered_by for q in questions if q.answered_by})))
+        ).scalars()
+    }
     actor_ids = {c.author_user_id for c in comments} | {e.actor_user_id for e in events}
     actor_ids.discard(None)
     actors = {
@@ -138,7 +144,7 @@ async def activity_items(
             type="question", id=q.id, at=q.created_at, actor=None,
             question={
                 "id": str(q.id), "body": q.body, "choices": list(q.choices or []), "status": str(q.status),
-                "mockup": mockups.get(q.mockup_id), "answered_by": str(q.answered_by) if q.answered_by else None,
+                "mockup": mockups.get(q.mockup_id), "answered_by": answerers.get(q.answered_by),
                 "answer_choice": q.answer_choice, "answer_text": q.answer_text,
             },
         )

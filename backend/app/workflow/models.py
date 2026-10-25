@@ -169,6 +169,8 @@ class WorkflowQuestion(IdMixin, Base):
     answer_text: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _created_at()
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # when the answer was sent to the agent's session; null while an answer waits for the run to end or a resume
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class StepReview(IdMixin, Base):
