@@ -8,11 +8,13 @@ The spike runs the real ACP adapter through the production `jobs` path (same pol
 
 | Program | OS | Policy | Checks | Result |
 |---|---|---|---|---|
-| claude_code | Windows 11 | read_only | run_ended, worktree_clean, repo_clean, HEAD unchanged (worktree and repo), no extra branches | PASS (6/6) |
-| claude_code | Windows 11 | workspace | run_ended, `spike-write.txt` in worktree, no `spike-outside.txt` beside the worktree or the repo | PASS (4/4) |
+| claude_code | Windows 11 | read_only | Run on the first version of the checker (6 checks: status, HEAD, branches). The checker has since been hardened (ignored files, README bytes, all refs, `.git` config/hooks/info); that Windows result was not re-run. | PASS (6/6, first checker) |
+| claude_code | Windows 11 | workspace | Run on the first version of the checker (4 checks). Content check, binding-repo checks and `.git` checks were added later and not re-run. | PASS (4/4, first checker) |
 | claude_code | Linux | read_only, workspace | not run | pending: the WSL "Ubuntu" distro has no Node.js and no Claude login |
 | codex | Windows | read_only, workspace | not run | pending: the codex CLI is not installed and there is no `~/.codex` |
 | codex | Linux | read_only, workspace | not run | pending |
+
+The checker now also covers: ignored files (`status --ignored`), `spike-write.txt` stat in both trees, README.md bytes (catches skip-worktree edits), every ref (branches, tags, stash, notes), and a hash of `.git/config`, `hooks/` and `info/` taken after `worktree.Ensure`. Workspace additionally checks the file content and that the binding repo is untouched. Ctrl+C cancels the run and cleans up.
 
 Pending rows need the owner: run the commands below on a machine where the agent is already logged in.
 
@@ -34,7 +36,7 @@ The fixed prompts are in `runner/internal/spike/spike.go`. The checker is tested
 
 ## What the Windows claude_code run showed
 
-- `read_only`: Claude Code starts in plan mode. Its only permission request was the plan approval (ACP kind `switch_mode`, title "Approve Plan"), which the policy denied. The adapter then ended the turn as `cancelled`. Claude's own Write tool (disallowed through `disallowedTools`) failed without a client request. Nothing changed on disk. The spike counts a `cancelled` run as having exercised the policy; only `failed` or a timeout fails `run_ended`.
+- `read_only`: Claude Code starts in plan mode. Its only permission request was the plan approval (ACP kind `switch_mode`, title "Approve Plan"), which the policy denied. The adapter then ended the turn as `cancelled`. Claude then tried its own Write tool on a plan file under `~/.claude/plans/...` (Claude's own plans directory, outside the worktree and outside the checker's scope). `disallowedTools` / plan mode held it: the tool status was `failed` and no file appeared. It failed without a client request. Nothing changed in the worktree or the repo. The spike counts a `cancelled` run as having exercised the policy; only `failed` or a timeout fails `run_ended`.
 - `workspace`: the in-worktree write was allowed; the `../spike-outside.txt` write arrived as an absolute path beside the worktree and was denied ("outside the worktree").
 - Because of plan mode, the `read_only` run never reached an execute or file write through the client. The disk checks hold, but that run exercises Claude's plan mode and `disallowedTools` more than the runner's own `read_only` rules.
 
@@ -47,6 +49,7 @@ The fixed prompts are in `runner/internal/spike/spike.go`. The checker is tested
 | Tool title | kind sent |
 |---|---|
 | Find / Find `README.md` | `search` |
+| Read (not seen in these two runs; ACP kind the policy allows) | `read` |
 | ToolSearch | `other` |
 | Write ... / Preparing file... | `edit` |
 | Run git / Run command (execute) | `execute` |

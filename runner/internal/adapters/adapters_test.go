@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"os/exec"
 	"reflect"
 	"testing"
 
@@ -53,24 +54,24 @@ func TestModeFor(t *testing.T) {
 }
 
 func TestDefaultSpecs(t *testing.T) {
-	s, err := forOS("linux", "claude_code", noEnv)
+	s, err := forOS("linux", "claude_code", noEnv, lookAll)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.Command != "npx" || !reflect.DeepEqual(s.Args, []string{"-y", "@agentclientprotocol/claude-agent-acp@0.94.0"}) {
 		t.Fatalf("claude spec = %+v", s)
 	}
-	s, _ = forOS("linux", "codex", noEnv)
+	s, _ = forOS("linux", "codex", noEnv, lookAll)
 	if s.Command != "npx" || !reflect.DeepEqual(s.Args, []string{"-y", "@zed-industries/codex-acp@0.16.0"}) {
 		t.Fatalf("codex spec = %+v", s)
 	}
-	if _, err := forOS("linux", "other", noEnv); err == nil {
+	if _, err := forOS("linux", "other", noEnv, lookAll); err == nil {
 		t.Fatal("unknown program must fail")
 	}
 }
 
 func TestWindowsUsesNpxCmd(t *testing.T) {
-	s, err := forOS("windows", "codex", noEnv)
+	s, err := forOS("windows", "codex", noEnv, lookAll)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,14 +90,14 @@ func TestOverrideEnv(t *testing.T) {
 		}
 		return ""
 	}
-	s, err := forOS("windows", "claude_code", env)
+	s, err := forOS("windows", "claude_code", env, lookAll)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if s.Command != `C:\Program Files\fake agent.exe` || !reflect.DeepEqual(s.Args, []string{"--scenario", "a b", "plain"}) {
 		t.Fatalf("spec = %+v", s)
 	}
-	s, _ = forOS("linux", "codex", env)
+	s, _ = forOS("linux", "codex", env, lookAll)
 	if s.Command != "/bin/fake" || len(s.Args) != 0 {
 		t.Fatalf("spec = %+v", s)
 	}
@@ -104,7 +105,29 @@ func TestOverrideEnv(t *testing.T) {
 
 func TestOverrideEnvUnterminatedQuote(t *testing.T) {
 	env := func(string) string { return `"oops` }
-	if _, err := forOS("linux", "codex", env); err == nil {
+	if _, err := forOS("linux", "codex", env, lookAll); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func lookAll(string) (string, error) { return "", nil }
+
+func lookOnly(name string) func(string) (string, error) {
+	return func(s string) (string, error) {
+		if s == name {
+			return s, nil
+		}
+		return "", exec.ErrNotFound
+	}
+}
+
+func TestWindowsNpxFallback(t *testing.T) {
+	s, err := forOS("windows", "codex", noEnv, lookOnly("npx.cmd"))
+	if err != nil || s.Command != "npx.cmd" {
+		t.Fatalf("only npx.cmd present: %+v %v", s, err)
+	}
+	s, err = forOS("windows", "codex", noEnv, lookOnly("npx.exe"))
+	if err != nil || s.Command != "npx" {
+		t.Fatalf("only npx.exe present: %+v %v", s, err)
 	}
 }

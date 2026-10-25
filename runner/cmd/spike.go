@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -24,8 +27,11 @@ func newSpikeCmd() *cobra.Command {
 			if program != "claude_code" && program != "codex" {
 				return fmt.Errorf("--program must be claude_code or codex")
 			}
+			// Ctrl+C cancels the run and still cleans up the temporary repositories.
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
 			out := cmd.OutOrStdout()
-			rep, err := spike.Run(cmd.Context(), spike.Options{Program: program, Keep: keep, Timeout: timeout, Out: out})
+			rep, err := spike.Run(ctx, spike.Options{Program: program, Keep: keep, Timeout: timeout, Out: out})
 			if rep != nil && rep.Path != "" {
 				fmt.Fprintln(out, "report:", rep.Path)
 			}

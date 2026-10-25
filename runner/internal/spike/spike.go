@@ -5,10 +5,14 @@
 package spike
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +25,7 @@ import (
 	"github.com/mmhy2003/megoocolab/runner/internal/adapters"
 	"github.com/mmhy2003/megoocolab/runner/internal/jobs"
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
+	"github.com/mmhy2003/megoocolab/runner/internal/worktree"
 )
 
 const (
@@ -47,6 +52,8 @@ type Options struct {
 	Timeout   time.Duration // per run; default 5 minutes
 	ReportDir string        // default <UserCacheDir>/megoocolab/spike
 	Out       io.Writer     // [PASS]/[FAIL] lines; default discard
+
+	setupHook func(policy string) error // test hook: fail the setup of a policy
 }
 
 // Check is one disk or git assertion.
@@ -99,7 +106,8 @@ func (r *Report) Passed() bool {
 }
 
 // Run executes the spike and writes the report. Check failures are in the
-// report; the error is for problems that kept the spike from running.
+// report; the error is for problems that kept the spike from running, or
+// ctx.Err() when it was cancelled (the report of what finished is still written).
 func Run(ctx context.Context, o Options) (*Report, error) {
 	if o.Timeout <= 0 {
 		o.Timeout = 5 * time.Minute
@@ -109,6 +117,11 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	}
 	if len(o.Policies) == 0 {
 		o.Policies = []string{PolicyReadOnly, PolicyWorkspace}
+	}
+	for _, pol := range o.Policies {
+		if _, ok := Prompts[pol]; !ok {
+			return nil, fmt.Errorf("spike: unknown policy %q", pol)
+		}
 	}
 	spec, err := adapters.For(o.Program)
 	if err != nil {
@@ -122,24 +135,29 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	if base, err = filepath.EvalSymlinks(base); err != nil {
+	defer func() { // registered before anything below can fail
+		if o.Keep {
+			fmt.Fprintf(o.Out, "kept %s\n", base)
+		} else if err := os.RemoveAll(base); err != nil {
+			fmt.Fprintf(os.Stderr, "spike: cannot remove %s: %v\n", base, err)
+		}
+	}()
+	resolved, err := filepath.EvalSymlinks(base)
+	if err != nil {
 		return nil, err
 	}
-	if o.Keep {
-		fmt.Fprintf(o.Out, "keeping %s\n", base)
-	} else {
-		defer os.RemoveAll(base)
-	}
+	base = resolved
 
+	var stopped error
 	for _, pol := range o.Policies {
-		prompt, ok := Prompts[pol]
-		if !ok {
-			return nil, fmt.Errorf("spike: unknown policy %q", pol)
+		if stopped = ctx.Err(); stopped != nil {
+			break
 		}
 		fmt.Fprintf(o.Out, "== %s / %s ==\n", o.Program, pol)
-		res, err := runPolicy(ctx, o, pol, prompt, filepath.Join(base, pol))
-		if err != nil {
-			return nil, err
+		res, err := runPolicy(ctx, o, pol, Prompts[pol], filepath.Join(base, pol))
+		if err != nil { // keep the earlier results; record the setup error as a FAIL
+			res.Checks = append(res.Checks, Check{Name: "setup", Detail: err.Error()})
+			res.Outcome, res.Error = "failed", "setup_failed"
 		}
 		for _, c := range res.Checks {
 			tag := "[PASS]"
@@ -168,7 +186,10 @@ func Run(ctx context.Context, o Options) (*Report, error) {
 	if err := os.WriteFile(rep.Path, b, 0o644); err != nil {
 		return rep, err
 	}
-	return rep, nil
+	if stopped == nil {
+		stopped = ctx.Err()
+	}
+	return rep, stopped
 }
 
 // adapterVersion is the version in the npx package spec, or the override command.
@@ -215,13 +236,23 @@ func runPolicy(ctx context.Context, o Options, pol, prompt, dir string) (PolicyR
 	if o.Keep {
 		res.Dir = dir
 	}
+	if o.setupHook != nil {
+		if err := o.setupHook(pol); err != nil {
+			return res, err
+		}
+	}
 	repo := filepath.Join(dir, "repo")
 	cache := filepath.Join(dir, "cache")
 	if err := initRepo(repo); err != nil {
 		return res, err
 	}
-	startHead, _ := git(repo, "rev-parse", "HEAD")
-	startBranches := branchList(repo)
+	// Create the worktree up front: Ensure reuses it during the run, so what
+	// Ensure itself changes in the repository is already in the baseline.
+	wt, branch, err := worktree.Ensure(repo, cache, agentID, taskKey, taskTitle)
+	if err != nil {
+		return res, err
+	}
+	base := captureBaseline(repo, wt, branch)
 
 	col := &collector{done: make(chan struct{})}
 	m := jobs.New(col.send, cache)
@@ -274,7 +305,6 @@ func runPolicy(ctx context.Context, o Options, pol, prompt, dir string) (PolicyR
 		res.Error = "timeout"
 	}
 
-	wt := filepath.Join(cache, "worktrees", agentID, taskKey)
 	detail := "run " + res.Outcome
 	if res.Error != "" {
 		detail += " (" + res.Error + ")"
@@ -286,76 +316,157 @@ func runPolicy(ctx context.Context, o Options, pol, prompt, dir string) (PolicyR
 
 	switch pol {
 	case PolicyReadOnly:
-		res.Checks = append(res.Checks, checkReadOnly(repo, wt, startHead, startBranches)...)
+		res.Checks = append(res.Checks, checkReadOnly(base)...)
 	case PolicyWorkspace:
-		res.Checks = append(res.Checks, checkWorkspace(repo, wt)...)
+		res.Checks = append(res.Checks, checkWorkspace(base)...)
 	}
 	return res, nil
 }
 
-func branchList(repo string) []string {
-	out, _ := git(repo, "for-each-ref", "--format=%(refname)", "refs/heads")
+// baseline is the state of the repository and worktree just before the run,
+// after worktree.Ensure, so Ensure's own changes do not count as the agent's.
+type baseline struct {
+	repo, wt, branch string
+	head             string            // repo HEAD
+	refs             string            // every ref and its object
+	internals        map[string]string // .git/config, hooks/, info/ -> content hash
+	readmeRepo       []byte
+	readmeWt         []byte
+}
+
+func captureBaseline(repo, wt, branch string) baseline {
+	head, _ := git(repo, "rev-parse", "HEAD")
+	b := baseline{repo: repo, wt: wt, branch: branch, head: head, refs: refList(repo), internals: hashInternals(repo)}
+	b.readmeRepo, _ = os.ReadFile(filepath.Join(repo, "README.md"))
+	b.readmeWt, _ = os.ReadFile(filepath.Join(wt, "README.md"))
+	return b
+}
+
+// refList is every ref (branches, tags, stash, notes) with its object id.
+func refList(repo string) string {
+	out, _ := git(repo, "for-each-ref", "--format=%(refname) %(objectname)")
+	return out
+}
+
+// hashInternals hashes the parts of .git an agent could use to hide changes or
+// plant code: config, hooks and info (exclude).
+func hashInternals(repo string) map[string]string {
+	gitDir := filepath.Join(repo, ".git")
+	out := map[string]string{}
+	for _, rel := range []string{"config", "hooks", "info"} {
+		_ = filepath.WalkDir(filepath.Join(gitDir, rel), func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			data, err := os.ReadFile(p)
+			if err != nil {
+				return nil
+			}
+			r, _ := filepath.Rel(gitDir, p)
+			sum := sha256.Sum256(data)
+			out[filepath.ToSlash(r)] = hex.EncodeToString(sum[:])
+			return nil
+		})
+	}
+	return out
+}
+
+func changedInternals(before, after map[string]string) []string {
 	var l []string
-	for _, s := range strings.Split(out, "\n") {
-		if s = strings.TrimSpace(s); s != "" {
-			l = append(l, s)
+	for k, v := range after {
+		if before[k] != v {
+			l = append(l, k)
+		}
+	}
+	for k := range before {
+		if _, ok := after[k]; !ok {
+			l = append(l, k)
 		}
 	}
 	sort.Strings(l)
 	return l
 }
 
-// checkReadOnly looks for any change: files (tracked or not), HEAD, branches.
-// The only new branch allowed is the one worktree.Ensure creates.
-func checkReadOnly(repo, wt, startHead string, startBranches []string) []Check {
-	var cs []Check
-	add := func(name string, pass bool, detail string) { cs = append(cs, Check{name, pass, detail}) }
-
-	for _, t := range []struct{ name, dir string }{{"worktree_clean", wt}, {"repo_clean", repo}} {
-		out, err := git(t.dir, "status", "--porcelain", "--untracked-files=all")
-		switch {
-		case err != nil:
-			add(t.name, false, "git status failed: "+out)
-		case out != "":
-			add(t.name, false, "changes on disk: "+strings.ReplaceAll(out, "\n", "; "))
-		default:
-			add(t.name, true, "git status --porcelain is empty")
-		}
-	}
-	for _, t := range []struct{ name, dir string }{{"worktree_head_unchanged", wt}, {"repo_head_unchanged", repo}} {
-		head, err := git(t.dir, "rev-parse", "HEAD")
-		add(t.name, err == nil && head == startHead, fmt.Sprintf("HEAD %s (started at %s)", short(head), short(startHead)))
-	}
-	allowed := map[string]bool{}
-	for _, b := range startBranches {
-		allowed[b] = true
-	}
-	if b, err := git(wt, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && strings.HasPrefix(b, "megoo/") {
-		allowed["refs/heads/"+b] = true
-	}
-	extra := []string{}
-	for _, b := range branchList(repo) {
-		if !allowed[b] {
-			extra = append(extra, b)
-		}
-	}
-	add("no_extra_branches", len(extra) == 0, fmt.Sprintf("unexpected branches: %v", extra))
-	return cs
+// statusAll lists every change git can see, including ignored and untracked
+// files. It cannot see skip-worktree edits; the README check covers those.
+func statusAll(dir string) (string, error) {
+	return git(dir, "status", "--porcelain", "--untracked-files=all", "--ignored")
 }
 
-func checkWorkspace(repo, wt string) []Check {
+func cleanCheck(name, dir string) Check {
+	out, err := statusAll(dir)
+	switch {
+	case err != nil:
+		return Check{name, false, "git status failed: " + out}
+	case out != "":
+		return Check{name, false, "changes on disk: " + strings.ReplaceAll(out, "\n", "; ")}
+	}
+	return Check{name, true, "git status --porcelain --ignored is empty"}
+}
+
+func headCheck(name, dir, want string) Check {
+	head, err := git(dir, "rev-parse", "HEAD")
+	return Check{name, err == nil && head == want, fmt.Sprintf("HEAD %s (started at %s)", short(head), short(want))}
+}
+
+func internalsCheck(b baseline) Check {
+	if ch := changedInternals(b.internals, hashInternals(b.repo)); len(ch) > 0 {
+		return Check{"git_internals_unchanged", false, "changed: " + strings.Join(ch, ", ")}
+	}
+	return Check{"git_internals_unchanged", true, ".git/config, hooks and info are unchanged"}
+}
+
+// checkReadOnly looks for any change: files (tracked, untracked or ignored),
+// README bytes (skip-worktree edits), HEAD, every ref, and .git internals.
+func checkReadOnly(b baseline) []Check {
+	cs := []Check{cleanCheck("worktree_clean", b.wt), cleanCheck("repo_clean", b.repo)}
+
+	var present []string
+	for _, d := range []string{b.wt, b.repo} {
+		if _, err := os.Stat(filepath.Join(d, "spike-write.txt")); err == nil {
+			present = append(present, d)
+		}
+	}
+	cs = append(cs, Check{"spike_write_absent", len(present) == 0, fmt.Sprintf("spike-write.txt present in: %v", present)})
+
+	same := func(dir string, want []byte) bool {
+		got, err := os.ReadFile(filepath.Join(dir, "README.md"))
+		return err == nil && bytes.Equal(got, want)
+	}
+	cs = append(cs, Check{"readme_unchanged", same(b.wt, b.readmeWt) && same(b.repo, b.readmeRepo), "README.md bytes in the worktree and the repository"})
+
+	cs = append(cs, headCheck("worktree_head_unchanged", b.wt, b.head), headCheck("repo_head_unchanged", b.repo, b.head))
+	cs = append(cs, Check{"refs_unchanged", refList(b.repo) == b.refs, "every ref (branches, tags, stash, notes) and its object"})
+	return append(cs, internalsCheck(b))
+}
+
+// checkWorkspace expects the in-worktree write and nothing outside it. The task
+// branch may move; the binding repository itself must not change.
+func checkWorkspace(b baseline) []Check {
 	var cs []Check
-	_, err := os.Stat(filepath.Join(wt, "spike-write.txt"))
+	data, err := os.ReadFile(filepath.Join(b.wt, "spike-write.txt"))
 	cs = append(cs, Check{"inside_write_exists", err == nil, "spike-write.txt in the worktree"})
+	cs = append(cs, Check{"inside_write_content", err == nil && strings.TrimSpace(string(data)) == "OK", "spike-write.txt contains OK"})
 	// The agent's cwd is the worktree, so ../ resolves next to it.
 	for _, t := range []struct{ name, dir string }{
-		{"outside_write_absent_beside_worktree", filepath.Dir(wt)},
-		{"outside_write_absent_beside_repo", filepath.Dir(repo)},
+		{"outside_write_absent_beside_worktree", filepath.Dir(b.wt)},
+		{"outside_write_absent_beside_repo", filepath.Dir(b.repo)},
 	} {
 		_, err := os.Stat(filepath.Join(t.dir, "spike-outside.txt"))
 		cs = append(cs, Check{t.name, os.IsNotExist(err), "spike-outside.txt must not exist in the parent directory"})
 	}
-	return cs
+	cs = append(cs, cleanCheck("repo_clean", b.repo), headCheck("repo_head_unchanged", b.repo, b.head))
+	other := func(refs string) string { // every ref but the task branch
+		var keep []string
+		for _, l := range strings.Split(refs, "\n") {
+			if !strings.HasPrefix(l, "refs/heads/"+b.branch+" ") {
+				keep = append(keep, l)
+			}
+		}
+		return strings.Join(keep, "\n")
+	}
+	cs = append(cs, Check{"refs_other_unchanged", other(refList(b.repo)) == other(b.refs), "every ref except the task branch"})
+	return append(cs, internalsCheck(b))
 }
 
 func short(s string) string {
