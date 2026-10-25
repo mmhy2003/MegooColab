@@ -8,8 +8,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.agents.models import Agent
 from app.audit import service as audit
-from app.auth.models import User
 from app.auth.deps import AdminUser, AuthedUser
+from app.auth.models import User
 from app.core.db import DbSession
 from app.core.text import NoNulStr
 from app.projects.access import get_project_for
