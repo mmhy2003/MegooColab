@@ -2,7 +2,7 @@ import re
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
@@ -12,9 +12,10 @@ from app.auth.models import Role, User
 from app.auth.schemas import UserOut
 from app.core.events import Event, publish
 from app.projects.access import accessible_project_ids, can_manage_project, project_team_ids
-from app.projects.models import Project
+from app.projects.models import Project, ProjectTeam
 from app.runner.registry import registry
 from app.tasks.models import Task
+from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
 
 PROGRAM_LABELS = {AgentProgram.claude_code: "Claude Code", AgentProgram.codex: "Codex"}
@@ -84,6 +85,29 @@ async def _manages_project(db: AsyncSession, user: User, project: Project) -> bo
 
 async def can_use_agent(db: AsyncSession, user: User, agent: Agent, project: Project) -> bool:
     return may_use_agent(user, agent.owner_id, await _manages_project(db, user, project))
+
+
+def owner_can_access(project_id: uuid.UUID) -> ColumnElement[bool]:
+    """SQL condition on Agent: its owner can access the project (an admin, or in one of its teams).
+    A binding whose owner lost access is kept but ignored: not assignable, runnable or listed there."""
+    is_admin = select(User.id).where(User.id == Agent.owner_id, User.role == Role.admin).exists()
+    is_member = (
+        select(ProjectTeam.project_id)
+        .join(TeamMember, TeamMember.team_id == ProjectTeam.team_id)
+        .where(ProjectTeam.project_id == project_id, TeamMember.user_id == Agent.owner_id)
+        .exists()
+    )
+    return or_(is_admin, is_member)
+
+
+async def is_usable_binding(db: AsyncSession, agent_id: uuid.UUID, project_id: uuid.UUID) -> bool:
+    """The agent is bound to the project and its owner can still access it."""
+    found = await db.scalar(
+        select(AgentBinding.id)
+        .join(Agent, Agent.id == AgentBinding.agent_id)
+        .where(AgentBinding.agent_id == agent_id, AgentBinding.project_id == project_id, owner_can_access(project_id))
+    )
+    return found is not None
 
 
 async def bound_project_ids(db: AsyncSession, agent_id: uuid.UUID) -> set[uuid.UUID]:

@@ -128,7 +128,7 @@ async def project_agents(ref: str, user: AuthedUser, db: DbSession) -> list[Proj
         await db.execute(
             select(Agent)
             .join(AgentBinding, AgentBinding.agent_id == Agent.id)
-            .where(AgentBinding.project_id == project.id)
+            .where(AgentBinding.project_id == project.id, service.owner_can_access(project.id))
             .order_by(Agent.name)
         )
     ).scalars()

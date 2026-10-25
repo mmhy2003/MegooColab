@@ -7,8 +7,8 @@ from fastapi import HTTPException, status
 from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.models import Agent, AgentBinding
-from app.agents.service import agent_statuses, can_use_agent
+from app.agents.models import Agent
+from app.agents.service import agent_statuses, can_use_agent, is_usable_binding
 from app.auth.models import Role, User, UserStatus
 from app.core.events import Event, publish
 from app.projects.access import get_project_for
@@ -281,14 +281,7 @@ async def check_agent_assignee(
     agent = await db.get(Agent, agent_id)
     if agent is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "unknown_agent")
-    bound = (
-        await db.execute(
-            select(AgentBinding.id).where(
-                AgentBinding.agent_id == agent_id, AgentBinding.project_id == project.id
-            )
-        )
-    ).first()
-    if bound is None:
+    if not await is_usable_binding(db, agent_id, project.id):  # also when its owner lost access
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agent_not_bound")
     if not await can_use_agent(db, user, agent, project):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")

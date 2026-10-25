@@ -1,11 +1,29 @@
 """Final review guards: deleting mid-run (I3), lost project access (I4), one active run per task (I5)."""
 
-from sqlalchemy import select
+import json
+import uuid
+
+from sqlalchemy import delete, select
 
 from app.agent_runs.models import AgentRun
 from app.auth.models import Role
-from tests.agent_runs.test_dispatch import _avail, _setup, _start, _task, _wait_run
-from tests.factories import make_user
+from app.runner.registry import registry
+from app.teams.models import TeamMember
+from tests.agent_runs.test_dispatch import (
+    _avail,
+    _dispatch_in_own_session,
+    _event_kinds,
+    _fake_conn,
+    _FakeSocket,
+    _offline_runs,
+    _setup,
+    _start,
+    _task,
+    _wait_run,
+)
+from tests.factories import login, make_project, make_user
+from tests.mcp.test_mcp import _mint as _mint_mcp
+from tests.mcp.test_mcp import call, mcp_running, mcp_session  # noqa: F401  (mcp_running is a fixture)
 from tests.runner.test_runner_ws import (  # noqa: F401  (tc_factory is a fixture)
     URL,
     _hello,
@@ -123,3 +141,65 @@ async def test_deleting_a_story_cancels_its_subtasks_running_run(db, tc_factory)
         assert ws.receive_json() == {"type": "run_cancel", "run_id": run["id"]}
         assert ws.receive_json()["run_id"] == second["id"]
         _finish(ws, run["id"])
+
+
+# ---- I4: an agent whose owner lost access to the project --------------------
+
+
+async def _drop_from_teams(db, user) -> None:
+    await db.execute(delete(TeamMember).where(TeamMember.user_id == user.id))
+    await db.commit()
+
+
+async def _ex_member_agent(client, client_factory, db):
+    """A member binds an agent to PAY, gets a task assigned to it, then leaves the project's team.
+    Returns (manager_client, agent, assigned_task, unassigned_task)."""
+    me = await make_user(db)
+    _, manager, _ = await make_project(client, db, "PAY", me)
+    await login(client, me)
+    agent = (await client.post("/api/agents", json={"program": "claude_code"})).json()
+    r = await client.put(
+        f"/api/agents/{agent['id']}/bindings", json={"bindings": [{"project_ref": "PAY", "local_path": "/repo"}]}
+    )
+    assert r.status_code == 200
+    assigned = (await client.post("/api/projects/PAY/tasks", json={"title": "A", "assignee_agent_id": agent["id"]})).json()
+    plain = (await client.post("/api/projects/PAY/tasks", json={"title": "B"})).json()
+    mc = client_factory()
+    await login(mc, manager)
+    assert len((await mc.get("/api/projects/PAY/agents")).json()) == 1
+    await _drop_from_teams(db, me)
+    return mc, agent, assigned, plain
+
+
+async def test_ex_member_agent_is_not_assignable_runnable_or_listed(client, client_factory, db):
+    mc, agent, assigned, plain = await _ex_member_agent(client, client_factory, db)
+    r = await mc.patch(f"/api/tasks/{plain['key']}", json={"assignee_agent_id": agent["id"]})
+    assert r.status_code == 422 and r.json()["detail"] == "agent_not_bound"
+    r = await mc.post("/api/projects/PAY/tasks", json={"title": "C", "assignee_agent_id": agent["id"]})
+    assert r.status_code == 422 and r.json()["detail"] == "agent_not_bound"
+    r = await mc.post(f"/api/tasks/{assigned['key']}/agent-runs", json={"policy": "read_only"})
+    assert r.status_code == 422 and r.json()["detail"] == "agent_not_bound"
+    assert (await mc.get("/api/projects/PAY/agents")).json() == []
+    assert (await db.execute(select(AgentRun))).first() is None
+
+
+async def test_ex_member_agent_not_assignable_over_mcp(app, client, client_factory, db, mcp_running):
+    mc, agent, _assigned, _plain = await _ex_member_agent(client, client_factory, db)
+    async with mcp_session(app, await _mint_mcp(mc)) as s:
+        is_error, payload = await call(s, "create_task", project_key="PAY", title="X", assignee_agent_id=agent["id"])
+    assert is_error and "agent_not_bound" in payload
+
+
+async def test_queued_run_of_an_ex_member_fails_instead_of_being_sent(client, db):
+    me, agent, runs = await _offline_runs(client, db)
+    await _drop_from_teams(db, me)
+    sock = _FakeSocket()
+    _fake_conn(me, agent, sock)
+    try:
+        await _dispatch_in_own_session(me.id)
+    finally:
+        registry._conns.pop(me.id, None)
+    assert [json.loads(f)["type"] for f in sock.sent] == []
+    row = (await db.execute(select(AgentRun).where(AgentRun.id == uuid.UUID(runs[0]["id"])))).scalar_one()
+    assert row.status == "failed" and row.reason == "owner_lost_access"
+    assert "agent_run_failed" in await _event_kinds(db)

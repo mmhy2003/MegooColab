@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunPolicy, RunStatus
 from app.agent_runs.schemas import RunAgentOut, RunOut
 from app.agents.models import Agent, AgentBinding
-from app.agents.service import can_use_agent, publish_agents_updated
+from app.agents.service import can_use_agent, is_usable_binding, owner_can_access, publish_agents_updated
 from app.auth.models import User
 from app.core.db import SessionLocal
 from app.core.events import Event, publish
@@ -71,10 +71,7 @@ async def start_run(
     agent = await db.get(Agent, task.assignee_agent_id)
     if agent is None or not await can_use_agent(db, user, agent, project):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
-    bound = await db.scalar(
-        select(AgentBinding.id).where(AgentBinding.agent_id == agent.id, AgentBinding.project_id == project.id)
-    )
-    if bound is None:
+    if not await is_usable_binding(db, agent.id, project.id):  # also when its owner lost access
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agent_not_bound")
     text = (prompt or "").strip() or default_prompt(f"{project.key}-{task.number}", task)
     run = AgentRun(
@@ -159,6 +156,11 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     task, project_key, local_path, owner_id = row
     if local_path is None:  # the binding was removed while the run waited
         await _transition(db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="agent_not_bound")
+        await db.commit()
+        return True
+    if await db.scalar(select(Agent.id).where(Agent.id == agent_id, owner_can_access(task.project_id))) is None:
+        # the owner left the project while the run waited: its task must not reach their laptop
+        await _transition(db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="owner_lost_access")
         await db.commit()
         return True
     conn.run_ids.add(run.id)
