@@ -57,18 +57,31 @@ const (
 
 // plainCommand accepts only text that bash, PowerShell and cmd all split into
 // the same words and leave unexpanded (no globs, braces, ~, variables, escapes):
-//   - unquoted text uses only [A-Za-z0-9._/:@,+=-], and the space character is the only
+//   - unquoted text uses only [A-Za-z0-9._/:,+=-], and the space character is the only
 //     separator (no tabs or newlines);
+//   - "@" is refused everywhere: PowerShell splats "@name" and MSYS programs
+//     read options from an "@file" response file (even when quoted);
+//   - "," may not start a word or a quoted segment: PowerShell's unary ","
+//     turns ",--output=x" into an option. Interior commas ("1,5") are kept;
+//   - PowerShell drops the quotes of a single-quoted word, and MSYS programs
+//     (git's find, grep, ls ...) then brace-, tilde- and glob-expand it, so a
+//     quoted segment holds no "{", "}" or "~", and one that starts a word may
+//     not start with "*", "?" or "[" (it could expand to a worktree file named
+//     "-delete"). After "=" a glob is fine: every match starts with the option;
 //   - a single-quoted segment starts a word (or follows "=") and ends it, is not
 //     empty, and holds no whitespace, quote or backslash, so cmd (which keeps the
 //     quotes literally) still sees one word.
 //
 // Anything else, including double quotes and non-ASCII, is refused.
 func plainCommand(cmd string) bool {
+	if strings.ContainsRune(cmd, '@') {
+		return false
+	}
 	atWordStart := true
 	prev := ' '
 	in := false
-	n := 0 // length of the current quoted content
+	wordQuote := false // the current quoted segment starts its word (not after "=")
+	n := 0             // length of the current quoted content
 	for _, r := range cmd {
 		if in {
 			switch {
@@ -77,7 +90,9 @@ func plainCommand(cmd string) bool {
 					return false
 				}
 				in = false
-			case r <= ' ' || r == 0x7f || r == '"' || r == bs || r > 0x7e:
+			case r <= ' ' || r == 0x7f || r == '"' || r == bs || r > 0x7e, strings.ContainsRune("{}~", r):
+				return false
+			case n == 0 && (r == ',' || wordQuote && strings.ContainsRune("*?[", r)):
 				return false
 			default:
 				n++
@@ -92,10 +107,12 @@ func plainCommand(cmd string) bool {
 			if !atWordStart && prev != '=' {
 				return false
 			}
-			in, n, atWordStart = true, 0, false
+			in, n, wordQuote, atWordStart = true, 0, atWordStart, false
 		case prev == sq && !atWordStart: // text glued to a closing quote
 			return false
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', strings.ContainsRune("._/:@,+=-", r):
+		case r == ',' && atWordStart:
+			return false
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', strings.ContainsRune("._/:,+=-", r):
 			atWordStart = false
 		default:
 			return false

@@ -126,10 +126,11 @@ func TestReadOnlyDeniesAllWrites(t *testing.T) {
 func TestReadOnlyCommands(t *testing.T) {
 	allowed := []string{
 		"git status", "git log --oneline -n 5", "git diff HEAD", "git show abc", "git blame a.go", "git grep foo", "git ls-files",
-		"ls -la", "dir", "cat a.txt", "type a.txt", "head -n 3 a", "tail -n 3 a", "rg foo", "grep -rn foo .", "find . -name '*.go'", "wc -l a", "pwd",
+		"ls -la", "dir", "cat a.txt", "type a.txt", "head -n 3 a", "tail -n 3 a", "rg foo", "grep -rn foo .", "find . -name 'x*.go'", "wc -l a", "pwd",
+		"rg 'foo.*bar'", "rg --glob='*.go' foo", "grep -rn 'TODO' src", "grep --include='*.go' -rn foo .", "find . -name 'a?[bc]*'",
 		`'git' status`, "GIT.EXE status", "C:/Git/bin/git.exe status", "/usr/bin/cat a.txt",
 		"  git   status  ", "git grep -in foo", "git grep -efoo a.go", "git log -n 5", "git log --pretty", "git log --pretty=oneline", "git diff -U3", "git diff --unified=5", "head -n5 a", "find . -name x -o -type d", "git blame -L1,5 a.go", "git log -5", "git log --since=2020-01-01 --author=bob", "git diff --stat HEAD",
-		"git status -sb", "git blame -L 1,5 a.go", "ls -lah", "tail -n 20 a.log", "head -5 a", "find . -type f -maxdepth 2 -name x", "rg -n --hidden foo src", "wc -lw a", "cat -n a",
+		"git status -sb", "git blame -L 1,5 a.go", "ls -lah", "git log a,-O", "git log 1,2", "git log --since=1,2", "git log 'a,b'", "tail -n 20 a.log", "head -5 a", "find . -type f -maxdepth 2 -name x", "rg -n --hidden foo src", "wc -lw a", "cat -n a",
 	}
 	for _, c := range allowed {
 		if !policy.ReadOnlyCommand(c) {
@@ -159,6 +160,17 @@ func TestReadOnlyCommands(t *testing.T) {
 		"cat -- a", "ls -- -a", "head --lines 5 a", "git log --max-count 5", "git log --pretty -- ", "rg -- --pre=x foo",
 		// environment-assignment prefixes are not a plain command
 		"FOO=bar git status", "API_KEY=sk-123 ls", `"X=1" cat a`,
+		// round 4: PowerShell's unary "," turns a word into an option; "@" splats or expands variables,
+		// and MSYS programs read "@file" response files
+		"git log ,--output=pwned.txt", "git grep ,-Ohostname foo", "find . ,-delete", "rg ,--pre=calc foo", "git log ,-O",
+		"git log ',--output=x'", "git log --format=',-O'", "git log ,", "git log ,,x",
+		"git log @PSVersionTable", "git log @env:USERNAME", "git log @HOME", "find '@opts2'", "find . '@opts2'", "git log a@b",
+		"git log --author=bob@x.com", "cat @x", "git log '@x'", "git log --format='@x'",
+		// round 4 probes: MSYS programs started from PowerShell (which drops the quotes) brace-expand,
+		// tilde-expand and glob their arguments; "{.,-fprint,zz}" writes a file with no help from the worktree,
+		// and a word-initial glob can expand to a planted file named like an option ("-fprint", "-delete")
+		"find '{.,-fprint,zz}'", "find '.' '{-fprint,zz}'", "rg 'a{2}' x", "rg --glob='{a,b}'", "cat '~'", "cat '~/x'", "rg 'a~b'",
+		"find . '[-]fprint' zz", "find . -name x -o '[-]delete'", "find . -name '*'", "find . -name '*.go'", "ls '*'", "grep -r foo '*'", "cat '?'", "git log '*'",
 	}
 	for _, c := range denied {
 		if policy.ReadOnlyCommand(c) {
