@@ -82,6 +82,12 @@ describe("AgentRunPanel", () => {
     expect(await screen.findByRole("button", { name: "Cancel run" })).toBeInTheDocument();
   });
 
+  it.each(["queued", "running"] as const)("hides Cancel for a %s run from someone who cannot use the agent", async (status) => {
+    setup({ ...agent, can_use: false }, [run(status)]);
+    await screen.findByText(new RegExp(`^${status} ·`));
+    expect(screen.queryByRole("button", { name: "Cancel run" })).not.toBeInTheDocument();
+  });
+
   it.each(["queued", "running"] as const)("disables Run agent while the latest run is %s", async (status) => {
     setup(agent, [run(status)]);
     await screen.findByRole("button", { name: "Cancel run" });

@@ -71,7 +71,7 @@ export function AgentRunPanel({ taskKey, agent, disabled }: { taskKey: string; a
           Latest run: <span className="text-fg">{runLine(latest)}</span>
         </p>
       )}
-      {active && !disabled && (
+      {active && agent.can_use && !disabled && (
         <Button variant="danger" disabled={busy} onClick={() => void act(() => api(`/api/agent-runs/${active.id}/cancel`, { method: "POST" }))}>
           Cancel run
         </Button>
