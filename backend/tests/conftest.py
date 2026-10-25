@@ -1,8 +1,8 @@
 import asyncio
 import os
 import tempfile
-from urllib.parse import urlsplit
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # Only TEST_DATABASE_URL (or the default test DB) decides the database; an exported DATABASE_URL
 # is overwritten. The session fixture below drops the public schema, so refuse any non-test DB.
@@ -29,7 +29,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import text
 
-import app.models  # noqa: F401
+import app.models
 from app.core.db import Base, SessionLocal, engine
 from app.main import create_app
 

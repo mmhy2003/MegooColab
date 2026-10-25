@@ -135,8 +135,8 @@ def upgrade() -> None:
     op.add_column('agent_runs', sa.Column('methodology_version_id', sa.Uuid(), nullable=True))
     op.add_column('agent_runs', sa.Column('git_before', postgresql.JSONB(astext_type=sa.Text()), nullable=True))
     op.add_column('agent_runs', sa.Column('git_after', postgresql.JSONB(astext_type=sa.Text()), nullable=True))
-    op.create_unique_constraint(None, 'agent_runs', ['mcp_token_hash'])
-    op.create_foreign_key(None, 'agent_runs', 'methodology_versions', ['methodology_version_id'], ['id'], ondelete='SET NULL')
+    op.create_unique_constraint('agent_runs_mcp_token_hash_key', 'agent_runs', ['mcp_token_hash'])
+    op.create_foreign_key('agent_runs_methodology_version_id_fkey', 'agent_runs', 'methodology_versions', ['methodology_version_id'], ['id'], ondelete='SET NULL')
     op.add_column('projects', sa.Column('finishing_option', sa.String(length=20), server_default='pull_request', nullable=False))
     op.add_column('projects', sa.Column('require_human_code_review', sa.Boolean(), server_default=sa.text('false'), nullable=False))
     op.add_column('projects', sa.Column('commit_docs_to_repo', sa.Boolean(), server_default=sa.text('false'), nullable=False))
@@ -149,14 +149,8 @@ def downgrade() -> None:
     op.drop_column('projects', 'commit_docs_to_repo')
     op.drop_column('projects', 'require_human_code_review')
     op.drop_column('projects', 'finishing_option')
-    # WARNING: constraint name is None; this directive will fail as
-    # rendered.  Add a name, or use a naming convention; see
-    # https://alembic.sqlalchemy.org/en/latest/naming.html
-    op.drop_constraint(None, 'agent_runs', type_='foreignkey')
-    # WARNING: constraint name is None; this directive will fail as
-    # rendered.  Add a name, or use a naming convention; see
-    # https://alembic.sqlalchemy.org/en/latest/naming.html
-    op.drop_constraint(None, 'agent_runs', type_='unique')
+    op.drop_constraint('agent_runs_methodology_version_id_fkey', 'agent_runs', type_='foreignkey')
+    op.drop_constraint('agent_runs_mcp_token_hash_key', 'agent_runs', type_='unique')
     op.drop_column('agent_runs', 'git_after')
     op.drop_column('agent_runs', 'git_before')
     op.drop_column('agent_runs', 'methodology_version_id')

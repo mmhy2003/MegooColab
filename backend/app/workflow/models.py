@@ -4,6 +4,7 @@ from enum import StrEnum
 
 from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.mutable import MutableDict, MutableList
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, IdMixin
@@ -81,6 +82,11 @@ class QuestionStatus(StrEnum):
     withdrawn = "withdrawn"
 
 
+class ReviewScope(StrEnum):
+    step = "step"
+    final = "final"
+
+
 class Verdict(StrEnum):
     approved = "approved"
     changes_requested = "changes_requested"
@@ -110,7 +116,7 @@ class TaskWorkflow(Base):
     pr_url: Mapped[str | None] = mapped_column(String(1000))
     finish_outcome: Mapped[str | None] = mapped_column(String(100))
     # role-or-"implement:<n>" -> ACP session id
-    sessions: Mapped[dict] = mapped_column(JSONB, default=dict)
+    sessions: Mapped[dict] = mapped_column(MutableDict.as_mutable(JSONB), default=dict)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
@@ -127,7 +133,7 @@ class WorkflowDocument(IdMixin, Base):
     version: Mapped[int]
     body_md: Mapped[str] = mapped_column(Text)
     # [{title, detail, subtask_id}] for plans
-    steps: Mapped[list | None] = mapped_column(JSONB)
+    steps: Mapped[list | None] = mapped_column(MutableList.as_mutable(JSONB))
     status: Mapped[DocStatus] = mapped_column(String(20), default=DocStatus.submitted)
     submitted_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
     decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
@@ -144,7 +150,7 @@ class Mockup(IdMixin, Base):
     version: Mapped[int]  # per task, starting at 1
     title: Mapped[str] = mapped_column(String(200))
     html: Mapped[str] = mapped_column(Text)
-    choices: Mapped[list] = mapped_column(JSONB, default=list)  # list of ids
+    choices: Mapped[list] = mapped_column(MutableList.as_mutable(JSONB), default=list)  # list of ids
     created_at: Mapped[datetime] = _created_at()
 
 
@@ -155,7 +161,7 @@ class WorkflowQuestion(IdMixin, Base):
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
     stage: Mapped[Stage] = mapped_column(String(20))
     body: Mapped[str] = mapped_column(Text)
-    choices: Mapped[list] = mapped_column(JSONB, default=list)
+    choices: Mapped[list] = mapped_column(MutableList.as_mutable(JSONB), default=list)
     mockup_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_mockups.id", ondelete="SET NULL"))
     status: Mapped[QuestionStatus] = mapped_column(String(20), default=QuestionStatus.open)
     answered_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
@@ -170,11 +176,11 @@ class StepReview(IdMixin, Base):
 
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
     run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"))
-    scope: Mapped[str] = mapped_column(String(10))  # "step" or "final"
+    scope: Mapped[ReviewScope] = mapped_column(String(10))
     step: Mapped[int | None]
     round: Mapped[int]
     verdict: Mapped[Verdict] = mapped_column(String(20))
-    findings: Mapped[list] = mapped_column(JSONB, default=list)
+    findings: Mapped[list] = mapped_column(MutableList.as_mutable(JSONB), default=list)
     created_at: Mapped[datetime] = _created_at()
 
 

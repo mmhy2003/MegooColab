@@ -90,3 +90,23 @@ async def test_workflow_deleted_with_task(client, db):
     assert (await db.execute(select(func.count()).select_from(TaskWorkflow))).scalar_one() == 0
     assert (await db.execute(select(func.count()).select_from(WorkflowDocument))).scalar_one() == 0
     assert (await db.execute(select(func.count()).select_from(Task))).scalar_one() == 0
+
+
+async def test_in_place_edits_to_jsonb_columns_persist(client, db):
+    await make_project(client, db, "PAY")
+    t = await _task(client)
+    tid = uuid.UUID(t["id"])
+    db.add(TaskWorkflow(task_id=tid))
+    db.add(WorkflowDocument(task_id=tid, kind=DocKind.plan, version=1, body_md="p", steps=[]))
+    await db.commit()
+
+    wf = await db.get(TaskWorkflow, tid)
+    wf.sessions["implement:1"] = "s"
+    doc = (await db.execute(select(WorkflowDocument).where(WorkflowDocument.task_id == tid))).scalar_one()
+    doc.steps.append({"title": "a", "detail": "", "subtask_id": None})
+    await db.commit()
+    db.expire_all()
+
+    assert (await db.get(TaskWorkflow, tid)).sessions == {"implement:1": "s"}
+    doc = (await db.execute(select(WorkflowDocument).where(WorkflowDocument.task_id == tid))).scalar_one()
+    assert [s["title"] for s in doc.steps] == ["a"]
