@@ -733,3 +733,16 @@ async def _task_runs(task_id) -> list[AgentRun]:
     async with SessionLocal() as s:
         rows = await s.execute(select(AgentRun).where(AgentRun.task_id == task_id).order_by(AgentRun.created_at))
         return list(rows.scalars())
+
+
+async def test_get_document_carries_the_decision_comment_and_who_decided(db, tc_factory):
+    """I6: a revising agent can read why its document was rejected, even when it starts a fresh session."""
+    tc = tc_factory(lifespan=True)
+    b, _ = await _design_waiting(db, tc)
+    r = tc.post(f"/api/tasks/{b.key}/documents/design/1/decision", json={"approve": False, "comment": "Simpler"})
+    assert r.status_code == 200, r.text
+    revision = (await _task_runs(b.task_id))[-1]
+    token = await _run_token(revision)
+    err, out = _tool(tc, token, "get_document", key=b.key, kind="design", version=1)
+    assert not err, out
+    assert (out["status"], out["decision_comment"], out["decided_by"]) == ("rejected", "Simpler", str(b.manager.id))

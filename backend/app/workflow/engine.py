@@ -88,6 +88,8 @@ WORKFLOW_TYPES = (TaskType.story, TaskType.task, TaskType.bug)  # what a workflo
 MAX_FAILURES = 3  # consecutive failed runs before escalating retries_exhausted (AGT-19)
 ACTIVE = (WorkflowStatus.running, WorkflowStatus.waiting_human)
 CONTINUE_TEXT = "Your previous run ended before it finished. Continue the same work from where you left off."
+# the heading a resume text gets when there is no session to resume and it joins the full prompt instead
+RESUME_HEADING = {"answer": "Answer", "rejection": "Rejection", "nudge": "Reminder", "findings": "Findings to address"}
 NUDGE_TEXT = {
     RunRole.plan: (
         "Your last run ended without asking a question or submitting your plan. Continue: ask the human "
@@ -352,9 +354,10 @@ async def enqueue(
     # a fresh-by-design role has no stored session; an answer resumes the asking run's own (resume_session_ref)
     session = resume_session_ref or (wf.sessions.get(key) if key else None)
     text = resume_text(resume_kind, payload) if resume_kind else resume_prompt
-    if resume_kind == "nudge" and not session:
-        # nothing to resume: the reminder goes at the end of the full prompt, within its size limit
-        note = "\n\n## Reminder\n" + text
+    if text and not session and text != CONTINUE_TEXT:
+        # nothing to resume: the answer, rejection, reminder or findings go at the end of the full prompt, under a
+        # heading and within its size limit (a bare "continue" means nothing to a fresh session)
+        note = f"\n\n## {RESUME_HEADING.get(resume_kind, 'Message')}\n" + text
         prompt += note[: max(0, MAX_PROMPT_CHARS - len(prompt))]
     run = AgentRun(
         task_id=task.id,

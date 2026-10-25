@@ -161,7 +161,8 @@ def register_workflow_tools(mcp: MCPServer) -> None:
     @mcp.tool()
     async def get_document(key: str, kind: str, version: int | None = None) -> dict[str, Any]:
         """A design or plan document (`kind` is design or plan) with its body and steps; the latest version
-        unless `version` is given."""
+        unless `version` is given. A decided one carries the reviewer's comment (why it was rejected) and who
+        decided."""
         async with tool_session() as (db, user):
             task, _ = await _readable(db, user, key, "get_document")
             try:
@@ -177,6 +178,8 @@ def register_workflow_tools(mcp: MCPServer) -> None:
             return {
                 "kind": str(doc.kind), "version": doc.version, "status": str(doc.status), "body_md": doc.body_md,
                 "steps": list(doc.steps) if doc.steps is not None else None,
+                "decision_comment": doc.decision_comment,
+                "decided_by": str(doc.decided_by) if doc.decided_by else None,
             }
 
     @mcp.tool()

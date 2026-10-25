@@ -277,10 +277,11 @@ func TestResumeFallbackToNewSessionWithFullPrompt(t *testing.T) {
 			if !strings.HasPrefix(last, "new:") || last != "new:"+*rf.SessionID {
 				t.Fatalf("events = %v, reported session %q", r.SessionEvents, *rf.SessionID)
 			}
-			if len(r.Prompts) != 1 || r.Prompts[0] != "full prompt" {
-				t.Fatalf("prompts = %v", r.Prompts)
+			// the new session gets the full prompt and then what the resume would have said (I6)
+			if len(r.Prompts) != 1 || r.Prompts[0] != "full prompt\n\ncontinue please" {
+				t.Fatalf("prompts = %q", r.Prompts)
 			}
-			if got := messages(e, "run-fb"); got != "started over" {
+			if got := messages(e, "run-fb"); got != "fresh answerstarted over" { // it saw both texts
 				t.Fatalf("messages = %q", got)
 			}
 			if log := e.runLog("run-fb"); !strings.Contains(log, "runner: resume_fallback: ") {
@@ -491,5 +492,17 @@ func TestRedactorCloseReleasesShortTailsAndWithholdsLongOnes(t *testing.T) {
 		if sb.String() != want {
 			t.Errorf("%q -> %q, want %q", in, sb.String(), want)
 		}
+	}
+}
+
+func TestResumeFallbackWithoutResumePromptSendsOnlyThePrompt(t *testing.T) {
+	t.Setenv("FAKEAGENT_SESSIONS_DIR", t.TempDir())
+	e := newEnvWithCache(t, twoTurns, 1, t.TempDir())
+	e.startRunWith("run-fb2", "MEG-8", func(rs *protocol.RunStart) {
+		rs.Prompt, rs.ResumeSessionID = "full prompt", "fake-session-404"
+	})
+	e.finished("run-fb2")
+	if r := e.finalReport(); len(r.Prompts) != 1 || r.Prompts[0] != "full prompt" {
+		t.Fatalf("prompts = %q", r.Prompts)
 	}
 }

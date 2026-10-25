@@ -328,3 +328,19 @@ async def test_type_change_to_epic_refused_while_workflow_active(db, tc_factory)
     # a task whose workflow has not started can change type
     other = _task(tc, b.agent, title="Other")
     assert tc.patch(f"/api/tasks/{other['key']}", json={"type": "epic"}).status_code == 200
+
+
+async def test_rejection_without_a_stored_session_reaches_the_fresh_prompt(db, tc_factory):
+    """I6: with no session to resume, the rejection comment goes into the full prompt, under a heading."""
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    await _submit(b, run)
+    await _finish(b.manager.id, run, "completed")  # no session reported
+    assert (await _wf(b.task_id)).needs == "design_approval"
+    r = _decide(tc, b, "design", 1, False, "Needs a rollback section")
+    assert r.status_code == 200, r.text
+    new = (await _runs(b.task_id))[-1]
+    assert (new.workflow_role, new.resume_session_ref, new.resume_prompt) == ("brainstorm", None, None)
+    tail = new.prompt[new.prompt.index("\n\n## Rejection\n"):]
+    assert "Needs a rollback section" in tail and "submit_design" in tail
+    assert len(new.prompt) <= 60_000

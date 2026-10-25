@@ -48,8 +48,11 @@ type sessionRequest struct {
 }
 
 // openSession resumes the stored session when the run asks for it and the agent
-// can; otherwise (or when that fails) it starts a new one with the full prompt.
+// can; otherwise it starts a new one with the full prompt. When a resume fails,
+// the resume prompt (an answer, a rejection, findings) follows the full prompt,
+// so the new session still gets it.
 func openSession(ctx context.Context, q sessionRequest) (openedSession, error) {
+	prompt := q.rs.Prompt
 	if q.rs.ResumeSessionID != "" {
 		s, err := resumeSession(ctx, q)
 		if err == nil {
@@ -59,12 +62,15 @@ func openSession(ctx context.Context, q sessionRequest) (openedSession, error) {
 		if ctx.Err() != nil {
 			return openedSession{}, ctx.Err()
 		}
+		if q.rs.ResumePrompt != "" {
+			prompt += "\n\n" + q.rs.ResumePrompt
+		}
 	}
 	resp, err := q.ac.NewSession(ctx, acp.NewSessionRequest{Cwd: q.cwd, McpServers: q.servers, Meta: q.meta})
 	if err != nil {
 		return openedSession{}, err
 	}
-	return openedSession{id: resp.SessionId, modes: resp.Modes, prompt: q.rs.Prompt}, nil
+	return openedSession{id: resp.SessionId, modes: resp.Modes, prompt: prompt}, nil
 }
 
 // resumeSession continues the stored session (session/resume, else session/load).
