@@ -53,6 +53,14 @@ class EscalationDecisionIn(BaseModel):
     action: Literal["retry", "accept", "pause"]
 
 
+class HumanReviewIn(BaseModel):
+    approved: Literal[True]
+
+
+class FinishingIn(BaseModel):
+    option: FinishingOption | None
+
+
 class ManualWorkflowIn(BaseModel):
     driver: Literal["manual"]
     stage: Stage

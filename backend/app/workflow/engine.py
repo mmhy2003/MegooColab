@@ -44,6 +44,7 @@ from app.workflow.models import (
     DocStatus,
     Driver,
     Enforcement,
+    FinishingOption,
     Needs,
     QuestionStatus,
     ReviewScope,
@@ -276,6 +277,27 @@ async def _latest_findings(db: AsyncSession, task_id: uuid.UUID, role: RunRole, 
     return list(found or [])
 
 
+async def _previous_findings(db: AsyncSession, wf: TaskWorkflow, role: RunRole, step: int | None) -> list[dict] | None:
+    """A re-review (round > 1 of a step review, round 2 of the final review) sees the round before's findings."""
+    if wf.review_round <= 1 or role not in (RunRole.step_review, RunRole.final_review):
+        return None
+    scope = ReviewScope.step if role == RunRole.step_review else ReviewScope.final
+    stmt = select(StepReview.findings).where(
+        StepReview.task_id == wf.task_id, StepReview.scope == scope, StepReview.round < wf.review_round
+    )
+    if scope == ReviewScope.step:
+        stmt = stmt.where(StepReview.step == step)
+    found = await db.scalar(stmt.order_by(StepReview.round.desc(), StepReview.created_at.desc()).limit(1))
+    return list(found) if found else None
+
+
+def finishing_option(project: Project, wf: TaskWorkflow) -> FinishingOption:
+    """WF-6a/6b: human code review forces a pull request; else the task's override; else the project's option."""
+    if project.require_human_code_review:
+        return FinishingOption.pull_request
+    return FinishingOption(wf.finishing_override or project.finishing_option)
+
+
 async def enqueue(
     db: AsyncSession,
     wf: TaskWorkflow,
@@ -304,7 +326,14 @@ async def enqueue(
     agent = await db.get(Agent, task.assignee_agent_id)
     findings = await _latest_findings(db, task.id, role, step) if role in FIX_ROLES else None
     key_override = "design_revision" if role == RunRole.brainstorm and wf.stage == Stage.design else None
-    prompt, meth = await build_prompt(db, task, role, step=step, findings=findings, key_override=key_override)
+    extra = None
+    if role == RunRole.finish:
+        option = finishing_option(await db.get(Project, task.project_id), wf)
+        extra = [f"## Finishing\nFinishing option: {option.value}"]
+    prompt, meth = await build_prompt(
+        db, task, role, step=step, findings=findings, key_override=key_override,
+        previous_findings=await _previous_findings(db, wf, role, step), extra_sections=extra,
+    )
     key = session_key(role, step)
     session = wf.sessions.get(key) if key else None
     text = resume_text(resume_kind, payload) if resume_kind else resume_prompt
@@ -341,7 +370,7 @@ async def enqueue(
     return run
 
 
-async def _rerun(
+async def rerun(
     db: AsyncSession,
     wf: TaskWorkflow,
     task: Task,
@@ -369,7 +398,7 @@ async def _rerun(
     )
 
 
-async def _owner_id(db: AsyncSession, run: AgentRun) -> uuid.UUID:
+async def owner_id(db: AsyncSession, run: AgentRun) -> uuid.UUID:
     return await db.scalar(select(Agent.owner_id).where(Agent.id == run.agent_id))
 
 
@@ -481,7 +510,7 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
         if pending is not None:
             await questions.deliver(db, wf, task, pending, requested_by=user.id)
         else:
-            await _rerun(db, wf, task, requested_by=user.id)
+            await rerun(db, wf, task, requested_by=user.id)
     return wf
 
 
@@ -524,7 +553,7 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
     elif action == "retry":
         wf.failures = 0
         wf.status = WorkflowStatus.running
-        await _rerun(db, wf, task, requested_by=user.id)
+        await rerun(db, wf, task, requested_by=user.id)
     else:
         wf.status = WorkflowStatus.running
         await ACCEPT_HANDLERS[reason](db, wf, task, user)
@@ -628,7 +657,7 @@ async def _on_run_finished(db: AsyncSession, run: AgentRun) -> None:
         await record_workflow_event(db, task, None, "enforcement.violation", {"stage": str(run.stage), "role": role.value})
         await escalate(db, wf, "enforcement_violation")
         return
-    owner_id = await _owner_id(db, run)
+    requester_id = await owner_id(db, run)
     if run.status == RunStatus.cancelled and run.reason == "user_deactivated" and await _owner_deactivated(db, run):
         # the agent's owner is gone: nothing could ever run, so the workflow pauses instead of retrying
         wf.status = WorkflowStatus.paused
@@ -639,7 +668,7 @@ async def _on_run_finished(db: AsyncSession, run: AgentRun) -> None:
         if wf.failures >= MAX_FAILURES:
             await escalate(db, wf, "retries_exhausted")
         else:
-            await _rerun(db, wf, task, last=run, requested_by=owner_id)
+            await rerun(db, wf, task, last=run, requested_by=requester_id)
         return
     wf.failures = 0
     handler = ROLE_HANDLERS.get(role)
@@ -685,12 +714,12 @@ async def _handle_brainstorm_or_plan(db: AsyncSession, wf: TaskWorkflow, task: T
 
     pending = await questions.undelivered_answer(db, task.id, run.id)
     if pending is not None:  # answered while this run was still running: it gets the answer, not a nudge
-        await questions.deliver(db, wf, task, pending, requested_by=await _owner_id(db, run))
+        await questions.deliver(db, wf, task, pending, requested_by=await owner_id(db, run))
         return
     if not wf.nudged:
         wf.nudged = True
-        await _rerun(
-            db, wf, task, last=run, requested_by=await _owner_id(db, run),
+        await rerun(
+            db, wf, task, last=run, requested_by=await owner_id(db, run),
             resume_kind="nudge", payload=NUDGE_TEXT.get(role),
         )
         return
@@ -726,6 +755,6 @@ async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
     })
 
 
-# The build stage registers its role and accept handlers on import; importing it here means every user of the
-# engine (run ends, escalation decisions) has them. Last, as build imports this module.
-from app.workflow import build  # noqa: F401
+# The build and finish stages register their role and accept handlers on import; importing them here means every
+# user of the engine (run ends, escalation decisions) has them. Last, as they import this module.
+from app.workflow import build, finish  # noqa: F401

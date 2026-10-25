@@ -138,6 +138,8 @@ async def build_prompt(
     *,
     step: int | None = None,
     findings: list[dict] | None = None,
+    previous_findings: list[dict] | None = None,
+    extra_sections: list[str] | None = None,
     key_override: str | None = None,
 ) -> tuple[str, MethodologyVersion]:
     role = RunRole(role)
@@ -170,6 +172,9 @@ async def build_prompt(
 
     finding_lines = [_finding_line(f) for f in findings] if role in FIX_ROLES and findings is not None else None
     shown = len(finding_lines) if finding_lines is not None else 0
+    # a re-review checks that the previous round's findings were addressed
+    prev_lines = [_finding_line(f) for f in previous_findings] if previous_findings else None
+    prev_shown = len(prev_lines) if prev_lines is not None else 0
 
     extra = [s for p in context_providers if (s := await p(db, task, role))]
 
@@ -198,6 +203,15 @@ async def build_prompt(
             omitted = len(finding_lines) - shown
             note = f"\n({omitted} more findings omitted to fit the prompt size limit.)" if omitted else ""
             parts.append("## Review findings\n" + wrap_untrusted("findings", "\n".join(finding_lines[:shown])) + note)
+        if prev_lines is not None:
+            omitted = len(prev_lines) - prev_shown
+            note = f"\n({omitted} more findings omitted to fit the prompt size limit.)" if omitted else ""
+            parts.append(
+                "## Previous review findings (verify each was addressed)\n"
+                + wrap_untrusted("previous_findings", "\n".join(prev_lines[:prev_shown]))
+                + note
+            )
+        parts.extend(extra_sections or [])  # MegooColab's own text (e.g. the finishing option): not wrapped
         parts.extend(extra)
         return "\n\n".join(parts)
 
@@ -207,6 +221,8 @@ async def build_prompt(
         if thread:
             thread.pop(0)
             dropped += 1
+        elif prev_shown:
+            prev_shown -= 1
         elif shown:
             shown -= 1
         elif design_body:

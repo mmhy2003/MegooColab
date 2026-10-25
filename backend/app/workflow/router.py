@@ -14,13 +14,12 @@ from app.projects.access import get_project_for
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.tasks.service import get_task_for
-from app.workflow import documents, engine, methodology, questions
+from app.workflow import documents, engine, finish, methodology, questions
 from app.workflow.models import (
     DocKind,
     DocStatus,
     Driver,
     Enforcement,
-    FinishingOption,
     MethodologyVersion,
     Mockup,
     QuestionStatus,
@@ -36,6 +35,8 @@ from app.workflow.schemas import (
     DocumentInfo,
     DocumentOut,
     EscalationDecisionIn,
+    FinishingIn,
+    HumanReviewIn,
     ManualWorkflowIn,
     WorkflowDocumentBrief,
     WorkflowOut,
@@ -152,10 +153,7 @@ async def workflow_out(db, task: Task) -> WorkflowOut:
             enforcement=Enforcement.enforced,
         )
     project = await db.get(Project, task.project_id)
-    if project.require_human_code_review:
-        finishing = FinishingOption.pull_request
-    else:
-        finishing = wf.finishing_override or project.finishing_option
+    finishing = engine.finishing_option(project, wf)
     docs = (
         await db.execute(
             select(WorkflowDocument)
@@ -238,6 +236,20 @@ async def decide_escalation(key: str, body: EscalationDecisionIn, user: AuthedUs
     task, _ = await get_task_for(db, user, key, write=True)
     await engine.decide_escalation(db, user, task, body.action)
     await engine.dispatch_queued(db)
+    return await workflow_out(db, task)
+
+
+@router.post("/api/tasks/{key}/workflow/human-review")
+async def approve_human_review(key: str, body: HumanReviewIn, user: AuthedUser, db: DbSession) -> WorkflowOut:
+    task, _ = await get_task_for(db, user, key, write=True)
+    await finish.approve_human_review(db, user, task)
+    return await workflow_out(db, task)
+
+
+@router.put("/api/tasks/{key}/workflow/finishing")
+async def set_finishing(key: str, body: FinishingIn, user: AuthedUser, db: DbSession) -> WorkflowOut:
+    task, _ = await get_task_for(db, user, key, write=True)
+    await finish.set_finishing(db, user, task, body.option)
     return await workflow_out(db, task)
 
 

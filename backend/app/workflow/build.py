@@ -208,7 +208,7 @@ async def _handle_work(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Agen
     if asked is not None:
         engine.wait_for(wf, Needs.question)
         return
-    owner_id = await engine._owner_id(db, run)
+    owner_id = await engine.owner_id(db, run)
     if (run.step_result or {}).get("tests_passed") is True:
         await _warn_if_no_commit(db, wf, task, run)
         await _queue_review(db, wf, task, run.step, owner_id)
@@ -219,7 +219,7 @@ async def _handle_work(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Agen
         return
     if not wf.nudged:
         wf.nudged = True
-        await engine._rerun(db, wf, task, last=run, requested_by=owner_id, resume_kind="nudge", payload=WORK_NUDGE)
+        await engine.rerun(db, wf, task, last=run, requested_by=owner_id, resume_kind="nudge", payload=WORK_NUDGE)
         return
     await engine.escalate(db, wf, "step_incomplete")
 
@@ -227,14 +227,14 @@ async def _handle_work(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Agen
 async def _handle_step_review(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
     """step_review ended: approve and advance, request a fix round, or escalate after round 3. Without a
     verdict: one nudge, then the escalation review_incomplete."""
-    owner_id = await engine._owner_id(db, run)
+    owner_id = await engine.owner_id(db, run)
     review = (
         await db.execute(select(StepReview).where(StepReview.run_id == run.id).limit(1))
     ).scalar_one_or_none()
     if review is None:
         if not wf.nudged:
             wf.nudged = True
-            await engine._rerun(
+            await engine.rerun(
                 db, wf, task, last=run, requested_by=owner_id, resume_kind="nudge", payload=REVIEW_NUDGE
             )
         else:
@@ -287,7 +287,7 @@ async def approve_step(db: AsyncSession, wf: TaskWorkflow, task: Task, n: int, *
 
 
 async def enter_review(db: AsyncSession, wf: TaskWorkflow, task: Task, *, requested_by: uuid.UUID) -> None:
-    """Ruling P-3, minimal: the Review stage with a fresh final review. Task 10 handles its outcome."""
+    """The Review stage with a fresh final review (round 1); finish.py handles its outcome."""
     await engine.set_stage(db, wf, task, Stage.review)
     await engine.move_to_category(db, task, ColumnCategory.review)
     wf.review_round = 1  # the final review's first round
