@@ -1,12 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { ADMIN, setupOrSignIn } from "./helpers/auth";
+
 /**
  * End-to-end smoke test of Plan 1 against a fresh install:
  * setup → invite → team → project → task → live board updates across two browsers →
  * live comments → losing access when removed from the team.
  */
 
-const ADMIN = { name: "Root Admin", email: "root@acme.io", password: "correct-horse-1" };
 const MEMBER = { name: "Dev One", email: "dev@acme.io", password: "dev-password-1" };
 
 function column(page: Page, name: string) {
@@ -17,15 +18,8 @@ test("foundation smoke", async ({ browser }) => {
   const adminCtx = await browser.newContext();
   const admin = await adminCtx.newPage();
 
-  // 1. first-run setup
-  await admin.goto("/setup");
-  await admin.getByLabel("Organization name").fill("Acme");
-  await admin.getByLabel("Your name").fill(ADMIN.name);
-  await admin.getByLabel("Email").fill(ADMIN.email);
-  await admin.getByLabel("New password", { exact: true }).fill(ADMIN.password);
-  await admin.getByLabel("Confirm new password").fill(ADMIN.password);
-  await admin.getByRole("button", { name: "Create organization" }).click();
-  await expect(admin).toHaveURL(/\/projects$/);
+  // 1. first-run setup (or sign in, when another spec has already set the organization up)
+  await setupOrSignIn(admin);
 
   // 2. invite a member (no SMTP configured → copy the link)
   await admin.goto("/admin/users");
@@ -108,7 +102,7 @@ test("foundation smoke", async ({ browser }) => {
   await expect(admin.getByRole("dialog", { name: "PAY-2" }).getByText("creds received.")).toBeVisible({ timeout: 2_000 });
 
   // 9. removing the member from Core takes PAY away from them
-  const team = (await (await admin.request.get("/api/teams")).json())[0];
+  const team = (await (await admin.request.get("/api/teams")).json()).find((t: { name: string }) => t.name === "Core");
   const adminId = (await (await admin.request.get("/api/auth/me")).json()).user.id;
   const removed = await admin.request.put(`/api/teams/${team.id}/members`, {
     data: { user_ids: [adminId] },

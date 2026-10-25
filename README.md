@@ -72,3 +72,13 @@ docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers
 cd frontend && npx playwright install chromium && npx playwright test
 docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env down -v
 ```
+
+### Agents end-to-end test
+
+`frontend/e2e/agents.spec.ts` drives the whole path (UI, server, runner, agent) against the same stack as above. It needs the Go toolchain and `git` on the PATH. The test builds the runner and the fake agent itself into a temp directory (`go build -o <tmp>/megoocolab-runner ./runner`, `go build -o <tmp>/fakeagent ./runner/internal/fakeagent`), runs the runner on the host with an isolated config and cache directory (HOME, USERPROFILE, APPDATA, LOCALAPPDATA, XDG_CONFIG_HOME and XDG_CACHE_HOME all point at a temp dir), and points `MEGOO_ADAPTER_CLAUDE_CODE` at the fake agent. It needs a fresh stack (it runs first-run setup), so bring the stack down with `down -v` before each run:
+
+```bash
+cd frontend && npx playwright test e2e/agents.spec.ts
+# optional: E2E_SCREENSHOT_DIR=<dir> saves light and dark screenshots of the agent pages
+#           E2E_RUNNER_LOG=1 prints the runner output at the end
+```
