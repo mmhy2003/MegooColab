@@ -52,7 +52,7 @@ DOC_ROLES = {
 # the runner's stable failure codes, kept as a failed run's reason; any other runner error is agent_error
 RUNNER_FAILURE_CODES = frozenset({
     "mcp_http_unsupported", "worktree_failed", "not_bound", "files_failed", "commit_failed", "adapter_start_failed",
-    "initialize_failed", "session_failed", "prompt_failed", "invalid_run_files", "busy",
+    "initialize_failed", "session_failed", "prompt_failed", "invalid_run_files", "busy", "git_state_unreadable",
 })
 
 log = logging.getLogger(__name__)

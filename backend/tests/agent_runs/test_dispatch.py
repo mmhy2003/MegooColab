@@ -521,6 +521,7 @@ async def test_cancel_during_send_waits_and_follows_run_start(client, db):
 RUNNER_FAILURE_CODES = [
     "mcp_http_unsupported", "worktree_failed", "not_bound", "files_failed", "commit_failed",
     "adapter_start_failed", "initialize_failed", "session_failed", "prompt_failed", "invalid_run_files", "busy",
+    "git_state_unreadable",
 ]
 
 

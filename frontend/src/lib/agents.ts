@@ -41,6 +41,7 @@ const RUN_REASON: Record<string, string> = {
   session_failed: "the agent couldn't open a session",
   prompt_failed: "the agent stopped while working",
   invalid_run_files: "the run's files were not valid",
+  git_state_unreadable: "the runner couldn't read the repository's state, so a read-only run can't be checked",
 };
 
 /** Plain words for a run's reason code; an unknown code stays readable. */
