@@ -35,6 +35,7 @@ const MESSAGES: Record<string, string> = {
   project_not_accessible: "You don't have access to that project.",
   local_path_not_absolute: "Enter the full path to the repository, such as C:\\code\\payments or /home/me/code/payments.",
   task_not_assigned_to_agent: "Assign this task to the agent before starting a run.",
+  task_has_active_run: "This task already has an agent run in progress. Wait for it to finish, or cancel it first.",
   forbidden: "You don't have permission to do that.",
   validation_error: "Some fields are invalid.",
 };

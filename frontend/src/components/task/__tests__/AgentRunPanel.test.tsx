@@ -30,9 +30,11 @@ function run(status: AgentRun["status"], extra: Partial<AgentRun> = {}): AgentRu
   } as AgentRun;
 }
 
-function setup(agentArg: ProjectAgent, runs: AgentRun[]) {
+function setup(agentArg: ProjectAgent, runs: AgentRun[], post?: Response) {
   const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
-    new Response(JSON.stringify(init?.method === "POST" ? runs[0] ?? {} : runs), { status: 200 }),
+    init?.method === "POST" && post
+      ? post
+      : new Response(JSON.stringify(init?.method === "POST" ? runs[0] ?? {} : runs), { status: 200 }),
   );
   vi.stubGlobal("fetch", fetchMock);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -78,6 +80,27 @@ describe("AgentRunPanel", () => {
   it.each(["queued", "running"] as const)("offers Cancel for a %s run", async (status) => {
     setup(agent, [run(status)]);
     expect(await screen.findByRole("button", { name: "Cancel run" })).toBeInTheDocument();
+  });
+
+  it.each(["queued", "running"] as const)("disables Run agent while the latest run is %s", async (status) => {
+    setup(agent, [run(status)]);
+    await screen.findByRole("button", { name: "Cancel run" });
+    expect(screen.getByRole("button", { name: "Run agent" })).toBeDisabled();
+  });
+
+  it("enables Run agent again once the latest run has ended", async () => {
+    setup(agent, [run("completed")]);
+    await screen.findByText(/completed/);
+    expect(screen.getByRole("button", { name: "Run agent" })).toBeEnabled();
+  });
+
+  it("explains a start that raced another run", async () => {
+    const conflict = new Response(JSON.stringify({ detail: "task_has_active_run" }), { status: 409 });
+    setup(agent, [], conflict);
+    fireEvent.click(await screen.findByRole("button", { name: "Run agent" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This task already has an agent run in progress. Wait for it to finish, or cancel it first.",
+    );
   });
 
   it.each(["completed", "failed", "cancelled"] as const)("hides Cancel for a %s run and shows its summary", async (status) => {

@@ -38,17 +38,23 @@ export function AgentRunPanel({ taskKey, agent, disabled }: { taskKey: string; a
     setBusy(true);
     try {
       await fn();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      // also after an error: a start that raced another run then shows that run
       await Promise.all([
         client.invalidateQueries({ queryKey: qk.agentRuns(taskKey) }),
         client.invalidateQueries({ queryKey: qk.activity(taskKey) }),
       ]);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
       setBusy(false);
     }
   };
   const canRun = agent.can_use && !disabled && !busy;
+  const runTitle = !agent.can_use
+    ? "Only the owner, project managers and admins can assign this agent"
+    : active
+      ? "This task already has an agent run in progress"
+      : undefined;
 
   return (
     <section aria-label="Agent" className="card space-y-2 p-3 text-sm">
@@ -83,8 +89,8 @@ export function AgentRunPanel({ taskKey, agent, disabled }: { taskKey: string; a
         <textarea aria-label="Prompt (optional)" rows={3} maxLength={4000} className={FIELD} disabled={!canRun} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
       </label>
       <Button
-        disabled={!canRun}
-        title={agent.can_use ? undefined : "Only the owner, project managers and admins can assign this agent"}
+        disabled={!canRun || !!active}
+        title={runTitle}
         onClick={() =>
           void act(async () => {
             await api(`/api/tasks/${taskKey}/agent-runs`, { method: "POST", json: { policy, prompt: prompt.trim() || null } });
