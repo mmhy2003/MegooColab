@@ -99,6 +99,12 @@ type session struct {
 
 func start(t *testing.T, scenario any, meta map[string]any) *session {
 	t.Helper()
+	return startIn(t, "", scenario, meta)
+}
+
+// startIn starts the fake agent with its working directory set to dir ("" for the test's own).
+func startIn(t *testing.T, dir string, scenario any, meta map[string]any) *session {
+	t.Helper()
 	bin := testutil.BuildFakeAgent(t)
 	sc, err := json.Marshal(scenario)
 	if err != nil {
@@ -106,6 +112,7 @@ func start(t *testing.T, scenario any, meta map[string]any) *session {
 	}
 	report := filepath.Join(t.TempDir(), "report.json")
 	cmd := exec.Command(bin)
+	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "FAKEAGENT_SCENARIO="+string(sc), "FAKEAGENT_REPORT="+report)
 	cmd.Stderr = os.Stderr
 	in, _ := cmd.StdinPipe()
@@ -283,5 +290,62 @@ func TestFakeAgentCancel(t *testing.T) {
 	}
 	if r := s.finish(t); r["cancelled"] != true {
 		t.Errorf("cancelled = %v", r["cancelled"])
+	}
+}
+
+// FAKEAGENT_REPORT_DIR: every process writes its own report there, so a test
+// that drives several runs (one agent process each) keeps every report.
+func TestFakeAgentReportDirKeepsOneReportPerProcess(t *testing.T) {
+	bin := testutil.BuildFakeAgent(t)
+	dir := filepath.Join(t.TempDir(), "reports")
+	for i := 0; i < 2; i++ {
+		cmd := exec.Command(bin)
+		cmd.Env = append(os.Environ(), "FAKEAGENT_REPORT_DIR="+dir)
+		cmd.Stdin = strings.NewReader("") // EOF at once: the agent exits and writes its report
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("run %d: %v %s", i, err, out)
+		}
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "report-*.json"))
+	if err != nil || len(files) != 2 {
+		t.Fatalf("reports = %v %v", files, err)
+	}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		var r map[string]any
+		if err != nil || json.Unmarshal(b, &r) != nil {
+			t.Fatalf("%s: %v %q", f, err, b)
+		}
+	}
+}
+
+// commit {all: true} stages every change first, like an agent committing its work; without it the commit
+// takes only what is already staged.
+func TestFakeAgentCommitAllStagesChanges(t *testing.T) {
+	repo := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", repo, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q")
+	git("commit", "-q", "--allow-empty", "-m", "init")
+	s := startIn(t, repo, []any{
+		map[string]any{"direct_write": map[string]any{"path": "a.txt", "content": "a"}},
+		map[string]any{"commit": map[string]any{"message": "only staged"}},
+		map[string]any{"commit": map[string]any{"message": "everything", "all": true}},
+	}, nil)
+	if _, err := s.conn.Prompt(context.Background(), acp.PromptRequest{SessionId: s.sid, Prompt: []acp.ContentBlock{acp.TextBlock("go")}}); err != nil {
+		t.Fatal(err)
+	}
+	s.finish(t)
+	if got := git("log", "--format=%s", "--name-only", "-2"); got != "everything\n\na.txt\nonly staged" {
+		t.Fatalf("log = %q", got)
+	}
+	if st := git("status", "--porcelain"); st != "" {
+		t.Fatalf("status = %q", st)
 	}
 }

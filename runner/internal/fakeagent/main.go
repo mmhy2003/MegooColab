@@ -1,6 +1,7 @@
 // Command fakeagent is a scripted ACP agent for tests. The scenario comes from
 // $FAKEAGENT_SCENARIO (JSON array of steps, run on session/prompt) and a JSON
-// report of what the agent observed is written to $FAKEAGENT_REPORT on exit.
+// report of what the agent observed is written to $FAKEAGENT_REPORT on exit
+// (or, with $FAKEAGENT_REPORT_DIR, to a file of its own in that directory).
 package main
 
 import (
@@ -18,8 +19,9 @@ import (
 )
 
 type fakeAgent struct {
-	conn  *acp.AgentSideConnection
-	steps []Step
+	conn       *acp.AgentSideConnection
+	steps      []Step
+	reportPath string // where the report goes; "" for nowhere
 
 	mu         sync.Mutex
 	report     Report
@@ -289,7 +291,14 @@ func (a *fakeAgent) run(ctx context.Context, sid acp.SessionId, st Step) error {
 			res.Error = err.Error()
 		}
 	case st.Commit != nil:
-		out, err := exec.CommandContext(ctx, "git", "-c", "user.name=fakeagent", "-c", "user.email=fakeagent@localhost", "commit", "--allow-empty", "-q", "-m", st.Commit.Message).CombinedOutput()
+		var out []byte
+		var err error
+		if st.Commit.All {
+			out, err = exec.CommandContext(ctx, "git", "add", "-A").CombinedOutput()
+		}
+		if err == nil {
+			out, err = exec.CommandContext(ctx, "git", "-c", "user.name=fakeagent", "-c", "user.email=fakeagent@localhost", "commit", "--allow-empty", "-q", "-m", st.Commit.Message).CombinedOutput()
+		}
 		ok := err == nil
 		res.OK = &ok
 		if err != nil {
@@ -374,7 +383,7 @@ func (a *fakeAgent) permissioned(ctx context.Context, sid acp.SessionId, kind ac
 
 // flush writes the report atomically (temp file + rename).
 func (a *fakeAgent) flush() {
-	path := os.Getenv("FAKEAGENT_REPORT")
+	path := a.reportPath
 	if path == "" {
 		return
 	}
@@ -392,6 +401,7 @@ func (a *fakeAgent) flush() {
 		fmt.Fprintln(os.Stderr, "fakeagent: report:", err)
 		return
 	}
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".fakeagent-report-*")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fakeagent: report:", err)
@@ -403,6 +413,19 @@ func (a *fakeAgent) flush() {
 		_ = os.Remove(tmp.Name())
 		fmt.Fprintln(os.Stderr, "fakeagent: report: write failed")
 	}
+}
+
+// reportFile is $FAKEAGENT_REPORT, else a file of this process's own in
+// $FAKEAGENT_REPORT_DIR (one agent process per run, so every run keeps its
+// report), else "".
+func reportFile() string {
+	if p := os.Getenv("FAKEAGENT_REPORT"); p != "" {
+		return p
+	}
+	if dir := os.Getenv("FAKEAGENT_REPORT_DIR"); dir != "" {
+		return filepath.Join(dir, fmt.Sprintf("report-%d-%d.json", time.Now().UnixNano(), os.Getpid()))
+	}
+	return ""
 }
 
 // Unused protocol surface.
@@ -429,7 +452,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "fakeagent:", err)
 		os.Exit(2)
 	}
-	a := &fakeAgent{steps: steps}
+	a := &fakeAgent{steps: steps, reportPath: reportFile()}
 	conn := acp.NewAgentSideConnection(a, os.Stdout, os.Stdin)
 	a.conn = conn
 	<-conn.Done()

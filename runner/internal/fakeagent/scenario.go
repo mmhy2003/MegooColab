@@ -50,9 +50,11 @@ func expand(steps []Step, prompt string) []Step {
 	return out
 }
 
-// CommitStep runs `git commit --allow-empty -m Message` in the agent's cwd.
+// CommitStep runs `git commit --allow-empty -m Message` in the agent's cwd;
+// with All, `git add -A` first, so every change is committed.
 type CommitStep struct {
 	Message string `json:"message"`
+	All     bool   `json:"all,omitempty"`
 }
 
 // PathStep names a file (relative to the agent's cwd) to look at.
