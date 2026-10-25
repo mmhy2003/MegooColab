@@ -5,26 +5,27 @@ from pydantic import BaseModel, Field
 
 from app.agents.models import AgentProgram, AnswerMode
 from app.auth.schemas import UserOut
+from app.core.text import NoNulStr
 
 MaxRuns = Annotated[int, Field(ge=1, le=3)]
 
 
 class AgentIn(BaseModel):
     program: AgentProgram
-    name: str | None = Field(default=None, max_length=200)
+    name: NoNulStr | None = Field(default=None, max_length=200)
     answer_mode: AnswerMode = AnswerMode.manual
     max_concurrent_runs: MaxRuns = 1
 
 
 class AgentPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=200)
+    name: NoNulStr | None = Field(default=None, min_length=1, max_length=200)
     answer_mode: AnswerMode | None = None
     max_concurrent_runs: MaxRuns | None = None
 
 
 class BindingIn(BaseModel):
-    project_ref: str = Field(min_length=1, max_length=64)
-    local_path: str = Field(max_length=1000)
+    project_ref: NoNulStr = Field(min_length=1, max_length=64)
+    local_path: NoNulStr = Field(max_length=1000)
 
 
 class BindingsIn(BaseModel):

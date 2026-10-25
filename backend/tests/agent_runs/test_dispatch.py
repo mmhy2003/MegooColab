@@ -306,7 +306,7 @@ async def test_cancel_queued_and_running(db, tc_factory):
         # the runner is alive: the run stays running until its run_finished arrives (Task 6)
         assert _run_status(tc, task, running["id"]) == "running"
 
-    _wait_run(tc, task, running["id"], "failed")  # the runner disconnected before its run_finished
+    _wait_run(tc, task, running["id"], "cancelled")  # the runner left before its run_finished: the user's cancel completes
 
     # runner gone and the row still marked running (e.g. after a server restart): cancel is immediate
     orphan = _start(tc, task)

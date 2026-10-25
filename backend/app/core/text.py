@@ -1,6 +1,6 @@
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import AfterValidator
+from pydantic import BeforeValidator
 
 
 def strip_nul(s: str) -> str:
@@ -8,5 +8,9 @@ def strip_nul(s: str) -> str:
     return s.replace("\x00", "")
 
 
-# Validators run in order, so min_length/max_length (Field) see the stripped text when used with NoNulStr.
-NoNulStr = Annotated[str, AfterValidator(strip_nul)]
+def _strip_if_str(v: Any) -> Any:
+    return strip_nul(v) if isinstance(v, str) else v
+
+
+# A BeforeValidator, so Field(min_length/max_length) are checked on the stripped text: "\x00" is empty (422).
+NoNulStr = Annotated[str, BeforeValidator(_strip_if_str)]

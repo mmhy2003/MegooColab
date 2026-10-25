@@ -1,20 +1,28 @@
 """Plan 2 review carry-overs: NUL stripping, the cancel actor, and two delete/dispatch races."""
 
+import asyncio
 import uuid
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import delete, select
 
-from app.agent_runs.models import AgentRun, RunPolicy
-from app.agent_runs.service import start_run
-from app.auth.models import User
+from app.agent_runs.models import AgentRun, RunPolicy, RunStatus
+from app.agent_runs.service import (
+    _lock_run,
+    _transition,
+    start_run,
+    stop_runs_before_delete,
+)
+from app.auth.models import Role, User
 from app.core.db import SessionLocal
 from app.projects.models import Project
+from app.tasks.activity import safe_filename
 from app.tasks.models import Comment, Task, TaskEvent
 from tests.agent_runs.test_dispatch import (
     _avail,
     _offline_runs,
+    _run_status,
     _setup,
     _start,
     _task,
@@ -22,8 +30,8 @@ from tests.agent_runs.test_dispatch import (
 )
 from tests.agent_runs.test_run_guards import _finish, _next_of
 from tests.factories import login, make_project, make_user
-from tests.mcp.test_mcp import call, mcp_running, mcp_session  # noqa: F401  (mcp_running is a fixture)
 from tests.mcp.test_mcp import _mint as _mint_mcp
+from tests.mcp.test_mcp import call, mcp_running, mcp_session  # noqa: F401  (mcp_running is a fixture)
 from tests.runner.test_runner_ws import (  # noqa: F401  (tc_factory is a fixture)
     URL,
     _hello,
@@ -106,15 +114,16 @@ async def test_finish_of_deleted_run_dispatches_next_queued(db, tc_factory):
         _wait_run(tc, t1, first["id"], "running")
         assert tc.delete(f"/api/tasks/{t1['key']}").status_code == 204
         assert _next_of(ws, "run_cancel")["run_id"] == first["id"]
-        _wait_run(tc, t2, second["id"], "queued")  # deleting dispatches nothing
+        # deleting dispatches nothing: the delete has returned, and the queued run was not claimed
+        assert _run_status(tc, t2, second["id"]) == "queued"
         _finish(ws, first["id"], "cancelled")  # the row is gone, but the slot is free
         assert _next_of(ws, "run_start")["run_id"] == second["id"]
         _wait_run(tc, t2, second["id"], "running")
 
 
 async def test_start_run_on_deleted_task_404(client, db):
-    me, _agent, _runs = await _offline_runs(client, db, n=0)
-    agent_id = _agent["id"]
+    me, agent, _runs = await _offline_runs(client, db, n=0)
+    agent_id = agent["id"]
     task_json = (
         await client.post("/api/projects/PAY/tasks", json={"title": "Gone", "assignee_agent_id": agent_id})
     ).json()
@@ -127,3 +136,71 @@ async def test_start_run_on_deleted_task_404(client, db):
     with pytest.raises(HTTPException) as exc:
         await start_run(db, user, task, project, RunPolicy.read_only, None)
     assert exc.value.status_code == 404 and exc.value.detail == "task_not_found"
+
+
+# ---- review round 1 ---------------------------------------------------------
+
+
+async def test_nul_only_text_is_rejected_and_length_counts_stripped_text(app, client, db, mcp_running):
+    me = await make_user(db)
+    await make_project(client, db, "PAY", me)
+    await login(client, me)
+    r = await client.post("/api/projects/PAY/tasks", json={"title": "\x00"})
+    assert r.status_code == 422
+    r = await client.post("/api/projects/PAY/tasks", json={"title": "a" * 500 + "\x00"})
+    assert r.status_code == 201 and r.json()["title"] == "a" * 500
+    task = r.json()
+    async with mcp_session(app, await _mint_mcp(client)) as s:
+        is_error, payload = await call(s, "comment_on_task", key=task["key"], body_md="\x00")
+    assert is_error and "invalid_input" in payload
+    assert (await db.execute(select(Comment.id))).first() is None
+
+
+async def test_other_text_inputs_strip_nul(client, db):
+    admin = await make_user(db, role=Role.admin)
+    await login(client, admin)
+    r = await client.post("/api/teams", json={"name": "T\x00eam", "description": "d\x00"})
+    assert r.status_code == 201, r.text
+    assert (r.json()["name"], r.json()["description"]) == ("Team", "d")
+    r = await client.post("/api/agents", json={"program": "claude_code", "name": "A\x00gent"})
+    assert r.status_code == 201, r.text
+    assert r.json()["name"] == "Agent"
+    assert safe_filename("a\x00b.txt") == "ab.txt"
+
+
+async def test_stop_runs_before_delete_does_not_deadlock_with_event_inserts(client, db):
+    """The delete holds the task lock while a cancel (run lock, then a TaskEvent insert, whose FK check
+    locks the task FOR KEY SHARE) finishes: FOR UPDATE on the task would deadlock here."""
+    _me, _agent, [run_json] = await _offline_runs(client, db)
+    run_id = uuid.UUID(run_json["id"])
+    task_id = (await db.execute(select(AgentRun.task_id).where(AgentRun.id == run_id))).scalar_one()
+    async with SessionLocal() as canceller, SessionLocal() as deleter:
+        run = await _lock_run(canceller, run_id)  # the cancel already holds the run row
+        delete_task = asyncio.create_task(stop_runs_before_delete(deleter, [task_id]))
+        await asyncio.sleep(0.5)  # the delete now holds the task lock and waits for the run row
+        assert not delete_task.done()
+        await asyncio.wait_for(
+            _transition(canceller, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=_me.id), 5
+        )
+        await canceller.commit()
+        await asyncio.wait_for(delete_task, 5)
+        await deleter.rollback()
+    assert (await db.execute(select(TaskEvent).where(TaskEvent.kind == "agent_run_cancelled"))).scalars().all()
+
+
+async def test_disconnect_after_user_cancel_ends_cancelled_with_actor(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    me, _ = await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    run = _start(tc, task)
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello([_avail(agent)]))
+        assert _next_of(ws, "run_start")["run_id"] == run["id"]
+        _wait_run(tc, task, run["id"], "running")
+        assert tc.post(f"/api/agent-runs/{run['id']}/cancel").status_code == 204
+        assert _next_of(ws, "run_cancel")["run_id"] == run["id"]
+    _wait_run(tc, task, run["id"], "cancelled")  # the runner left before its run_finished
+    event = (await db.execute(select(TaskEvent).where(TaskEvent.kind == "agent_run_cancelled"))).scalar_one()
+    assert event.actor_user_id == me.id
+    assert "agent_run_failed" not in [k for (k,) in (await db.execute(select(TaskEvent.kind))).all()]

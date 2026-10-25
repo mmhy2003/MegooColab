@@ -4,16 +4,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.schemas import AgentOut
 from app.auth.schemas import UserOut
+from app.core.text import NoNulStr
 
 
 class TeamIn(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    description: str = ""
+    name: NoNulStr = Field(min_length=1, max_length=200)
+    description: NoNulStr = ""
 
 
 class TeamPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
+    name: NoNulStr | None = Field(default=None, min_length=1, max_length=200)
+    description: NoNulStr | None = None
 
 
 class TeamOut(BaseModel):

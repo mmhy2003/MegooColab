@@ -11,7 +11,12 @@ from sqlalchemy.orm import aliased
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunPolicy, RunStatus
 from app.agent_runs.schemas import RunAgentOut, RunOut
 from app.agents.models import Agent, AgentBinding
-from app.agents.service import can_use_agent, is_usable_binding, owner_can_access, publish_agents_updated
+from app.agents.service import (
+    can_use_agent,
+    is_usable_binding,
+    owner_can_access,
+    publish_agents_updated,
+)
 from app.auth.models import User
 from app.core.db import SessionLocal
 from app.core.events import Event, publish
@@ -280,7 +285,11 @@ async def fail_disconnected_runs(db: AsyncSession, conn: RunnerConn) -> None:
     for run, owner_id in (await db.execute(stmt)).all():
         if superseded and run.id not in conn.run_ids:
             continue
-        if conn.close_code == CLOSE_UNAUTHORIZED:
+        if run.cancelled_by is not None:  # a user asked for the cancel: the runner going away completes it
+            await _transition(
+                db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, actor_id=run.cancelled_by
+            )
+        elif conn.close_code == CLOSE_UNAUTHORIZED:
             await _transition(
                 db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, reason="runner_unauthorized"
             )
@@ -301,7 +310,13 @@ async def fail_unclaimed_runs(db: AsyncSession, conn: RunnerConn) -> None:
         .execution_options(populate_existing=True)
     )
     for run, owner_id in (await db.execute(stmt)).all():
-        if run.id not in conn.run_ids:
+        if run.id in conn.run_ids:
+            continue
+        if run.cancelled_by is not None:
+            await _transition(
+                db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, actor_id=run.cancelled_by
+            )
+        else:
             await _transition(
                 db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
             )
@@ -314,9 +329,13 @@ async def stop_runs_before_delete(db: AsyncSession, task_ids) -> None:
 
     The run rows are locked: a dispatch in flight finishes its send first (and the cancel follows it), and
     a queued run cannot be claimed and started before the delete commits."""
-    # lock the tasks first: a start_run racing this delete either committed its run (and is seen below) or
-    # finds the task gone (404); a bare run-row lock would miss a run inserted after the snapshot
-    await db.execute(select(Task.id).where(Task.id.in_(task_ids)).order_by(Task.id).with_for_update())
+    # Lock the tasks first, FOR NO KEY UPDATE (the mode start_run takes, so the two serialise): a start_run
+    # racing this delete either committed its run (seen below) or finds the task gone (404). Not FOR UPDATE:
+    # that would conflict with the FOR KEY SHARE that every TaskEvent insert (FK check) takes on the task
+    # while holding a run row lock, and the two sides would deadlock.
+    await db.execute(
+        select(Task.id).where(Task.id.in_(task_ids)).order_by(Task.id).with_for_update(key_share=True)
+    )
     rows = (
         await db.execute(
             select(AgentRun, Agent.owner_id, Task.project_id)
@@ -554,7 +573,8 @@ async def finish_run(
             log.warning("run %s failed on the runner: %.200s", run.id, strip_nul(error or ""))
         await _transition(
             db, run, RunStatus(outcome), f"agent_run_{outcome}", owner_id=agent.owner_id,
-            actor_id=run.cancelled_by if outcome == "cancelled" else None, reason=reason, summary=summary, extra={"summary": summary},
+            actor_id=run.cancelled_by if outcome == "cancelled" else None,
+            reason=reason, summary=summary, extra={"summary": summary},
         )
     else:
         run.finished_at = run.finished_at or _now()

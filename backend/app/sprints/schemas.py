@@ -4,12 +4,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.text import NoNulStr
 from app.sprints.models import SprintState
 
 
 class SprintIn(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    goal: str = ""
+    name: NoNulStr = Field(min_length=1, max_length=200)
+    goal: NoNulStr = ""
     start_date: date
     end_date: date
 
@@ -21,8 +22,8 @@ class SprintIn(BaseModel):
 
 
 class SprintPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=200)
-    goal: str | None = None
+    name: NoNulStr | None = Field(default=None, min_length=1, max_length=200)
+    goal: NoNulStr | None = None
     start_date: date | None = None
     end_date: date | None = None
 

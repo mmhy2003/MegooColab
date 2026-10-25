@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.routing import Route
@@ -26,7 +27,7 @@ from app.mcp_server.auth import McpBearerAuth, current_mcp_user_id
 from app.projects.access import accessible_project_ids, get_project_for
 from app.projects.models import BoardColumn, Project
 from app.tasks import service
-from app.tasks.activity import activity_items, create_comment
+from app.tasks.activity import CommentIn, activity_items, create_comment
 from app.tasks.models import Priority, Task, TaskType
 from app.tasks.schemas import MoveIn, TaskCreate, TaskUpdate
 
@@ -204,8 +205,12 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
     @mcp.tool()
     async def comment_on_task(key: str, body_md: str) -> dict[str, str]:
         """Add a comment (markdown) to a task."""
+        try:
+            body = CommentIn(body_md=body_md).body_md  # same rules as the REST schema (NULs stripped, not empty)
+        except ValidationError:
+            raise ToolError("invalid_input") from None
         async with _tool_session() as (db, user):
-            comment = await create_comment(db, user, key, body_md)
+            comment = await create_comment(db, user, key, body)
             return {"comment_id": str(comment.id)}
 
     http_app = mcp.streamable_http_app(
