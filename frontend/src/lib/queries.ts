@@ -14,6 +14,7 @@ export const qk = {
   documents: (key: string) => ["documents", key] as const,
   document: (key: string, kind: string, version: number) => ["document", key, kind, version] as const,
   mockups: (key: string) => ["mockups", key] as const,
+  review: (key: string, id: string) => ["review", key, id] as const,
   activity: (key: string) => ["activity", key] as const,
   attachments: (key: string) => ["attachments", key] as const,
   sprints: (ref: string) => ["sprints", ref] as const,

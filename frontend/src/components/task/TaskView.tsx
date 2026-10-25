@@ -27,9 +27,9 @@ import { TaskFields } from "./TaskFields";
 
 const ACTIVITY_PAGE = 50;
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, id, children }: { title: string; id?: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-2">
+    <section id={id} className="space-y-2">
       <h3 className="text-[11px] tracking-widest text-muted uppercase">{title}</h3>
       {children}
     </section>
@@ -158,7 +158,7 @@ export function TaskView({
           {(["design", "plan"] as const).map(
             (kind) =>
               workflow.data?.documents.some((d) => d.kind === kind) && (
-                <Section key={kind} title={kind === "design" ? "Design" : "Plan"}>
+                <Section key={kind} id={`document-${kind}`} title={kind === "design" ? "Design" : "Plan"}>
                   <DocumentView taskKey={t.key} kind={kind} disabled={disabled} />
                 </Section>
               ),
@@ -194,6 +194,8 @@ export function TaskView({
               columnNames={columnNames}
               userNames={userNames}
               agentNames={agentNames}
+              taskKey={taskKey}
+              canAct={workflow.data?.can_act === true && !disabled}
               hasMore={older.more && (older.items.length > 0 || (activity.data?.length ?? 0) >= ACTIVITY_PAGE)}
               onLoadEarlier={async () => {
                 const first = older.items[0] ?? activity.data?.[0];

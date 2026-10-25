@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -162,5 +163,63 @@ describe("ActivityThread paging", () => {
   it("hides the button when everything is loaded", () => {
     render(<ActivityThread items={[]} columnNames={new Map()} userNames={new Map()} />);
     expect(screen.queryByRole("button", { name: "Load earlier activity" })).not.toBeInTheDocument();
+  });
+});
+
+describe("ActivityThread workflow events", () => {
+  const names = { columnNames: new Map([["c3", "Review"]]), userNames: new Map<string, string>() };
+  const ev = (id: string, kind: string, data: Record<string, unknown>, withActor = false): ActivityItem => ({
+    type: "event", id, at: "2026-10-25T10:00:00Z", actor: withActor ? actor : null, kind, data,
+  });
+  const rows = (list: ActivityItem[]) => {
+    render(<ActivityThread items={list} taskKey="PAY-1" {...names} />);
+    return screen.getAllByRole("listitem");
+  };
+
+  it("renders an enforcement violation in pink, with text", () => {
+    const [row] = rows([ev("v1", "enforcement.violation", { stage: "brainstorm", role: "brainstorm" })]);
+    expect(row.textContent).toContain("Enforcement violation during Brainstorm: the repository changed");
+    expect(row.className).toContain("text-pink");
+  });
+
+  it("uses plain past-tense sentences", () => {
+    const list = rows([
+      ev("1", "document.submitted", { kind: "design", version: 2 }),
+      ev("2", "document.approved", { kind: "plan", version: 1 }, true),
+      ev("3", "step.approved", { step: 2 }),
+      ev("4", "review.result", { scope: "step", step: 2, round: 1, verdict: "changes_requested", counts: { critical: 0, important: 1, minor: 2 } }),
+      ev("5", "status_changed", { to_column: "c3", by: "workflow" }),
+      ev("6", "workflow.escalated", { reason: "retries_exhausted" }),
+      ev("7", "workflow.paused", { reason: "owner_deactivated" }),
+      ev("8", "finish.reported", { outcome: "pull_request", branch: "megoo/PAY-1", pr_url: "javascript:alert(1)" }),
+    ]).map((li) => li.textContent);
+    expect(list[0]).toContain("The agent submitted design v2");
+    expect(list[1]).toContain("Ahmed Ali approved the plan v1");
+    expect(list[2]).toContain("Step 2 approved");
+    expect(list[3]).toContain("Review of step 2 (round 1): changes requested — 1 important, 2 minor");
+    expect(list[4]).toContain("Moved to Review by the workflow");
+    expect(list[5]).toContain("The agent's runs failed 3 times in a row.");
+    expect(list[6]).toContain("MegooColab paused the workflow (the agent's owner was deactivated)");
+    expect(list[7]).toContain("Finish reported: opened a pull request on megoo/PAY-1");
+    expect(screen.queryByRole("link", { name: "Open the pull request" })).toBeNull();
+  });
+
+  it("links document events to the document section", () => {
+    rows([ev("2", "document.approved", { kind: "plan", version: 1 }, true)]);
+    expect(screen.getByRole("link", { name: "plan v1" })).toHaveAttribute("href", "#document-plan");
+  });
+
+  it("renders a question item as a card", () => {
+    const q: ActivityItem = {
+      type: "question", id: "q1", at: "2026-10-25T10:00:00Z", actor: null,
+      question: { id: "q1", body: "Which one?", choices: [], status: "withdrawn", mockup: null, answered_by: null, answer_choice: null, answer_text: null },
+    };
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ActivityThread items={[q]} taskKey="PAY-1" {...names} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Which one?")).toBeInTheDocument();
+    expect(screen.getByText(/withdrawn/)).toBeInTheDocument();
   });
 });

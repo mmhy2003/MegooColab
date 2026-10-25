@@ -1,17 +1,22 @@
 """Build stage: plan steps, complete_step, per-step reviews, fix rounds and escalation (Task 9)."""
 
+import uuid
+
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select, update
 
 from app.agent_runs.models import AgentRun
-from app.auth.models import User
+from app.auth.models import Role, User
 from app.core.db import SessionLocal
 from app.projects.models import BoardColumn
 from app.tasks.models import Task
 from app.workflow import build, engine, questions
 from app.workflow.models import StepReview, WorkflowQuestion
+from tests.agent_runs.test_dispatch import _task
 from tests.agent_runs.test_run_guards import _next_of
+from tests.factories import make_user
+from tests.runner.test_runner_ws import _login
 from tests.workflow.test_documents import STEPS, _decide, _plan_waiting
 from tests.workflow.test_engine import (
     SHA_A,
@@ -402,3 +407,24 @@ def test_build_handlers_registered():
     for role in ("implement", "step_review", "step_fix"):
         assert engine.ROLE_HANDLERS[engine.RunRole(role)].__module__ == "app.workflow.build"
     assert "review_rounds_exhausted" in engine.ACCEPT_HANDLERS
+
+
+async def test_review_findings_endpoint(db, tc_factory):
+    tc, other = tc_factory(lifespan=True), tc_factory()
+    b, run = await _building(db, tc)
+    await _complete(run)
+    await _finish(b.manager.id, run, "completed", session_id="impl-1", **_git(SHA_A, SHA_B))
+    review = await _last(b.task_id)
+    finding = {"severity": "important", "file": "a.py", "line": 3, "summary": "missing check"}
+    review_id = await _review(review, "changes_requested", [finding])
+
+    r = tc.get(f"/api/tasks/{b.key}/reviews/{review_id}")
+    assert r.status_code == 200
+    assert r.json() == {"scope": "step", "step": 1, "round": 1, "verdict": "changes_requested", "findings": [finding]}
+
+    # a review id of another task, an unknown id and a user without project access are all 404
+    second = _task(tc, b.agent, title="Other")
+    assert tc.get(f"/api/tasks/{second['key']}/reviews/{review_id}").status_code == 404
+    assert tc.get(f"/api/tasks/{b.key}/reviews/{uuid.uuid4()}").status_code == 404
+    _login(other, await make_user(db, role=Role.member))
+    assert other.get(f"/api/tasks/{b.key}/reviews/{review_id}").status_code == 404

@@ -1,7 +1,12 @@
+import { AlertTriangle } from "lucide-react";
+
 import { Avatar } from "@/components/ui/Avatar";
 import { Markdown } from "@/components/ui/Markdown";
+import { QuestionCard } from "@/components/workflow/QuestionCard";
+import { ReviewResult } from "@/components/workflow/ReviewFindings";
 import { runReasonText } from "@/lib/agents";
 import type { ActivityItem } from "@/lib/types";
+import { escalationReasonText, FINISHING_LABEL, STAGES, type FinishingOption } from "@/lib/workflow";
 
 type Names = { columnNames: Map<string, string>; userNames: Map<string, string>; agentNames?: Map<string, string> };
 
@@ -40,7 +45,7 @@ export function describeEvent(
     case "sprint_changed":
       return data.to ? "moved this into a sprint" : "moved this to the backlog";
     default:
-      return describeAgentEvent(kind, data, byPerson) ?? kind;
+      return describeWorkflowEvent(kind, data) ?? describeAgentEvent(kind, data, byPerson) ?? kind;
   }
 }
 
@@ -82,6 +87,100 @@ function describeAgentEvent(kind: string, data: Record<string, unknown>, byPerso
   }
 }
 
+function stageName(v: unknown): string {
+  return STAGES.find((s) => s.id === v)?.label ?? (str(v) ?? "a stage");
+}
+
+const PAUSE_REASON: Record<string, string> = { owner_deactivated: "the agent's owner was deactivated" };
+const DECISION_TEXT: Record<string, string> = { retry: "chose to retry", accept: "accepted the result", pause: "chose to pause" };
+const OUTCOME_TEXT: Record<string, string> = {
+  merge_local: "merged locally",
+  pull_request: "opened a pull request",
+  keep_branch: "kept the branch",
+};
+const SEVERITY_ORDER = ["critical", "important", "minor"] as const;
+
+function findingTotal(data: Record<string, unknown>): number {
+  const counts = (data.counts ?? {}) as Record<string, unknown>;
+  return SEVERITY_ORDER.reduce((n, sv) => n + num(counts[sv]), 0);
+}
+
+/** Events of the workflow engine, in plain past tense. Agent- and user-written fields are shown as text only. */
+function describeWorkflowEvent(kind: string, data: Record<string, unknown>): string | undefined {
+  switch (kind) {
+    case "workflow.started":
+      return "started the workflow";
+    case "workflow.paused": {
+      const reason = str(data.reason);
+      return reason ? `paused the workflow (${PAUSE_REASON[reason] ?? reason.replace(/_/g, " ")})` : "paused the workflow";
+    }
+    case "workflow.resumed":
+      return "resumed the workflow";
+    case "workflow.stage":
+      return `Moved the workflow from ${stageName(data.from)} to ${stageName(data.to)}`;
+    case "workflow.escalated":
+      return `The workflow needs a decision. ${escalationReasonText(str(data.reason) ?? null)}`;
+    case "escalation.decided":
+      return DECISION_TEXT[str(data.action) ?? ""] ?? "decided how to continue";
+    case "workflow.finished":
+      return "The workflow finished";
+    case "finishing.changed": {
+      const option = str(data.option) as FinishingOption | undefined;
+      return option && FINISHING_LABEL[option] ? `set the finishing option to ${FINISHING_LABEL[option]}` : "reset the finishing option";
+    }
+    case "document.submitted":
+      return `submitted ${str(data.kind) ?? "a document"} v${num(data.version)}`;
+    case "document.approved":
+      return `approved the ${str(data.kind) ?? "document"} v${num(data.version)}`;
+    case "document.rejected": {
+      const comment = str(data.comment);
+      return `rejected the ${str(data.kind) ?? "document"} v${num(data.version)}${comment ? `: ${comment}` : ""}`;
+    }
+    case "step.completed":
+      return `Step ${num(data.step)} completed, ${data.tests_passed ? "tests passed" : "tests not passing"}`;
+    case "step.approved":
+      return `Step ${num(data.step)} approved`;
+    case "step.no_commit":
+      return `Step ${num(data.step)} finished without a commit`;
+    case "review.result": {
+      const counts = (data.counts ?? {}) as Record<string, unknown>;
+      const parts = SEVERITY_ORDER.filter((sv) => num(counts[sv]) > 0).map((sv) => `${num(counts[sv])} ${sv}`);
+      const what = data.scope === "final" ? "Final review" : `Review of step ${num(data.step)}`;
+      const verdict = data.verdict === "approved" ? "approved" : "changes requested";
+      return `${what} (round ${num(data.round)}): ${verdict}${parts.length ? ` — ${parts.join(", ")}` : ""}`;
+    }
+    case "finish.reported": {
+      const outcome = OUTCOME_TEXT[str(data.outcome) ?? ""] ?? "finished";
+      const branch = str(data.branch);
+      return `Finish reported: ${outcome}${branch ? ` on ${branch}` : ""}`;
+    }
+    case "enforcement.violation":
+      return `Enforcement violation during ${stageName(data.stage)}: the repository changed`;
+    case "human_review.approved":
+    case "human_review_approved":
+      return "approved the pull request";
+    default:
+      return undefined;
+  }
+}
+
+/** Events whose text is a full sentence of its own, with no actor in front. */
+const STANDALONE = new Set([
+  "step.completed",
+  "step.approved",
+  "step.no_commit",
+  "review.result",
+  "finish.reported",
+  "enforcement.violation",
+  "workflow.stage",
+  "workflow.escalated",
+  "workflow.finished",
+]);
+
+function isSafeUrl(url: string | undefined): url is string {
+  return !!url && /^https?:\/\//i.test(url);
+}
+
 function when(at: string): string {
   return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
@@ -93,7 +192,16 @@ export function ActivityThread({
   agentNames,
   hasMore = false,
   onLoadEarlier,
-}: { items: ActivityItem[]; hasMore?: boolean; onLoadEarlier?: () => void } & Names) {
+  taskKey = "",
+  canAct = false,
+}: {
+  items: ActivityItem[];
+  hasMore?: boolean;
+  onLoadEarlier?: () => void;
+  taskKey?: string;
+  /** the viewer may answer questions (workflow.can_act, and not a read-only view) */
+  canAct?: boolean;
+} & Names) {
   return (
     <>
     {hasMore && onLoadEarlier && (
@@ -106,6 +214,14 @@ export function ActivityThread({
         const agentId = str(item.data?.agent_id);
         const isAgent = item.kind?.startsWith("agent_") && !item.actor;
         const actor = item.actor?.name ?? (isAgent ? (agentId && agentNames?.get(agentId)) || "Agent" : "Someone");
+        if (item.type === "question" && item.question) {
+          return (
+            <li key={item.id} className="flex gap-2">
+              <Avatar name="Agent" size={24} />
+              <QuestionCard item={item} taskKey={taskKey} canAct={canAct} />
+            </li>
+          );
+        }
         if (item.type === "comment") {
           return (
             <li key={item.id} className="flex gap-2">
@@ -120,17 +236,84 @@ export function ActivityThread({
             </li>
           );
         }
+        const kind = item.kind ?? "";
+        const data = item.data ?? {};
+        if (kind === "status_changed" && data.by === "workflow") {
+          const column = columnNames.get(str(data.to_column) ?? "") ?? "another column";
+          return <EventRow key={item.id} at={item.at} text={`Moved to ${column} by the workflow`} />;
+        }
+        const text = describeEvent(kind, data, { columnNames, userNames, agentNames }, !!item.actor);
+        if (kind === "enforcement.violation") return <EventRow key={item.id} at={item.at} text={text} violation />;
+        const isWorkflowKind = /^(workflow|escalation|document|step|review|finish|finishing|human_review)[._]/.test(kind);
+        const who = item.actor ? actor : kind === "document.submitted" ? "The agent" : isWorkflowKind ? "MegooColab" : actor;
+        const docKind = kind.startsWith("document.") && (data.kind === "design" || data.kind === "plan") ? data.kind : undefined;
+        const reviewId = kind === "review.result" ? str(data.review_id) : undefined;
+        const prUrl = kind === "finish.reported" ? str(data.pr_url) : undefined;
         return (
-          <li key={item.id} className="flex items-center gap-2 pl-1 text-xs text-muted">
-            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-cyan" />
-            <span>
-              <span className="text-fg">{actor}</span> {describeEvent(item.kind ?? "", item.data ?? {}, { columnNames, userNames, agentNames }, !!item.actor)}
-            </span>
-            <span className="ml-auto whitespace-nowrap">{when(item.at)}</span>
-          </li>
+          <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind}>
+            {isSafeUrl(prUrl) && (
+              <>
+                {" — "}
+                <a href={prUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-ink underline">
+                  Open the pull request
+                </a>
+              </>
+            )}
+            {reviewId && <ReviewResult taskKey={taskKey} reviewId={reviewId} total={findingTotal(data)} />}
+          </EventRow>
         );
       })}
     </ol>
+    </>
+  );
+}
+
+function EventRow({
+  at,
+  text,
+  lead = null,
+  violation = false,
+  docKind,
+  children,
+}: {
+  at: string;
+  text: string;
+  lead?: string | null;
+  violation?: boolean;
+  /** document events link to the design or plan section of the task */
+  docKind?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <li className={`flex items-start gap-2 pl-1 text-xs ${violation ? "text-pink" : "text-muted"}`}>
+      {violation ? (
+        <AlertTriangle size={12} aria-hidden className="mt-0.5 shrink-0" />
+      ) : (
+        <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan" />
+      )}
+      <span className="min-w-0 break-words">
+        {lead && <span className="text-fg">{lead} </span>}
+        {docKind ? <DocText text={text} kind={docKind} /> : text}
+        {children}
+      </span>
+      <span className="ml-auto whitespace-nowrap">{when(at)}</span>
+    </li>
+  );
+}
+
+/** "approved the plan v1": the "plan v1" part links to the document section of the task. */
+function DocText({ text, kind }: { text: string; kind: string }) {
+  const start = text.indexOf(kind);
+  if (start < 0) return <>{text}</>;
+  const colon = text.indexOf(":", start);
+  const end = colon < 0 ? text.length : colon;
+  return (
+    <>
+      {text.slice(0, start)}
+      <a href={`#document-${kind}`} className="text-cyan-ink underline">
+        {text.slice(start, end)}
+      </a>
+      {text.slice(end)}
     </>
   );
 }

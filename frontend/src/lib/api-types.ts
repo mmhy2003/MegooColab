@@ -1361,6 +1361,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{key}/reviews/{review_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Review */
+        get: operations["get_review_api_tasks__key__reviews__review_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mockups/{mockup_id}/view": {
         parameters: {
             query?: never;
@@ -2237,6 +2254,21 @@ export interface components {
         ResetLinkOut: {
             /** Reset Url */
             reset_url: string;
+        };
+        /** ReviewOut */
+        ReviewOut: {
+            /** Scope */
+            scope: string;
+            /** Step */
+            step: number | null;
+            /** Round */
+            round: number;
+            /** Verdict */
+            verdict: string;
+            /** Findings */
+            findings: {
+                [key: string]: unknown;
+            }[];
         };
         /**
          * Role
@@ -6031,6 +6063,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MockupOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_review_api_tasks__key__reviews__review_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+                review_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewOut"];
                 };
             };
             /** @description Validation Error */

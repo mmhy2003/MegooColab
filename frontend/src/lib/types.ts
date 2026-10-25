@@ -39,3 +39,24 @@ export type CreatedToken = S["CreatedTokenOut"];
 export type ProjectAgent = S["ProjectAgentOut"];
 export type AgentRun = S["RunOut"];
 export type RunPolicy = S["RunPolicy"];
+
+/** The `question` of an activity item with type "question" (the API types it as a loose object). */
+export type QuestionChoice = { id: string; label: string; description?: string | null; recommended?: boolean };
+export type ActivityQuestion = {
+  id: string;
+  body: string;
+  choices: QuestionChoice[];
+  status: "open" | "answered" | "withdrawn";
+  mockup: { id: string; version: number; title: string } | null;
+  answered_by: { id: string; name: string } | null;
+  answer_choice: string | null;
+  answer_text: string | null;
+};
+export type MockupInfo = { id: string; version: number; title: string; choices: string[]; created_at: string };
+export type ReviewDetail = {
+  scope: "step" | "final";
+  step: number | null;
+  round: number;
+  verdict: "approved" | "changes_requested";
+  findings: { severity: "critical" | "important" | "minor"; file: string | null; line: number | null; summary: string }[];
+};
