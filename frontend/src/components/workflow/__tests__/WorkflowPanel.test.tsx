@@ -162,6 +162,25 @@ describe("WorkflowPanel", () => {
     expect(screen.getByText(/Not enforced/)).toBeInTheDocument();
   });
 
+  it("offers Pause on an active connect_only workflow to those who may act on it", async () => {
+    const fetchMock = setup(wf({ driver: "connect_only", status: "waiting_human", needs: "design_approval", enforcement: "unenforced" }), { agent: null });
+    fireEvent.click(await screen.findByRole("button", { name: "Pause" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/tasks/PAY-1/workflow/pause"), expect.objectContaining({ method: "POST" })),
+    );
+  });
+
+  it("hides Pause on a connect_only workflow from others and once paused", async () => {
+    setup(wf({ driver: "connect_only", status: "running", enforcement: "unenforced", can_act: false }), { agent: null });
+    await screen.findByText(/Running/);
+    expect(screen.queryByRole("button", { name: "Pause" })).not.toBeInTheDocument();
+    cleanup();
+    setup(wf({ driver: "connect_only", status: "paused", enforcement: "unenforced" }), { agent: null });
+    await screen.findByText("Paused");
+    expect(screen.queryByRole("button", { name: "Pause" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+  });
+
   it("marks the current checklist stage in text", async () => {
     setup(wf({ driver: "manual", stage: "plan", can_set_manual: true }), { agent: null });
     expect(await screen.findByRole("button", { name: "Plan (current)" })).toHaveAttribute("aria-pressed", "true");

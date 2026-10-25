@@ -52,14 +52,19 @@ async def before_reassign(
 ) -> None:
     """The task's assignee changes:
     - an active connect-only workflow (AGT-32): 409 workflow_active for any change, as its assignee drives it
-      and may act on it (WF-6);
+      and may act on it (WF-6). Once paused it may go to another person (whose stage tools resume it) or to an
+      agent, which makes it an idle runner workflow at brainstorm (engine.hand_over_to_runner);
     - a runner-driven workflow, when the agent changes: 409 workflow_active while it runs or waits; a paused
       workflow forgets its sessions (they belong to the old agent)."""
     if (new_agent_id, new_user_id) == (task.assignee_agent_id, task.assignee_user_id):
         return
     wf = await engine.lock_task(db, task)
-    if wf is not None and wf.driver == Driver.connect_only and wf.status in engine.ACTIVE:
-        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_active")
+    if wf is not None and wf.driver == Driver.connect_only:
+        if wf.status in engine.ACTIVE:
+            raise HTTPException(status.HTTP_409_CONFLICT, "workflow_active")
+        if wf.status == WorkflowStatus.paused and new_agent_id is not None:
+            engine.hand_over_to_runner(wf)
+        return
     if wf is None or wf.driver != Driver.runner or new_agent_id == task.assignee_agent_id:
         return
     if wf.status in engine.ACTIVE:

@@ -34,7 +34,14 @@ from tests.agent_runs.test_dispatch import _task
 from tests.runner.test_protocol_v2 import MCP_HEADERS
 from tests.runner.test_runner_ws import _login
 from tests.workflow.test_documents import STEPS, _design_waiting
-from tests.workflow.test_engine import _finish, _member, _started, _wf
+from tests.workflow.test_engine import (
+    _admin_client,
+    _events,
+    _finish,
+    _member,
+    _started,
+    _wf,
+)
 
 ASKED = "Question posted. End your turn now; the answer arrives as your next message."
 ALL_WORKFLOW_TOOLS = {
@@ -635,3 +642,94 @@ async def test_get_workflow_gives_the_runs_recorded_methodology_version(db, tc_f
     assert not err, out
     assert out["instructions"] == meth.body_md != "Edited text"
     assert (out["stage"], out["role"]) == ("design", "brainstorm")
+
+
+# ---- an abandoned connect-only workflow (I2) ------------------------------------------------------
+
+
+async def _members_connect_only(db, tc, tc_factory):
+    """A plain member drives their own task through their personal token: (member client, key, task_id, token).
+    The design is submitted, so the workflow waits for its approval."""
+    member = await _member(db, tc)
+    mc = tc_factory()
+    _login(mc, member)
+    mine = _my_task(tc, member)
+    key, task_id = mine["key"], uuid.UUID(mine["id"])
+    token = _personal(mc)
+    assert not _tool(mc, token, "submit_design", key=key, markdown="# Design")[0]
+    assert ((await _wf(task_id)).status, (await _wf(task_id)).needs) == ("waiting_human", "design_approval")
+    return mc, key, task_id, token
+
+
+async def test_admin_pauses_an_abandoned_connect_only_workflow_then_reassigns_it_to_an_agent(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _started(db, tc)
+    _, key, task_id, _ = await _members_connect_only(db, tc, tc_factory)
+    other = tc_factory()
+    _login(other, await _member(db, tc))  # neither the assignee nor a manager
+    r = other.post(f"/api/tasks/{key}/workflow/pause")
+    assert r.status_code == 403 and r.json()["detail"] == "cannot_act_on_workflow", r.text
+
+    ac = await _admin_client(db, tc_factory)
+    r = ac.post(f"/api/tasks/{key}/workflow/pause")
+    assert r.status_code == 200, r.text
+    assert (r.json()["driver"], r.json()["status"], r.json()["needs"]) == ("connect_only", "paused", None)
+    [paused] = await _events(task_id, "workflow.paused")
+    assert paused.data == {"reason": "manual"}
+    r = ac.post(f"/api/tasks/{key}/workflow/pause")
+    assert r.status_code == 409 and r.json()["detail"] == "workflow_not_active"
+
+    # the paused workflow no longer holds the assignee: an agent takes it over from brainstorm
+    r = ac.patch(f"/api/tasks/{key}", json={"assignee_agent_id": b.agent["id"]})
+    assert r.status_code == 200, r.text
+    wf = await _wf(task_id)
+    assert (wf.driver, wf.status, wf.stage, wf.needs, wf.enforcement, wf.current_step) == (
+        "runner", "idle", "brainstorm", None, "enforced", None
+    )
+    assert [(d.kind, d.version) for d in await _docs(task_id)] == [("design", 1)]  # documents kept
+    # and the agent's owner starts it like any agent task
+    assert tc.post(f"/api/tasks/{key}/workflow/start").status_code == 200
+    assert [(r.workflow_role, r.status) for r in await _task_runs(task_id)] == [("brainstorm", "queued")]
+
+
+async def test_manager_pauses_a_connect_only_workflow_then_switches_it_to_the_checklist(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    await _started(db, tc)
+    _, key, task_id, _ = await _members_connect_only(db, tc, tc_factory)
+    r = tc.post(f"/api/tasks/{key}/workflow/pause")  # tc is the project's manager
+    assert r.status_code == 200, r.text
+    assert r.json()["can_set_manual"] is True
+    r = tc.patch(f"/api/tasks/{key}/workflow", json={"driver": "manual", "stage": "plan"})
+    assert r.status_code == 200, r.text
+    wf = await _wf(task_id)
+    assert (wf.driver, wf.stage, wf.status, wf.enforcement) == ("manual", "plan", "idle", "unenforced")
+
+
+async def test_the_assignees_next_stage_tool_resumes_a_paused_connect_only_workflow(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    await _started(db, tc)
+    mc, key, task_id, token = await _members_connect_only(db, tc, tc_factory)
+    # the assignee may pause their own workflow; get_workflow only reads
+    assert mc.post(f"/api/tasks/{key}/workflow/pause").status_code == 200
+    assert not _tool(mc, token, "get_workflow", key=key)[0]
+    assert (await _wf(task_id)).status == "paused"
+    # a stage tool resumes it, back to the approval it was waiting for
+    assert not _tool(mc, token, "ask_human", key=key, question="Still there?")[0]
+    wf = await _wf(task_id)
+    assert (wf.status, wf.needs) == ("waiting_human", "design_approval")
+    [resumed] = await _events(task_id, "workflow.resumed")
+    assert resumed.actor_user_id is not None
+    _answer_open(tc, key, await _questions(task_id), "Yes")
+    _approve(tc, key, "design", 1)
+    # paused while running: the next stage tool sets it running again and goes through
+    assert tc.post(f"/api/tasks/{key}/workflow/pause").status_code == 200
+    err, out = _tool(mc, token, "submit_plan", key=key, markdown="# Plan", steps=STEPS)
+    assert not err, out
+    wf = await _wf(task_id)
+    assert (wf.driver, wf.stage, wf.status, wf.needs) == ("connect_only", "plan", "waiting_human", "plan_approval")
+
+
+async def _task_runs(task_id) -> list[AgentRun]:
+    async with SessionLocal() as s:
+        rows = await s.execute(select(AgentRun).where(AgentRun.task_id == task_id).order_by(AgentRun.created_at))
+        return list(rows.scalars())

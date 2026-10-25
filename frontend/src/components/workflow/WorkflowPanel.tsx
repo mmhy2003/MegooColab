@@ -140,6 +140,12 @@ export function WorkflowPanel({
         </div>
       )}
 
+      {/* a connect_only workflow has no agent here: its assignee, a manager or an admin may pause it, and the
+          assignee's next stage tool resumes it */}
+      {wf.driver === "connect_only" && (status === "running" || status === "waiting_human") && canDecide && (
+        <Button variant="ghost" disabled={busy} onClick={() => void post("pause")}>Pause</Button>
+      )}
+
       {status === "waiting_human" && wf.needs === "human_code_review" && canDecide && (
         <Button disabled={busy} onClick={() => void post("human-review", { approved: true })}>Approve PR</Button>
       )}

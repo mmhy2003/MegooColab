@@ -473,10 +473,19 @@ async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
 
 
 async def pause(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
-    """Pause an active workflow and cancel its run (as this user: cancelled_by). It is never retried."""
+    """Pause an active workflow and cancel its run (as this user: cancelled_by). It is never retried.
+
+    A connect_only workflow (AGT-32) has no run: its assignee, a project manager or an admin may pause it, so an
+    abandoned one stops holding its card and assignee. Its assignee's next stage tool resumes it."""
     wf = await lock_task(db, task)
-    if wf is None or wf.driver != Driver.runner or wf.status not in ACTIVE:
+    if wf is None or wf.driver == Driver.manual or wf.status not in ACTIVE:
         raise HTTPException(status.HTTP_409_CONFLICT, "workflow_not_active")
+    if wf.driver == Driver.connect_only:
+        await require_actor(db, user, task, wf)
+        wf.status = WorkflowStatus.paused
+        wf.needs = None
+        await record_workflow_event(db, task, user.id, "workflow.paused", {"reason": "manual"})
+        return wf
     await _require_can_use(db, user, task, wf)
     wf.status = WorkflowStatus.paused
     wf.needs = None  # an escalation keeps its reason, so resuming returns to it
@@ -647,6 +656,8 @@ async def lock_connect_only(db: AsyncSession, user: User, task: Task) -> TaskWor
     await db.refresh(task, ["assignee_user_id", "assignee_agent_id", "type"])
     check_connect_only(user, task, wf)
     if wf is not None and wf.driver == Driver.connect_only:
+        if wf.status == WorkflowStatus.paused:
+            await _resume_connect_only(db, user, wf, task)
         return wf
     if task.type not in WORKFLOW_TYPES:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
@@ -668,6 +679,38 @@ async def lock_connect_only(db: AsyncSession, user: User, task: Task) -> TaskWor
     wf.finished_at = None
     await record_workflow_event(db, task, user.id, "workflow.started", {"driver": Driver.connect_only.value})
     return wf
+
+
+async def _resume_connect_only(db: AsyncSession, user: User, wf: TaskWorkflow, task: Task) -> None:
+    """A stage tool on a paused connect_only workflow: it runs again, or waits again for the answer or the
+    approval a human still owes (a decision needs that wait, see documents.decide)."""
+    await record_workflow_event(db, task, user.id, "workflow.resumed")
+    need = await _pending_need(db, wf)
+    if need == Needs.design_approval:
+        await set_stage(db, wf, task, Stage.design)
+    if need is not None:
+        wait_for(wf, need)
+    else:
+        wf.status = WorkflowStatus.running
+        wf.needs = None
+
+
+def hand_over_to_runner(wf: TaskWorkflow) -> None:
+    """A paused connect_only workflow reassigned to an agent: back to an idle runner workflow at brainstorm,
+    ready to start. Its documents stay."""
+    wf.driver = Driver.runner
+    wf.enforcement = Enforcement.enforced
+    wf.stage = Stage.brainstorm
+    wf.status = WorkflowStatus.idle
+    wf.needs = None
+    wf.agent_id = None
+    wf.current_step = None
+    wf.review_round = 0
+    wf.failures = 0
+    wf.nudged = False
+    wf.escalation_reason = None
+    wf.sessions.clear()
+    wf.finished_at = None
 
 
 async def require_connect_only_running(db: AsyncSession, wf: TaskWorkflow) -> None:
