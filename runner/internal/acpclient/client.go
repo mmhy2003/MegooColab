@@ -43,10 +43,11 @@ type Client struct {
 	emit     EmitFunc
 	interval time.Duration
 
-	mu    sync.Mutex // guards everything below and serializes emit
-	msg   strings.Builder
-	timer *time.Timer
-	tools map[acp.ToolCallId]*toolInfo
+	mu        sync.Mutex // guards everything below and serializes emit
+	msg       strings.Builder
+	timer     *time.Timer
+	tools     map[acp.ToolCallId]*toolInfo
+	replaying bool // a session/load is in flight: updates are replayed history
 }
 
 var _ acp.Client = (*Client)(nil)
@@ -58,6 +59,15 @@ func New(pol policy.Policy, root string, emit func(kind string, data map[string]
 		o(c)
 	}
 	return c
+}
+
+// SetReplaying switches the dropping of session/update. It is on while a
+// session/load is in flight: the agent replays the old conversation as updates,
+// and none of that is a run update.
+func (c *Client) SetReplaying(on bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.replaying = on
 }
 
 // Flush sends any buffered agent message text. The run manager calls it when a
@@ -240,6 +250,12 @@ func (c *Client) WriteTextFile(_ context.Context, p acp.WriteTextFileRequest) (a
 // buffered; plans and tool calls go out as they come. Content blocks, diffs,
 // raw input and raw output are never read into any update.
 func (c *Client) SessionUpdate(_ context.Context, n acp.SessionNotification) error {
+	c.mu.Lock()
+	drop := c.replaying
+	c.mu.Unlock()
+	if drop {
+		return nil
+	}
 	u := n.Update
 	switch {
 	case u.AgentMessageChunk != nil:

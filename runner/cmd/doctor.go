@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mmhy2003/megoocolab/runner/internal/adapters"
 	"github.com/mmhy2003/megoocolab/runner/internal/config"
+	"github.com/mmhy2003/megoocolab/runner/internal/jobs"
 )
 
 const nodeHint = "Install Node.js 20+ from https://nodejs.org — the Claude Code and Codex adapters run on it"
@@ -39,6 +42,7 @@ type doctor struct {
 	run      func(name string, args ...string) (string, error)
 	http     *http.Client
 	load     func() (config.Config, error)
+	probeACP func(ctx context.Context, program string) (jobs.Capabilities, error)
 }
 
 func newDoctor() doctor {
@@ -48,20 +52,27 @@ func newDoctor() doctor {
 			out, err := exec.Command(name, args...).Output()
 			return string(out), err
 		},
-		http: &http.Client{Timeout: 10 * time.Second},
-		load: config.Load,
+		http:     &http.Client{Timeout: 10 * time.Second},
+		load:     config.Load,
+		probeACP: jobs.ProbeCapabilities,
 	}
 }
 
 func newDoctorCmd() *cobra.Command {
-	return &cobra.Command{
+	var acpCaps bool
+	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check configuration, server access and prerequisites",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if acpCaps {
+				return newDoctor().reportACP(cmd.Context(), cmd.OutOrStdout())
+			}
 			return newDoctor().report(cmd.OutOrStdout())
 		},
 	}
+	cmd.Flags().BoolVar(&acpCaps, "acp", false, "print the ACP capabilities each agent adapter advertises (starts the adapters; no session, no token)")
+	return cmd
 }
 
 // report prints every check and returns an error if any failed.
@@ -146,4 +157,38 @@ func (d doctor) checkNode() checkResult {
 		return checkResult{Name: name, Hint: "npx was not found on PATH (it ships with Node.js). " + nodeHint}
 	}
 	return checkResult{Name: name, OK: true, Hint: ver + " with npx"}
+}
+
+// acpPrograms are the agent programs the runner can drive. The runner's local
+// config knows no agents (the server sends them), so every program is checked.
+var acpPrograms = []string{adapters.ClaudeCode, adapters.Codex}
+
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
+}
+
+// reportACP starts each adapter, runs Initialize only and prints what it
+// advertises. An adapter that cannot be checked is reported and makes the
+// command fail.
+func (d doctor) reportACP(ctx context.Context, w io.Writer) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	failed := 0
+	for _, program := range acpPrograms {
+		caps, err := d.probeACP(ctx, program)
+		if err != nil {
+			fmt.Fprintf(w, "%s: unchecked (%v)\n", program, err)
+			failed++
+			continue
+		}
+		fmt.Fprintf(w, "%s: mcp http: %s, loadSession: %s, resume: %s\n", program, yesNo(caps.McpHTTP), yesNo(caps.LoadSession), yesNo(caps.Resume))
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d adapter(s) could not be checked", failed)
+	}
+	return nil
 }

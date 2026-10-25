@@ -515,11 +515,17 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if !safeRunID.MatchString(rs.RunID) {
 		return "failed", "log_failed"
 	}
-	logf, err := m.openLog(rs.RunID)
+	file, err := m.openLog(rs.RunID)
 	if err != nil {
 		return "failed", "log_failed"
 	}
-	defer logf.Close()
+	defer file.Close()
+	var logf io.Writer = file
+	if rs.Mcp != nil && rs.Mcp.Token != "" { // the run token never reaches the log
+		rd := newRedactor(file, rs.Mcp.Token)
+		defer rd.Close() // runs before file.Close
+		logf = rd
+	}
 	fail := func(code string, cause error) (string, string) {
 		if cause != nil {
 			fmt.Fprintf(logf, "runner: %s: %v\n", code, cause)
@@ -625,41 +631,44 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	ac := acp.NewClientSideConnection(client, stdin, stdout)
 	ac.SetLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	if _, err := ac.Initialize(r.ctx, acp.InitializeRequest{
+	initResp, err := ac.Initialize(r.ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 		ClientCapabilities: acp.ClientCapabilities{
 			Fs:       acp.FileSystemCapabilities{ReadTextFile: true, WriteTextFile: true},
 			Terminal: false,
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		return fail("initialize_failed", err)
 	}
-	sess, err := ac.NewSession(r.ctx, acp.NewSessionRequest{
-		Cwd:        wt,
-		McpServers: []acp.McpServer{},
-		Meta:       adapters.SessionMeta(agent.Program, kind),
+	if rs.Mcp != nil && !initResp.AgentCapabilities.McpCapabilities.Http {
+		return fail("mcp_http_unsupported", nil)
+	}
+	sess, err := openSession(r.ctx, sessionRequest{
+		ac: ac, client: client, caps: initResp.AgentCapabilities, rs: rs, cwd: wt,
+		meta: adapters.SessionMeta(agent.Program, kind), servers: mcpServers(rs.Mcp), log: logf,
 	})
 	if err != nil {
 		return fail("session_failed", err)
 	}
 	r.mu.Lock()
-	r.sessionID = string(sess.SessionId)
+	r.sessionID = string(sess.id)
 	r.mu.Unlock()
 	var available []string
-	if sess.Modes != nil {
-		for _, md := range sess.Modes.AvailableModes {
+	if sess.modes != nil {
+		for _, md := range sess.modes.AvailableModes {
 			available = append(available, string(md.Id))
 		}
 	}
 	// The policy is enforced by the client whatever the mode; a refused mode is only logged.
 	if mode := adapters.ModeFor(agent.Program, kind, available); mode != "" {
-		if _, err := ac.SetSessionMode(r.ctx, acp.SetSessionModeRequest{SessionId: sess.SessionId, ModeId: acp.SessionModeId(mode)}); err != nil {
+		if _, err := ac.SetSessionMode(r.ctx, acp.SetSessionModeRequest{SessionId: sess.id, ModeId: acp.SessionModeId(mode)}); err != nil {
 			fmt.Fprintf(logf, "runner: set_mode %q failed: %v\n", mode, err)
 		}
 	}
 
 	r.mu.Lock()
-	r.conn, r.session = ac, sess.SessionId
+	r.conn, r.session = ac, sess.id
 	cancelled := r.cancelRequested
 	r.mu.Unlock()
 	if cancelled {
@@ -667,8 +676,8 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	}
 
 	resp, err := ac.Prompt(r.ctx, acp.PromptRequest{
-		SessionId: sess.SessionId,
-		Prompt:    []acp.ContentBlock{acp.TextBlock(rs.Prompt)},
+		SessionId: sess.id,
+		Prompt:    []acp.ContentBlock{acp.TextBlock(sess.prompt)},
 	})
 	client.Flush()
 	if err != nil {

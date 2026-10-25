@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/mmhy2003/megoocolab/runner/internal/config"
+	"github.com/mmhy2003/megoocolab/runner/internal/jobs"
+	"github.com/mmhy2003/megoocolab/runner/internal/testutil"
 )
 
 func fakeLook(missing ...string) func(string) (string, error) {
@@ -121,6 +124,44 @@ func TestDoctorRunExitsNonZeroOnFailure(t *testing.T) {
 	}
 	s := out.String()
 	if !strings.Contains(s, "[FAIL] config: ") || !strings.Contains(s, "[FAIL] git: ") || !strings.Contains(s, "[OK] node: ") {
+		t.Fatalf("output:\n%s", s)
+	}
+}
+
+func TestDoctorAcpPrintsCapabilities(t *testing.T) {
+	agent := `"` + testutil.BuildFakeAgent(t) + `"`
+	t.Setenv("MEGOO_ADAPTER_CLAUDE_CODE", agent)
+	t.Setenv("MEGOO_ADAPTER_CODEX", agent)
+	t.Setenv("FAKEAGENT_RESUME", "1")
+	t.Setenv("FAKEAGENT_NO_MCP_HTTP", "1")
+
+	root := newRootCmd("test")
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"doctor", "--acp"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	want := "claude_code: mcp http: no, loadSession: yes, resume: yes\n" +
+		"codex: mcp http: no, loadSession: yes, resume: yes\n"
+	if out.String() != want {
+		t.Fatalf("output:\n%s\nwant:\n%s", out.String(), want)
+	}
+}
+
+func TestDoctorAcpReportsUncheckedAdapter(t *testing.T) {
+	d := doctor{probeACP: func(_ context.Context, p string) (jobs.Capabilities, error) {
+		if p == "codex" {
+			return jobs.Capabilities{}, errors.New("cannot start the adapter")
+		}
+		return jobs.Capabilities{McpHTTP: true}, nil
+	}}
+	var out bytes.Buffer
+	if err := d.reportACP(context.Background(), &out); err == nil {
+		t.Fatal("expected an error")
+	}
+	if s := out.String(); !strings.Contains(s, "claude_code: mcp http: yes, loadSession: no, resume: no\n") ||
+		!strings.Contains(s, "codex: unchecked (cannot start the adapter)\n") {
 		t.Fatalf("output:\n%s", s)
 	}
 }

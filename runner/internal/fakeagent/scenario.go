@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Step is one scripted action. Exactly one field is set.
@@ -19,6 +20,34 @@ type Step struct {
 	Stop        *string     `json:"stop,omitempty"`
 	Commit      *CommitStep `json:"commit,omitempty"`
 	ReportFile  *PathStep   `json:"report_file,omitempty"`
+	McpCall     *McpStep    `json:"mcp_call,omitempty"`
+
+	// IfPromptContains makes the step a conditional block: Then runs only when
+	// the current turn's prompt contains the text. One scenario can so drive
+	// several turns.
+	IfPromptContains *string `json:"if_prompt_contains,omitempty"`
+	Then             []Step  `json:"then,omitempty"`
+}
+
+// McpStep calls a tool on the session's HTTP MCP server.
+type McpStep struct {
+	Tool string         `json:"tool"`
+	Args map[string]any `json:"args"`
+}
+
+// expand flattens conditional blocks against the turn's prompt text.
+func expand(steps []Step, prompt string) []Step {
+	var out []Step
+	for _, st := range steps {
+		if st.IfPromptContains != nil {
+			if strings.Contains(prompt, *st.IfPromptContains) {
+				out = append(out, expand(st.Then, prompt)...)
+			}
+			continue
+		}
+		out = append(out, st)
+	}
+	return out
 }
 
 // CommitStep runs `git commit --allow-empty -m Message` in the agent's cwd.
@@ -71,6 +100,8 @@ func (s Step) typeName() string {
 		return "commit"
 	case s.ReportFile != nil:
 		return "report_file"
+	case s.McpCall != nil:
+		return "mcp_call"
 	}
 	return "unknown"
 }
@@ -97,6 +128,8 @@ type StepResult struct {
 	Length  *int   `json:"length,omitempty"`  // read: characters read, not the content
 	Exists  *bool  `json:"exists,omitempty"`  // report_file
 	Content string `json:"content,omitempty"` // report_file: the file's text, if it exists
+	Tool    string `json:"tool,omitempty"`    // mcp_call
+	Result  string `json:"result,omitempty"`  // mcp_call: the tool result as JSON
 }
 
 // Report is written to FAKEAGENT_REPORT on exit.
@@ -107,6 +140,11 @@ type Report struct {
 	ModesSet   []string        `json:"modes_set"`
 	Steps      []StepResult    `json:"steps"`
 	Cancelled  bool            `json:"cancelled"`
+
+	Prompts       []string        `json:"prompts"`        // the text of every turn
+	SessionEvents []string        `json:"session_events"` // new:<id> | load:<id> | resume:<id>
+	Replayed      int             `json:"replayed"`       // history updates sent while loading
+	McpServers    json.RawMessage `json:"mcp_servers"`    // what the last session request carried
 }
 
 type InitSummary struct {

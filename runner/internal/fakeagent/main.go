@@ -27,6 +27,8 @@ type fakeAgent struct {
 	cancelTurn context.CancelFunc
 	cancelled  bool
 	toolSeq    int
+	history    []histMsg
+	mcp        []acp.McpServer
 }
 
 var _ acp.Agent = (*fakeAgent)(nil)
@@ -46,30 +48,89 @@ func (a *fakeAgent) Initialize(_ context.Context, p acp.InitializeRequest) (acp.
 		s.ClientName, s.ClientVersion = p.ClientInfo.Name, p.ClientInfo.Version
 	}
 	a.report.Initialize = s
-	return acp.InitializeResponse{ProtocolVersion: acp.ProtocolVersionNumber}, nil
+	caps := acp.AgentCapabilities{
+		McpCapabilities: acp.McpCapabilities{Http: os.Getenv("FAKEAGENT_NO_MCP_HTTP") != "1"},
+		LoadSession:     os.Getenv("FAKEAGENT_NO_LOAD") != "1",
+	}
+	if os.Getenv("FAKEAGENT_RESUME") == "1" && os.Getenv("FAKEAGENT_NO_LOAD") != "1" {
+		caps.SessionCapabilities.Resume = &acp.SessionResumeCapabilities{}
+	}
+	return acp.InitializeResponse{ProtocolVersion: acp.ProtocolVersionNumber, AgentCapabilities: caps}, nil
+}
+
+// begin records a session request (new, load or resume) and makes it current.
+func (a *fakeAgent) begin(event string, id acp.SessionId, cwd string, meta map[string]any, servers []acp.McpServer, history []histMsg) {
+	a.sessionID = id
+	a.history = history
+	a.mcp = servers
+	a.report.Cwd = cwd
+	if meta != nil {
+		a.report.Meta, _ = json.Marshal(meta)
+	}
+	a.report.SessionEvents = append(a.report.SessionEvents, event+":"+string(id))
+	a.report.McpServers, _ = json.Marshal(servers)
+	if os.Getenv("FAKEAGENT_ECHO_MCP") == "1" {
+		fmt.Fprintf(os.Stderr, "fakeagent: mcpServers: %s\n", a.report.McpServers)
+	}
+}
+
+func fakeModes() *acp.SessionModeState {
+	desc := func(s string) *string { return &s }
+	return &acp.SessionModeState{
+		CurrentModeId: "default",
+		AvailableModes: []acp.SessionMode{
+			{Id: "default", Name: "Default", Description: desc("Ask before acting")},
+			{Id: "plan", Name: "Plan", Description: desc("Plan only")},
+			{Id: "read-only", Name: "Read only", Description: desc("No edits")},
+			{Id: "auto", Name: "Auto", Description: desc("Act without asking")},
+		},
+	}
 }
 
 func (a *fakeAgent) NewSession(_ context.Context, p acp.NewSessionRequest) (acp.NewSessionResponse, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.sessionID = "fake-session-1"
-	a.report.Cwd = p.Cwd
-	if p.Meta != nil {
-		a.report.Meta, _ = json.Marshal(p.Meta)
+	id := acp.SessionId(newSessionID())
+	a.begin("new", id, p.Cwd, p.Meta, p.McpServers, nil)
+	saveHistory(string(id), nil)
+	return acp.NewSessionResponse{SessionId: id, Modes: fakeModes()}, nil
+}
+
+// LoadSession replays the stored history as session/update before returning,
+// like a real agent does.
+func (a *fakeAgent) LoadSession(ctx context.Context, p acp.LoadSessionRequest) (acp.LoadSessionResponse, error) {
+	h, err := loadHistory(string(p.SessionId))
+	if err != nil {
+		return acp.LoadSessionResponse{}, err
 	}
-	desc := func(s string) *string { return &s }
-	return acp.NewSessionResponse{
-		SessionId: a.sessionID,
-		Modes: &acp.SessionModeState{
-			CurrentModeId: "default",
-			AvailableModes: []acp.SessionMode{
-				{Id: "default", Name: "Default", Description: desc("Ask before acting")},
-				{Id: "plan", Name: "Plan", Description: desc("Plan only")},
-				{Id: "read-only", Name: "Read only", Description: desc("No edits")},
-				{Id: "auto", Name: "Auto", Description: desc("Act without asking")},
-			},
-		},
-	}, nil
+	a.mu.Lock()
+	a.begin("load", p.SessionId, p.Cwd, p.Meta, p.McpServers, h)
+	a.mu.Unlock()
+	for _, m := range h {
+		u := acp.UpdateAgentMessageText(m.Text)
+		if m.Role == "user" {
+			u = acp.UpdateUserMessageText(m.Text)
+		}
+		if err := a.update(ctx, p.SessionId, u); err != nil {
+			return acp.LoadSessionResponse{}, err
+		}
+		a.mu.Lock()
+		a.report.Replayed++
+		a.mu.Unlock()
+	}
+	return acp.LoadSessionResponse{Modes: fakeModes()}, nil
+}
+
+// ResumeSession continues a stored session without replaying it.
+func (a *fakeAgent) ResumeSession(_ context.Context, p acp.ResumeSessionRequest) (acp.ResumeSessionResponse, error) {
+	h, err := loadHistory(string(p.SessionId))
+	if err != nil {
+		return acp.ResumeSessionResponse{}, err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.begin("resume", p.SessionId, p.Cwd, p.Meta, p.McpServers, h)
+	return acp.ResumeSessionResponse{Modes: fakeModes()}, nil
 }
 
 func (a *fakeAgent) SetSessionMode(_ context.Context, p acp.SetSessionModeRequest) (acp.SetSessionModeResponse, error) {
@@ -99,8 +160,20 @@ func (a *fakeAgent) Prompt(_ context.Context, p acp.PromptRequest) (acp.PromptRe
 	a.mu.Unlock()
 	defer cancel()
 
+	var text strings.Builder
+	for _, b := range p.Prompt {
+		if b.Text != nil {
+			text.WriteString(b.Text.Text)
+		}
+	}
+	a.mu.Lock()
+	a.report.Prompts = append(a.report.Prompts, text.String())
+	a.history = append(a.history, histMsg{Role: "user", Text: text.String()})
+	a.mu.Unlock()
+	defer a.saveCurrent()
+
 	stop := acp.StopReasonEndTurn
-	for _, st := range a.steps {
+	for _, st := range expand(a.steps, text.String()) {
 		if ctx.Err() != nil {
 			stop = acp.StopReasonCancelled
 			break
@@ -125,6 +198,12 @@ func (a *fakeAgent) Prompt(_ context.Context, p acp.PromptRequest) (acp.PromptRe
 	return acp.PromptResponse{StopReason: stop}, nil
 }
 
+func (a *fakeAgent) saveCurrent() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	saveHistory(string(a.sessionID), a.history)
+}
+
 func (a *fakeAgent) record(r StepResult) {
 	a.mu.Lock()
 	a.report.Steps = append(a.report.Steps, r)
@@ -142,6 +221,9 @@ func (a *fakeAgent) run(ctx context.Context, sid acp.SessionId, st Step) error {
 		if err := a.update(ctx, sid, acp.UpdateAgentMessageText(*st.Say)); err != nil {
 			return err
 		}
+		a.mu.Lock()
+		a.history = append(a.history, histMsg{Role: "agent", Text: *st.Say})
+		a.mu.Unlock()
 	case st.Plan != nil:
 		entries := make([]acp.PlanEntry, 0, len(st.Plan))
 		for _, e := range st.Plan {
@@ -218,6 +300,18 @@ func (a *fakeAgent) run(ctx context.Context, sid acp.SessionId, st Step) error {
 		exists := err == nil
 		res.Exists = &exists
 		res.Content = string(b)
+	case st.McpCall != nil:
+		a.mu.Lock()
+		srv := firstHTTPMcp(a.mcp)
+		a.mu.Unlock()
+		out, ok, err := callMcpTool(ctx, srv, st.McpCall.Tool, st.McpCall.Args)
+		if err != nil && ctx.Err() != nil {
+			return err
+		}
+		res.Tool, res.OK, res.Result = st.McpCall.Tool, &ok, out
+		if err != nil {
+			res.Error = err.Error()
+		}
 	case st.SleepMS != nil:
 		select {
 		case <-time.After(time.Duration(*st.SleepMS) * time.Millisecond):
@@ -324,9 +418,6 @@ func (a *fakeAgent) CloseSession(context.Context, acp.CloseSessionRequest) (acp.
 }
 func (a *fakeAgent) ListSessions(context.Context, acp.ListSessionsRequest) (acp.ListSessionsResponse, error) {
 	return acp.ListSessionsResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionList)
-}
-func (a *fakeAgent) ResumeSession(context.Context, acp.ResumeSessionRequest) (acp.ResumeSessionResponse, error) {
-	return acp.ResumeSessionResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionResume)
 }
 func (a *fakeAgent) SetSessionConfigOption(context.Context, acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
 	return acp.SetSessionConfigOptionResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionSetConfigOption)
