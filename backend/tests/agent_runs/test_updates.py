@@ -231,7 +231,7 @@ async def test_hello_fails_running_runs_not_on_this_connection(db, tc_factory):
 
 
 async def test_nul_characters_are_stripped_before_storing(client, db):
-    """Postgres text and JSONB reject \x00: agent text with NUL must not break updates or finish."""
+    """Postgres text and JSONB reject NUL characters: agent text with NUL must not break updates or finish."""
     me, _agent, [run_id] = await _running(client, db)
     await apply_update(db, me.id, run_id, 1, "message", {"text": "a\x00b"})
     await apply_update(db, me.id, run_id, 2, "plan", {"entries": [{"title": "st\x00ep", "status": "pending"}]})
