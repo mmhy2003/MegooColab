@@ -46,6 +46,10 @@ describe("invalidationsFor", () => {
     expect(invalidationsFor({ type: "agents.updated", project_id: "p1" }, keys)).toEqual([["project-agents", "PAY"], ["agents"], ["team"]]);
   });
 
+  it("still refreshes every project's agents when the project list is not cached", () => {
+    expect(invalidationsFor({ type: "agents.updated", project_id: "unknown" }, keys)).toEqual([["project-agents"], ["agents"], ["team"]]);
+  });
+
   it("maps user-only agent events to my agents", () => {
     expect(invalidationsFor({ type: "agents.updated", user_id: "u" }, keys)).toEqual([["agents"], ["team"]]);
   });
