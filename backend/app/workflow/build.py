@@ -39,6 +39,7 @@ from app.workflow.models import (
     TaskWorkflow,
     Verdict,
     WorkflowDocument,
+    WorkflowStatus,
 )
 
 MAX_REVIEW_ROUNDS = 3
@@ -84,6 +85,11 @@ async def complete_step(
     _, task = await lock_run_role(db, run, WORK_ROLES)
     if isinstance(step, bool) or not isinstance(step, int) or step != run.step:
         raise _422("wrong_step")
+    run.step_result = _clean_step_result(summary, tests_passed, test_command)
+    await engine.record_workflow_event(db, task, None, "step.completed", {"step": step, "tests_passed": tests_passed})
+
+
+def _clean_step_result(summary: str, tests_passed: bool, test_command: str | None) -> dict:
     if not isinstance(tests_passed, bool):
         raise _422("invalid_step_result")
     if not isinstance(summary, str) or (test_command is not None and not isinstance(test_command, str)):
@@ -92,8 +98,36 @@ async def complete_step(
     test_command = (strip_nul(test_command) or None) if test_command is not None else None
     if len(summary) > MAX_SUMMARY or (test_command and len(test_command) > MAX_TEST_COMMAND):
         raise _422("too_large")
-    run.step_result = {"summary": summary, "tests_passed": tests_passed, "test_command": test_command}
+    return {"summary": summary, "tests_passed": tests_passed, "test_command": test_command}
+
+
+async def complete_step_connect_only(
+    db: AsyncSession, wf: TaskWorkflow, task: Task, step: int, summary: str, tests_passed: bool,
+    test_command: str | None,
+) -> None:
+    """AGT-32: a connect-only agent reports the current step done. There are no review runs: passing tests
+    complete the step (its subtask moves to done) and the next one begins; after the last step the workflow
+    finishes and the card moves to done. Failing tests are recorded and the step stays. The caller holds the
+    workflow lock (engine.lock_connect_only) and commits."""
+    if wf.status == WorkflowStatus.finished:
+        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
+    if wf.stage != Stage.build:
+        raise HTTPException(status.HTTP_409_CONFLICT, "wrong_stage")
+    if isinstance(step, bool) or not isinstance(step, int) or step != wf.current_step:
+        raise _422("wrong_step")
+    _clean_step_result(summary, tests_passed, test_command)
     await engine.record_workflow_event(db, task, None, "step.completed", {"step": step, "tests_passed": tests_passed})
+    if not tests_passed:
+        return
+    steps = await _plan_steps(db, task.id)
+    await _done_subtask(db, steps, step)
+    if step < len(steps):
+        engine.set_step(wf, step + 1)
+        return
+    from app.workflow import finish  # local: finish imports this module
+
+    await engine.set_stage(db, wf, task, Stage.done)
+    await finish.finish_workflow(db, wf, task, None)
 
 
 def _clean_findings(findings) -> list[dict]:

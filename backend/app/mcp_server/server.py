@@ -1,15 +1,14 @@
-"""MCP server (connect-only): task tools for coding agents, over Streamable HTTP at /api/mcp.
+"""MCP server: task tools and workflow tools for coding agents, over Streamable HTTP at /api/mcp.
 
 Every tool opens its own DB session, loads the token owner and calls the same service
 functions as the REST API, so permissions, events and task history are identical.
+A run token (`mgr_`) may read and comment on its own task only, and use the workflow tools of its role
+(app/mcp_server/workflow_tools.py); the other task tools refuse it.
 """
 
-import contextlib
 import uuid
-from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import HTTPException
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
@@ -20,10 +19,9 @@ from starlette.routing import Route
 from starlette.types import ASGIApp
 
 from app.agents.models import Agent
-from app.auth.deps import require_password_ok
-from app.auth.models import User, UserStatus
-from app.core.db import SessionLocal
-from app.mcp_server.auth import McpBearerAuth, current_mcp_user_id
+from app.mcp_server.auth import McpBearerAuth, refuse_run_token, require_run_task
+from app.mcp_server.auth import tool_session as _tool_session
+from app.mcp_server.workflow_tools import register_workflow_tools
 from app.projects.access import accessible_project_ids, get_project_for
 from app.projects.models import BoardColumn, Project
 from app.tasks import service
@@ -34,28 +32,7 @@ from app.workflow import engine
 
 MCP_PATH = "/api/mcp"
 ACTIVITY_LIMIT = 20
-
-
-@contextlib.asynccontextmanager
-async def _tool_session() -> AsyncIterator[tuple[AsyncSession, User]]:
-    """A DB session plus the token owner. Commits on success; REST errors become tool errors."""
-    user_id = current_mcp_user_id.get()
-    if user_id is None:
-        raise ToolError("invalid_token")
-    async with SessionLocal() as db:
-        try:
-            user = await db.get(User, user_id)
-            if user is None or user.status != UserStatus.active:
-                raise ToolError("invalid_token")
-            await require_password_ok(user)
-            yield db, user
-            await db.commit()
-        except HTTPException as e:
-            await db.rollback()
-            raise ToolError(str(e.detail)) from None
-        except BaseException:
-            await db.rollback()
-            raise
+MAX_REQUEST_BYTES = 8 * 1024 * 1024
 
 
 def _json(model: Any) -> dict[str, Any]:
@@ -102,6 +79,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
     @mcp.tool()
     async def list_projects() -> list[dict[str, Any]]:
         """Projects the token owner can access."""
+        refuse_run_token()
         async with _tool_session() as (db, user):
             allowed = await accessible_project_ids(db, user)
             stmt = select(Project).order_by(Project.key)
@@ -120,6 +98,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
     ) -> list[dict[str, Any]]:
         """Tasks of a project. `assignee` is a user id, or `agent:<agent id>`; `column` is a column name;
         `q` matches titles; `mine` keeps tasks assigned to me or to one of my agents."""
+        refuse_run_token()
         async with _tool_session() as (db, user):
             project = await get_project_for(db, user, project_key)
             column_id = (await _column_by_name(db, project, column)).id if column else None
@@ -131,8 +110,9 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
 
     @mcp.tool()
     async def get_task(key: str) -> dict[str, Any]:
-        """A task by key (e.g. PAY-12) with its last 20 activity items (comments and events)."""
+        """A task by key (e.g. PAY-12) with its last 20 activity items (comments, events and questions)."""
         async with _tool_session() as (db, user):
+            await require_run_task(db, key)
             task, _ = await service.get_task_for(db, user, key)
             out = _json(await service.task_out(db, task))
             out["activity"] = [_json(i) for i in await activity_items(db, task, ACTIVITY_LIMIT)]
@@ -148,6 +128,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
         assignee_agent_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a task in the project's first column. `type` is epic, story, task, bug or subtask."""
+        refuse_run_token()
         async with _tool_session() as (db, user):
             project = await get_project_for(db, user, project_key, write=True)
             try:
@@ -177,6 +158,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
         story_points: int | None = None,
     ) -> dict[str, Any]:
         """Change a task's title, description, priority (lowest, low, medium, high or highest) or story points."""
+        refuse_run_token()
         async with _tool_session() as (db, user):
             task, project = await service.get_task_for(db, user, key, write=True)
             try:
@@ -196,6 +178,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
     @mcp.tool()
     async def move_task(key: str, column: str) -> dict[str, Any]:
         """Move a task to the end of the named column (case-insensitive), e.g. "In Progress"."""
+        refuse_run_token()
         async with _tool_session() as (db, user):
             task, project = await service.get_task_for(db, user, key, write=True)
             col = await _column_by_name(db, project, column)
@@ -212,13 +195,19 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
         except ValidationError:
             raise ToolError("invalid_input") from None
         async with _tool_session() as (db, user):
+            await require_run_task(db, key)
             comment = await create_comment(db, user, key, body)
             return {"comment_id": str(comment.id)}
+
+    register_workflow_tools(mcp)
 
     http_app = mcp.streamable_http_app(
         streamable_http_path=MCP_PATH,
         stateless_http=True,
         json_response=True,
+        # A whole request is capped (413). It must hold a 2 MB mockup even once JSON-escaped; every field is
+        # capped again by its own limit (too_large).
+        max_request_body_size=MAX_REQUEST_BYTES,
         # Authenticated by bearer token, and served behind a proxy under any public host name
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )

@@ -128,7 +128,7 @@ async def enter_done(db: AsyncSession, wf: TaskWorkflow, task: Task, *, requeste
     await engine.enqueue(db, wf, task, RunRole.finish, requested_by=requested_by)
 
 
-async def _finish_workflow(db: AsyncSession, wf: TaskWorkflow, task: Task, actor_id: uuid.UUID | None) -> None:
+async def finish_workflow(db: AsyncSession, wf: TaskWorkflow, task: Task, actor_id: uuid.UUID | None) -> None:
     wf.status = WorkflowStatus.finished
     wf.needs = None
     wf.finished_at = datetime.now(UTC)
@@ -181,7 +181,7 @@ async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Ag
         if engine.requires_human_review(project, wf) and engine.finishing_option(project, wf) == FinishingOption.pull_request:
             engine.wait_for(wf, Needs.human_code_review)
         else:
-            await _finish_workflow(db, wf, task, None)
+            await finish_workflow(db, wf, task, None)
         return
     if not wf.nudged:
         wf.nudged = True
@@ -210,7 +210,7 @@ async def approve_human_review(db: AsyncSession, user: User, task: Task) -> Task
         db, "workflow.human_review_approved", actor_id=user.id, target_type="task", target_id=task.id,
         data={"pr_url": wf.pr_url},
     )
-    await _finish_workflow(db, wf, task, user.id)
+    await finish_workflow(db, wf, task, user.id)
     return wf
 
 

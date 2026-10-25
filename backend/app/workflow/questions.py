@@ -241,7 +241,8 @@ async def undelivered_answer(db, task_id: uuid.UUID, run_id: uuid.UUID) -> Workf
 
 
 async def deliver(db, wf: TaskWorkflow, task: Task, q: WorkflowQuestion, *, requested_by: uuid.UUID):
-    """Resume the asking role's session with the answer and mark it delivered. The caller holds the locks."""
+    """Resume the asking role's session with the answer and mark it delivered. The caller holds the locks.
+    A connect-only workflow just runs again: its agent reads the answer from the task's thread (get_task)."""
     label = None
     if q.answer_choice:
         try:
@@ -256,7 +257,7 @@ async def deliver(db, wf: TaskWorkflow, task: Task, q: WorkflowQuestion, *, requ
     else:
         role, step = (RunRole.plan if wf.stage == Stage.plan else RunRole.brainstorm), None
         session_ref = None
-    run = await engine.enqueue(
+    run = await engine.hand_to_agent(
         db, wf, task, role, step=step, resume_kind="answer",
         payload={"choice_label": label, "text": q.answer_text}, requested_by=requested_by,
         resume_session_ref=session_ref,

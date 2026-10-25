@@ -161,6 +161,8 @@ async def require_actor(db: AsyncSession, user: User, task: Task, wf: TaskWorkfl
     agent = await db.get(Agent, agent_id) if agent_id else None
     if agent is not None and agent.owner_id == user.id:
         return
+    if wf is not None and wf.driver == Driver.connect_only and task.assignee_user_id == user.id:
+        return  # connect-only (AGT-32): the assignee owns the agent working through their personal token
     if not await _manages(db, user, await db.get(Project, task.project_id)):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_act_on_workflow")
 
@@ -383,6 +385,20 @@ async def enqueue(
     return run
 
 
+async def hand_to_agent(
+    db: AsyncSession, wf: TaskWorkflow, task: Task, role: RunRole | str, *, step: int | None = None, **enqueue_args
+) -> AgentRun | None:
+    """Give the work back to the agent after a human decision (an answer, an approval, a rejection). A
+    runner-driven workflow queues the role's run (`enqueue`). A connect_only one has no run to queue (its agent
+    works through its owner's personal MCP token, AGT-32): it simply runs again, and the agent learns what to
+    do next from get_workflow."""
+    if wf.driver == Driver.connect_only:
+        wf.status = WorkflowStatus.running
+        wf.needs = None
+        return None
+    return await enqueue(db, wf, task, role, step=step, **enqueue_args)
+
+
 async def rerun(
     db: AsyncSession,
     wf: TaskWorkflow,
@@ -602,6 +618,55 @@ async def set_manual(db: AsyncSession, user: User, task: Task, stage: Stage) -> 
     wf.finished_at = _now() if wf.stage == Stage.done else None
     if frm != wf.stage:
         await record_workflow_event(db, task, user.id, "workflow.stage", {"from": str(frm), "to": str(wf.stage)})
+    return wf
+
+
+# ---- connect-only driver (AGT-32) --------------------------------------------------------------
+# An agent working through its owner's personal MCP token on the owner's own task. The documents, questions and
+# approvals are the same as for a runner-driven workflow, but nothing is ever queued (`hand_to_agent`), and
+# nothing is enforced. Its stages are gated by documents.submit_connect_only and build.complete_step_connect_only,
+# called from the MCP tools (app/mcp_server/workflow_tools.py).
+
+
+def check_connect_only(user: User, task: Task, wf: TaskWorkflow | None) -> None:
+    """A personal token drives only its owner's own task (403 not_your_task), never one MegooColab drives
+    (409 runner_driven): a human's own MCP client cannot submit for their agent."""
+    if task.assignee_agent_id is not None or (
+        wf is not None and wf.driver == Driver.runner and wf.status != WorkflowStatus.idle
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, "runner_driven")
+    if task.assignee_user_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not_your_task")
+
+
+async def lock_connect_only(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
+    """Locks 1 and 2 for a connect-only stage tool. The first one starts the workflow: driver connect_only,
+    enforcement unenforced, stage brainstorm, running (a manual checklist is replaced)."""
+    wf = await lock_task(db, task)
+    # again under the task lock: the assignee or type may have changed since `task` was loaded
+    await db.refresh(task, ["assignee_user_id", "assignee_agent_id", "type"])
+    check_connect_only(user, task, wf)
+    if wf is not None and wf.driver == Driver.connect_only:
+        return wf
+    if task.type not in WORKFLOW_TYPES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
+    if wf is None:
+        wf = await lock_task(db, task, create=True)
+    wf.driver = Driver.connect_only
+    wf.enforcement = Enforcement.unenforced
+    wf.stage = Stage.brainstorm
+    wf.status = WorkflowStatus.running
+    wf.needs = None
+    wf.agent_id = None
+    wf.current_step = None
+    wf.review_round = 0
+    wf.failures = 0
+    wf.nudged = False
+    wf.escalation_reason = None
+    wf.sessions.clear()
+    wf.started_at = _now()
+    wf.finished_at = None
+    await record_workflow_event(db, task, user.id, "workflow.started", {"driver": Driver.connect_only.value})
     return wf
 
 

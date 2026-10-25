@@ -22,6 +22,7 @@ from app.workflow.models import (
     Needs,
     RunRole,
     Stage,
+    TaskWorkflow,
     WorkflowDocument,
     WorkflowQuestion,
     WorkflowStatus,
@@ -125,6 +126,27 @@ async def submit(
     return doc
 
 
+SUBMIT_STAGES = {DocKind.design: (Stage.brainstorm, Stage.design), DocKind.plan: (Stage.plan,)}
+
+
+async def submit_connect_only(
+    db, wf: TaskWorkflow, task: Task, kind: DocKind | str, body_md: str, steps: list[dict] | None = None
+) -> WorkflowDocument:
+    """AGT-32: a connect-only agent submits its design (Brainstorm or Design) or plan (Plan). The stage is
+    checked here, as `submit` does not; the workflow then waits for approval, as the runner-driven handler
+    would. The caller holds the workflow lock (engine.lock_connect_only) and commits."""
+    kind = DocKind(kind)
+    if wf.status == WorkflowStatus.finished:
+        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
+    if wf.stage not in SUBMIT_STAGES[kind]:
+        raise HTTPException(status.HTTP_409_CONFLICT, "wrong_stage")
+    doc = await submit(db, None, task, kind, body_md, steps)
+    if kind == DocKind.design:
+        await engine.set_stage(db, wf, task, Stage.design)
+    engine.wait_for(wf, NEEDS_OF[kind])
+    return doc
+
+
 async def decide(
     db, user: User, task: Task, kind: DocKind | str, version: int, approve: bool, comment: str | None
 ) -> None:
@@ -172,13 +194,13 @@ async def decide(
 
     if not approve:  # the same session revises it: the brainstorm session for a design, the plan session for a plan
         role = RunRole.brainstorm if kind == DocKind.design else RunRole.plan
-        await engine.enqueue(
+        await engine.hand_to_agent(
             db, wf, task, role, resume_kind="rejection", payload={"comment": comment, "kind": kind.value},
             requested_by=user.id,
         )
     elif kind == DocKind.design:
         await engine.set_stage(db, wf, task, Stage.plan)  # the plan session is fresh
-        await engine.enqueue(db, wf, task, RunRole.plan, requested_by=user.id)
+        await engine.hand_to_agent(db, wf, task, RunRole.plan, requested_by=user.id)
     else:
         await _start_build(db, user, wf, task, doc)
 
@@ -202,4 +224,4 @@ async def _start_build(db, user: User, wf, task: Task, doc: WorkflowDocument) ->
     doc.steps = steps  # a new list: edits inside nested dicts are not tracked
     await engine.set_stage(db, wf, task, Stage.build)
     engine.set_step(wf, 1)
-    await engine.enqueue(db, wf, task, RunRole.implement, step=1, requested_by=user.id)
+    await engine.hand_to_agent(db, wf, task, RunRole.implement, step=1, requested_by=user.id)

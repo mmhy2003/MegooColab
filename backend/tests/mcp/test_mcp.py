@@ -27,10 +27,13 @@ async def mcp_session(app, secret: str):
         transport=httpx2.ASGITransport(app=app),
         headers={"Authorization": f"Bearer {secret}"},
     )
-    async with http, streamable_http_client(URL, http_client=http) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            yield session
+    async with (
+        http,
+        streamable_http_client(URL, http_client=http) as (read, write),
+        ClientSession(read, write) as session,
+    ):
+        await session.initialize()
+        yield session
 
 
 async def call(session, name: str, **args):
@@ -91,6 +94,8 @@ async def test_tools_list_contains_expected_names(app, client, db, mcp_running):
     assert names == {
         "whoami", "list_projects", "list_tasks", "get_task", "create_task",
         "update_task", "move_task", "comment_on_task",
+        "get_workflow", "get_document", "ask_human", "submit_design", "submit_plan", "complete_step",
+        "submit_review", "report_finish",
     }
     # the endpoint works without a trailing slash and other API routes are unaffected
     assert (await client.get("/api/health")).status_code == 200
@@ -107,7 +112,7 @@ async def test_whoami(app, client, db, mcp_running):
 
 async def test_list_and_get_tasks_respect_project_access(app, client, client_factory, db, mcp_running):
     member = await make_user(db)
-    project, manager, _ = await make_project(client, db, "PAY", member)
+    await make_project(client, db, "PAY", member)
     mgr_secret = await _mint(client)
     outsider = await make_user(db)
     other = client_factory()
@@ -137,14 +142,14 @@ async def test_list_and_get_tasks_respect_project_access(app, client, client_fac
 
 
 async def test_create_and_move_task_via_mcp_publishes_events(app, client, db, mcp_running):
-    project, manager, _ = await make_project(client, db, "PAY")
+    _project, manager, _ = await make_project(client, db, "PAY")
     secret = await _mint(client)
     cols = {c["name"].lower(): c for c in (await client.get("/api/projects/PAY/columns")).json()}
     done = next(c for c in cols.values() if c["category"] == "done")
 
 
     async with mcp_session(app, secret) as s:
-        err, t = await call(s, "create_task", project_key="PAY", title="Ship it")
+        err, _ = await call(s, "create_task", project_key="PAY", title="Ship it")
         assert not err
         err, moved = await call(s, "move_task", key="PAY-1", column=done["name"].upper())
         assert not err and moved["column_id"] == done["id"] and moved["completed_at"]
@@ -166,7 +171,7 @@ async def test_create_and_move_task_via_mcp_publishes_events(app, client, db, mc
 
 async def test_viewer_token_cannot_write(app, client, client_factory, db, mcp_running):
     viewer = await make_user(db, role=Role.viewer)
-    project, manager, team = await make_project(client, db, "PAY", viewer)
+    await make_project(client, db, "PAY", viewer)
     mgr = await _mint(client)
     v = client_factory()
     await login(v, viewer)
