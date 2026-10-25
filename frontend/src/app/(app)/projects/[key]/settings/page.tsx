@@ -7,15 +7,17 @@ import { useState } from "react";
 import { ColumnEditor } from "@/components/project/ColumnEditor";
 import { LabelEditor } from "@/components/project/LabelEditor";
 import { RepoEditor } from "@/components/project/RepoEditor";
+import { WorkflowSettings } from "@/components/project/WorkflowSettings";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { canManage, useMe } from "@/lib/me";
 import { useColumns, useLabels, useProject, useRepos, useTeams } from "@/lib/project";
 import { qk } from "@/lib/queries";
 import type { Project } from "@/lib/types";
 
-const TABS = ["General", "Columns", "Repositories", "Labels"] as const;
+const TABS = ["General", "Columns", "Repositories", "Labels", "Workflow"] as const;
 
 function General({ project }: { project: Project }) {
   const client = useQueryClient();
@@ -78,6 +80,7 @@ export default function ProjectSettingsPage() {
   const { key } = useParams<{ key: string }>();
   const client = useQueryClient();
   const project = useProject(key);
+  const { data: me } = useMe();
   const columns = useColumns(key);
   const repos = useRepos(key);
   const labels = useLabels(key);
@@ -107,6 +110,7 @@ export default function ProjectSettingsPage() {
       {tab === "Repositories" && repos.data && (
         <RepoEditor projectKey={key} repos={repos.data} onChanged={() => client.invalidateQueries({ queryKey: qk.repositories(key) })} />
       )}
+      {tab === "Workflow" && <WorkflowSettings key={project.data.id} project={project.data} canEdit={canManage(me)} />}
       {tab === "Labels" && labels.data && (
         <LabelEditor projectKey={key} labels={labels.data} onChanged={() => client.invalidateQueries({ queryKey: qk.labels(key) })} />
       )}

@@ -54,3 +54,6 @@ export type ActivityQuestion = {
 };
 export type MockupInfo = { id: string; version: number; title: string; choices: string[]; created_at: string };
 export type ReviewDetail = S["ReviewOut"];
+export type MethodologyItem = S["MethodologyOut"];
+export type MethodologyVersionInfo = S["MethodologyVersionInfo"];
+export type MethodologyVersion = S["MethodologyVersionOut"];
