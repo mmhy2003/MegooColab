@@ -109,3 +109,24 @@ func TestEnsureRefusesStaleDirectory(t *testing.T) {
 		t.Fatal("stale directory was touched")
 	}
 }
+
+func TestEnsureRejectsUnsafeIDs(t *testing.T) {
+	bad := []string{"", "-x", "..", "../../x", "a/b", `a\b`, filepath.Join(os.TempDir(), "abs"), ".hidden"}
+	for _, v := range bad {
+		for _, which := range []string{"task", "agent"} {
+			repo, cache := newRepo(t), filepath.Join(t.TempDir(), "cache")
+			agent, key := "agent1", "MEG-1"
+			if which == "task" {
+				key = v
+			} else {
+				agent = v
+			}
+			if _, _, err := Ensure(repo, cache, agent, key, "t"); err == nil {
+				t.Errorf("%s=%q: expected error", which, v)
+			}
+			if _, err := os.Stat(cache); err == nil {
+				t.Errorf("%s=%q: created %s", which, v, cache)
+			}
+		}
+	}
+}

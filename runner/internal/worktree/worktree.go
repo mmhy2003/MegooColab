@@ -7,9 +7,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 )
+
+var safeID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // Slug turns a task title into a branch-name fragment: lowercase, runs of
 // non-alphanumerics become one "-", at most 40 characters, "task" if empty.
@@ -53,8 +56,14 @@ func Ensure(repo, cacheRoot, agentID, taskKey, title string) (path, branch strin
 	if out, e := git(repo, "rev-parse", "--is-inside-work-tree"); e != nil || out != "true" {
 		return "", "", fmt.Errorf("worktree: %q is not a git work tree", repo)
 	}
+	if !safeID.MatchString(taskKey) || !safeID.MatchString(agentID) {
+		return "", "", fmt.Errorf("worktree: unsafe agent id or task key")
+	}
 	branch = "megoo/" + taskKey + "-" + Slug(title)
 	path = filepath.Join(cacheRoot, "worktrees", agentID, taskKey)
+	if rel, e := filepath.Rel(filepath.Join(cacheRoot, "worktrees"), path); e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("worktree: path escapes the worktree root")
+	}
 
 	if _, statErr := os.Stat(path); statErr == nil {
 		registered, e := isRegistered(repo, path)
