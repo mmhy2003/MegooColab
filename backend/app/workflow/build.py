@@ -32,7 +32,6 @@ from app.workflow.models import (
     DocKind,
     DocStatus,
     Needs,
-    QuestionStatus,
     ReviewScope,
     RunRole,
     Stage,
@@ -40,7 +39,6 @@ from app.workflow.models import (
     TaskWorkflow,
     Verdict,
     WorkflowDocument,
-    WorkflowQuestion,
 )
 
 MAX_REVIEW_ROUNDS = 3
@@ -200,12 +198,7 @@ async def _queue_review(db: AsyncSession, wf: TaskWorkflow, task: Task, n: int, 
 async def _handle_work(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
     """implement / step_fix ended: a question waits for its answer; a completed step with passing tests goes
     to review; otherwise one nudge, then the escalation step_incomplete."""
-    asked = await db.scalar(
-        select(WorkflowQuestion.id)
-        .where(WorkflowQuestion.run_id == run.id, WorkflowQuestion.status == QuestionStatus.open)
-        .limit(1)
-    )
-    if asked is not None:
+    if await questions.has_open_question(db, run.id):
         engine.wait_for(wf, Needs.question)
         return
     owner_id = await engine.owner_id(db, run)

@@ -291,14 +291,18 @@ async def _previous_findings(db: AsyncSession, wf: TaskWorkflow, role: RunRole, 
     return list(found) if found else None
 
 
-# wf.sessions[FROZEN_REVIEW_KEY] (bool) records, when the Done stage begins, whether human code review was required;
-# the effective option is then frozen into wf.finishing_override, so later project changes do not affect the run.
-FROZEN_REVIEW_KEY = "finish_human_review"
+# When the Done stage begins, finish.enter_done freezes the effective option into wf.finishing_override and records
+# wf.finish_requires_human_review, so later project changes do not affect the run.
+def requires_human_review(project: Project, wf: TaskWorkflow) -> bool:
+    """The frozen requirement; a Done-stage row from before it existed falls back to the live setting."""
+    if wf.stage == Stage.done and wf.finish_requires_human_review is not None:
+        return wf.finish_requires_human_review
+    return bool(project.require_human_code_review)
 
 
 def finishing_option(project: Project, wf: TaskWorkflow) -> FinishingOption:
     """WF-6a/6b: human code review forces a pull request; else the task's override; else the project's option."""
-    if wf.stage == Stage.done and FROZEN_REVIEW_KEY in wf.sessions:  # frozen when Done began (finish.enter_done)
+    if wf.stage == Stage.done and wf.finish_requires_human_review is not None:  # frozen when Done began
         return FinishingOption(wf.finishing_override)
     if project.require_human_code_review:
         return FinishingOption.pull_request

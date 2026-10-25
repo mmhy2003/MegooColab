@@ -115,6 +115,8 @@ class TaskWorkflow(Base):
     branch: Mapped[str | None] = mapped_column(String(300))
     pr_url: Mapped[str | None] = mapped_column(String(1000))
     finish_outcome: Mapped[str | None] = mapped_column(String(100))
+    # frozen when the Done stage begins: was human code review required (WF-6a)? None before that
+    finish_requires_human_review: Mapped[bool | None]
     # role-or-"implement:<n>" -> ACP session id
     sessions: Mapped[dict] = mapped_column(MutableDict.as_mutable(JSONB), default=dict)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

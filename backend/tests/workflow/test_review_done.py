@@ -16,6 +16,7 @@ from app.workflow import context, engine, finish, questions
 from app.workflow.models import RunRole
 from tests.agent_runs.test_run_guards import _next_of
 from tests.factories import DEFAULT_PASSWORD
+from tests.runner.test_runner_ws import _agent
 from tests.workflow.test_build import (
     FINDING,
     REVIEW_NUDGE,
@@ -498,3 +499,23 @@ async def test_concurrent_human_review_approval_one_wins(db, tc_factory, client_
     assert sorted(r.status_code for r in rs) == [200, 409]
     assert [r.json()["detail"] for r in rs if r.status_code == 409] == ["already_decided"]
     assert len(await _events(b.task_id, "workflow.finished")) == 1
+
+
+async def test_human_review_requirement_survives_pause_reassign_resume(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    _patch_project(tc, require_human_code_review=True)
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    assert tc.post(f"/api/tasks/{b.key}/workflow/pause").json()["status"] == "paused"
+    other = _agent(tc, name="Other")
+    r = tc.put(f"/api/agents/{other['id']}/bindings", json={"bindings": [{"project_ref": "PAY", "local_path": "/o"}]})
+    assert r.status_code == 200
+    assert tc.patch(f"/api/tasks/{b.key}", json={"assignee_agent_id": other["id"]}).status_code == 200
+    assert tc.post(f"/api/tasks/{b.key}/workflow/resume").status_code == 200
+    run = await _last(b.task_id)
+    assert run.workflow_role == "finish" and str(run.agent_id) == other["id"]
+    await _report(run)
+    await _finish(b.manager.id, run, "completed")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs) == ("waiting_human", "human_code_review")

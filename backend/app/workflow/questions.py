@@ -210,6 +210,18 @@ async def retire_answers(db, task_id: uuid.UUID, *, keep: uuid.UUID | None = Non
     await db.execute(stmt.values(delivered_at=datetime.now(UTC)))
 
 
+async def has_open_question(db, run_id: uuid.UUID) -> bool:
+    """Did this run ask a question that is still open?"""
+    return (
+        await db.scalar(
+            select(WorkflowQuestion.id)
+            .where(WorkflowQuestion.run_id == run_id, WorkflowQuestion.status == QuestionStatus.open)
+            .limit(1)
+        )
+        is not None
+    )
+
+
 async def undelivered_answer(db, task_id: uuid.UUID, run_id: uuid.UUID) -> WorkflowQuestion | None:
     """The latest answer to a question that `run_id` asked and that never reached it (withdrawn ones never
     count)."""
