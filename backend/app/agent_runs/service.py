@@ -135,7 +135,15 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
 
 async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, run: AgentRun) -> bool:
     """Send run_start for a run already committed as running. False if the connection is gone, in which
-    case the run goes back to queued (conditionally, in a new transaction)."""
+    case the run goes back to queued.
+
+    The run row stays locked from the re-check until the commit after the send, so a cancel_run that
+    lands after the claim either committed first (the run is no longer running: nothing is sent) or
+    waits, then finds the run in conn.run_ids and sends run_cancel after run_start."""
+    run = await _lock_run(db, run.id)
+    if run is None or run.status != RunStatus.running:  # cancelled between the claim and now
+        await db.commit()
+        return True
     row = (
         await db.execute(
             select(Task, Project.key, AgentBinding.local_path, Agent.owner_id)
@@ -172,11 +180,8 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
         )
     except RunnerClosed:
         conn.run_ids.discard(run.id)
-        await db.execute(
-            update(AgentRun)
-            .where(AgentRun.id == run.id, AgentRun.status == RunStatus.running)
-            .values(status=RunStatus.queued, started_at=None)
-        )
+        run.status = RunStatus.queued
+        run.started_at = None
         await db.commit()
         return False
     await record_event(db, task, None, "agent_run_started", {"run_id": str(run.id)})

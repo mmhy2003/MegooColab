@@ -10,7 +10,7 @@ from sqlalchemy import select, update
 from starlette.websockets import WebSocketDisconnect
 
 from app.agent_runs.models import AgentRun
-from app.agent_runs.service import dispatch_pending
+from app.agent_runs.service import _claim_next, _send_start, dispatch_pending
 from app.auth.models import Role
 from app.core.db import SessionLocal
 from app.runner.registry import RunnerConn, registry
@@ -390,3 +390,92 @@ async def test_token_revocation_cancels_running_runs_as_runner_unauthorized(db, 
         assert exc.value.code == 4401
     _wait_run(tc, task, run["id"], "cancelled")
     assert tc.get(f"/api/tasks/{task['key']}/agent-runs").json()[0]["reason"] == "runner_unauthorized"
+
+
+# ---- cancel racing the dispatch (final review I2) ---------------------------
+
+
+async def _claim(owner, agent):
+    s = SessionLocal()
+    run = await _claim_next(s, uuid.UUID(agent["id"]), owner.id)
+    assert run is not None and run.status == "running"
+    return s, run
+
+
+async def test_cancel_between_claim_and_send_never_starts_the_run(client, db):
+    me, agent, _runs = await _offline_runs(client, db)
+    sock = _FakeSocket()
+    conn = _fake_conn(me, agent, sock)
+    try:
+        s, run = await _claim(me, agent)
+        async with s:
+            # the cancel lands after the claim committed `running`, before run_start is sent
+            assert (await client.post(f"/api/agent-runs/{run.id}/cancel")).status_code == 204
+            assert await _send_start(s, conn, uuid.UUID(agent["id"]), run)
+    finally:
+        registry._conns.pop(me.id, None)
+    assert sock.sent == []
+    assert run.id not in conn.run_ids
+    row = (await db.execute(select(AgentRun).execution_options(populate_existing=True))).scalar_one()
+    assert row.status == "cancelled" and row.reason is None
+
+
+async def test_unbound_check_does_not_overwrite_a_cancel(client, db):
+    me, agent, _runs = await _offline_runs(client, db)
+    sock = _FakeSocket()
+    conn = _fake_conn(me, agent, sock)
+    try:
+        s, run = await _claim(me, agent)
+        async with s:
+            assert (await client.post(f"/api/agent-runs/{run.id}/cancel")).status_code == 204
+            r = await client.put(f"/api/agents/{agent['id']}/bindings", json={"bindings": []})
+            assert r.status_code == 200
+            assert await _send_start(s, conn, uuid.UUID(agent["id"]), run)
+    finally:
+        registry._conns.pop(me.id, None)
+    assert sock.sent == []
+    row = (await db.execute(select(AgentRun).execution_options(populate_existing=True))).scalar_one()
+    assert row.status == "cancelled" and row.reason is None
+    assert "agent_run_failed" not in await _event_kinds(db)
+
+
+class _GatedSocket(_FakeSocket):
+    """Holds run_start in flight until the gate opens."""
+
+    def __init__(self):
+        super().__init__()
+        self.entered = asyncio.Event()
+        self.gate = asyncio.Event()
+
+    async def send_text(self, text):
+        if json.loads(text)["type"] == "run_start":
+            self.entered.set()
+            await self.gate.wait()
+        self.sent.append(text)
+
+
+async def test_cancel_during_send_waits_and_follows_run_start(client, db):
+    me, agent, runs = await _offline_runs(client, db)
+    sock = _GatedSocket()
+    _fake_conn(me, agent, sock)
+    dispatch = asyncio.create_task(_dispatch_in_own_session(me.id))
+    cancel = None
+    try:
+        await asyncio.wait_for(sock.entered.wait(), 5)
+        cancel = asyncio.create_task(client.post(f"/api/agent-runs/{runs[0]['id']}/cancel"))
+        await asyncio.sleep(0.3)
+        cancelled_early = cancel.done()
+        sock.gate.set()
+        await asyncio.wait_for(dispatch, 5)
+        assert (await asyncio.wait_for(cancel, 5)).status_code == 204
+        assert not cancelled_early  # serialised behind the in-flight run_start
+    finally:
+        sock.gate.set()  # never leave a transaction open behind the test
+        await asyncio.gather(dispatch, *([cancel] if cancel else []), return_exceptions=True)
+        registry._conns.pop(me.id, None)
+    frames = [json.loads(f) for f in sock.sent]
+    assert [f["type"] for f in frames] == ["run_start", "run_cancel"]
+    assert {f["run_id"] for f in frames} == {runs[0]["id"]}
+    # the runner is alive: the run stays running until its run_finished arrives
+    row = (await db.execute(select(AgentRun).execution_options(populate_existing=True))).scalar_one()
+    assert row.status == "running"
