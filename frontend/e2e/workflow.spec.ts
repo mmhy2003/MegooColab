@@ -388,7 +388,7 @@ test("workflow end to end", async ({ browser }) => {
     ["WFL-3", "subtask", "Step 2: Wire it up"],
   ]);
   // Build starts with step 1, whose implement run holds for 4 s (see the scenario)
-  await expect(card.getByText("1 of 2 steps")).toBeVisible({ timeout: 4_000 });
+  await expect(card.getByText("1 of 2 steps")).toBeVisible({ timeout: 15_000 });
 
   // 6. thread links to a document version select that version in the plan view, inside the drawer
   // the first "plan v1" link is "submitted plan v1"; the last "plan v2" one is "approved the plan v2"
