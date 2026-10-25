@@ -411,8 +411,13 @@ def _pick(fields: dict) -> dict:
     return {k: v for k, v in fields.items() if v is not None}
 
 
+def _no_nul(value: str) -> str:
+    """Postgres text and JSONB reject NUL characters."""
+    return value.replace("\x00", "")
+
+
 def _text(value, limit: int) -> str | None:
-    return value[:limit] if isinstance(value, str) else None
+    return _no_nul(value)[:limit] if isinstance(value, str) else None
 
 
 def _choice(value, allowed: set[str]) -> str | None:
@@ -429,6 +434,7 @@ def _safe_path(value) -> str | None:
     """Relative paths without `..` are kept; anything else is replaced, never echoed."""
     if not isinstance(value, str):
         return None
+    value = _no_nul(value)
     if (
         not value
         or value.startswith(("/", "\\", "~"))
@@ -440,7 +446,7 @@ def _safe_path(value) -> str | None:
 
 
 def _first_token(value) -> str | None:
-    parts = value.split() if isinstance(value, str) else []
+    parts = _no_nul(value).split() if isinstance(value, str) else []
     return parts[0][:MAX_COMMAND] if parts else None
 
 
@@ -532,12 +538,12 @@ async def finish_run(
     if run is None or agent is None or agent.owner_id != conn_user_id or run.status == RunStatus.queued:
         await db.rollback()
         return
-    summary = summary[:2000]
+    summary = _no_nul(summary)[:2000]
     if run.status == RunStatus.running:
         reason = None
         if outcome == "failed":
             reason = "agent_error"  # the runner's error text is logged, not stored: it is not allowed metadata
-            log.warning("run %s failed on the runner: %.200s", run.id, error or "")
+            log.warning("run %s failed on the runner: %.200s", run.id, _no_nul(error or ""))
         await _transition(
             db, run, RunStatus(outcome), f"agent_run_{outcome}", owner_id=agent.owner_id,
             reason=reason, summary=summary, extra={"summary": summary},

@@ -228,3 +228,28 @@ async def test_hello_fails_running_runs_not_on_this_connection(db, tc_factory):
         _wait_run(tc, other, queued["id"], "running")
     kinds = [e.kind for e in await _events(db, "agent_run_")]
     assert "agent_run_failed" in kinds
+
+
+async def test_nul_characters_are_stripped_before_storing(client, db):
+    """Postgres text and JSONB reject \x00: agent text with NUL must not break updates or finish."""
+    me, _agent, [run_id] = await _running(client, db)
+    await apply_update(db, me.id, run_id, 1, "message", {"text": "a\x00b"})
+    await apply_update(db, me.id, run_id, 2, "plan", {"entries": [{"title": "st\x00ep", "status": "pending"}]})
+    await apply_update(db, me.id, run_id, 3, "tool", {"tool_kind": "read", "title": "Re\x00ad", "status": "completed"})
+    await apply_update(db, me.id, run_id, 4, "file_change", {"path": "src/a\x00.py", "lines_added": 1})
+    await apply_update(db, me.id, run_id, 5, "command", {"command": "py\x00test -q", "exit_code": 0})
+    await apply_update(
+        db, me.id, run_id, 6, "permission",
+        {"tool_kind": "edit", "title": "Wr\x00ite", "decision": "denied", "reason": "read\x00_only"},
+    )
+    await db.commit()
+    data = {e.kind: e.data for e in await _events(db)}
+    assert data["agent_message"]["text"] == "ab"
+    assert data["agent_plan"]["entries"] == [{"title": "step", "status": "pending"}]
+    assert data["agent_tool"]["title"] == "Read"
+    assert data["agent_file_change"]["path"] == "src/a.py"
+    assert data["agent_command"]["command"] == "pytest"
+    assert data["agent_permission"]["title"] == "Write" and data["agent_permission"]["reason"] == "read_only"
+    await finish_run(db, me.id, run_id, "failed", "sum\x00mary", "err\x00or")
+    row = await _row(db, run_id)
+    assert row.status == "failed" and row.summary == "summary"
