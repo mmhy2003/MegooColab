@@ -621,6 +621,11 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	case acp.StopReasonEndTurn:
 		return "completed", ""
 	case acp.StopReasonCancelled:
+		// Read-only Claude runs in plan mode: the denied switch_mode ("Approve
+		// Plan") ends the turn as cancelled. Only a cancel we asked for counts.
+		if kind == policy.ReadOnly && !r.cancelled() {
+			return "completed", ""
+		}
 		return "cancelled", ""
 	}
 	return fail(stopReasonCode(resp.StopReason), fmt.Errorf("agent stop reason %q", resp.StopReason))

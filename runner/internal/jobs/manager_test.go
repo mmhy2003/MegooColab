@@ -717,3 +717,32 @@ func TestStopCodesAreLogged(t *testing.T) {
 		}
 	}
 }
+
+// A read-only Claude turn in plan mode ends "cancelled" on its own when the
+// denied switch_mode ("Approve Plan") stops it: the runner did not ask for
+// that, so the analysis counts as completed. Under workspace nothing changes.
+func TestReadOnlyTurnCancelledByTheAgentCompletes(t *testing.T) {
+	const selfCancelled = `[{"say":"Here is my analysis"},{"stop":"cancelled"}]`
+	e := newEnvWithCache(t, selfCancelled, 1, t.TempDir())
+	e.startRun("run-ro", "MEG-20", "read_only")
+	if rf := e.finished("run-ro"); rf.Outcome != "completed" || rf.Summary != "Here is my analysis" || rf.Error != nil {
+		t.Fatalf("read-only finished = %+v", rf)
+	}
+	e.startRun("run-ws", "MEG-21", "workspace")
+	if rf := e.finished("run-ws"); rf.Outcome != "cancelled" {
+		t.Fatalf("workspace finished = %+v", rf)
+	}
+}
+
+// A cancel the runner asked for stays "cancelled" under read-only too.
+func TestReadOnlyRequestedCancelStaysCancelled(t *testing.T) {
+	e := newEnvWithCache(t, sleeping, 1, t.TempDir())
+	e.startRun("run-c", "MEG-22", "read_only")
+	e.waitUpdate("run-c")
+	if err := e.srv.Send(protocol.RunCancel{Type: protocol.TypeRunCancel, RunID: "run-c"}); err != nil {
+		t.Fatal(err)
+	}
+	if rf := e.finished("run-c"); rf.Outcome != "cancelled" {
+		t.Fatalf("finished = %+v", rf)
+	}
+}
