@@ -11,7 +11,11 @@ from app.agents.schemas import AdminAgentOut, AgentOut, BindingOut, ProjectAgent
 from app.auth.models import Role, User
 from app.auth.schemas import UserOut
 from app.core.events import Event, publish
-from app.projects.access import accessible_project_ids, can_manage_project, project_team_ids
+from app.projects.access import (
+    accessible_project_ids,
+    can_manage_project,
+    project_team_ids,
+)
 from app.projects.models import Project, ProjectTeam
 from app.runner.registry import WORKFLOW_CAPABILITY, WORKFLOW_PROBLEM, registry
 from app.tasks.models import Task
@@ -52,12 +56,14 @@ async def agent_statuses(db: AsyncSession, agents: list[tuple[uuid.UUID, uuid.UU
     }
 
 
-def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID) -> list[str]:
-    """What the owner's live runner reports as wrong with the agent, plus a too-old-runner notice."""
+def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User) -> list[str]:
+    """What the owner's live runner reports as wrong with the agent (shown to the owner and admins only),
+    plus the server's own too-old-runner notice (shown to everyone who can see the agent)."""
     conn = registry.conn_for_user(owner_id)
     if conn is None:
         return []
-    problems = list(conn.problems.get(agent_id, []))
+    private = viewer.id == owner_id or viewer.role == Role.admin
+    problems = list(conn.problems.get(agent_id, [])) if private else []
     if WORKFLOW_CAPABILITY not in conn.capabilities:
         problems.append(WORKFLOW_PROBLEM)
     return problems
@@ -174,7 +180,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "max_concurrent_runs": a.max_concurrent_runs,
             "owner": UserOut.model_validate(owners[a.owner_id]),
             "status": statuses[a.id],
-            "problems": agent_problems(a.id, a.owner_id),
+            "problems": agent_problems(a.id, a.owner_id, viewer),
             "bindings": bindings.get(a.id, []),
         }
         for a in agents

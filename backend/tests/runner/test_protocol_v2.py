@@ -25,7 +25,7 @@ from tests.agent_runs.test_dispatch import (
     _start,
     _wait_run,
 )
-from tests.runner.test_runner_ws import (  
+from tests.runner.test_runner_ws import (  # noqa: F401  (tc_factory is a fixture)
     URL,
     _hello,
     _manager_with_project,
@@ -152,7 +152,7 @@ async def test_run_finished_stores_session_and_git_state(db, tc_factory):
 async def test_run_finished_rejects_bad_git_state(db, tc_factory):
     tc = tc_factory(lifespan=True)
     await _manager_with_project(db, tc)
-    token, agent, task = _setup(tc)
+    token, _agent, _task = _setup(tc)
     with tc.websocket_connect(URL, headers=token["headers"]) as ws:
         ws.receive_json()
         ws.send_json({
@@ -175,7 +175,10 @@ def _start_kwargs(**over):
 @pytest.mark.parametrize(
     "path",
     ["design.md", "/etc/passwd", ".megoocolab/../x", "../.megoocolab/x", ".megoocolab\\x.md", "C:/x",
-     ".megoocolab/", ".megoocolab//x", ".megoocolab/./x", "docs/superpowers/x.md", ".megoocolab/a\x00b"],
+     ".megoocolab/", ".megoocolab//x", ".megoocolab/./x", "docs/superpowers/x.md", ".megoocolab/a\x00b",
+     ".megoocolab/a:b.md", ".megoocolab/a.", ".megoocolab/a ", ".megoocolab/CON", ".megoocolab/nul.md",
+     ".megoocolab/Com1.txt", ".megoocolab/lpt9.md", ".megoocolab/ x.md", ".megoocolab/a*b", ".megoocolab/\u00e9.md",
+     ".megoocolab/a../b"],
 )
 def test_files_paths_validated(path):
     with pytest.raises(ValueError):
@@ -185,7 +188,8 @@ def test_files_paths_validated(path):
 @pytest.mark.parametrize(
     "path",
     ["plan.md", "docs/superpowers/../x.md", "docs/superpowers\\x.md", "/docs/superpowers/x.md",
-     ".megoocolab/x.md", "docs/superpowers/", "docs/superpowersx/y.md"],
+     ".megoocolab/x.md", "docs/superpowers/", "docs/superpowersx/y.md", "docs/superpowers/specs/aux.md",
+     "docs/superpowers/plans/a:b.md", "docs/superpowers/plans/x."],
 )
 def test_repo_files_paths_validated(path):
     with pytest.raises(ValueError):
@@ -200,14 +204,14 @@ def test_valid_paths_and_size_cap():
         )
     )
     assert ok.files[0].path == ".megoocolab/design.md"
-    half = "x" * (512 * 1024)
-    RunStart(**_start_kwargs(files=[RunFile(path=".megoocolab/a.md", content=half)]))
+    mb = "x" * (1024 * 1024)
+    RunStart(**_start_kwargs(files=[RunFile(path=f".megoocolab/{i}.md", content=mb) for i in range(2)]))  # 2 MB
     with pytest.raises(ValidationError):  # UTF-8 bytes, not characters
-        RunStart(**_start_kwargs(files=[RunFile(path=".megoocolab/a.md", content="é" * (512 * 1024 + 1))]))
+        RunStart(**_start_kwargs(files=[RunFile(path=".megoocolab/a.md", content="é" * (1024 * 1024 + 1))]))
     with pytest.raises(ValueError):
         RunStart(
             **_start_kwargs(
-                files=[RunFile(path=f".megoocolab/{i}.md", content=half) for i in range(2)]
+                files=[RunFile(path=f".megoocolab/{i}.md", content=mb) for i in range(2)]
                 + [RunFile(path=".megoocolab/z.md", content="y")]
             )
         )
@@ -292,7 +296,7 @@ async def test_failed_send_requeues_and_clears_token(client, db):
 async def test_oversized_documents_fail_the_run_without_a_token(client, db):
     me, agent, runs = await _offline_runs(client, db)
     await _make_workflow(db, runs[0]["id"])
-    await _docs(db, 1, [("design", 1, "approved", "é" * 400_000), ("plan", 1, "approved", "é" * 400_000)])
+    await _docs(db, 1, [("design", 1, "approved", "é" * 600_000), ("plan", 1, "approved", "é" * 600_000)])
     sock = _FakeSocket()
     conn = RunnerConn(me.id, sock)
     conn.set_availability(uuid.UUID(agent["id"]), True, [])
@@ -309,7 +313,7 @@ async def test_oversized_documents_fail_the_run_without_a_token(client, db):
     assert row.mcp_token_hash is None
 
 
-async def test_token_cleared_when_runner_disconnects_and_when_cancelled(db, tc_factory):
+async def test_token_cleared_when_runner_disconnects(db, tc_factory):
     tc = tc_factory(lifespan=True)
     await _manager_with_project(db, tc)
     token, agent, task = _setup(tc)
@@ -365,3 +369,86 @@ async def test_run_token_never_authenticates_rest(db, tc_factory):
             assert getattr(anon, method)(path, headers=h).status_code == 401, path
         # even with a logged-in cookie, a bearer header is refused on REST
         assert tc.get("/api/projects", headers=h).status_code == 401
+
+
+async def test_token_cleared_when_run_is_cancelled(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    run = _start(tc, task)
+    await _make_workflow(db, run["id"])
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello_v2(agent))
+        raw = ws.receive_json()["mcp"]["token"]
+        assert tc.post(f"/api/agent-runs/{run['id']}/cancel").status_code == 204
+        assert ws.receive_json()["type"] == "run_cancel"
+        ws.send_json({"type": "run_finished", "run_id": run["id"], "outcome": "cancelled", "summary": ""})
+        _wait_run(tc, task, run["id"], "cancelled")
+    assert _mcp_status(tc, raw) == 401
+    assert (await _row(db, run["id"])).mcp_token_hash is None
+
+
+async def test_nul_characters_in_run_finished_do_not_wedge_the_run(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    run = _start(tc, task)
+    await _make_workflow(db, run["id"])
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello_v2(agent))
+        assert ws.receive_json()["run_id"] == run["id"]
+        ws.send_json({
+            "type": "run_finished", "run_id": run["id"], "outcome": "completed", "summary": "o\u0000k",
+            "session_id": "s\u0000id", "error": "e\u0000",
+            "git_before": {"head": SHA, "branch": "a\u0000b", "dirty": False},
+        })
+        _wait_run(tc, task, run["id"], "completed")
+    row = await _row(db, run["id"])
+    assert row.mcp_token_hash is None and row.session_ref == "sid" and row.summary == "ok"
+    assert row.git_before["branch"] == "ab"
+
+
+def test_runner_reported_strings_are_bounded_and_nul_free():
+    from app.runner.protocol import runner_message
+
+    agent = str(uuid.uuid4())
+    msg = runner_message.validate_python(
+        {"type": "agent_status", "agent_id": agent, "available": False, "problems": ["a\u0000b"]}
+    )
+    assert msg.problems == ["ab"]
+    for problems in (["x"] * 11, ["x" * 201]):
+        with pytest.raises(ValidationError):
+            runner_message.validate_python(
+                {"type": "agent_status", "agent_id": agent, "available": False, "problems": problems}
+            )
+    assert runner_message.validate_python({"type": "run_update", "run_id": agent, "seq": 1, "kind": "m\u0000", "data": {}}).kind == "m"
+
+
+async def test_runner_problems_visible_to_owner_and_admins_only(db):
+    from app.agents.service import agent_problems
+    from app.auth.models import Role
+    from tests.factories import make_user
+
+    owner, admin, other = await make_user(db), await make_user(db, role=Role.admin), await make_user(db)
+    agent_id = uuid.uuid4()
+    conn = RunnerConn(owner.id, _FakeSocket())
+    conn.set_availability(agent_id, False, ["claude not installed"])
+    registry._conns[owner.id] = conn
+    try:
+        assert agent_problems(agent_id, owner.id, owner) == ["claude not installed", WORKFLOW_PROBLEM]
+        assert agent_problems(agent_id, owner.id, admin) == ["claude not installed", WORKFLOW_PROBLEM]
+        assert agent_problems(agent_id, owner.id, other) == [WORKFLOW_PROBLEM]
+        conn.capabilities = {"workflow/1"}
+        assert agent_problems(agent_id, owner.id, other) == []
+    finally:
+        registry._conns.pop(owner.id, None)
+
+
+def test_v2_start_fields_are_exactly_the_non_v1_fields():
+    from app.runner.protocol import V2_START_FIELDS
+
+    assert V2_START_FIELDS == {
+        "role", "stage", "step", "resume_session_id", "resume_prompt", "mcp", "files", "repo_files", "commit_message",
+    }

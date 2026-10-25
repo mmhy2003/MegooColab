@@ -647,7 +647,7 @@ async def finish_run(
     summary = strip_nul(summary)[:2000]
     if finished is not None:  # protocol v2: the agent session and the worktree's git state
         if finished.session_id:
-            run.session_ref = strip_nul(finished.session_id)
+            run.session_ref = finished.session_id
         if finished.git_before is not None:
             run.git_before = finished.git_before.model_dump(mode="json")
         if finished.git_after is not None:

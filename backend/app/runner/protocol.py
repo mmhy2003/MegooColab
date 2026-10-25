@@ -4,10 +4,13 @@ The Go runner (Task 11) mirrors these shapes exactly.
 """
 
 import posixpath
+import re
 import uuid
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+
+from app.core.text import NoNulStr
 
 CLOSE_UNAUTHORIZED = 4401  # missing, invalid or revoked token / deactivated user
 CLOSE_REPLACED = 4409  # a newer connection for the same user took over
@@ -19,19 +22,22 @@ class _FromRunner(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+Problems = Annotated[list[Annotated[NoNulStr, Field(max_length=200)]], Field(max_length=10)]
+
+
 class AgentReport(_FromRunner):
     agent_id: uuid.UUID
     available: bool
-    problems: list[str] = []
+    problems: Problems = []
 
 
 class Hello(_FromRunner):
     type: Literal["hello"]
-    runner_version: str
-    os: str
-    arch: str
+    runner_version: NoNulStr = Field(max_length=100)
+    os: NoNulStr = Field(max_length=100)
+    arch: NoNulStr = Field(max_length=100)
     agents: list[AgentReport] = []
-    capabilities: list[Annotated[str, Field(max_length=50)]] = Field(default=[], max_length=50)
+    capabilities: list[Annotated[NoNulStr, Field(max_length=50)]] = Field(default=[], max_length=50)
 
 
 class Heartbeat(_FromRunner):
@@ -42,20 +48,20 @@ class AgentStatus(_FromRunner):
     type: Literal["agent_status"]
     agent_id: uuid.UUID
     available: bool
-    problems: list[str] = []
+    problems: Problems = []
 
 
 class RunUpdate(_FromRunner):
     type: Literal["run_update"]
     run_id: uuid.UUID
     seq: int
-    kind: str
+    kind: NoNulStr = Field(max_length=40)
     data: dict[str, Any]
 
 
 class GitState(_FromRunner):
     head: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
-    branch: str | None = Field(default=None, max_length=200)
+    branch: NoNulStr | None = Field(default=None, max_length=200)
     dirty: bool
 
 
@@ -63,9 +69,9 @@ class RunFinished(_FromRunner):
     type: Literal["run_finished"]
     run_id: uuid.UUID
     outcome: Literal["completed", "failed", "cancelled"]
-    summary: str = Field(max_length=2000)
-    error: str | None = None
-    session_id: str | None = Field(default=None, max_length=200)
+    summary: NoNulStr = Field(max_length=2000)
+    error: NoNulStr | None = Field(default=None, max_length=10000)
+    session_id: NoNulStr | None = Field(default=None, max_length=200)
     git_before: GitState | None = None
     git_after: GitState | None = None
 
@@ -102,9 +108,18 @@ class RunTask(BaseModel):
     project_key: str
 
 
-MAX_FILES_BYTES = 1024 * 1024
+MAX_FILES_BYTES = 2 * 1024 * 1024
 FILES_PREFIX = ".megoocolab/"
 REPO_FILES_PREFIX = "docs/superpowers/"
+
+
+_COMPONENT = re.compile(r"[A-Za-z0-9._-]+")
+_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def _safe_component(c: str) -> bool:
+    """No dot-segments, no trailing dot, no Windows device names (with or without an extension)."""
+    return c not in (".", "..") and not c.endswith(".") and c.split(".")[0].upper() not in _RESERVED
 
 
 def check_relative_path(path: str, prefix: str) -> str:
@@ -116,7 +131,7 @@ def check_relative_path(path: str, prefix: str) -> str:
         or not path.startswith(prefix)
         or len(path) == len(prefix)
         or posixpath.normpath(path) != path
-        or ".." in path.split("/")
+        or not all(_COMPONENT.fullmatch(c) and _safe_component(c) for c in path.split("/"))
     ):
         raise ValueError(f"path not allowed: {path!r}")
     return path
@@ -168,9 +183,9 @@ class RunStart(BaseModel):
         return files
 
 
-V2_START_FIELDS = {
-    "role", "stage", "step", "resume_session_id", "resume_prompt", "mcp", "files", "repo_files", "commit_message",
-}
+_V1_START_FIELDS = {"type", "run_id", "agent_id", "task", "local_path", "policy", "prompt"}
+# derived, so a future RunStart field cannot leak to a v1 runner
+V2_START_FIELDS = set(RunStart.model_fields) - _V1_START_FIELDS
 
 
 class RunCancel(BaseModel):
