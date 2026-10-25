@@ -20,7 +20,7 @@ from app.tasks.models import Task, TaskEvent
 from app.tasks.service import record_event
 from app.workflow import methodology
 from tests.factories import login, make_project, make_user
-from tests.runner.test_runner_ws import (  # noqa: F401  (tc_factory is a fixture)
+from tests.runner.test_runner_ws import (
     URL,
     _agent,
     _hello,
@@ -28,7 +28,6 @@ from tests.runner.test_runner_ws import (  # noqa: F401  (tc_factory is a fixtur
     _manager_with_project,
     _mint,
     _wait_status,
-    tc_factory,
 )
 
 

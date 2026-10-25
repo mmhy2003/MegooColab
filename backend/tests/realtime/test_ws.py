@@ -28,23 +28,6 @@ def _project(tc: TestClient, key: str, team) -> dict:
     return r.json()
 
 
-@pytest.fixture
-def tc_factory(app):
-    """`lifespan=True` runs startup (event hub) — use it for the one client that opens the socket."""
-    entered: list[TestClient] = []
-
-    def _make(lifespan: bool = False) -> TestClient:
-        c = TestClient(app, headers={"X-Megoo-Client": "web"})
-        if lifespan:
-            c.__enter__()
-            entered.append(c)
-        return c
-
-    yield _make
-    for c in entered:
-        c.__exit__(None, None, None)
-
-
 async def test_ws_rejects_without_session(tc_factory):
     tc = tc_factory(lifespan=True)
     with pytest.raises(WebSocketDisconnect) as exc:

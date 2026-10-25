@@ -1,40 +1,18 @@
 """MCP server tests: the SDK's Streamable HTTP client talking to the ASGI app in-process."""
 
-import asyncio
 import contextlib
 import json
 
 import httpx2
-import pytest
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from sqlalchemy import select
 
 from app.auth.models import Role
 from app.tasks.models import Task, TaskEvent
-from tests.factories import login, make_project, make_team, make_user
+from tests.factories import login, make_project, make_user
 
 URL = "http://test/api/mcp"
-
-
-@pytest.fixture
-async def mcp_running(app):
-    """httpx ASGITransport doesn't run the lifespan, so run the MCP session manager in its own task.
-
-    (An anyio task group must be exited by the task that entered it, hence the task.)
-    """
-    started, stop = asyncio.Event(), asyncio.Event()
-
-    async def _run():
-        async with app.state.mcp.session_manager.run():
-            started.set()
-            await stop.wait()
-
-    task = asyncio.create_task(_run())
-    await started.wait()
-    yield
-    stop.set()
-    await task
 
 
 async def _mint(client, scopes=("mcp",)) -> str:
@@ -161,7 +139,7 @@ async def test_list_and_get_tasks_respect_project_access(app, client, client_fac
 async def test_create_and_move_task_via_mcp_publishes_events(app, client, db, mcp_running):
     project, manager, _ = await make_project(client, db, "PAY")
     secret = await _mint(client)
-    cols = {c["name"].lower(): c for c in (await client.get(f"/api/projects/PAY/columns")).json()}
+    cols = {c["name"].lower(): c for c in (await client.get("/api/projects/PAY/columns")).json()}
     done = next(c for c in cols.values() if c["category"] == "done")
 
 

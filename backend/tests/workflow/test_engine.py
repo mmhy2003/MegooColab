@@ -28,14 +28,13 @@ from app.workflow.models import (
 from tests.agent_runs.test_dispatch import _avail, _setup
 from tests.agent_runs.test_run_guards import _next_of
 from tests.factories import make_user
-from tests.runner.test_runner_ws import (  # noqa: F401  (tc_factory is a fixture)
+from tests.runner.test_runner_ws import (
     URL,
     _agent,
     _hello,
     _login,
     _manager_with_project,
     _wait_status,
-    tc_factory,
 )
 
 SHA_A, SHA_B = "a" * 40, "b" * 40

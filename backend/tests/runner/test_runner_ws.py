@@ -13,22 +13,6 @@ from tests.factories import DEFAULT_PASSWORD, make_team, make_user
 URL = "/api/runner/ws"
 
 
-@pytest.fixture
-def tc_factory(app):
-    entered: list[TestClient] = []
-
-    def _make(lifespan: bool = False) -> TestClient:
-        c = TestClient(app, headers={"X-Megoo-Client": "web"})
-        if lifespan:
-            c.__enter__()
-            entered.append(c)
-        return c
-
-    yield _make
-    for c in entered:
-        c.__exit__(None, None, None)
-
-
 def _login(tc: TestClient, user) -> None:
     r = tc.post("/api/auth/login", json={"email": user.email, "password": DEFAULT_PASSWORD})
     assert r.status_code == 200, r.text

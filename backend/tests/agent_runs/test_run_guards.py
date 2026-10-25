@@ -28,13 +28,12 @@ from tests.agent_runs.test_dispatch import (
 )
 from tests.factories import login, make_project, make_user
 from tests.mcp.test_mcp import _mint as _mint_mcp
-from tests.mcp.test_mcp import call, mcp_running, mcp_session  # noqa: F401  (mcp_running is a fixture)
-from tests.runner.test_runner_ws import (  # noqa: F401  (tc_factory is a fixture)
+from tests.mcp.test_mcp import call, mcp_session
+from tests.runner.test_runner_ws import (
     URL,
     _hello,
     _login,
     _manager_with_project,
-    tc_factory,
 )
 
 

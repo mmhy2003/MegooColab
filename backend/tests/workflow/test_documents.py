@@ -13,7 +13,6 @@ from app.workflow import documents, questions
 from app.workflow.models import WorkflowDocument
 from tests.agent_runs.test_dispatch import _task
 from tests.factories import DEFAULT_PASSWORD
-from tests.runner.test_runner_ws import tc_factory  # noqa: F401, F811  (tc_factory is a fixture)
 from tests.workflow.test_engine import (
     _board,
     _events,

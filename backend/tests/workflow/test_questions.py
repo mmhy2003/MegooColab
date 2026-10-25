@@ -21,7 +21,7 @@ from app.workflow.models import (
     WorkflowQuestion,
 )
 from tests.factories import DEFAULT_PASSWORD, make_user
-from tests.runner.test_runner_ws import _login, tc_factory  # noqa: F401  (tc_factory is a fixture)
+from tests.runner.test_runner_ws import _login
 from tests.workflow.test_engine import (
     _events,
     _finish,

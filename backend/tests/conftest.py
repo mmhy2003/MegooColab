@@ -27,6 +27,7 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 import app.models
@@ -107,6 +108,44 @@ async def client_factory(app):
 @pytest.fixture
 async def client(client_factory):
     return client_factory()
+
+
+@pytest.fixture
+def tc_factory(app):
+    """Starlette TestClients against the same app. `lifespan=True` runs startup (event hub, runner registry):
+    use it for the client that opens sockets or needs the app's background services."""
+    entered: list[TestClient] = []
+
+    def _make(lifespan: bool = False) -> TestClient:
+        c = TestClient(app, headers={"X-Megoo-Client": "web"})
+        if lifespan:
+            c.__enter__()
+            entered.append(c)
+        return c
+
+    yield _make
+    for c in entered:
+        c.__exit__(None, None, None)
+
+
+@pytest.fixture
+async def mcp_running(app):
+    """httpx ASGITransport doesn't run the lifespan, so run the MCP session manager in its own task.
+
+    (An anyio task group must be exited by the task that entered it, hence the task.)
+    """
+    started, stop = asyncio.Event(), asyncio.Event()
+
+    async def _run():
+        async with app.state.mcp.session_manager.run():
+            started.set()
+            await stop.wait()
+
+    task = asyncio.create_task(_run())
+    await started.wait()
+    yield
+    stop.set()
+    await task
 
 
 @pytest.fixture

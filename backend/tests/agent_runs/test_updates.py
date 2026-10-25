@@ -7,7 +7,7 @@ from sqlalchemy import select, update
 from app.agent_runs.models import AgentRun
 from app.agent_runs.service import apply_update, finish_run, sanitize_update
 from app.tasks.models import TaskEvent
-from tests.agent_runs.test_dispatch import (  # noqa: F401  (tc_factory is a fixture)
+from tests.agent_runs.test_dispatch import (
     URL,
     _avail,
     _hello,
@@ -16,7 +16,6 @@ from tests.agent_runs.test_dispatch import (  # noqa: F401  (tc_factory is a fix
     _start,
     _task,
     _wait_run,
-    tc_factory,
 )
 from tests.factories import make_user
 from tests.runner.test_runner_ws import _manager_with_project

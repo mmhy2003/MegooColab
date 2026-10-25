@@ -27,12 +27,11 @@ from tests.agent_runs.test_dispatch import (
     _start,
     _wait_run,
 )
-from tests.runner.test_runner_ws import (  # noqa: F401  (tc_factory is a fixture)
+from tests.runner.test_runner_ws import (
     URL,
     _hello,
     _manager_with_project,
     _wait_status,
-    tc_factory,
 )
 
 MCP_HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
