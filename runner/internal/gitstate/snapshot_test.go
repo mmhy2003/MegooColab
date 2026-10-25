@@ -202,3 +202,92 @@ func TestStashRefAbsentIsNotAnErrorButFailuresAre(t *testing.T) {
 		t.Fatal("a failing git is not 'ref absent'")
 	}
 }
+
+// I1: an earlier workspace run (implement, step_fix, final_fix) may leave
+// uncommitted edits behind; a read-only run is dirty only for what it changed.
+func TestDirtLeftByAnEarlierRunIsNotTheReviewsChange(t *testing.T) {
+	write := func(t *testing.T, dir, name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	leftover := func(t *testing.T) (string, Snapshot) {
+		t.Helper()
+		dir := repo(t)
+		write(t, dir, "a.txt", "implementer edit\n") // modified tracked file
+		write(t, dir, "notes.txt", "untracked\n")    // untracked file
+		if err := os.MkdirAll(filepath.Join(dir, ".megoocolab"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		write(t, dir, ".megoocolab/plan.md", "plan\n")
+		before, err := Capture(dir)
+		if err != nil || !before.State.Dirty {
+			t.Fatalf("before = %+v, %v", before.State, err)
+		}
+		return dir, before
+	}
+	after := func(t *testing.T, dir string, before Snapshot) bool {
+		t.Helper()
+		snap, err := Capture(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return After(&before, snap).Dirty
+	}
+
+	t.Run("untouched review", func(t *testing.T) {
+		dir, before := leftover(t)
+		write(t, dir, ".megoocolab/plan.md", "new plan\n") // MegooColab's own files never count
+		if after(t, dir, before) {
+			t.Fatal("an untouched review must not be dirty")
+		}
+	})
+	t.Run("review edits the already-modified file", func(t *testing.T) {
+		dir, before := leftover(t)
+		write(t, dir, "a.txt", "review edit\n")
+		if !after(t, dir, before) {
+			t.Fatal("editing a dirty tracked file must be dirty")
+		}
+	})
+	t.Run("review edits the untracked file", func(t *testing.T) {
+		dir, before := leftover(t)
+		write(t, dir, "notes.txt", "review edit\n")
+		if !after(t, dir, before) {
+			t.Fatal("editing a dirty untracked file must be dirty")
+		}
+	})
+	t.Run("review deletes the untracked file", func(t *testing.T) {
+		dir, before := leftover(t)
+		if err := os.Remove(filepath.Join(dir, "notes.txt")); err != nil {
+			t.Fatal(err)
+		}
+		if !after(t, dir, before) {
+			t.Fatal("deleting a file must be dirty")
+		}
+	})
+	t.Run("review stages the modified file", func(t *testing.T) {
+		dir, before := leftover(t)
+		run(t, dir, "add", "a.txt")
+		if !after(t, dir, before) {
+			t.Fatal("staging must be dirty")
+		}
+	})
+	t.Run("review creates a new file", func(t *testing.T) {
+		dir, before := leftover(t)
+		write(t, dir, "new.txt", "n\n")
+		if !after(t, dir, before) {
+			t.Fatal("a new file must be dirty")
+		}
+	})
+	t.Run("no baseline keeps the state", func(t *testing.T) {
+		dir, _ := leftover(t)
+		snap, err := Capture(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !After(nil, snap).Dirty {
+			t.Fatal("without a baseline the state decides")
+		}
+	})
+}

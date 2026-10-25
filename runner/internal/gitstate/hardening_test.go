@@ -59,10 +59,10 @@ func TestFsmonitorNeverRuns(t *testing.T) {
 }
 
 func TestDirtyIgnoresOnlyTheMegooDirectory(t *testing.T) {
-	if !dirty("?? .megoocolab\x00") {
+	if len(statusEntries("?? .megoocolab\x00")) == 0 {
 		t.Error("a file named .megoocolab is a change")
 	}
-	if dirty("?? .megoocolab/plan.md\x00") {
+	if len(statusEntries("?? .megoocolab/plan.md\x00")) != 0 {
 		t.Error(".megoocolab/ content must be ignored")
 	}
 }

@@ -156,6 +156,11 @@ func git(dir string, args ...string) (string, error) {
 }
 
 func gitCtx(parent context.Context, d time.Duration, dir string, args ...string) (string, error) {
+	return gitIn(parent, d, dir, "", args...)
+}
+
+// gitIn is gitCtx with stdin.
+func gitIn(parent context.Context, d time.Duration, dir, stdin string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(parent, d)
 	defer cancel()
 	full := append(append([]string{"-C", dir}, HardenedArgs()...), args...)
@@ -167,6 +172,9 @@ func gitCtx(parent context.Context, d time.Duration, dir string, args ...string)
 	cmd.WaitDelay = time.Second // a grandchild holding a pipe cannot block forever
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
 	if err := cmd.Run(); err != nil {
 		switch {
 		case parent.Err() != nil:
@@ -184,19 +192,25 @@ func gitCtx(parent context.Context, d time.Duration, dir string, args ...string)
 // the state is unknown; callers must not send a guess. Capture adds the checks
 // that need a baseline.
 func Read(dir string) (protocol.GitState, error) {
+	st, _, err := read(dir)
+	return st, err
+}
+
+// read is Read that also returns the raw `status --porcelain -z` output.
+func read(dir string) (protocol.GitState, string, error) {
 	var st protocol.GitState
 	if _, err := git(dir, "rev-parse", "--git-dir"); err != nil {
-		return st, err
+		return st, "", err
 	}
 	if out, err := git(dir, "rev-parse", "--verify", "-q", "HEAD"); err == nil {
 		h := strings.TrimSpace(out)
 		if !headRe.MatchString(h) {
-			return st, fmt.Errorf("unexpected HEAD %q", h)
+			return st, "", fmt.Errorf("unexpected HEAD %q", h)
 		}
 		st.Head = &h
 		br, err := git(dir, "rev-parse", "--abbrev-ref", "HEAD")
 		if err != nil {
-			return st, err
+			return st, "", err
 		}
 		b := truncateRunes(strings.TrimSpace(br), MaxBranchRunes)
 		st.Branch = &b
@@ -206,10 +220,10 @@ func Read(dir string) (protocol.GitState, error) {
 	}
 	out, err := git(dir, "status", "--porcelain", "-z", "--untracked-files=all")
 	if err != nil {
-		return st, err
+		return st, "", err
 	}
-	st.Dirty = dirty(out)
-	return st, nil
+	st.Dirty = len(statusEntries(out)) > 0
+	return st, out, nil
 }
 
 // flaggedSet lists the tracked files tagged S (skip-worktree) or with a
@@ -227,10 +241,13 @@ func flaggedSet(out string) string {
 	return strings.Join(set, "\x00")
 }
 
-// Snapshot is a Read plus what Read alone cannot tell: the untracked-but-ignored
-// files and the stash, which a run can use to hide its changes from status.
+// Snapshot is a Read plus what Read alone cannot tell: the working state's
+// fingerprint, so that edits an earlier run left behind are not taken for this
+// run's, and the untracked-but-ignored files, the flagged files and the stash,
+// which a run can use to hide its changes from status.
 type Snapshot struct {
 	State   protocol.GitState
+	working string
 	ignored string
 	flagged string
 	stash   string
@@ -238,7 +255,11 @@ type Snapshot struct {
 
 // Capture reads a Snapshot.
 func Capture(dir string) (Snapshot, error) {
-	st, err := Read(dir)
+	st, status, err := read(dir)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	working, err := fingerprint(dir, statusEntries(status))
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -264,7 +285,58 @@ func Capture(dir string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	return Snapshot{State: st, ignored: strings.Join(ign, "\x00"), flagged: flaggedSet(lv), stash: stash}, nil
+	return Snapshot{State: st, working: working, ignored: strings.Join(ign, "\x00"), flagged: flaggedSet(lv), stash: stash}, nil
+}
+
+// fingerprint is the working state: each status entry outside .megoocolab/
+// with the git hash of its path's current content, or a marker for a path that
+// is gone, a link or a directory (a submodule). Sorted, so equal states give
+// equal fingerprints. --no-filters: a clean filter from the worktree's config
+// would be code the agent controls.
+func fingerprint(dir string, entries []statusEntry) (string, error) {
+	marks := make([]string, len(entries))
+	var hashed []int
+	var paths strings.Builder
+	for i, e := range entries {
+		p := filepath.Join(dir, filepath.FromSlash(e.path))
+		fi, err := os.Lstat(p)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			marks[i] = "deleted"
+		case err != nil:
+			return "", err
+		case isLink(fi):
+			target, err := os.Readlink(p)
+			if err != nil {
+				return "", err
+			}
+			marks[i] = "link:" + target
+		case fi.IsDir():
+			marks[i] = "dir"
+		default:
+			hashed = append(hashed, i)
+			paths.WriteString(e.path + "\n")
+		}
+	}
+	if len(hashed) > 0 {
+		out, err := gitIn(context.Background(), timeout, dir, paths.String(), "hash-object", "--no-filters", "--stdin-paths")
+		if err != nil {
+			return "", err
+		}
+		sums := strings.Fields(out)
+		if len(sums) != len(hashed) {
+			return "", fmt.Errorf("hash-object: %d hashes for %d paths", len(sums), len(hashed))
+		}
+		for j, i := range hashed {
+			marks[i] = sums[j]
+		}
+	}
+	lines := make([]string, len(entries))
+	for i, e := range entries {
+		lines[i] = e.raw + "\x00" + marks[i]
+	}
+	sort.Strings(lines)
+	return strings.Join(lines, "\x00\x00"), nil
 }
 
 // stashRef returns the commit refs/stash points at, or "" when there is no
@@ -282,14 +354,17 @@ func stashRef(dir string) (string, error) {
 	return "", err
 }
 
-// After is the state to report once a run ended: after's own state, dirty also
-// when the run changed the set of ignored files, of skip-worktree or
-// assume-unchanged files, or the stash since before. With
-// no baseline only after's own state is known.
+// After is the state to report once a run ended. With a baseline, dirty means
+// the run changed something since before: the working state (an edit, or a
+// new, deleted or staged file), the set of ignored files, of skip-worktree or
+// assume-unchanged files, or the stash. Edits that were already there, left by
+// an earlier run, do not count. With no baseline only after's own state is
+// known.
 func After(before *Snapshot, after Snapshot) protocol.GitState {
 	st := after.State
-	if before != nil && (before.ignored != after.ignored || before.flagged != after.flagged || before.stash != after.stash) {
-		st.Dirty = true
+	if before != nil {
+		st.Dirty = before.working != after.working || before.ignored != after.ignored ||
+			before.flagged != after.flagged || before.stash != after.stash
 	}
 	return st
 }
@@ -301,29 +376,39 @@ func truncateRunes(s string, n int) string {
 	return s
 }
 
-// dirty parses `status --porcelain -z`: "XY path" entries, where a rename or
-// copy is followed by one more entry holding the original path.
-func dirty(out string) bool {
+// statusEntry is one `status --porcelain -z` entry: raw is the whole entry
+// (with a rename's or copy's original path appended), path its current path.
+type statusEntry struct {
+	raw, path string
+}
+
+// statusEntries parses `status --porcelain -z`: "XY path" entries, where a
+// rename or copy is followed by one more entry holding the original path.
+// Entries only about .megoocolab/ are left out.
+func statusEntries(out string) []statusEntry {
+	var res []statusEntry
 	entries := strings.Split(out, "\x00")
 	for i := 0; i < len(entries); i++ {
 		e := entries[i]
 		if len(e) < 4 {
 			continue
 		}
-		paths := []string{e[3:]}
+		raw, paths := e, []string{e[3:]}
 		if e[0] == 'R' || e[0] == 'C' || e[1] == 'R' || e[1] == 'C' {
 			if i+1 < len(entries) {
 				paths = append(paths, entries[i+1])
+				raw += "\x00" + entries[i+1]
 			}
 			i++
 		}
 		for _, p := range paths {
 			if !strings.HasPrefix(p, FilesPrefix) {
-				return true
+				res = append(res, statusEntry{raw: raw, path: e[3:]})
+				break
 			}
 		}
 	}
-	return false
+	return res
 }
 
 // resolve joins a validated relative path onto root, refusing to pass through
