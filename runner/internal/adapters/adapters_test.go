@@ -1,0 +1,110 @@
+package adapters
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/mmhy2003/megoocolab/runner/internal/policy"
+)
+
+func noEnv(string) string { return "" }
+
+func TestClaudeReadOnlyMetaDisallowsEdits(t *testing.T) {
+	m := SessionMeta("claude_code", policy.ReadOnly)
+	opts := m["claudeCode"].(map[string]any)["options"].(map[string]any)
+	if got := opts["disallowedTools"]; !reflect.DeepEqual(got, []string{"Edit", "Write", "MultiEdit", "NotebookEdit"}) {
+		t.Fatalf("disallowedTools = %#v", got)
+	}
+	if got := opts["settingSources"]; !reflect.DeepEqual(got, []string{}) {
+		t.Fatalf("settingSources = %#v", got)
+	}
+	if opts["allowDangerouslySkipPermissions"] != false {
+		t.Fatalf("allowDangerouslySkipPermissions = %#v", opts["allowDangerouslySkipPermissions"])
+	}
+	w := SessionMeta("claude_code", policy.Workspace)["claudeCode"].(map[string]any)["options"].(map[string]any)
+	if _, ok := w["disallowedTools"]; ok {
+		t.Fatal("workspace must not set disallowedTools")
+	}
+	if SessionMeta("codex", policy.ReadOnly) != nil {
+		t.Fatal("codex meta must be nil")
+	}
+}
+
+func TestModeFor(t *testing.T) {
+	cases := []struct {
+		program   string
+		kind      policy.Kind
+		available []string
+		want      string
+	}{
+		{"codex", policy.ReadOnly, []string{"read-only", "auto", "full-access"}, "read-only"},
+		{"codex", policy.Workspace, []string{"read-only", "auto", "full-access"}, "auto"},
+		{"claude_code", policy.ReadOnly, []string{"default", "plan"}, "plan"},
+		{"claude_code", policy.ReadOnly, []string{"default"}, ""},
+		{"claude_code", policy.Workspace, []string{"default", "plan"}, "default"},
+		{"codex", policy.ReadOnly, []string{"auto"}, ""},
+		{"nope", policy.ReadOnly, []string{"plan"}, ""},
+	}
+	for _, c := range cases {
+		if got := ModeFor(c.program, c.kind, c.available); got != c.want {
+			t.Errorf("ModeFor(%s,%s,%v) = %q, want %q", c.program, c.kind, c.available, got, c.want)
+		}
+	}
+}
+
+func TestDefaultSpecs(t *testing.T) {
+	s, err := forOS("linux", "claude_code", noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Command != "npx" || !reflect.DeepEqual(s.Args, []string{"-y", "@agentclientprotocol/claude-agent-acp@0.94.0"}) {
+		t.Fatalf("claude spec = %+v", s)
+	}
+	s, _ = forOS("linux", "codex", noEnv)
+	if s.Command != "npx" || !reflect.DeepEqual(s.Args, []string{"-y", "@zed-industries/codex-acp@0.16.0"}) {
+		t.Fatalf("codex spec = %+v", s)
+	}
+	if _, err := forOS("linux", "other", noEnv); err == nil {
+		t.Fatal("unknown program must fail")
+	}
+}
+
+func TestWindowsUsesNpxCmd(t *testing.T) {
+	s, err := forOS("windows", "codex", noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Command != "npx.cmd" {
+		t.Fatalf("command = %q", s.Command)
+	}
+}
+
+func TestOverrideEnv(t *testing.T) {
+	env := func(k string) string {
+		switch k {
+		case "MEGOO_ADAPTER_CLAUDE_CODE":
+			return `"C:\Program Files\fake agent.exe" --scenario  "a b" plain`
+		case "MEGOO_ADAPTER_CODEX":
+			return "/bin/fake"
+		}
+		return ""
+	}
+	s, err := forOS("windows", "claude_code", env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Command != `C:\Program Files\fake agent.exe` || !reflect.DeepEqual(s.Args, []string{"--scenario", "a b", "plain"}) {
+		t.Fatalf("spec = %+v", s)
+	}
+	s, _ = forOS("linux", "codex", env)
+	if s.Command != "/bin/fake" || len(s.Args) != 0 {
+		t.Fatalf("spec = %+v", s)
+	}
+}
+
+func TestOverrideEnvUnterminatedQuote(t *testing.T) {
+	env := func(string) string { return `"oops` }
+	if _, err := forOS("linux", "codex", env); err == nil {
+		t.Fatal("expected error")
+	}
+}
