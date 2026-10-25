@@ -73,8 +73,11 @@ describe("TaskCardView", () => {
     const { rerender } = render(<TaskCardView task={{ ...task, workflow: wf }} />);
     expect(screen.getByText("NEEDS YOU")).toHaveAttribute("title", "Approve the plan");
     expect(screen.getByLabelText("Stage: Plan (3 of 6)")).toBeInTheDocument();
+    expect(screen.getByText(/waiting for you/)).toBeInTheDocument();
     rerender(<TaskCardView task={{ ...task, workflow: { ...wf, can_act: false } }} />);
     expect(screen.queryByText("NEEDS YOU")).not.toBeInTheDocument();
+    expect(screen.queryByText(/for you/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/waiting on a person/)).toBeInTheDocument();
   });
 
   it("shows enforcement chip and build progress", () => {

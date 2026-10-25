@@ -58,7 +58,7 @@ export function TaskCardView({
       <p className="leading-snug break-words">{task.title}</p>
       {wf && (
         <div className="space-y-1">
-          <StageTrack stage={wf.stage} status={wf.status} compact />
+          <StageTrack stage={wf.stage} status={wf.status} canAct={wf.can_act} compact />
           <div className="flex flex-wrap items-center gap-1 text-[11px]">
             {wf.needs && wf.can_act && (
               <span

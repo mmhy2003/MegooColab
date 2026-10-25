@@ -177,7 +177,7 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
     if viewer is not None:
         agent_id = task.assignee_agent_id or wf.agent_id
         owner_id = await db.scalar(select(Agent.owner_id).where(Agent.id == agent_id)) if agent_id else None
-        viewer_can_act = engine.can_act(viewer, task, wf, await engine._manages(db, viewer, project), owner_id)
+        viewer_can_act = engine.can_act(viewer, task, wf, await engine.manages(db, viewer, project), owner_id)
     steps = []
     for n, step in enumerate((plan.steps or []) if plan else [], start=1):
         if wf.status == WorkflowStatus.finished or wf.stage in (Stage.review, Stage.done):

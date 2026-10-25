@@ -11,7 +11,7 @@ from app.agents.models import Agent
 from app.agents.service import agent_statuses, can_use_agent, is_usable_binding
 from app.auth.models import Role, User, UserStatus
 from app.core.events import Event, publish
-from app.projects.access import can_manage_project, get_project_for, project_team_ids
+from app.projects.access import can_manage_project, get_project_for
 from app.projects.models import BoardColumn, ColumnCategory, Label, Project, ProjectTeam
 from app.projects.schemas import LabelOut
 from app.sprints.service import snapshot_if_active
@@ -37,6 +37,7 @@ from app.tasks.schemas import (
 from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
 from app.workflow.models import DocKind, DocStatus, TaskWorkflow, WorkflowDocument
+from app.workflow.rules import can_act
 from app.workflow.schemas import TaskWorkflowOut
 
 KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$")
@@ -75,7 +76,7 @@ async def task_changed(db: AsyncSession, task: Task, kind: str = "task.updated")
         await snapshot_if_active(db, task.sprint_id)
 
 
-async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User | None = None) -> list[TaskOut]:
+async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[TaskOut]:
     if not tasks:
         return []
     ids = [t.id for t in tasks]
@@ -155,12 +156,10 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User | None = N
 
 
 async def _workflows_for(
-    db: AsyncSession, tasks: list[Task], viewer: User | None
+    db: AsyncSession, tasks: list[Task], viewer: User
 ) -> dict[uuid.UUID, TaskWorkflowOut]:
     """One query for every task workflow; steps_total is the step count of the latest approved plan.
-    can_act is the engine's WF-6 rule for the viewer, evaluated in bulk (false without a viewer)."""
-    from app.workflow.engine import can_act  # the engine imports this module
-
+    can_act is the engine's WF-6 rule for the viewer, evaluated in bulk ."""
     ids = [t.id for t in tasks]
     plan_steps = (
         select(func.jsonb_array_length(WorkflowDocument.steps))
@@ -177,17 +176,24 @@ async def _workflows_for(
     by_task = {t.id: t for t in tasks}
     owners: dict[uuid.UUID, uuid.UUID] = {}
     manages: dict[uuid.UUID, bool] = {}
-    if viewer is not None and rows:
+    if rows:
         agent_ids = {by_task[wf.task_id].assignee_agent_id or wf.agent_id for wf, _ in rows} - {None}
         if agent_ids:
             owners = dict((await db.execute(select(Agent.id, Agent.owner_id).where(Agent.id.in_(agent_ids)))).all())
         my_teams = await user_team_ids(db, viewer.id)
+        project_teams: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
+        for project_id, team_id in await db.execute(
+            select(ProjectTeam.project_id, ProjectTeam.team_id).where(
+                ProjectTeam.project_id.in_({t.project_id for t in tasks})
+            )
+        ):
+            project_teams[project_id].add(team_id)
         for project_id in {t.project_id for t in tasks}:
-            manages[project_id] = can_manage_project(viewer, await project_team_ids(db, project_id), my_teams)
+            manages[project_id] = can_manage_project(viewer, project_teams[project_id], my_teams)
 
     def viewer_can_act(wf: TaskWorkflow) -> bool:
         task = by_task[wf.task_id]
-        return viewer is not None and can_act(
+        return can_act(
             viewer, task, wf, manages.get(task.project_id, False), owners.get(task.assignee_agent_id or wf.agent_id)
         )
 
@@ -236,7 +242,7 @@ async def _links_for(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, 
     return out
 
 
-async def task_out(db: AsyncSession, task: Task, viewer: User | None = None) -> TaskOut:
+async def task_out(db: AsyncSession, task: Task, viewer: User) -> TaskOut:
     await db.flush()
     await db.refresh(task)
     return (await tasks_out(db, [task], viewer))[0]

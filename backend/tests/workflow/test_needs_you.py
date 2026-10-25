@@ -3,10 +3,13 @@
 import uuid
 from types import SimpleNamespace
 
+from sqlalchemy import update
+
+from app.agents.models import Agent
 from app.auth.models import Role
 from app.teams.models import TeamMember
-from app.workflow import engine
-from tests.factories import make_user
+from app.workflow import engine, rules
+from tests.factories import make_team, make_user
 from tests.runner.test_runner_ws import _login
 from tests.workflow.test_engine import _member, _started
 from tests.workflow.test_questions import _waiting
@@ -48,12 +51,32 @@ async def test_needs_you_waiting_visible_to_owner_manager_not_member(db, tc_fact
 
 def test_can_act_rule():
     me, other = uuid.uuid4(), uuid.uuid4()
-    user = SimpleNamespace(id=me)
+    user = SimpleNamespace(id=me, role=Role.member)
     task = SimpleNamespace(assignee_user_id=None)
     wf = SimpleNamespace(driver="runner")
-    assert engine.can_act(user, task, wf, False, me)  # the agent's owner
-    assert engine.can_act(user, task, wf, True, other)  # a manager
-    assert not engine.can_act(user, task, wf, False, other)
-    assert not engine.can_act(user, task, None, False, None)
-    co = SimpleNamespace(driver=engine.Driver.connect_only)
-    assert engine.can_act(user, SimpleNamespace(assignee_user_id=me), co, False, other)  # connect_only assignee
+    assert rules.can_act(user, task, wf, False, me)  # the agent's owner
+    assert rules.can_act(user, task, wf, True, other)  # a manager
+    assert not rules.can_act(user, task, wf, False, other)
+    assert not rules.can_act(user, task, None, False, None)
+    co = SimpleNamespace(driver="connect_only")
+    assert rules.can_act(user, SimpleNamespace(assignee_user_id=me), co, False, other)  # connect_only assignee
+    assert engine.can_act is rules.can_act
+    viewer = SimpleNamespace(id=me, role=Role.viewer)  # read-only users never act, even as owner or assignee
+    assert not rules.can_act(viewer, task, wf, True, me)
+    assert not rules.can_act(viewer, SimpleNamespace(assignee_user_id=me), co, True, me)
+
+
+async def test_owner_who_is_not_a_manager_sees_it_and_other_team_manager_does_not(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run, _qid = await _waiting(db, tc)
+    owner = await _member(db, tc)
+    await db.execute(update(Agent).where(Agent.id == uuid.UUID(b.agent["id"])).values(owner_id=owner.id))
+    await db.commit()
+    _login(tc, owner)
+    [t] = _needs_you(tc)
+    assert t["key"] == b.key and t["workflow"]["can_act"] is True
+    outsider = await make_user(db, role=Role.manager)
+    await make_team(db, outsider)
+    _login(tc, outsider)  # manages another team, not this project
+    r = tc.get("/api/projects/PAY/tasks", params={"needs_you": "true"})
+    assert r.status_code != 200

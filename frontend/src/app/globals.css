@@ -26,6 +26,7 @@
   --glow-cyan: none;
   --glow-pink: none;
   --glow-box: 0 0 0 1px rgba(0, 144, 168, 0.25), 0 4px 14px rgba(0, 144, 168, 0.18);
+  --glow-box-pink: 0 0 0 1px rgba(212, 0, 79, 0.25), 0 4px 14px rgba(212, 0, 79, 0.18);
   --shadow: 0 1px 2px rgba(26, 11, 61, 0.08), 0 4px 16px rgba(26, 11, 61, 0.06);
   color-scheme: light;
 }
@@ -50,6 +51,7 @@
   --glow-cyan: 0 0 8px rgba(5, 217, 232, 0.8);
   --glow-pink: 0 0 8px rgba(255, 42, 109, 0.8);
   --glow-box: 0 0 12px rgba(5, 217, 232, 0.45);
+  --glow-box-pink: 0 0 12px rgba(255, 42, 109, 0.5);
   --shadow: none;
   color-scheme: dark;
 }
@@ -118,6 +120,10 @@ a {
 
 @utility glow-box {
   box-shadow: var(--glow-box);
+}
+
+@utility glow-box-pink {
+  box-shadow: var(--glow-box-pink);
 }
 
 @utility card {

@@ -62,6 +62,8 @@ const MESSAGES: Record<string, string> = {
   not_your_task: "That isn't the task this run is working on.",
   runner_driven: "MegooColab's agent is driving this task, so it can't be run by hand.",
   task_assigned_to_agent: "This task is assigned to an agent, so it can't be run by hand.",
+  methodology_not_found: "That instruction text doesn't exist.",
+  methodology_conflict: "Someone else saved this text first. Reload and try again.",
   forbidden: "You don't have permission to do that.",
   validation_error: "Some fields are invalid.",
 };
