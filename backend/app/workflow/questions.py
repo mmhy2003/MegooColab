@@ -116,6 +116,7 @@ async def ask(
         .where(WorkflowQuestion.task_id == task.id, WorkflowQuestion.status == QuestionStatus.open)
         .values(status=QuestionStatus.withdrawn)
     )
+    await retire_answers(db, task.id)  # an answer the asking run never saw is moot once it asks again
     mockup_row = None
     if clean_mockup:
         version = (await db.scalar(select(func.max(Mockup.version)).where(Mockup.task_id == task.id)) or 0) + 1
@@ -195,13 +196,29 @@ async def _choice_label(db, q: WorkflowQuestion, choice: str) -> str:
     raise _422("unknown_choice")
 
 
-async def undelivered_answer(db, task_id: uuid.UUID) -> WorkflowQuestion | None:
-    """The latest answered question whose answer never reached the agent (withdrawn ones never count)."""
+async def retire_answers(db, task_id: uuid.UUID, *, keep: uuid.UUID | None = None) -> None:
+    """Mark every pending answer of the task as superseded. `delivered_at` therefore means "delivered or
+    superseded": an answer the agent can no longer be handed (a newer question, a delivery, a stage change)
+    is stamped so that no later run end or resume sends it to the wrong role or stage."""
+    stmt = update(WorkflowQuestion).where(
+        WorkflowQuestion.task_id == task_id,
+        WorkflowQuestion.status == QuestionStatus.answered,
+        WorkflowQuestion.delivered_at.is_(None),
+    )
+    if keep is not None:
+        stmt = stmt.where(WorkflowQuestion.id != keep)
+    await db.execute(stmt.values(delivered_at=datetime.now(UTC)))
+
+
+async def undelivered_answer(db, task_id: uuid.UUID, run_id: uuid.UUID) -> WorkflowQuestion | None:
+    """The latest answer to a question that `run_id` asked and that never reached it (withdrawn ones never
+    count)."""
     return (
         await db.execute(
             select(WorkflowQuestion)
             .where(
                 WorkflowQuestion.task_id == task_id,
+                WorkflowQuestion.run_id == run_id,
                 WorkflowQuestion.status == QuestionStatus.answered,
                 WorkflowQuestion.delivered_at.is_(None),
             )
@@ -213,7 +230,12 @@ async def undelivered_answer(db, task_id: uuid.UUID) -> WorkflowQuestion | None:
 
 async def deliver(db, wf: TaskWorkflow, task: Task, q: WorkflowQuestion, *, requested_by: uuid.UUID):
     """Resume the asking role's session with the answer and mark it delivered. The caller holds the locks."""
-    label = await _choice_label(db, q, q.answer_choice) if q.answer_choice else None
+    label = None
+    if q.answer_choice:
+        try:
+            label = await _choice_label(db, q, q.answer_choice)
+        except HTTPException:  # run-end and resume paths must not fail: fall back to the raw id
+            label = q.answer_choice
     asked_by = await db.get(AgentRun, q.run_id) if q.run_id else None
     if asked_by is not None and asked_by.workflow_role:
         role, step = RunRole(asked_by.workflow_role), asked_by.step
@@ -224,6 +246,7 @@ async def deliver(db, wf: TaskWorkflow, task: Task, q: WorkflowQuestion, *, requ
         payload={"choice_label": label, "text": q.answer_text}, requested_by=requested_by,
     )
     q.delivered_at = datetime.now(UTC)
+    await retire_answers(db, q.task_id, keep=q.id)
     return run
 
 

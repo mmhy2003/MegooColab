@@ -237,6 +237,9 @@ async def set_stage(db: AsyncSession, wf: TaskWorkflow, task: Task, to: Stage) -
     if wf.stage == to:
         return
     frm = wf.stage
+    from app.workflow import questions  # local: questions imports this module
+
+    await questions.retire_answers(db, wf.task_id)  # a pending answer belongs to the stage it was asked in
     wf.stage = to
     wf.nudged = False
     if to == Stage.plan:
@@ -465,7 +468,10 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     else:
         from app.workflow import questions  # local: questions imports this module
 
-        pending = await questions.undelivered_answer(db, task.id)  # answered while paused
+        # answered while paused: only for the latest run, and only if it is still the current stage and step
+        last = await latest_run(db, task.id)
+        current = last is not None and last.stage == wf.stage and last.step == wf.current_step
+        pending = await questions.undelivered_answer(db, task.id, last.id) if current else None
         if pending is not None:
             await questions.deliver(db, wf, task, pending, requested_by=user.id)
         else:
@@ -671,7 +677,7 @@ async def _handle_brainstorm_or_plan(db: AsyncSession, wf: TaskWorkflow, task: T
         return
     from app.workflow import questions  # local: questions imports this module
 
-    pending = await questions.undelivered_answer(db, task.id)
+    pending = await questions.undelivered_answer(db, task.id, run.id)
     if pending is not None:  # answered while this run was still running: it gets the answer, not a nudge
         await questions.deliver(db, wf, task, pending, requested_by=await _owner_id(db, run))
         return

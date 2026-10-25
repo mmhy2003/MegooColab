@@ -12,7 +12,7 @@ from app.auth.models import Role
 from app.core.db import SessionLocal
 from app.tasks.activity import activity_items
 from app.tasks.models import Task
-from app.workflow import context, questions
+from app.workflow import context, engine, questions
 from app.workflow.models import (
     Mockup,
     RunRole,
@@ -28,6 +28,7 @@ from tests.workflow.test_engine import (
     _member,
     _runs,
     _started,
+    _submit,
     _wf,
 )
 
@@ -303,7 +304,7 @@ async def test_delivered_answer_is_not_delivered_twice(db, tc_factory):
     assert len(runs) == 3 and "Chosen: Postgres" not in runs[-1].resume_prompt
     async with SessionLocal() as s:
         task = await s.get(Task, b.task_id)
-        assert await questions.undelivered_answer(s, task.id) is None
+        assert await questions.undelivered_answer(s, task.id, new.id) is None
 
 
 async def test_withdrawn_question_is_never_delivered(db, tc_factory):
@@ -312,7 +313,7 @@ async def test_withdrawn_question_is_never_delivered(db, tc_factory):
     await _asked(b, run)
     await _asked(b, run, body="Second?")
     async with SessionLocal() as s:
-        assert await questions.undelivered_answer(s, b.task_id) is None
+        assert await questions.undelivered_answer(s, b.task_id, run.id) is None
 
 
 async def test_question_from_implement_run_resumes_that_step_session(db, tc_factory):
@@ -389,3 +390,81 @@ async def test_activity_answered_by_is_a_user_object(db, tc_factory):
     assert _answer(tc, b, qid, choice="pg").status_code == 200
     [q] = [i for i in tc.get(f"/api/tasks/{b.key}/activity").json() if i["type"] == "question"]
     assert q["question"]["answered_by"] == {"id": str(b.manager.id), "name": b.manager.name}
+
+
+# ---- round 2: stale answers are retired, never delivered to the wrong role -------------------------------
+
+
+async def _prompts(task_id) -> str:
+    return " | ".join((r.resume_prompt or "") for r in await _runs(task_id))
+
+
+async def test_superseded_answer_is_never_delivered(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    q1 = await _asked(b, run)
+    assert _answer(tc, b, q1, text="OLDANSWER").status_code == 200  # the run is still running: never seen
+    q2 = await _asked(b, run, body="Second?")
+    assert await _delivered(q1) is not None  # retired by the new question
+    await _finish(b.manager.id, run, "completed", session_id="sess-1")
+    assert _answer(tc, b, q2, text="NEWANSWER").status_code == 200
+    run2 = (await _runs(b.task_id))[-1]
+    assert "NEWANSWER" in run2.resume_prompt and "OLDANSWER" not in run2.resume_prompt
+    assert tc.post(f"/api/tasks/{b.key}/workflow/pause").status_code == 200
+    assert tc.post(f"/api/tasks/{b.key}/workflow/resume").status_code == 200
+    run3 = (await _runs(b.task_id))[-1]
+    await _finish(b.manager.id, run3, "completed")  # ends with no output: nudged
+    resume_prompts = " | ".join((r.resume_prompt or "") for r in await _runs(b.task_id))
+    assert "OLDANSWER" not in resume_prompts and len(await _runs(b.task_id)) == 4
+
+
+async def test_answer_pending_at_a_stage_change_is_never_delivered(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    q1 = await _asked(b, run)
+    assert _answer(tc, b, q1, text="STALE").status_code == 200
+    await _submit(b.task_id, run.id, "design")  # the agent submits its design without having seen the answer
+    await _finish(b.manager.id, run, "completed")
+    wf = await _wf(b.task_id)
+    assert (wf.stage, wf.needs) == ("design", "design_approval")
+    assert await _delivered(q1) is not None
+    async with SessionLocal() as s:
+        assert await questions.undelivered_answer(s, b.task_id, run.id) is None
+    assert "STALE" not in await _prompts(b.task_id)
+
+
+async def test_set_stage_retires_pending_answers(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    q1 = await _asked(b, run)
+    assert _answer(tc, b, q1, text="STALE").status_code == 200
+    assert await _delivered(q1) is None
+    async with SessionLocal() as s:
+        wf = await engine.lock_workflow(s, b.task_id)
+        await engine.set_stage(s, wf, await s.get(Task, b.task_id), "plan")
+        await s.commit()
+    assert await _delivered(q1) is not None
+
+
+async def test_answer_of_an_earlier_run_is_not_delivered_when_a_later_run_ends(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    q1 = await _asked(b, run)
+    async with SessionLocal() as s:  # a pending answer that belongs to some other run
+        await s.execute(update(WorkflowQuestion).where(WorkflowQuestion.id == q1).values(
+            status="answered", answer_text="OTHERRUN", run_id=None))
+        await s.commit()
+    await _finish(b.manager.id, run, "completed")  # no question, no output: nudged
+    assert "OTHERRUN" not in await _prompts(b.task_id)
+
+
+async def test_unresolvable_choice_falls_back_to_the_raw_id(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    q1 = await _asked(b, run)
+    async with SessionLocal() as s:
+        await s.execute(update(WorkflowQuestion).where(WorkflowQuestion.id == q1).values(
+            status="answered", answer_choice="gone"))
+        await s.commit()
+    await _finish(b.manager.id, run, "completed", session_id="sess-1")
+    assert "Chosen: gone" in (await _runs(b.task_id))[-1].resume_prompt
