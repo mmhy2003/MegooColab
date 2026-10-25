@@ -107,7 +107,7 @@ async def test_deactivation_revokes_tokens(client, client_factory, db, outbox):
     assert (await client_factory().get("/api/auth/me", headers=_bearer(secret))).status_code == 401
 
 
-async def test_bearer_post_needs_no_csrf_header(client_factory, db):
+async def test_bearer_post_passes_csrf_but_not_rest_auth(client_factory, db):
     u = await make_user(db)
     c = client_factory()
     await login(c, u)
@@ -115,7 +115,7 @@ async def test_bearer_post_needs_no_csrf_header(client_factory, db):
     bare = client_factory()
     del bare.headers["X-Megoo-Client"]
     r = await bare.patch("/api/auth/me", json={"name": "Renamed"}, headers=_bearer(secret))
-    assert r.status_code == 200
+    assert r.status_code == 401 and r.json()["detail"] == "bearer_not_allowed"  # not csrf_header_missing
     r = await bare.patch("/api/auth/me", json={"name": "Again"})
     assert r.status_code == 403
 

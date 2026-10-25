@@ -60,12 +60,10 @@ async def user_from_session_token(db, token: str | None) -> User | None:
 
 
 async def current_user(request: Request, response: Response, db: DbSession) -> User:
-    raw = bearer_token(request)
-    if raw is not None:
-        resolved = await resolve_bearer(db, raw)
-        if resolved is None:
-            raise _unauthorized()
-        return resolved[0]
+    """The cookie session's user. Bearer tokens are refused here: REST accepts them only on the
+    allow-listed routes that depend on `current_user_or_token` (and on GET /api/tokens/self)."""
+    if bearer_token(request) is not None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer_not_allowed")
     session = await current_session(request, response, db)
     user = await db.get(User, session.user_id)
     if user is None or user.status != UserStatus.active:
@@ -74,6 +72,20 @@ async def current_user(request: Request, response: Response, db: DbSession) -> U
 
 
 CurrentUser = Annotated[User, Depends(current_user)]
+
+
+async def current_user_or_token(request: Request, response: Response, db: DbSession) -> User:
+    """Cookie session or a bearer token of any scope. Allow-list only: GET /api/auth/me (runner login)."""
+    raw = bearer_token(request)
+    if raw is None:
+        return await current_user(request, response, db)
+    resolved = await resolve_bearer(db, raw)
+    if resolved is None:
+        raise _unauthorized()
+    return resolved[0]
+
+
+CurrentUserOrToken = Annotated[User, Depends(current_user_or_token)]
 
 
 async def require_password_ok(user: CurrentUser) -> User:

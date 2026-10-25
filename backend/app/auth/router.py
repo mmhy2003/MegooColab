@@ -6,7 +6,7 @@ from sqlalchemy import delete, select
 
 from app.audit import service as audit
 from app.auth import service, totp
-from app.auth.deps import CurrentUser, current_session
+from app.auth.deps import CurrentUser, CurrentUserOrToken, current_session
 from app.auth.models import Session, TokenPurpose, User, UserStatus
 from app.auth.schemas import LowerEmail, Password, UserEnvelope, UserOut
 from app.core.db import DbSession
@@ -64,7 +64,7 @@ async def logout(
 
 
 @router.get("/me")
-async def me(user: CurrentUser) -> UserEnvelope:
+async def me(user: CurrentUserOrToken) -> UserEnvelope:
     return UserEnvelope(user=UserOut.model_validate(user))
 
 
