@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent_runs.service import stop_runs_before_delete
 from app.audit import service as audit
 from app.auth.deps import AuthedUser
 from app.auth.models import Role
@@ -28,6 +29,7 @@ from app.projects.schemas import (
     RepoOut,
     RepoPatch,
 )
+from app.tasks.models import Task
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -107,6 +109,7 @@ async def delete_project(ref: str, user: AuthedUser, db: DbSession) -> None:
     project = await get_project_for(db, user, ref, write=True)
     if user.role != Role.admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
+    await stop_runs_before_delete(db, select(Task.id).where(Task.project_id == project.id))
     await _project_changed(db, project)
     await db.delete(project)
     await audit.record(db, "project.deleted", actor_id=user.id, target_type="project", target_id=project.id,

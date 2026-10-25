@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.agent_runs.service import stop_runs_before_delete
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
 from app.projects.access import can_manage_project, get_project_for, project_team_ids
@@ -68,6 +69,7 @@ async def delete_task(key: str, user: AuthedUser, db: DbSession) -> None:
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
     sprint_id = task.sprint_id
+    await stop_runs_before_delete(db, service.deleted_with(task))
     await _changed(db, task, "task.deleted")
     await service.delete_task(db, task)
     await snapshot_if_active(db, sprint_id)

@@ -284,6 +284,38 @@ async def fail_unclaimed_runs(db: AsyncSession, conn: RunnerConn) -> None:
             )
 
 
+async def stop_runs_before_delete(db: AsyncSession, task_ids) -> None:
+    """These tasks are about to be deleted, and their runs with them in the cascade. Queued runs simply go;
+    running ones get run_cancel on the owner's runner so no agent keeps working unobserved (its later
+    run_finished, for a run that no longer exists, is ignored). `task_ids` is a list or a select of ids.
+
+    The run rows are locked: a dispatch in flight finishes its send first (and the cancel follows it), and
+    a queued run cannot be claimed and started before the delete commits."""
+    rows = (
+        await db.execute(
+            select(AgentRun, Agent.owner_id, Task.project_id)
+            .join(Agent, Agent.id == AgentRun.agent_id)
+            .join(Task, Task.id == AgentRun.task_id)
+            .where(AgentRun.task_id.in_(task_ids), AgentRun.status.in_(ACTIVE_STATUSES))
+            .with_for_update(of=AgentRun)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    affected: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for run, owner_id, project_id in rows:
+        affected.setdefault(owner_id, set()).add(project_id)
+        if run.status != RunStatus.running:
+            continue
+        conn = registry.conn_for_user(owner_id)
+        if conn is not None and run.id in conn.run_ids:
+            try:
+                await conn.send(RunCancel(run_id=run.id))
+            except RunnerClosed:
+                pass
+    for owner_id, project_ids in affected.items():
+        await publish_agents_updated(db, owner_id, project_ids)
+
+
 async def cancel_user_runs(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Deactivation: cancel the user's queued and running runs, on their agents or requested by them.
     Running ones get a best-effort run_cancel on the agent owner's connection."""

@@ -421,6 +421,16 @@ async def update_task(db: AsyncSession, user: User, project: Project, task: Task
     return task
 
 
+def deleted_with(task: Task):
+    """Select of the ids delete_task removes: the task and, unless it is an epic (whose children are
+    detached), the subtasks the parent_id cascade takes with it."""
+    if task.type == TaskType.epic:
+        return select(Task.id).where(Task.id == task.id)
+    tree = select(Task.id).where(Task.id == task.id).cte("deleted_tree", recursive=True)
+    tree = tree.union_all(select(Task.id).where(Task.parent_id == tree.c.id))
+    return select(tree.c.id)
+
+
 async def delete_task(db: AsyncSession, task: Task) -> None:
     if task.type == TaskType.epic:
         await db.execute(update(Task).where(Task.parent_id == task.id).values(parent_id=None))
