@@ -47,6 +47,7 @@ type Manager struct {
 	CancelGrace   time.Duration                // wait after session/cancel before killing; default 10 s
 	ExitGrace     time.Duration                // wait for the adapter to exit after a finished turn; default 2 s
 	FlushInterval time.Duration                // message coalescing interval; 0 keeps the default
+	LogCap        int                          // bytes of adapter output kept per run log; default 5 MiB
 
 	send      func(any) error
 	cacheRoot string
@@ -71,6 +72,7 @@ func New(send func(any) error, cacheRoot string) *Manager {
 		Kill:        killTree,
 		CancelGrace: 10 * time.Second,
 		ExitGrace:   2 * time.Second,
+		LogCap:      logCap,
 		send:        send,
 		cacheRoot:   cacheRoot,
 		agents:      map[string]protocol.WelcomeAgent{},
@@ -169,12 +171,10 @@ func (r *run) closeEmit() {
 		// The text ended on something that looks like the start of the token: a
 		// few characters pass, a longer start is withheld.
 		r.held = ""
-		if len(held) > 4 {
-			held = redacted
-		}
 		r.mu.Lock()
 		prev := r.summary
 		r.mu.Unlock()
+		held = releaseTail(held)
 		r.sendLocked("message", map[string]any{"text": held})
 		r.mu.Lock() // the tail belongs to the last message; it is not a message of its own
 		r.summary = truncate(prev+held, summaryLimit)
@@ -574,12 +574,8 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return "failed", "log_failed"
 	}
 	defer file.Close()
-	var logf io.Writer = &cappedWriter{w: file, left: logCap}
-	if rs.Mcp != nil && rs.Mcp.Token != "" { // the run token never reaches the log; redact before the cap can cut it
-		rd := newRedactor(logf, rs.Mcp.Token)
-		defer rd.Close() // runs before file.Close
-		logf = rd
-	}
+	logf, stderrLog, closeLogs := logWriters(file, m.LogCap, tokenOf(rs.Mcp))
+	defer closeLogs() // runs before file.Close
 	fail := func(code string, cause error) (string, string) {
 		if cause != nil {
 			fmt.Fprintf(logf, "runner: %s: %v\n", code, cause)
@@ -653,7 +649,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	}
 	readBefore()
 
-	proc, err := startAdapter(spec, wt, logf)
+	proc, err := startAdapter(spec, wt, stderrLog)
 	if err != nil {
 		return fail("adapter_start_failed", err)
 	}
@@ -668,6 +664,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if m.FlushInterval > 0 {
 		opts = append(opts, acpclient.WithFlushInterval(m.FlushInterval))
 	}
+	opts = append(opts, acpclient.WithSecret(r.secret))
 	client := acpclient.New(pol, wt, r.emit, opts...)
 	r.client = client
 	ac := acp.NewClientSideConnection(client, stdin, stdout)

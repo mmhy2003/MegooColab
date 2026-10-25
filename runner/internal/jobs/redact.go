@@ -37,7 +37,7 @@ func (r *redactor) Write(p []byte) (int, error) {
 func (r *redactor) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	rest := r.pending
+	rest := releaseTail(r.pending)
 	r.pending = ""
 	_, err := io.WriteString(r.w, rest)
 	return err
@@ -89,4 +89,26 @@ func redactValue(v any, secret string) any {
 		return out
 	}
 	return v
+}
+
+// releaseTail is what to write for the held-back end of a stream that is over:
+// up to 4 characters pass as they are, a longer start of the token is withheld.
+func releaseTail(held string) string {
+	if len(held) > 4 {
+		return redacted
+	}
+	return held
+}
+
+// logWriters builds the writers of a run's log file. The runner's own lines go
+// through the redactor only: they always reach the file. The adapter's stderr
+// is redacted first and capped after, so the cap can never cut a token open.
+// closeAll releases what the redactors hold; call it before closing the file.
+func logWriters(file io.Writer, limit int, secret string) (runner, stderr io.Writer, closeAll func()) {
+	capped := &cappedWriter{w: file, left: limit}
+	if secret == "" {
+		return file, capped, func() {}
+	}
+	rl, re := newRedactor(file, secret), newRedactor(capped, secret)
+	return rl, re, func() { _ = re.Close(); _ = rl.Close() }
 }

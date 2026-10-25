@@ -407,13 +407,89 @@ func TestTokenNotInRunUpdatesOrSummary(t *testing.T) {
 	}
 }
 
-func TestLogCapDoesNotCutAHeldBackTokenPrefix(t *testing.T) {
+// A title (or command) the adapter cuts at 200 (100) characters is redacted
+// before it is cut, so a token straddling the cut leaves no usable prefix.
+func TestCutTitleOrCommandKeepsNoTokenPrefix(t *testing.T) {
+	scenarios := map[string]string{
+		"title":   `[{"tool":{"kind":"other","title":"` + strings.Repeat("x", 190) + runToken + ` tail"}}]`,
+		"command": `[{"exec":{"command":"` + strings.Repeat("x", 90) + runToken + `"}}]`,
+	}
+	for name, sc := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			e := newEnvWithCache(t, sc, 1, t.TempDir())
+			e.startRunWith("run-cut", "MEG-11", withMcp("http://127.0.0.1:1/api/mcp"))
+			e.finished("run-cut")
+			n := 0
+			for _, f := range e.srv.Frames() {
+				if f.Type != protocol.TypeRunUpdate {
+					continue
+				}
+				n++
+				if strings.Contains(string(f.Raw), runToken[:9]) { // "mgr_" + 5 characters
+					t.Fatalf("a cut string keeps a token prefix: %s", f.Raw)
+				}
+			}
+			if n == 0 {
+				t.Fatal("no updates")
+			}
+		})
+	}
+}
+
+// The adapter's output counts against the log cap; the runner's own lines never do.
+func TestRunnerLogLinesSurviveTheCap(t *testing.T) {
+	t.Setenv("FAKEAGENT_ECHO_MCP", "1")
+	e := newEnvWithCache(t, `[{"stop":"refusal"}]`, 1, t.TempDir(), func(m *Manager) { m.LogCap = 40 })
+	e.startRunWith("run-cap", "MEG-12", withMcp("http://127.0.0.1:1/api/mcp"))
+	rf := e.finished("run-cap")
+	if rf.Error == nil || *rf.Error != "stopped:refusal" {
+		t.Fatalf("finished = %+v", rf)
+	}
+	log := e.runLog("run-cap")
+	if !strings.Contains(log, "[log truncated]") || !strings.Contains(log, "runner: stopped:refusal") {
+		t.Fatalf("log = %q", log)
+	}
+	if strings.Contains(log, runToken) {
+		t.Fatalf("log holds the token: %q", log)
+	}
+}
+
+// With the cap falling inside the token, the output must hold no piece of it:
+// the token is replaced first and the cap cuts the replacement.
+func TestStderrCapNeverCutsTheTokenOpen(t *testing.T) {
 	var sb strings.Builder
-	capped := &cappedWriter{w: &sb, left: 10}
-	w := newRedactor(capped, "abcdef")
-	_, _ = w.Write([]byte("0123456789 abc"))
-	_ = w.Close()
-	if strings.Contains(sb.String(), "abc") {
-		t.Fatalf("log = %q", sb.String())
+	_, stderr, closeAll := logWriters(&sb, 10, "abcdef")
+	_, _ = stderr.Write([]byte("0123456 abcdef"))
+	closeAll()
+	got := sb.String()
+	if strings.Contains(got, "ab") || !strings.HasPrefix(got, "0123456 [r") {
+		t.Fatalf("log = %q", got)
+	}
+}
+
+func TestRunnerLinesAreNotCappedButAreRedacted(t *testing.T) {
+	var sb strings.Builder
+	runner, stderr, closeAll := logWriters(&sb, 5, "abcdef")
+	_, _ = stderr.Write([]byte("0123456789"))
+	_, _ = runner.Write([]byte("runner: failed abcdef\n"))
+	closeAll()
+	if got := sb.String(); !strings.Contains(got, "runner: failed [redacted]\n") {
+		t.Fatalf("log = %q", got)
+	}
+}
+
+func TestRedactorCloseReleasesShortTailsAndWithholdsLongOnes(t *testing.T) {
+	for in, want := range map[string]string{
+		"x abc":   "x abc",        // 3 characters: released as they are
+		"x abcd":  "x abcd",       // 4 characters
+		"x abcde": "x [redacted]", // longer than 4: could be most of the token
+	} {
+		var sb strings.Builder
+		w := newRedactor(&sb, "abcdefghij")
+		_, _ = w.Write([]byte(in))
+		_ = w.Close()
+		if sb.String() != want {
+			t.Errorf("%q -> %q, want %q", in, sb.String(), want)
+		}
 	}
 }

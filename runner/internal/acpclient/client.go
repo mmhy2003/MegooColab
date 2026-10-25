@@ -30,6 +30,10 @@ type Option func(*Client)
 // WithFlushInterval overrides the message coalescing interval (for tests).
 func WithFlushInterval(d time.Duration) Option { return func(c *Client) { c.interval = d } }
 
+// WithSecret makes the client replace secret with [redacted] in everything it
+// reports, before any cut to a length limit, so a cut can never leave part of it.
+func WithSecret(secret string) Option { return func(c *Client) { c.secret = secret } }
+
 type toolInfo struct {
 	kind    acp.ToolKind
 	command string
@@ -42,6 +46,7 @@ type Client struct {
 	root     string
 	emit     EmitFunc
 	interval time.Duration
+	secret   string
 
 	mu        sync.Mutex // guards everything below and serializes emit
 	msg       strings.Builder
@@ -68,6 +73,20 @@ func (c *Client) SetReplaying(on bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.replaying = on
+}
+
+// scrub replaces the secret in s.
+func (c *Client) scrub(s string) string {
+	if c.secret == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, c.secret, "[redacted]")
+}
+
+// display is displayTitle of a tool call with the secret removed first. The
+// policy decides on the raw text; only what is reported is scrubbed.
+func (c *Client) display(kind acp.ToolKind, title, command string) string {
+	return displayTitle(kind, c.scrub(title), c.scrub(command))
 }
 
 // Flush sends any buffered agent message text. The run manager calls it when a
@@ -164,9 +183,9 @@ func (c *Client) RequestPermission(_ context.Context, p acp.RequestPermissionReq
 	}
 
 	c.mu.Lock()
-	c.emitLocked("permission", permissionData(kind, displayTitle(kind, title, command), d.Allow, reason))
+	c.emitLocked("permission", permissionData(kind, c.display(kind, title, command), d.Allow, c.scrub(reason)))
 	if d.Allow && kind == acp.ToolKindExecute {
-		if base := policy.FirstTokenBase(command); base != "" {
+		if base := policy.FirstTokenBase(c.scrub(command)); base != "" {
 			c.emit("command", map[string]any{"command": truncate(base, 100)})
 		}
 	}
@@ -215,7 +234,7 @@ func (c *Client) ReadTextFile(_ context.Context, p acp.ReadTextFileRequest) (acp
 // reported as a permission update; a write as a file_change with counts only.
 func (c *Client) WriteTextFile(_ context.Context, p acp.WriteTextFileRequest) (acp.WriteTextFileResponse, error) {
 	rel, inside := policy.Relative(c.root, p.Path)
-	shown := rel
+	shown := c.scrub(rel)
 	if !inside {
 		shown = "(outside the worktree)"
 	}
@@ -263,13 +282,18 @@ func (c *Client) SessionUpdate(_ context.Context, n acp.SessionNotification) err
 			c.addMessage(t.Text)
 		}
 	case u.Plan != nil:
-		c.send("plan", map[string]any{"entries": planEntries(u.Plan.Entries)})
+		entries := make([]acp.PlanEntry, len(u.Plan.Entries))
+		for i, e := range u.Plan.Entries {
+			e.Content = c.scrub(e.Content)
+			entries[i] = e
+		}
+		c.send("plan", map[string]any{"entries": planEntries(entries)})
 	case u.ToolCall != nil:
 		tc := u.ToolCall
 		info := &toolInfo{kind: tc.Kind, command: commandOf(tc.RawInput), title: tc.Title}
 		c.mu.Lock()
 		c.tools[tc.ToolCallId] = info
-		c.emitLocked("tool", toolData(info.kind, displayTitle(info.kind, info.title, info.command), tc.Status))
+		c.emitLocked("tool", toolData(info.kind, c.display(info.kind, info.title, info.command), tc.Status))
 		c.mu.Unlock()
 	case u.ToolCallUpdate != nil:
 		c.toolUpdate(u.ToolCallUpdate)
@@ -302,7 +326,7 @@ func (c *Client) toolUpdate(tu *acp.SessionToolCallUpdate) {
 	if !changed { // content / raw output only: nothing to report
 		return
 	}
-	c.emitLocked("tool", toolData(info.kind, displayTitle(info.kind, info.title, info.command), status))
+	c.emitLocked("tool", toolData(info.kind, c.display(info.kind, info.title, info.command), status))
 }
 
 func (c *Client) CreateTerminal(context.Context, acp.CreateTerminalRequest) (acp.CreateTerminalResponse, error) {
