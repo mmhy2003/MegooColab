@@ -5,6 +5,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -620,6 +621,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if err != nil {
 		return fail("worktree_failed", err)
 	}
+	taskBranchPrefix := "megoo/" + rs.Task.Key + "-"
 	pol, err := policy.New(kind, wt)
 	if err != nil {
 		return fail("policy_failed", err)
@@ -637,7 +639,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	// after capture that fails with a before state present is sent as dirty,
 	// see gitstate.CaptureAfter.)
 	readBefore := func() {
-		snap, err := gitstate.Capture(wt)
+		snap, err := gitstate.CapturePrefixed(wt, taskBranchPrefix)
 		if err != nil {
 			fmt.Fprintf(logf, "runner: git_before: %v\n", err)
 			return
@@ -686,10 +688,20 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	// branch) a commit on the task branch followed by a detach would go unseen.
 	// The prefix, not Ensure's exact name: a worktree is reused when the task's
 	// title, and so the slug, changed.
-	unchecked := kind == policy.ReadOnly && (r.snapBefore == nil || !r.snapBefore.OnBranchPrefix("megoo/"+rs.Task.Key+"-"))
+	unchecked := kind == policy.ReadOnly && (r.snapBefore == nil || !r.snapBefore.OnBranchPrefix(taskBranchPrefix))
+	var cause error
+	if unchecked && r.snapBefore == nil {
+		cause = errors.New("the repository's state could not be read before the run")
+	} else if unchecked {
+		on := strings.TrimPrefix(r.snapBefore.Branch(), "refs/heads/")
+		if on == "" {
+			on = "detached"
+		}
+		cause = fmt.Errorf("HEAD is on %s, not on a %s* branch, so a read-only run cannot be checked", on, taskBranchPrefix)
+	}
 	r.mu.Unlock()
 	if unchecked {
-		return fail("git_state_unreadable", nil)
+		return fail("git_state_unreadable", cause)
 	}
 
 	proc, err := startAdapter(spec, wt, stderrLog)

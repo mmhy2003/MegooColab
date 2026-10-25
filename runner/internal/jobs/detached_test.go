@@ -3,6 +3,8 @@ package jobs
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -24,5 +26,9 @@ func TestReadOnlyRunOnADetachedHeadFailsBeforeTheAdapterStarts(t *testing.T) {
 	}
 	if _, err := os.Stat(e.report); err == nil {
 		t.Fatal("the adapter was started")
+	}
+	log, err := os.ReadFile(filepath.Join(e.cache, "logs", "run-d2.log"))
+	if err != nil || !strings.Contains(string(log), "detached") {
+		t.Fatalf("the run log must say HEAD is detached: %q %v", log, err)
 	}
 }

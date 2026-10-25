@@ -15,7 +15,7 @@ describe("runReasonText", () => {
     expect(runReasonText("prompt_failed")).toBe("the agent stopped while working");
     expect(runReasonText("invalid_run_files")).toBe("the run's files were not valid");
     expect(runReasonText("git_state_unreadable")).toBe(
-      "the runner couldn't read the repository's state, so a read-only run can't be checked",
+      "the runner couldn't read the repository's state, or the worktree isn't on its task branch, so a read-only run can't be checked",
     );
     expect(runReasonText("busy")).toBe("the agent was busy");
   });

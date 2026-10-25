@@ -274,10 +274,18 @@ type Snapshot struct {
 	// decide what status shows (see hiddenGitFiles).
 	branchRef string
 	hidden    string
+	// prefix and tips: the branches under refs/heads/<prefix> and their tips.
+	prefix string
+	tips   map[string]string
 }
 
 // Capture reads a Snapshot.
-func Capture(dir string) (Snapshot, error) {
+func Capture(dir string) (Snapshot, error) { return CapturePrefixed(dir, "") }
+
+// CapturePrefixed is Capture that also records the tips of the local branches
+// whose names start with prefix (e.g. "megoo/MEG-5-"), so that After can tell
+// when one of them was created, deleted or moved.
+func CapturePrefixed(dir, prefix string) (Snapshot, error) {
 	st, status, err := read(dir)
 	if err != nil {
 		return Snapshot{}, err
@@ -316,8 +324,12 @@ func Capture(dir string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	tips, err := branchTips(dir, prefix)
+	if err != nil {
+		return Snapshot{}, err
+	}
 	return Snapshot{State: st, working: working, ignored: strings.Join(ign, "\x00"), flagged: flaggedSet(lv), stash: stash,
-		branchRef: ref, hidden: hidden}, nil
+		branchRef: ref, hidden: hidden, prefix: prefix, tips: tips}, nil
 }
 
 // CaptureAfter is the git_after for a run that ended, and the one place that
@@ -328,7 +340,11 @@ func Capture(dir string) (Snapshot, error) {
 // nothing is claimed: the error comes back with a zero state and the caller
 // omits git_after.
 func CaptureAfter(dir string, before *Snapshot) (protocol.GitState, error) {
-	snap, err := Capture(dir)
+	prefix := ""
+	if before != nil {
+		prefix = before.prefix
+	}
+	snap, err := CapturePrefixed(dir, prefix)
 	if err == nil {
 		return After(before, snap), nil
 	}
@@ -376,9 +392,26 @@ func After(before *Snapshot, after Snapshot) protocol.GitState {
 			// A read-only run starts on its task branch (the manager checks), so a
 			// commit followed by a detach or a switch changes the ref. A tip moved
 			// under an unchanged ref is a head change, which the server sees.
-			before.branchRef != after.branchRef || before.hidden != after.hidden
+			before.branchRef != after.branchRef || before.hidden != after.hidden || otherTipsMoved(before, after)
 	}
 	return st
+}
+
+// otherTipsMoved reports whether a branch of the task, other than the one HEAD
+// is on now (its move is a head change the server sees), was created, deleted
+// or moved.
+func otherTipsMoved(before *Snapshot, after Snapshot) bool {
+	for ref, tip := range before.tips {
+		if ref != after.branchRef && after.tips[ref] != tip {
+			return true
+		}
+	}
+	for ref := range after.tips {
+		if _, ok := before.tips[ref]; !ok && ref != after.branchRef {
+			return true
+		}
+	}
+	return false
 }
 
 func truncateRunes(s string, n int) string {

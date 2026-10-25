@@ -207,33 +207,83 @@ func hiddenGitFiles(dir string) (string, error) {
 // stay enabled: that still holds for checkout (worktree add), not for the
 // runner's own capture.
 func wgitNoFilters(dir string, args ...string) (string, error) {
-	out, err := wgit(dir, "config", "--name-only", "--get-regexp", "^filter[.]")
+	out, err := wgit(dir, "config", "-z", "--get-regexp", "^filter[.]")
 	if err != nil && !exitIsOne(err) {
 		return "", err
 	}
-	seen := map[string]bool{}
-	var off []string
-	for _, key := range strings.Fields(out) {
-		rest := strings.TrimPrefix(key, "filter.")
+	return wgit(dir, append(filterOffArgs(out), args...)...)
+}
+
+// filterOffArgs builds the -c options that switch off every filter driver in
+// `config -z --get-regexp` output ("key", newline, "value", NUL), except stock
+// Git LFS. LFS stays on only while its process filter is exactly
+// `git-lfs filter-process` and its clean and smudge, if set, are exactly the
+// stock `git-lfs clean -- %f` and `git-lfs smudge -- %f`: its pointer files are
+// how an LFS repository's files appear in status, and switching it off would
+// make every LFS file look modified. Anything else under the name lfs is
+// neutralised like any other driver.
+func filterOffArgs(out string) []string {
+	vals := map[string]map[string]string{}
+	var names []string
+	for _, ent := range strings.Split(out, "\x00") {
+		key, val, _ := strings.Cut(ent, "\n")
+		rest, ok := strings.CutPrefix(key, "filter.")
 		i := strings.LastIndex(rest, ".")
-		if i <= 0 || seen[rest[:i]] {
+		if !ok || i <= 0 {
 			continue
 		}
-		name := rest[:i]
-		seen[name] = true
-		for _, v := range []string{"clean", "smudge", "process"} {
-			off = append(off, "-c", "filter."+name+"."+v+"=")
+		name, field := rest[:i], strings.ToLower(rest[i+1:])
+		if vals[name] == nil {
+			vals[name] = map[string]string{}
+			names = append(names, name)
+		}
+		vals[name][field] = val
+	}
+	var off []string
+	for _, name := range names {
+		v := vals[name]
+		if name == "lfs" && v["process"] == "git-lfs filter-process" &&
+			(v["clean"] == "" || v["clean"] == "git-lfs clean -- %f") &&
+			(v["smudge"] == "" || v["smudge"] == "git-lfs smudge -- %f") {
+			continue
+		}
+		for _, f := range []string{"clean", "smudge", "process"} {
+			off = append(off, "-c", "filter."+name+"."+f+"=")
 		}
 		off = append(off, "-c", "filter."+name+".required=false")
 	}
-	return wgit(dir, append(off, args...)...)
+	return off
 }
-
-// allowImplicitPin lets tests use a worktree nobody pinned. Production never sets it.
-var allowImplicitPin = false
 
 // OnBranchPrefix reports whether HEAD was on a local branch whose name starts
 // with prefix when the snapshot was taken.
 func (s Snapshot) OnBranchPrefix(prefix string) bool {
 	return strings.HasPrefix(s.branchRef, "refs/heads/"+prefix)
 }
+
+// Branch is the ref HEAD was on when the snapshot was taken, "" when detached.
+func (s Snapshot) Branch() string { return s.branchRef }
+
+// branchTips lists the tips of the local branches under refs/heads/<prefix>:
+// the task's branches. A read-only run may start on any of them (an earlier run
+// can leave HEAD on a leftover branch), so a commit on another of them, then a
+// switch back, has to show.
+func branchTips(dir, prefix string) (map[string]string, error) {
+	tips := map[string]string{}
+	if prefix == "" {
+		return tips, nil
+	}
+	out, err := wgit(dir, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/"+prefix+"*")
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if ref, sha, ok := strings.Cut(strings.TrimSpace(l), " "); ok {
+			tips[ref] = sha
+		}
+	}
+	return tips, nil
+}
+
+// allowImplicitPin lets tests use a worktree nobody pinned. Production never sets it.
+var allowImplicitPin = false
