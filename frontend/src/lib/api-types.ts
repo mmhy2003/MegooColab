@@ -2266,6 +2266,10 @@ export interface components {
             agent: components["schemas"]["RunAgentOut"];
             policy: components["schemas"]["RunPolicy"];
             status: components["schemas"]["RunStatus"];
+            /** Workflow Role */
+            workflow_role?: string | null;
+            /** Step */
+            step?: number | null;
             /** Reason */
             reason: string | null;
             /** Summary */
@@ -2812,6 +2816,16 @@ export interface components {
              */
             can_act: boolean;
             finishing_option: components["schemas"]["FinishingOption"];
+            /**
+             * Finishing Forced
+             * @default false
+             */
+            finishing_forced: boolean;
+            /**
+             * Can Set Manual
+             * @default false
+             */
+            can_set_manual: boolean;
             /** Branch */
             branch: string | null;
             /** Pr Url */

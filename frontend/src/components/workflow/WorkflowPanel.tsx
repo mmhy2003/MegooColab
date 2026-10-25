@@ -32,10 +32,22 @@ const ENFORCEMENT_TEXT = {
 
 function runLine(run: AgentRun): string {
   const detail = run.summary ?? (run.reason ? runReasonText(run.reason) : null);
-  return `${run.status} · ${run.policy === "read_only" ? "read-only" : "workspace"}${detail ? ` · ${detail}` : ""}`;
+  const where = run.workflow_role ? `${run.step ? `step ${run.step} · ` : ""}${run.workflow_role} · ` : "";
+  return `${where}${run.status} · ${run.policy === "read_only" ? "read-only" : "workspace"}${detail ? ` · ${detail}` : ""}`;
 }
 
-export function WorkflowPanel({ taskKey, agent, disabled = false }: { taskKey: string; agent?: ProjectAgent; disabled?: boolean }) {
+export function WorkflowPanel({
+  taskKey,
+  agent,
+  unassigned = false,
+  disabled = false,
+}: {
+  taskKey: string;
+  agent?: ProjectAgent;
+  /** the task has no agent assignee (decided from the task, so it holds while agents load) */
+  unassigned?: boolean;
+  disabled?: boolean;
+}) {
   const client = useQueryClient();
   const workflow = useWorkflow(taskKey);
   const runs = useAgentRuns(taskKey);
@@ -54,6 +66,9 @@ export function WorkflowPanel({ taskKey, agent, disabled = false }: { taskKey: s
       client.invalidateQueries({ queryKey: qk.agentRuns(taskKey) }),
       client.invalidateQueries({ queryKey: qk.activity(taskKey) }),
       client.invalidateQueries({ queryKey: qk.task(taskKey) }),
+      client.invalidateQueries({ queryKey: ["documents"] }),
+      client.invalidateQueries({ queryKey: ["document"] }),
+      client.invalidateQueries({ queryKey: ["mockups"] }),
     ]);
   const run = async (fn: () => Promise<unknown>) => {
     setError(null);
@@ -70,13 +85,15 @@ export function WorkflowPanel({ taskKey, agent, disabled = false }: { taskKey: s
   };
   const post = (path: string, json?: unknown) => run(() => api(`/api/tasks/${taskKey}/workflow/${path}`, { method: "POST", json }));
 
-  const agentDriven = wf.driver !== "manual" && !!agent;
+  const agentDriven = !!agent && (wf.driver !== "manual" || wf.status === "idle");
   const canUse = !!agent?.can_use && !disabled;
   const canDecide = wf.can_act && !disabled;
   const { status } = wf;
   const latest = runs.data?.[0];
   const escalating = status === "waiting_human" && wf.needs === "escalation";
-  const showFinishing = agentDriven && wf.stage !== "done" && status !== "finished";
+  // set_finishing needs a started workflow and is closed from done on
+  const showFinishing = agentDriven && status !== "idle" && status !== "finished" && wf.stage !== "done";
+  const showChecklist = unassigned && !agent && wf.can_set_manual && !disabled && status !== "running" && status !== "waiting_human";
 
   return (
     <section aria-label="Workflow" className="card space-y-3 p-3 text-sm">
@@ -90,9 +107,9 @@ export function WorkflowPanel({ taskKey, agent, disabled = false }: { taskKey: s
       {agent?.status === "offline" && (
         <p className="text-xs text-muted">Agent offline — the run starts when {agent.owner.name}&apos;s runner connects.</p>
       )}
-      <StageTrack stage={wf.stage} status={status} canAct={wf.can_act} />
+      <StageTrack stage={wf.stage} status={status} canAct={wf.can_act && !disabled} hideStatus />
       <p className="font-semibold">{statusLine(wf)}</p>
-      <p className="text-xs text-muted">{ENFORCEMENT_TEXT[wf.enforcement]}</p>
+      {!(status === "idle" && !agent) && <p className="text-xs text-muted">{ENFORCEMENT_TEXT[wf.enforcement]}</p>}
 
       {escalating && (
         <div className="space-y-2 rounded border border-pink/60 p-2">
@@ -106,7 +123,9 @@ export function WorkflowPanel({ taskKey, agent, disabled = false }: { taskKey: s
               <Button variant="danger" disabled={busy} onClick={() => void post("escalation", { action: "pause" })}>Pause</Button>
             </div>
           ) : (
-            <p className="text-xs text-muted">Waiting on the agent&apos;s owner or a project manager.</p>
+            <p className="text-xs text-muted">
+              {wf.can_act ? "This is a read-only view." : "Waiting on the agent’s owner or a project manager."}
+            </p>
           )}
         </div>
       )}
@@ -127,7 +146,7 @@ export function WorkflowPanel({ taskKey, agent, disabled = false }: { taskKey: s
 
       {agentDriven && (
         <div className="space-y-1">
-          {showFinishing && canDecide ? (
+          {showFinishing && !wf.finishing_forced && canDecide ? (
             <label className="block space-y-1 text-xs text-muted">
               Finishing option
               <select
@@ -148,7 +167,11 @@ export function WorkflowPanel({ taskKey, agent, disabled = false }: { taskKey: s
             </label>
           ) : (
             <p className="text-xs text-muted">
-              Finishes with: <span className="text-fg">{FINISHING_LABEL[wf.finishing_option]}</span>
+              {status === "finished" ? "Finished with" : "Finishes with"}:{" "}
+              <span className="text-fg">{FINISHING_LABEL[wf.finishing_option]}</span>
+              {wf.finishing_forced && status !== "finished" && (
+                <> — required by the project&apos;s human code review setting</>
+              )}
             </p>
           )}
         </div>
@@ -169,7 +192,7 @@ export function WorkflowPanel({ taskKey, agent, disabled = false }: { taskKey: s
         </div>
       )}
 
-      {!agent && !disabled && (
+      {showChecklist && (
         <div className="space-y-2">
           {wf.driver !== "manual" ? (
             <Button
@@ -188,9 +211,10 @@ export function WorkflowPanel({ taskKey, agent, disabled = false }: { taskKey: s
                   disabled={busy}
                   aria-pressed={s.id === wf.stage}
                   onClick={() => void run(() => api(`/api/tasks/${taskKey}/workflow`, { method: "PATCH", json: { driver: "manual", stage: s.id } }))}
-                  className={`rounded border px-2 py-0.5 text-xs ${s.id === wf.stage ? "border-cyan text-cyan-ink" : "border-line text-muted hover:border-cyan"}`}
+                  className={`rounded border px-2 py-0.5 text-xs ${s.id === wf.stage ? "border-cyan font-semibold text-cyan-ink" : "border-line text-muted hover:border-cyan"}`}
                 >
                   {s.label}
+                  {s.id === wf.stage ? " (current)" : ""}
                 </button>
               ))}
             </div>

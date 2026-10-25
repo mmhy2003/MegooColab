@@ -159,7 +159,7 @@ export function TaskView({
             (kind) =>
               workflow.data?.documents.some((d) => d.kind === kind) && (
                 <Section key={kind} title={kind === "design" ? "Design" : "Plan"}>
-                  <DocumentView taskKey={t.key} kind={kind} />
+                  <DocumentView taskKey={t.key} kind={kind} disabled={disabled} />
                 </Section>
               ),
           )}
@@ -225,6 +225,7 @@ export function TaskView({
           {["story", "task", "bug"].includes(t.type) && (
             <WorkflowPanel
               taskKey={t.key}
+              unassigned={t.assignee_agent_id == null}
               agent={t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined}
               disabled={disabled}
             />

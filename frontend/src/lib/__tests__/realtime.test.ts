@@ -32,6 +32,9 @@ describe("invalidationsFor", () => {
     expect(out).toContainEqual(["activity"]);
     expect(out).toContainEqual(["agent-runs"]);
     expect(out).toContainEqual(["columns", "PAY"]);
+    expect(out).toContainEqual(["documents"]);
+    expect(out).toContainEqual(["document"]);
+    expect(out).toContainEqual(["mockups"]);
   });
 
   it("falls back to prefixes when the project key is unknown", () => {

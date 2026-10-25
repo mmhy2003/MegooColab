@@ -479,6 +479,8 @@ async def runs_out(db: AsyncSession, runs: list[AgentRun]) -> list[RunOut]:
             agent=RunAgentOut(id=r.agent_id, name=agents[r.agent_id].name, program=agents[r.agent_id].program),
             policy=r.policy,
             status=r.status,
+            workflow_role=r.workflow_role,
+            step=r.step,
             reason=r.reason,
             summary=r.summary,
             created_at=r.created_at,

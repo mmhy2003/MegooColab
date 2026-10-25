@@ -218,6 +218,7 @@ async def test_require_human_review_forces_pr_and_waits_then_approval_finishes(d
         "waiting_human", "human_code_review", "done", PR_URL, "megoo/PAY-1", "pr_opened")
     out = tc.get(f"/api/tasks/{b.key}/workflow").json()
     assert (out["pr_url"], out["needs"]) == (PR_URL, "human_code_review")
+    assert out["finishing_forced"] is True
     assert tc.get(f"/api/tasks/{b.key}").json()["column_id"] == b.cols["review"]["id"]
 
     _login(other, await _member(db, tc))

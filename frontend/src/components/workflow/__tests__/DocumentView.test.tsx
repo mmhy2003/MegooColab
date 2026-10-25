@@ -13,7 +13,7 @@ const info = (version: number, status: string) => ({
   decision_comment: null,
 });
 
-function setup(opts: { decision?: Response; can_act?: boolean; kind?: "design" | "plan" } = {}) {
+function setup(opts: { decision?: Response; can_act?: boolean; disabled?: boolean; kind?: "design" | "plan" } = {}) {
   const kind = opts.kind ?? "design";
   const fetchMock = vi.fn(async (url: string) => {
     if (url.endsWith("/decision")) return (opts.decision ?? new Response("{}", { status: 200 })).clone();
@@ -40,7 +40,7 @@ function setup(opts: { decision?: Response; can_act?: boolean; kind?: "design" |
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <DocumentView taskKey="PAY-1" kind={kind} />
+      <DocumentView taskKey="PAY-1" kind={kind} disabled={opts.disabled} />
     </QueryClientProvider>,
   );
   return fetchMock;
@@ -88,6 +88,19 @@ describe("DocumentView", () => {
     setup({ decision: new Response(JSON.stringify({ detail: "already_decided" }), { status: 409 }) });
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Someone already decided this version.");
+  });
+
+  it("shows no decision buttons on a read-only view", async () => {
+    setup({ disabled: true });
+    await screen.findByRole("heading", { name: "Second design" });
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+
+  it("marks the selected version in text, not only colour", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "Second design" });
+    expect(screen.getByRole("button", { name: /v2.*\(selected\)/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /v1/ })).not.toHaveTextContent("(selected)");
   });
 
   it("hides the decision for people who cannot act", async () => {

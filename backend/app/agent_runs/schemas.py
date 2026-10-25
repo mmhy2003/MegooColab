@@ -19,6 +19,8 @@ class RunOut(BaseModel):
     agent: RunAgentOut
     policy: RunPolicy
     status: RunStatus
+    workflow_role: str | None = None
+    step: int | None = None
     reason: str | None
     summary: str | None
     created_at: datetime

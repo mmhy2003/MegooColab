@@ -173,6 +173,9 @@ async def test_moving_agent_task_into_working_starts_brainstorm_run(db, tc_facto
     assert "workflow.started" in kinds and "agent_run_queued" in kinds
     out = tc.get(f"/api/tasks/{b.key}/workflow").json()
     assert out["status"] == "running" and out["needs"] is None and out["finishing_option"] == "pull_request"
+    assert out["finishing_forced"] is False and out["can_set_manual"] is False
+    [listed] = tc.get(f"/api/tasks/{b.key}/agent-runs").json()
+    assert (listed["workflow_role"], listed["step"]) == ("brainstorm", None)
     # moving within working, or into working again, starts nothing more
     assert _move(tc, b.key, b.cols["working"]).status_code == 200
     assert len(await _runs(b.task_id)) == 1

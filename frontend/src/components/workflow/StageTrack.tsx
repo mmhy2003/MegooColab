@@ -17,11 +17,14 @@ export function StageTrack({
   status,
   canAct = false,
   compact = false,
+  hideStatus = false,
 }: {
   stage: WorkflowStage;
   status: WorkflowStatus;
   canAct?: boolean;
   compact?: boolean;
+  /** the caller already prints the status (full size only) */
+  hideStatus?: boolean;
 }) {
   const current = stageIndex(stage);
   const waiting = status === "waiting_human";
@@ -57,6 +60,7 @@ export function StageTrack({
           ))}
         </div>
       )}
+      {!(hideStatus && !compact) && (
       <p className="text-[11px] text-muted">
         {compact ? (
           <>
@@ -71,6 +75,7 @@ export function StageTrack({
           )
         )}
       </p>
+      )}
     </div>
   );
 }

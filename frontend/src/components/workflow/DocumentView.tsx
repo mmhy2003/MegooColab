@@ -20,7 +20,7 @@ const STATUS_TEXT: Record<DocumentInfo["status"], string> = {
 const STEP_STATE_TEXT = { pending: "Pending", running: "Running", in_review: "In review", done: "Done" } as const;
 const FIELD = "w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm";
 
-export function DocumentView({ taskKey, kind }: { taskKey: string; kind: DocKind }) {
+export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: string; kind: DocKind; disabled?: boolean }) {
   const client = useQueryClient();
   const workflow = useWorkflow(taskKey);
   const list = useQuery({
@@ -47,7 +47,7 @@ export function DocumentView({ taskKey, kind }: { taskKey: string; kind: DocKind
   if (list.error) return <p className="text-sm text-pink">{errorMessage(list.error)}</p>;
   if (!selected) return null;
 
-  const canDecide = selected.status === "submitted" && workflow.data?.can_act === true;
+  const canDecide = selected.status === "submitted" && workflow.data?.can_act === true && !disabled;
   const buildStates = selected.status === "approved" ? workflow.data?.steps : undefined;
 
   const decide = async (approve: boolean) => {
@@ -68,7 +68,7 @@ export function DocumentView({ taskKey, kind }: { taskKey: string; kind: DocKind
       setError(err instanceof ApiError && err.status === 409 ? "Someone already decided this version." : errorMessage(err));
     } finally {
       await Promise.all(
-        [qk.documents(taskKey), ["document", taskKey], qk.workflow(taskKey), qk.activity(taskKey), qk.task(taskKey)].map((queryKey) =>
+        [qk.documents(taskKey), ["document", taskKey], qk.mockups(taskKey), qk.workflow(taskKey), qk.activity(taskKey), qk.task(taskKey)].map((queryKey) =>
           client.invalidateQueries({ queryKey }),
         ),
       );
@@ -88,9 +88,10 @@ export function DocumentView({ taskKey, kind }: { taskKey: string; kind: DocKind
               setPicked(v.version);
               setError(null);
             }}
-            className={`rounded border px-2 py-0.5 text-xs ${v.version === selected.version ? "border-cyan text-cyan-ink" : "border-line text-muted hover:border-cyan"}`}
+            className={`rounded border px-2 py-0.5 text-xs ${v.version === selected.version ? "border-cyan font-semibold text-cyan-ink" : "border-line text-muted hover:border-cyan"}`}
           >
             v{v.version} · {STATUS_TEXT[v.status]}
+            {v.version === selected.version ? " (selected)" : ""}
           </button>
         ))}
       </div>

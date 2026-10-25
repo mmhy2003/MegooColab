@@ -43,6 +43,8 @@ class WorkflowStepOut(BaseModel):
 
 class WorkflowOut(TaskWorkflowOut):
     finishing_option: FinishingOption  # the effective option
+    finishing_forced: bool = False  # human code review forces a pull request
+    can_set_manual: bool = False  # WF-11: the viewer may switch this task to the checklist
     branch: str | None
     pr_url: str | None
     documents: list[WorkflowDocumentBrief]

@@ -19,6 +19,8 @@ function wf(extra: Partial<Workflow> = {}): Workflow {
     escalation_reason: null,
     can_act: true,
     finishing_option: "pull_request",
+    finishing_forced: false,
+    can_set_manual: false,
     branch: null,
     pr_url: null,
     documents: [],
@@ -28,17 +30,17 @@ function wf(extra: Partial<Workflow> = {}): Workflow {
   } as Workflow;
 }
 
-function setup(workflow: Workflow, opts: { agent?: ProjectAgent | null; post?: Response } = {}) {
+function setup(workflow: Workflow, opts: { runs?: unknown[]; agent?: ProjectAgent | null; post?: Response; unassigned?: boolean; disabled?: boolean } = {}) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method && init.method !== "GET" && opts.post) return opts.post.clone();
-    if (url.includes("/agent-runs")) return new Response("[]", { status: 200 });
+    if (url.includes("/agent-runs")) return new Response(JSON.stringify(opts.runs ?? []), { status: 200 });
     return new Response(JSON.stringify(workflow), { status: 200 });
   });
   vi.stubGlobal("fetch", fetchMock);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <WorkflowPanel taskKey="PAY-1" agent={opts.agent === undefined ? agent : (opts.agent ?? undefined)} disabled={false} />
+      <WorkflowPanel taskKey="PAY-1" agent={opts.agent === undefined ? agent : (opts.agent ?? undefined)} unassigned={opts.unassigned ?? opts.agent === null} disabled={opts.disabled ?? false} />
     </QueryClientProvider>,
   );
   return fetchMock;
@@ -53,12 +55,12 @@ describe("WorkflowPanel", () => {
   it("shows Start only for idle agent task with can_use", async () => {
     setup(wf());
     expect(await screen.findByRole("button", { name: "Start" })).toBeInTheDocument();
-    expect(screen.getAllByText("Not started").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Not started")).toHaveLength(1);
   });
 
   it("hides Start when the user cannot use the agent", async () => {
     setup(wf(), { agent: { ...agent, can_use: false } });
-    await screen.findAllByText("Not started");
+    await screen.findByText("Not started");
     expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
   });
 
@@ -127,8 +129,11 @@ describe("WorkflowPanel", () => {
     expect(await screen.findByRole("button", { name: "Resume" })).toBeInTheDocument();
   });
 
-  it("offers the stage checklist on a human-assigned task", async () => {
-    const fetchMock = setup(wf(), { agent: null, post: new Response(JSON.stringify(wf({ driver: "manual" })), { status: 200 }) });
+  it("offers the stage checklist on an unassigned task the viewer may set up", async () => {
+    const fetchMock = setup(wf({ can_set_manual: true }), {
+      agent: null,
+      post: new Response(JSON.stringify(wf({ driver: "manual" })), { status: 200 }),
+    });
     fireEvent.click(await screen.findByRole("button", { name: "Use stage checklist" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -138,9 +143,83 @@ describe("WorkflowPanel", () => {
     );
   });
 
-  it("shows stage buttons for a manual workflow", async () => {
-    setup(wf({ driver: "manual", stage: "plan" }), { agent: null });
-    expect(await screen.findByRole("button", { name: "Build" })).toBeInTheDocument();
+  it("hides the checklist from someone who may not set it up", async () => {
+    setup(wf({ can_set_manual: false }), { agent: null });
+    await screen.findByText("Not started");
+    expect(screen.queryByRole("button", { name: "Use stage checklist" })).not.toBeInTheDocument();
+  });
+
+  it("never shows the checklist on an agent task, even while agents are loading", async () => {
+    setup(wf({ can_set_manual: true }), { agent: null, unassigned: false });
+    await screen.findByText("Not started");
+    expect(screen.queryByRole("button", { name: "Use stage checklist" })).not.toBeInTheDocument();
+  });
+
+  it("does not show the checklist while a connect_only workflow is running", async () => {
+    setup(wf({ driver: "connect_only", status: "running", enforcement: "unenforced", can_set_manual: true }), { agent: null });
+    await screen.findByText(/Running/);
+    expect(screen.queryByRole("button", { name: "Use stage checklist" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Not enforced/)).toBeInTheDocument();
+  });
+
+  it("marks the current checklist stage in text", async () => {
+    setup(wf({ driver: "manual", stage: "plan", can_set_manual: true }), { agent: null });
+    expect(await screen.findByRole("button", { name: "Plan (current)" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Build" })).toBeInTheDocument();
+  });
+
+  it("shows Start for a manual-idle task that later got an agent", async () => {
+    setup(wf({ driver: "manual", status: "idle" }));
+    expect(await screen.findByRole("button", { name: "Start" })).toBeInTheDocument();
+  });
+
+  it("does not offer Start for a manual workflow that is under way", async () => {
+    setup(wf({ driver: "manual", status: "paused" }));
+    await screen.findByText("Paused");
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+  });
+
+  it("hides the finishing select while idle", async () => {
+    setup(wf());
+    await screen.findByRole("button", { name: "Start" });
+    expect(screen.queryByLabelText("Finishing option")).not.toBeInTheDocument();
+    expect(screen.getByText("Open a pull request")).toBeInTheDocument();
+  });
+
+  it("explains a forced finishing option instead of offering a select", async () => {
+    setup(wf({ stage: "build", status: "running", finishing_forced: true }));
+    expect(await screen.findByText(/required by the project's human code review setting/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Finishing option")).not.toBeInTheDocument();
+  });
+
+  it("uses past tense once finished and hides the enforcement line when idle with no agent", async () => {
+    setup(wf({ stage: "done", status: "finished", branch: "task/pay-1" }));
+    expect(await screen.findByText(/Finished with:/)).toBeInTheDocument();
+    cleanup();
+    setup(wf(), { agent: null });
+    await screen.findByText("Not started");
+    expect(screen.queryByText(/Rules enforced/)).not.toBeInTheDocument();
+  });
+
+  it("does not claim the viewer must act when the view is read-only", async () => {
+    setup(wf({ stage: "plan", status: "waiting_human", needs: "plan_approval", can_act: true }), { disabled: true });
+    await screen.findByText("Waiting: Approve the plan");
+    expect(screen.queryByText(/for you/i)).not.toBeInTheDocument();
+  });
+
+  it("refetches the workflow after a 409 from an action", async () => {
+    const fetchMock = setup(wf(), { post: new Response(JSON.stringify({ detail: "workflow_active" }), { status: 409 }) });
+    const loads = () => fetchMock.mock.calls.filter(([u, i]) => String(u).endsWith("/workflow") && !i?.method).length;
+    fireEvent.click(await screen.findByRole("button", { name: "Start" }));
+    await screen.findByRole("alert");
+    await waitFor(() => expect(loads()).toBeGreaterThan(1));
+  });
+
+  it("shows the role and step on run rows", async () => {
+    setup(wf({ stage: "build", status: "running" }), {
+      runs: [{ id: "r1", status: "completed", policy: "workspace", workflow_role: "implement", step: 2, summary: "done it", reason: null }],
+    });
+    expect(await screen.findByText(/step 2 · implement · completed · workspace · done it/)).toBeInTheDocument();
   });
 
   it("shows an error message when an action fails", async () => {

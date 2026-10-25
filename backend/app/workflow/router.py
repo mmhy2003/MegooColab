@@ -174,10 +174,17 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
     )
     active = await engine.active_run(db, task.id)
     viewer_can_act = False
+    can_set_manual = False
     if viewer is not None:
+        viewer_manages = await engine.manages(db, viewer, project)
+        can_set_manual = (
+            task.assignee_agent_id is None
+            and (task.assignee_user_id == viewer.id or viewer_manages)
+            and wf.status not in engine.ACTIVE
+        )
         agent_id = task.assignee_agent_id or wf.agent_id
         owner_id = await db.scalar(select(Agent.owner_id).where(Agent.id == agent_id)) if agent_id else None
-        viewer_can_act = engine.can_act(viewer, task, wf, await engine.manages(db, viewer, project), owner_id)
+        viewer_can_act = engine.can_act(viewer, task, wf, viewer_manages, owner_id)
     steps = []
     for n, step in enumerate((plan.steps or []) if plan else [], start=1):
         if wf.status == WorkflowStatus.finished or wf.stage in (Stage.review, Stage.done):
@@ -202,6 +209,8 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
         escalation_reason=wf.escalation_reason,
         can_act=viewer_can_act,
         finishing_option=finishing,
+        finishing_forced=engine.requires_human_review(project, wf),
+        can_set_manual=can_set_manual,
         branch=wf.branch,
         pr_url=wf.pr_url,
         documents=[WorkflowDocumentBrief(kind=d.kind, version=d.version, status=d.status) for d in docs],
