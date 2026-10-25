@@ -10,8 +10,11 @@ package gitstate
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -289,54 +292,99 @@ func Capture(dir string) (Snapshot, error) {
 }
 
 // fingerprint is the working state: each status entry outside .megoocolab/
-// with the git hash of its path's current content, or a marker for a path that
-// is gone, a link or a directory (a submodule). Sorted, so equal states give
-// equal fingerprints. --no-filters: a clean filter from the worktree's config
-// would be code the agent controls.
+// with a SHA-256 of its path's current content, or a marker for a path that is
+// gone, a link, a directory (a submodule), too big to hash or unreadable.
+// Sorted, so equal states give equal fingerprints. The content is hashed in Go,
+// as a stream, with no filters and no git process: git's --stdin-paths mode
+// C-unquotes names starting with a quote and splits names holding a newline,
+// which made the whole fingerprint fail and blinded check R1. The values only
+// have to compare equal between two snapshots, so they are not git object ids.
+// A file over maxFileBytes, or any file once maxTotalBytes were hashed, is
+// marked size:<n>:mtime:<unixnano>; a read error marks only that entry.
 func fingerprint(dir string, entries []statusEntry) (string, error) {
-	marks := make([]string, len(entries))
-	var hashed []int
-	var paths strings.Builder
+	lines := make([]string, len(entries))
+	var total int64
 	for i, e := range entries {
 		p := filepath.Join(dir, filepath.FromSlash(e.path))
+		var mark string
 		fi, err := os.Lstat(p)
 		switch {
 		case errors.Is(err, os.ErrNotExist):
-			marks[i] = "deleted"
+			mark = "deleted"
 		case err != nil:
-			return "", err
+			mark = "unreadable:" + errKind(err)
 		case isLink(fi):
-			target, err := os.Readlink(p)
-			if err != nil {
-				return "", err
+			if target, err := os.Readlink(p); err != nil {
+				mark = "unreadable:" + errKind(err)
+			} else {
+				mark = "link:" + target
 			}
-			marks[i] = "link:" + target
 		case fi.IsDir():
-			marks[i] = "dir"
+			mark = "dir"
+		case fi.Size() > maxFileBytes || total+fi.Size() > maxTotalBytes:
+			mark = fmt.Sprintf("size:%d:mtime:%d", fi.Size(), fi.ModTime().UnixNano())
 		default:
-			hashed = append(hashed, i)
-			paths.WriteString(e.path + "\n")
+			var n int64
+			mark, n = hashFile(p)
+			total += n
 		}
-	}
-	if len(hashed) > 0 {
-		out, err := gitIn(context.Background(), timeout, dir, paths.String(), "hash-object", "--no-filters", "--stdin-paths")
-		if err != nil {
-			return "", err
-		}
-		sums := strings.Fields(out)
-		if len(sums) != len(hashed) {
-			return "", fmt.Errorf("hash-object: %d hashes for %d paths", len(sums), len(hashed))
-		}
-		for j, i := range hashed {
-			marks[i] = sums[j]
-		}
-	}
-	lines := make([]string, len(entries))
-	for i, e := range entries {
-		lines[i] = e.raw + "\x00" + marks[i]
+		lines[i] = e.raw + "\x00" + mark
 	}
 	sort.Strings(lines)
 	return strings.Join(lines, "\x00\x00"), nil
+}
+
+// hashFile streams p through SHA-256. A read error gives an unreadable marker.
+func hashFile(p string) (string, int64) {
+	f, err := os.Open(p)
+	if err != nil {
+		return "unreadable:" + errKind(err), 0
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return "unreadable:" + errKind(err), n
+	}
+	return hex.EncodeToString(h.Sum(nil)), n
+}
+
+func errKind(err error) string {
+	switch {
+	case errors.Is(err, os.ErrPermission):
+		return "permission"
+	case errors.Is(err, os.ErrNotExist):
+		return "notexist"
+	default:
+		return "io"
+	}
+}
+
+var (
+	maxFileBytes  int64 = 256 << 20
+	maxTotalBytes int64 = 1 << 30
+)
+
+// CaptureAfter is the git_after for a run that ended, and the one place that
+// fails closed: when the after snapshot cannot be taken (git timeout or error)
+// but a before snapshot exists, the returned state is still usable and has
+// Dirty true, with head and branch from Read when that works and nil otherwise;
+// the error is returned as well, for the run log. Without a before snapshot
+// nothing is claimed: the error comes back with a zero state and the caller
+// omits git_after.
+func CaptureAfter(dir string, before *Snapshot) (protocol.GitState, error) {
+	snap, err := Capture(dir)
+	if err == nil {
+		return After(before, snap), nil
+	}
+	if before == nil {
+		return protocol.GitState{}, err
+	}
+	st := protocol.GitState{Dirty: true}
+	if plain, rerr := Read(dir); rerr == nil {
+		st.Head, st.Branch = plain.Head, plain.Branch
+	}
+	return st, err
 }
 
 // stashRef returns the commit refs/stash points at, or "" when there is no

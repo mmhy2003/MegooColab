@@ -639,13 +639,19 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	}
 	// Registered before the adapter's reap, so it runs once the adapter is gone.
 	defer func() {
-		snap, err := gitstate.Capture(wt)
+		r.mu.Lock()
+		before := r.snapBefore
+		r.mu.Unlock()
+		// Fails closed (see gitstate.CaptureAfter): with a baseline, a failed
+		// capture still yields a dirty git_after.
+		st, err := gitstate.CaptureAfter(wt, before)
 		if err != nil {
 			fmt.Fprintf(logf, "runner: git_after: %v\n", err)
-			return
+			if before == nil {
+				return
+			}
 		}
 		r.mu.Lock()
-		st := gitstate.After(r.snapBefore, snap)
 		r.gitAfter = &st
 		r.mu.Unlock()
 	}()
