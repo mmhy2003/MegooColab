@@ -521,6 +521,23 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
         )
         if submitted is not None:
             return Needs.design_approval if kind == DocKind.design else Needs.plan_approval
+    if wf.stage == Stage.done and wf.finish_outcome and wf.status != WorkflowStatus.finished:
+        # the finish run reported (with passing tests, as _handle_finish requires): the PR waits for its approval
+        task = await db.get(Task, wf.task_id)
+        reported = await db.scalar(
+            select(AgentRun.step_result)
+            .where(
+                AgentRun.task_id == wf.task_id,
+                AgentRun.workflow_role == RunRole.finish,
+                AgentRun.step_result.has_key("tests_passed"),
+            )
+            .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
+            .limit(1)
+        )
+        if (reported or {}).get("tests_passed") is True and requires_human_review(
+            await db.get(Project, task.project_id), wf
+        ):
+            return Needs.human_code_review
     return None
 
 
@@ -541,9 +558,13 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     else:
         from app.workflow import questions  # local: questions imports this module
 
-        # answered while paused: only for the latest run, and only if it is still the current stage and step
+        # answered while paused: only for the latest run, and only if it is still the current stage (and, in
+        # Build, the current step)
         last = await latest_run(db, task.id)
-        current = last is not None and last.stage == wf.stage and last.step == wf.current_step
+        current = (
+            last is not None and last.stage == wf.stage
+            and (wf.stage != Stage.build or last.step == wf.current_step)
+        )
         pending = await questions.undelivered_answer(db, task.id, last.id) if current else None
         if pending is not None:
             await questions.deliver(db, wf, task, pending, requested_by=user.id)

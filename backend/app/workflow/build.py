@@ -316,6 +316,7 @@ async def enter_review(db: AsyncSession, wf: TaskWorkflow, task: Task, *, reques
     """The Review stage with a fresh final review (round 1); finish.py handles its outcome."""
     await engine.set_stage(db, wf, task, Stage.review)
     await engine.move_to_category(db, task, ColumnCategory.review)
+    engine.set_step(wf, None)  # Review and Done runs have no step
     wf.review_round = 1  # the final review's first round
     await engine.enqueue(db, wf, task, RunRole.final_review, requested_by=requested_by)
 

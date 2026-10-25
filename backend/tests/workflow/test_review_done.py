@@ -548,3 +548,63 @@ async def test_board_without_review_column_still_leaves_build_and_finishes(db, t
     await _finish(b.manager.id, fin, "completed")
     assert (await _wf(b.task_id)).status == "finished"
     assert tc.get(f"/api/tasks/{b.key}").json()["column_id"] == b.cols["done"]["id"]
+
+
+# ---- resume in Review and Done (I4) -------------------------------------------------------------
+
+
+async def test_pause_and_resume_while_waiting_for_pr_approval_waits_again(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    _patch_project(tc, require_human_code_review=True)
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    run = await _last(b.task_id)
+    await _report(run)
+    await _finish(b.manager.id, run, "completed")
+    assert (await _wf(b.task_id)).needs == "human_code_review"
+    count = len(await _runs(b.task_id))
+    assert tc.post(f"/api/tasks/{b.key}/workflow/pause").json()["status"] == "paused"
+    r = tc.post(f"/api/tasks/{b.key}/workflow/resume")
+    assert r.status_code == 200, r.text
+    assert (r.json()["status"], r.json()["needs"]) == ("waiting_human", "human_code_review")
+    assert len(await _runs(b.task_id)) == count  # the finish agent does not run again
+    r = tc.post(f"/api/tasks/{b.key}/workflow/human-review", json={"approved": True})
+    assert (r.status_code, r.json()["status"]) == (200, "finished")
+
+
+async def test_answer_given_while_paused_in_review_is_delivered_on_resume(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, fix = await _fix_run(db, tc)
+    qid = await _ask(b, fix)
+    await _finish(b.manager.id, fix, "completed", session_id="sess-fix")
+    assert (await _wf(b.task_id)).needs == "question"
+    assert tc.post(f"/api/tasks/{b.key}/workflow/pause").json()["status"] == "paused"
+    await _answer(b, qid, "use the release branch")
+    count = len(await _runs(b.task_id))
+    assert tc.post(f"/api/tasks/{b.key}/workflow/resume").status_code == 200
+    resumed = await _last(b.task_id)
+    assert len(await _runs(b.task_id)) == count + 1
+    assert (resumed.workflow_role, resumed.resume_session_ref) == ("final_fix", "sess-fix")
+    assert "use the release branch" in resumed.resume_prompt
+    wf = await _wf(b.task_id)
+    assert (wf.stage, wf.status, wf.current_step) == ("review", "running", None)
+
+
+async def test_resume_after_a_failing_finish_report_runs_finish_again(db, tc_factory):
+    """A report with failing tests is no PR to approve: resume re-runs the finish role."""
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    _patch_project(tc, require_human_code_review=True)
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    run = await _last(b.task_id)
+    await _report(run, tests_passed=False)
+    await _finish(b.manager.id, run, "completed")
+    nudge = await _last(b.task_id)
+    assert nudge.id != run.id and nudge.workflow_role == "finish"
+    assert tc.post(f"/api/tasks/{b.key}/workflow/pause").json()["status"] == "paused"
+    r = tc.post(f"/api/tasks/{b.key}/workflow/resume")
+    assert (r.json()["status"], r.json()["needs"]) == ("running", None)
+    again = await _last(b.task_id)
+    assert again.id != nudge.id and again.workflow_role == "finish"
