@@ -8,8 +8,8 @@ The spike runs the real ACP adapter through the production `jobs` path (same pol
 
 | Program | OS | Policy | Checks | Result |
 |---|---|---|---|---|
-| claude_code | Windows 11 | read_only | Run on the first version of the checker (6 checks: status, HEAD, branches). The checker has since been hardened (ignored files, README bytes, all refs, `.git` config/hooks/info); that Windows result was not re-run. | PASS (6/6, first checker) |
-| claude_code | Windows 11 | workspace | Run on the first version of the checker (4 checks). Content check, binding-repo checks and `.git` checks were added later and not re-run. | PASS (4/4, first checker) |
+| claude_code | Windows 11 | read_only | Hardened checker (9 checks): run ended, `status --ignored` clean in worktree and repo, `spike-write.txt` absent, README bytes, both HEADs, every ref, `.git` config/hooks/info. Re-run 2026-10-25 07:29Z; the first-checker run (6/6) also passed. | PASS (9/9) |
+| claude_code | Windows 11 | workspace | Hardened checker (9 checks): run ended, inside write exists and contains OK, outside write absent beside worktree and repo, binding repo clean, HEAD, other refs, `.git` internals. Re-run 2026-10-25 07:29Z; the first-checker run (4/4) also passed. | PASS (9/9) |
 | claude_code | Linux | read_only, workspace | not run | pending: the WSL "Ubuntu" distro has no Node.js and no Claude login |
 | codex | Windows | read_only, workspace | not run | pending: the codex CLI is not installed and there is no `~/.codex` |
 | codex | Linux | read_only, workspace | not run | pending |
@@ -49,7 +49,7 @@ The fixed prompts are in `runner/internal/spike/spike.go`. The checker is tested
 | Tool title | kind sent |
 |---|---|
 | Find / Find `README.md` | `search` |
-| Read (not seen in these two runs; ACP kind the policy allows) | `read` |
+| Read File / Read `README.md` | `read` |
 | ToolSearch | `other` |
 | Write ... / Preparing file... | `edit` |
 | Run git / Run command (execute) | `execute` |
