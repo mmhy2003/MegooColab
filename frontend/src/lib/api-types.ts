@@ -2028,6 +2028,8 @@ export interface components {
         MethodologyIn: {
             /** Body Md */
             body_md: string;
+            /** Base Version */
+            base_version?: number | null;
         };
         /** MethodologyOut */
         MethodologyOut: {

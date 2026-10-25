@@ -67,6 +67,6 @@ describe("Workflow settings", () => {
   it("shows the server error", async () => {
     setup(true, new Response(JSON.stringify({ detail: "forbidden" }), { status: 403 }));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveClass("text-pink"));
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("You don't have permission to do that."));
   });
 });

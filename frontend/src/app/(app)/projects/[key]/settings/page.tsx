@@ -110,10 +110,10 @@ export default function ProjectSettingsPage() {
       {tab === "Repositories" && repos.data && (
         <RepoEditor projectKey={key} repos={repos.data} onChanged={() => client.invalidateQueries({ queryKey: qk.repositories(key) })} />
       )}
-      {tab === "Workflow" && <WorkflowSettings key={project.data.id} project={project.data} canEdit={canManage(me)} />}
       {tab === "Labels" && labels.data && (
         <LabelEditor projectKey={key} labels={labels.data} onChanged={() => client.invalidateQueries({ queryKey: qk.labels(key) })} />
       )}
+      {tab === "Workflow" && <WorkflowSettings key={project.data.id} project={project.data} canEdit={canManage(me)} />}
     </div>
   );
 }

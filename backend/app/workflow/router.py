@@ -72,6 +72,8 @@ class MethodologyVersionOut(MethodologyVersionInfo):
 
 class MethodologyIn(BaseModel):
     body_md: NoNulStr = Field(min_length=1, max_length=50_000)
+    # the version the editor loaded; a different current version means someone saved in between
+    base_version: int | None = None
 
 
 def _out(row: MethodologyVersion) -> MethodologyOut:
@@ -125,6 +127,8 @@ async def update_methodology(key: str, body: MethodologyIn, user: AdminUser, db:
         n = prev.version + 1
     except LookupError:
         n = 1
+    if body.base_version is not None and body.base_version != n - 1:
+        raise HTTPException(status.HTTP_409_CONFLICT, "methodology_conflict")
     row = MethodologyVersion(key=key, version=n, body_md=body.body_md, created_by=user.id)
     try:
         async with db.begin_nested():

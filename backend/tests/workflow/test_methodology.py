@@ -125,3 +125,17 @@ async def test_unknown_key_404(client, db):
     assert (await client.put("/api/methodology/nope", json={"body_md": "x"})).status_code == 404
     assert (await client.get("/api/methodology/nope/versions")).status_code == 404
     assert (await client.get("/api/methodology/nope/versions/1")).status_code == 404
+
+
+async def test_base_version_mismatch_is_409_and_match_saves(client, db):
+    await methodology.seed_defaults(db)
+    admin = await make_user(db, role=Role.admin)
+    await db.commit()
+    await login(client, admin)
+    stale = await client.put("/api/methodology/plan", json={"body_md": "stale", "base_version": 5})
+    assert stale.status_code == 409 and stale.json()["detail"] == "methodology_conflict"
+    assert (await methodology.current(db, "plan")).version == 1
+    ok = await client.put("/api/methodology/plan", json={"body_md": "fresh", "base_version": 1})
+    assert ok.status_code == 200 and ok.json()["version"] == 2
+    again = await client.put("/api/methodology/plan", json={"body_md": "late", "base_version": 1})
+    assert again.status_code == 409

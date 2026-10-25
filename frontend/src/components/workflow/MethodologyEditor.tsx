@@ -27,6 +27,8 @@ const mqk = {
   version: (key: string, v: number) => ["methodology", key, "version", v] as const,
 };
 
+const DISCARD = "Discard your unsaved changes?";
+
 const when = (iso: string) => new Date(iso).toLocaleString();
 
 function History({
@@ -94,6 +96,22 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
 
   useEffect(() => {
     if (!dirty) return;
+    // in-app navigation: ask before following any same-origin link
+    const guardLinks = (e: MouseEvent) => {
+      const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      if (!a || (a as HTMLAnchorElement).target === "_blank") return;
+      if ((a as HTMLAnchorElement).origin !== window.location.origin) return;
+      if (!window.confirm(DISCARD)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    document.addEventListener("click", guardLinks, true);
+    return () => document.removeEventListener("click", guardLinks, true);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!dirty) return;
     const warn = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
@@ -105,16 +123,17 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
   const refresh = () => client.invalidateQueries({ queryKey: mqk.list() });
 
   async function save() {
+    const sent = text;
     setSaving(true);
     setMsg(null);
     try {
       const saved = await api<{ version: number }>(`/api/methodology/${item.key}`, {
         method: "PUT",
-        json: { body_md: text },
+        json: { body_md: sent, base_version: item.version },
       });
       await refresh();
       await client.invalidateQueries({ queryKey: mqk.versions(item.key) });
-      setDraft(null);
+      setDraft((d) => (d === sent ? null : d));
       setMsg({ ok: true, text: `Saved as v${saved.version}` });
     } catch (err) {
       setMsg({ ok: false, text: errorMessage(err), conflict: err instanceof ApiError && err.status === 409 });
@@ -139,7 +158,7 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
         onChange={(e) => setDraft(e.target.value)}
       />
       <div className="mt-2 flex flex-wrap items-center gap-3">
-        <Button type="button" disabled={!dirty || tooLong || saving} onClick={save}>
+        <Button type="button" disabled={!dirty || length === 0 || tooLong || saving} onClick={save}>
           Save
         </Button>
         <Button type="button" variant="ghost" onClick={() => setShowHistory((s) => !s)} aria-expanded={showHistory}>
@@ -157,6 +176,7 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
               type="button"
               variant="ghost"
               onClick={async () => {
+                if (dirty && !window.confirm(DISCARD)) return;
                 await refresh();
                 setDraft(null);
                 setMsg(null);
@@ -172,6 +192,7 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
           itemKey={item.key}
           names={names}
           onRestore={(body) => {
+            if (dirty && !window.confirm(DISCARD)) return;
             setDraft(body);
             setMsg(null);
           }}

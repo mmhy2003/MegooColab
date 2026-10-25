@@ -91,7 +91,7 @@ describe("MethodologyEditor", () => {
     expect(await screen.findByText("Saved as v4")).toBeInTheDocument();
     const put = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "PUT")!;
     expect(put[0]).toBe("/api/methodology/plan");
-    expect(JSON.parse((put[1] as RequestInit).body as string)).toEqual({ body_md: "Plan text edited" });
+    expect(JSON.parse((put[1] as RequestInit).body as string)).toEqual({ body_md: "Plan text edited", base_version: 3 });
     await waitFor(() => expect(within(planCard()).getByText("v4")).toBeInTheDocument());
   });
 
@@ -109,8 +109,10 @@ describe("MethodologyEditor", () => {
     fireEvent.click(within(planCard()).getByRole("button", { name: "Save" }));
     expect(await screen.findByText(/Someone else saved this text first/)).toBeInTheDocument();
     expect(box).toHaveValue("My edit");
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(within(planCard()).getByRole("button", { name: "Load latest" }));
     await waitFor(() => expect(box).toHaveValue("Plan text v3"));
+    vi.restoreAllMocks();
   });
 
   it("shows history", async () => {
@@ -132,6 +134,68 @@ describe("MethodologyEditor", () => {
     expect(within(planCard()).getByRole("textbox")).toHaveValue("Old **plan** text");
     expect(within(planCard()).getByRole("button", { name: "Save" })).toBeEnabled();
     expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === "PUT")).toBe(false);
+  });
+
+  it("asks before restore or Load latest overwrites unsaved edits", async () => {
+    setup({ put: new Response(JSON.stringify({ detail: "methodology_conflict" }), { status: 409 }) });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const box = await planBox();
+    fireEvent.click(within(planCard()).getByRole("button", { name: "History" }));
+    fireEvent.click(await within(planCard()).findByRole("button", { name: /v2/ }));
+    fireEvent.change(box, { target: { value: "My edit" } });
+    fireEvent.click(await within(planCard()).findByRole("button", { name: "Restore as new version" }));
+    expect(confirm).toHaveBeenCalledWith("Discard your unsaved changes?");
+    expect(box).toHaveValue("My edit");
+    fireEvent.click(within(planCard()).getByRole("button", { name: "Save" }));
+    fireEvent.click(await within(planCard()).findByRole("button", { name: "Load latest" }));
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(box).toHaveValue("My edit");
+    confirm.mockReturnValue(true);
+    fireEvent.click(within(planCard()).getByRole("button", { name: "Load latest" }));
+    await waitFor(() => expect(box).toHaveValue("Plan text v3"));
+    confirm.mockRestore();
+  });
+
+  it("guards in-app link clicks while dirty", async () => {
+    setup();
+    const link = document.createElement("a");
+    link.href = "/projects";
+    document.body.appendChild(link);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const clickLink = () => {
+      const ev = new MouseEvent("click", { bubbles: true, cancelable: true });
+      link.dispatchEvent(ev);
+      return ev.defaultPrevented;
+    };
+    expect(clickLink()).toBe(false);
+    expect(confirm).not.toHaveBeenCalled();
+    fireEvent.change(await planBox(), { target: { value: "dirty" } });
+    expect(clickLink()).toBe(true);
+    expect(confirm).toHaveBeenCalledWith("Discard your unsaved changes?");
+    confirm.mockReturnValue(true);
+    expect(clickLink()).toBe(false);
+    link.remove();
+    confirm.mockRestore();
+  });
+
+  it("keeps text typed while a save is in flight and blocks an empty body", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const fetchMock = setup();
+    const inner = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") await gate;
+      return inner(url, init);
+    });
+    const box = await planBox();
+    fireEvent.change(box, { target: { value: "" } });
+    expect(within(planCard()).getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.change(box, { target: { value: "sent" } });
+    fireEvent.click(within(planCard()).getByRole("button", { name: "Save" }));
+    fireEvent.change(box, { target: { value: "sent plus more" } });
+    release();
+    expect(await screen.findByText("Saved as v4")).toBeInTheDocument();
+    expect(box).toHaveValue("sent plus more");
   });
 
   it("warns before leaving with unsaved edits", async () => {
