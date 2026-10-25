@@ -9,7 +9,7 @@ function str(v: unknown): string | undefined {
 }
 
 /** Sentence fragment describing an event; unknown kinds (from later features) fall back to the kind itself. */
-export function describeEvent(kind: string, data: Record<string, unknown>, { columnNames, userNames }: Names): string {
+export function describeEvent(kind: string, data: Record<string, unknown>, { columnNames, userNames, agentNames }: Names): string {
   switch (kind) {
     case "created":
       return "created this task";
@@ -17,7 +17,10 @@ export function describeEvent(kind: string, data: Record<string, unknown>, { col
       return `moved this to ${columnNames.get(str(data.to_column) ?? "") ?? "another column"}`;
     case "assigned": {
       const to = str(data.to);
-      return to ? `assigned this to ${userNames.get(to) ?? "someone"}` : "unassigned this";
+      const toAgent = str(data.to_agent);
+      if (to) return `assigned this to ${userNames.get(to) ?? "someone"}`;
+      if (toAgent) return `assigned this to ${agentNames?.get(toAgent) ?? "an agent"}`;
+      return "unassigned this";
     }
     case "field_changed": {
       const field = str(data.field) ?? "a field";
@@ -112,7 +115,7 @@ export function ActivityThread({
           <li key={item.id} className="flex items-center gap-2 pl-1 text-xs text-muted">
             <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-cyan" />
             <span>
-              <span className="text-fg">{actor}</span> {describeEvent(item.kind ?? "", item.data ?? {}, { columnNames, userNames })}
+              <span className="text-fg">{actor}</span> {describeEvent(item.kind ?? "", item.data ?? {}, { columnNames, userNames, agentNames })}
             </span>
             <span className="ml-auto whitespace-nowrap">{when(item.at)}</span>
           </li>

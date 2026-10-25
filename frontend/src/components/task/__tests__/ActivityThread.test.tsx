@@ -37,6 +37,12 @@ describe("ActivityThread", () => {
     expect(rows[4]).toContain("Ahmed Ali agent_stage_entered");
   });
 
+  it("says an agent was assigned, not that the task was unassigned", () => {
+    const toAgent: ActivityItem = { type: "event", id: "e7", at: "2026-10-22T10:06:00Z", actor, kind: "assigned", data: { from: null, to: null, to_agent: "a1" } };
+    render(<ActivityThread items={[toAgent]} columnNames={columnNames} userNames={userNames} agentNames={new Map([["a1", "Ahmed's Claude Code"]])} />);
+    expect(screen.getByRole("listitem").textContent).toContain("Ahmed Ali assigned this to Ahmed's Claude Code");
+  });
+
   it("never renders raw HTML from comments", () => {
     const evil: ActivityItem = { type: "comment", id: "c9", at: "2026-10-22T10:05:00Z", actor, body_md: "<script>alert(1)</script><b>bold</b>", edited_at: null };
     const { container } = render(<ActivityThread items={[evil]} columnNames={columnNames} userNames={userNames} />);
