@@ -82,7 +82,7 @@ def create_app() -> FastAPI:
         docs_url="/api/docs",
         redoc_url=None,
     )
-    app.add_middleware(CsrfHeaderMiddleware)
+    app.add_middleware(CsrfHeaderMiddleware, exempt_paths=frozenset({MCP_PATH}))  # bearer only, no cookies
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:

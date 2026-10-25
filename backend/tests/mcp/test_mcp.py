@@ -74,6 +74,26 @@ async def test_mcp_requires_bearer_401(client, mcp_running):
         assert r.json() == {"detail": "invalid_token"}
 
 
+async def test_mcp_without_any_headers_is_401_not_csrf(client_factory, db, mcp_running):
+    """No token, no client header: the CSRF guard must not answer first (MCP never accepts cookies)."""
+    bare = client_factory()
+    del bare.headers["X-Megoo-Client"]
+    r = await bare.post("/api/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    assert r.status_code == 401
+    assert r.json() == {"detail": "invalid_token"}
+    assert r.headers["www-authenticate"] == "Bearer"
+    # a browser session cookie is not a credential here either
+    user = await make_user(db)
+    bare.headers["X-Megoo-Client"] = "web"
+    await login(bare, user)
+    del bare.headers["X-Megoo-Client"]
+    r = await bare.post(
+        "/api/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        headers={"Accept": "application/json, text/event-stream"},
+    )
+    assert r.status_code == 401 and r.headers["www-authenticate"] == "Bearer"
+
+
 async def test_mcp_rejects_runner_only_token_401(client, db, mcp_running):
     user = await make_user(db)
     await login(client, user)
