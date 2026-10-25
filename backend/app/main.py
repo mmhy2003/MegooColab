@@ -18,6 +18,7 @@ from app.auth.tokens_router import router as tokens_router
 from app.auth.tokens_router import self_router as tokens_self_router
 from app.core.config import get_settings
 from app.core.csrf import CsrfHeaderMiddleware
+from app.core.db import SessionLocal
 from app.core.events import hub
 from app.mcp_server.server import MCP_PATH, build_mcp
 from app.org.router import router as org_router
@@ -32,6 +33,8 @@ from app.tasks.router import router as tasks_router
 from app.teams.router import router as teams_router
 from app.users.router import admin_router as admin_users_router
 from app.users.router import users_router
+from app.workflow.methodology import seed_defaults
+from app.workflow.router import router as workflow_router
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +64,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.run_migrations_on_startup:
         # env.py uses asyncio.run(), so run it off the server's event loop
         await asyncio.to_thread(run_migrations)
+    async with SessionLocal() as session:
+        await seed_defaults(session)
+        await session.commit()
     await hub.start(settings.database_url)
     try:
         await asyncio.wait_for(hub.ready.wait(), timeout=10)
@@ -108,6 +114,7 @@ def create_app() -> FastAPI:
         realtime_router,
         runner_router,
         agent_runs_router,
+        workflow_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect
