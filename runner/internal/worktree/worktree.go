@@ -5,7 +5,6 @@ package worktree
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -44,12 +43,8 @@ func Slug(title string) string {
 }
 
 func git(repo string, args ...string) (string, error) {
-	out, err := exec.Command("git", append(append([]string{"-C", repo}, gitstate.HardenedArgs()...), args...)...).CombinedOutput()
-	s := strings.TrimSpace(string(out))
-	if err != nil {
-		return s, fmt.Errorf("git %s: %w: %s", args[0], err, s)
-	}
-	return s, nil
+	out, err := gitstate.Run(repo, args...)
+	return strings.TrimSpace(out), err
 }
 
 // Ensure returns the worktree for a task, creating it (and its branch) from

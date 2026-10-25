@@ -131,13 +131,26 @@ func HardenedArgs() []string {
 	}
 }
 
+// OverrideForTest swaps the git binary and the per-call timeout; the returned
+// function restores them. For tests of callers that need a hanging git.
+func OverrideForTest(bin string, d time.Duration) (restore func()) {
+	oldBin, oldTimeout := gitBin, timeout
+	gitBin, timeout = bin, d
+	return func() { gitBin, timeout = oldBin, oldTimeout }
+}
+
+// Run runs git in dir with the hardened options and a timeout, returning its
+// stdout. Every runner git call goes through it.
+func Run(dir string, args ...string) (string, error) { return git(dir, args...) }
+
 // git runs git in dir with a timeout.
 func git(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	full := append(append([]string{"-C", dir}, HardenedArgs()...), args...)
 	cmd := exec.CommandContext(ctx, gitBin, full...)
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0",
+		"GIT_NO_REPLACE_OBJECTS=1") // git replace could make an old HEAD read as new content
 	cmd.WaitDelay = time.Second // a grandchild holding a pipe cannot block forever
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -213,6 +226,9 @@ func Capture(dir string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	// --directory: the ignored set is compared at directory granularity on
+	// purpose, so huge ignored trees (node_modules, build output) stay cheap. A
+	// new file inside an already-ignored directory is therefore not noticed.
 	out, err := git(dir, "ls-files", "-o", "-i", "--exclude-standard", "--directory", "-z")
 	if err != nil {
 		return Snapshot{}, err
@@ -228,8 +244,26 @@ func Capture(dir string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	stash, _ := git(dir, "rev-parse", "--verify", "-q", "refs/stash") // absent: empty
-	return Snapshot{State: st, ignored: strings.Join(ign, "\x00"), flagged: flaggedSet(lv), stash: strings.TrimSpace(stash)}, nil
+	stash, err := stashRef(dir)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{State: st, ignored: strings.Join(ign, "\x00"), flagged: flaggedSet(lv), stash: stash}, nil
+}
+
+// stashRef returns the commit refs/stash points at, or "" when there is no
+// stash. Only git's "no such ref" answer (exit status 1) counts as absent; a
+// timeout or any other failure is an error.
+func stashRef(dir string) (string, error) {
+	out, err := git(dir, "rev-parse", "--verify", "-q", "refs/stash")
+	if err == nil {
+		return strings.TrimSpace(out), nil
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) && ee.ExitCode() == 1 {
+		return "", nil
+	}
+	return "", err
 }
 
 // After is the state to report once a run ended: after's own state, dirty also

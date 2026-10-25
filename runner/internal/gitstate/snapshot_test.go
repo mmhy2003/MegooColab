@@ -155,3 +155,50 @@ func TestFlaggingAnotherFileDuringTheRunIsDirty(t *testing.T) {
 		t.Fatal("a changed flag must be dirty")
 	}
 }
+
+func TestReplacedObjectsCannotHideAnEdit(t *testing.T) {
+	dir := repo(t)
+	before, err := Capture(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1 := run(t, dir, "rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, dir, "commit", "-q", "-a", "-m", "edit")
+	c2 := run(t, dir, "rev-parse", "HEAD")
+	run(t, dir, "replace", c1, c2) // from now on c1 reads as c2
+	run(t, dir, "reset", "-q", "--hard", c1)
+	after, err := Capture(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := After(&before, after)
+	if *st.Head == *before.State.Head && !st.Dirty {
+		t.Fatalf("a replaced HEAD hid the edit: %+v", st)
+	}
+}
+
+func TestStashRefAbsentIsNotAnErrorButFailuresAre(t *testing.T) {
+	dir := repo(t)
+	if s, err := stashRef(dir); err != nil || s != "" {
+		t.Fatalf("absent = %q, %v", s, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, dir, "stash")
+	if s, err := stashRef(dir); err != nil || s == "" {
+		t.Fatalf("present = %q, %v", s, err)
+	}
+	t.Setenv("GITSTATE_FAKE_GIT", "1")
+	restore := OverrideForTest(os.Args[0], 300*time.Millisecond)
+	defer restore()
+	if _, err := stashRef(dir); err == nil {
+		t.Fatal("a timeout is not 'ref absent'")
+	}
+	if _, err := stashRef(filepath.Join(dir, "no-such-dir")); err == nil {
+		t.Fatal("a failing git is not 'ref absent'")
+	}
+}

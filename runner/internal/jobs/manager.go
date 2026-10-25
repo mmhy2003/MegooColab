@@ -262,7 +262,7 @@ func (m *Manager) probe() []protocol.AgentAvailability {
 }
 
 func isGitWorkTree(path string) bool {
-	out, err := exec.Command("git", append(append([]string{"-C", path}, gitstate.HardenedArgs()...), "rev-parse", "--is-inside-work-tree")...).Output()
+	out, err := gitstate.Run(path, "rev-parse", "--is-inside-work-tree")
 	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 

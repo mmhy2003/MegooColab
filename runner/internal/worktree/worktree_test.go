@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/mmhy2003/megoocolab/runner/internal/gitstate"
 )
 
 func runGit(t *testing.T, dir string, args ...string) string {
@@ -143,5 +146,28 @@ func TestEnsureRunsNoRepoHooks(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("post-checkout hook ran")
+	}
+}
+
+func TestMain(m *testing.M) {
+	// The test binary doubles as a git that hangs, for the timeout test.
+	if os.Getenv("WORKTREE_FAKE_GIT") == "1" {
+		time.Sleep(time.Minute)
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+func TestEnsureTimesOutOnAHangingGit(t *testing.T) {
+	repo := newRepo(t)
+	t.Setenv("WORKTREE_FAKE_GIT", "1")
+	restore := gitstate.OverrideForTest(os.Args[0], 300*time.Millisecond)
+	defer restore()
+	start := time.Now()
+	if _, _, err := Ensure(repo, t.TempDir(), "agent-1", "MEG-1", "Title"); err == nil {
+		t.Fatal("a hanging git must make Ensure fail")
+	}
+	if time.Since(start) > 10*time.Second {
+		t.Fatal("did not time out")
 	}
 }
