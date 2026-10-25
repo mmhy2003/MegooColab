@@ -151,10 +151,9 @@ func git(dir string, args ...string) (string, error) {
 }
 
 // Read returns the worktree's HEAD, branch and whether it has changes outside
-// .megoocolab/. Head is nil when the repository has no commits. A tracked file
-// flagged skip-worktree or assume-unchanged counts as dirty: those flags hide
-// edits from status. An error means the state is unknown; callers must not
-// send a guess.
+// .megoocolab/. Head is nil when the repository has no commits. An error means
+// the state is unknown; callers must not send a guess. Capture adds the checks
+// that need a baseline.
 func Read(dir string) (protocol.GitState, error) {
 	var st protocol.GitState
 	if _, err := git(dir, "rev-parse", "--git-dir"); err != nil {
@@ -181,25 +180,22 @@ func Read(dir string) (protocol.GitState, error) {
 		return st, err
 	}
 	st.Dirty = dirty(out)
-	if !st.Dirty {
-		lv, err := git(dir, "ls-files", "-v", "-z")
-		if err != nil {
-			return st, err
-		}
-		st.Dirty = flagged(lv)
-	}
 	return st, nil
 }
 
-// flagged reports a tracked file tagged S (skip-worktree) or with a lowercase
-// tag (assume-unchanged) in `ls-files -v -z` output.
-func flagged(out string) bool {
+// flaggedSet lists the tracked files tagged S (skip-worktree) or with a
+// lowercase tag (assume-unchanged) in `ls-files -v -z` output, tag included,
+// sorted. Those flags hide edits from status, so a run that changes the set is
+// dirty; flags that were already there (a sparse checkout) are not.
+func flaggedSet(out string) string {
+	var set []string
 	for _, e := range strings.Split(out, "\x00") {
 		if len(e) >= 2 && (e[0] == 'S' || (e[0] >= 'a' && e[0] <= 'z')) {
-			return true
+			set = append(set, e)
 		}
 	}
-	return false
+	sort.Strings(set)
+	return strings.Join(set, "\x00")
 }
 
 // Snapshot is a Read plus what Read alone cannot tell: the untracked-but-ignored
@@ -207,6 +203,7 @@ func flagged(out string) bool {
 type Snapshot struct {
 	State   protocol.GitState
 	ignored string
+	flagged string
 	stash   string
 }
 
@@ -227,16 +224,21 @@ func Capture(dir string) (Snapshot, error) {
 		}
 	}
 	sort.Strings(ign)
+	lv, err := git(dir, "ls-files", "-v", "-z")
+	if err != nil {
+		return Snapshot{}, err
+	}
 	stash, _ := git(dir, "rev-parse", "--verify", "-q", "refs/stash") // absent: empty
-	return Snapshot{State: st, ignored: strings.Join(ign, "\x00"), stash: strings.TrimSpace(stash)}, nil
+	return Snapshot{State: st, ignored: strings.Join(ign, "\x00"), flagged: flaggedSet(lv), stash: strings.TrimSpace(stash)}, nil
 }
 
 // After is the state to report once a run ended: after's own state, dirty also
-// when the run changed the set of ignored files or the stash since before. With
+// when the run changed the set of ignored files, of skip-worktree or
+// assume-unchanged files, or the stash since before. With
 // no baseline only after's own state is known.
 func After(before *Snapshot, after Snapshot) protocol.GitState {
 	st := after.State
-	if before != nil && (before.ignored != after.ignored || before.stash != after.stash) {
+	if before != nil && (before.ignored != after.ignored || before.flagged != after.flagged || before.stash != after.stash) {
 		st.Dirty = true
 	}
 	return st

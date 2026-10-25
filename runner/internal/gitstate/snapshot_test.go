@@ -112,3 +112,46 @@ func TestUnchangedRepoWithIgnoredFilesIsNotDirty(t *testing.T) {
 		t.Fatal("no baseline must not invent dirt")
 	}
 }
+
+func TestStandingSkipWorktreeFlagIsNotDirty(t *testing.T) {
+	for _, flag := range []string{"--skip-worktree", "--assume-unchanged"} {
+		t.Run(flag, func(t *testing.T) {
+			dir := repo(t)
+			run(t, dir, "update-index", flag, "a.txt") // standing flag, e.g. a sparse checkout
+			before, err := Capture(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			after, err := Capture(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if st := After(&before, after); st.Dirty || before.State.Dirty {
+				t.Fatalf("standing flag reported dirty: before %+v after %+v", before.State, st)
+			}
+		})
+	}
+}
+
+func TestFlaggingAnotherFileDuringTheRunIsDirty(t *testing.T) {
+	dir := repo(t)
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, dir, "add", "b.txt")
+	run(t, dir, "commit", "-q", "-m", "b")
+	run(t, dir, "update-index", "--skip-worktree", "a.txt")
+	before, _ := Capture(dir)
+	run(t, dir, "update-index", "--skip-worktree", "b.txt")
+	after, _ := Capture(dir)
+	if st := After(&before, after); !st.Dirty {
+		t.Fatal("a newly flagged file must be dirty")
+	}
+	// a changed flag (skip-worktree to assume-unchanged) counts too
+	run(t, dir, "update-index", "--no-skip-worktree", "b.txt")
+	run(t, dir, "update-index", "--assume-unchanged", "b.txt")
+	third, _ := Capture(dir)
+	if st := After(&after, third); !st.Dirty {
+		t.Fatal("a changed flag must be dirty")
+	}
+}
