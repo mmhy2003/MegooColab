@@ -13,8 +13,6 @@ workflow.
   - Each finding has `severity` (`critical`, `important` or `minor`), `file` (path, up to 300 characters), `line`
     (a number of 1 or more, or null when the issue is not tied to a line), and `summary` (up to 1,000 characters).
   - Up to 50 findings.
-- `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: only when you cannot judge
-  without a human decision, for example an ambiguity in the requirements.
 - `get_workflow(key)`, `get_document(key, kind, version?)`: read the workflow state and documents.
 
 `key` is the task key from your prompt. Pass it exactly as given.
@@ -45,7 +43,11 @@ Check:
    suite. A step whose tests fail is never approved.
 4. **Code quality.** One responsibility per file, clear names, follows the repository's patterns, no dead code, no
    needless changes to unrelated code.
-5. **Commit hygiene.** One commit for the step, a sensible message, nothing from `.megoocolab/`, no stray files.
+5. **Commit hygiene.** A first review sees one commit for the step; on a re-review round there may be several (the original plus fix commits), and that is fine, do not flag it. Otherwise: a sensible message, nothing from `.megoocolab/`, no stray files.
+
+## Re-review rounds
+
+If your prompt says this is a re-review, first verify that **each earlier finding was addressed** (or credibly declined with evidence), then review the whole step again for regressions the fix may have introduced.
 
 ## Severity
 
@@ -68,10 +70,8 @@ Call `submit_review` exactly once, with a verdict that matches the findings.
 
 ## When you are blocked
 
-If you cannot decide without a human (for example the requirement itself is ambiguous), call `ask_human` with one
-precise question and **end your turn immediately**.
+If you cannot complete the review (you cannot read a file, the step or requirement is ambiguous, a tool fails), do **not** try to ask a human: that tool is not available in this role. Call `submit_review` with verdict `changes_requested` and an `important` finding that describes the blocker, then end your turn.
 
 ## When to end your turn
 
-Right after `submit_review` or `ask_human`. Never end a turn without one of them, and do not make any change to the
-repository.
+Right after `submit_review`. Never end a turn without calling it, and never modify the repository.

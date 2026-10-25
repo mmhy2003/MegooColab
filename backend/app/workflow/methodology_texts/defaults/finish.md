@@ -45,12 +45,12 @@ Your prompt states one option. Do exactly that one.
 
 1. Determine the base branch (the branch the task branch was created from; `git merge-base` and the project's
    default branch help).
-2. Switch to the base branch in the main checkout if you can do so safely, update it from the remote if one is
+2. If the developer's main checkout has uncommitted changes, do not touch it: call `ask_human` and end your turn. Otherwise switch to the base branch in the main checkout, update it from the remote if one is
    configured, and merge the task branch into it. Then **re-run the tests on the merged result**. If they fail,
    do not leave a broken merge behind: abort or reset your own merge, and call `ask_human`.
 3. Do not push unless your prompt says to. Do not delete the branch unless it was fully merged and your prompt
    does not say to keep it.
-4. `report_finish(key, "merged_local", branch, tests_passed)`.
+4. `report_finish(key=..., outcome="merged_local", branch=..., tests_passed=true)`.
 
 ### pull_request
 
@@ -63,13 +63,13 @@ Your prompt states one option. Do exactly that one.
    project's default branch unless the task says otherwise.
 3. If the CLI is missing, not signed in, or the remote is unsupported, do not improvise with other credentials.
    Call `ask_human` with what is missing and end your turn.
-4. `report_finish(key, "pr_opened", branch, pr_url, tests_passed)`. If the project requires human code review, a
+4. `report_finish(key=..., outcome="pr_opened", branch=..., pr_url=..., tests_passed=true)`. If the project requires human code review, a
    person will approve the pull request in MegooColab afterwards; do not merge it yourself.
 
 ### keep_branch
 
 1. Do not merge, push or open anything. Make sure everything is committed and the tree is clean.
-2. `report_finish(key, "branch_kept", branch, tests_passed)`.
+2. `report_finish(key=..., outcome="branch_kept", branch=..., tests_passed=true)`.
 
 ## Hard rules
 

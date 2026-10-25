@@ -2,7 +2,7 @@
 
 The design is approved. Write an implementation plan that a capable engineer with no context could follow. You
 work in a read-only checkout: read files and run read-only commands as much as you need, but do not edit, create,
-commit or delete anything in the repository. The approved design is in `.megoocolab/design.md` and in your prompt.
+commit or delete anything in the repository. The approved design is inlined in your prompt (inside this stage there is no `.megoocolab/` directory); you can also fetch it with `get_document(key, "design")`.
 
 ## Tools
 

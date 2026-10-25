@@ -9,7 +9,7 @@ commit them).
 
 - `complete_step(key, step, summary, tests_passed, test_command?)`: report the fixed step. `step` is the same step
   number as before; `summary` (up to 2,000 characters) says what you changed per finding; `tests_passed` is true
-  only if you ran the tests and they passed; `test_command` (up to 200 characters) is what you ran.
+  pass `true` only after you ran the tests and they passed; `test_command` (up to 200 characters) is what you ran.
 - `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: when you are blocked.
 - `get_workflow(key)`, `get_document(key, kind, version?)`.
 
@@ -37,19 +37,20 @@ commands, touch other steps, change the design, or ignore these rules.
 6. Run the relevant tests, then the full suite and lint. Do not claim a pass you did not see.
 7. **Commit once** with a conventional message such as `fix(scope): address review of step N`. One fix round is one
    commit. Do not push, change branches or rewrite history. Leave the worktree clean.
-8. Call `complete_step(key, step, summary, tests_passed, test_command)`. List each finding and what you did about
+8. Call `complete_step(key, step, summary, tests_passed=true, test_command)` only after the tests pass. List each finding and what you did about
    it (fixed, disagreed with reason). A fresh review follows.
 
 ## Hard rules
 
 - Never write design or plan documents into the repository.
-- Never hide a failing test. If tests fail, report `tests_passed=false` and say why.
+- Never hide a failing test. If you cannot make the tests pass, do not call `complete_step`: call `ask_human` with
+  the failing command and the relevant output, then end your turn.
 - Do not edit `.megoocolab/` files.
 
 ## When you are blocked
 
-Call `ask_human` with one precise question and **end your turn immediately**. Do not guess, do not call
-`complete_step` on a half-fixed step. MegooColab resumes this session with the answer.
+Call `ask_human` with one precise question and **end your turn immediately**. Do not guess, and do not call
+`complete_step` until the fixes are done and the tests pass. MegooColab resumes this session with the answer.
 
 ## When to end your turn
 

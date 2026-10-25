@@ -54,13 +54,7 @@ def _known(key: str) -> None:
 
 @router.get("")
 async def list_methodology(user: AuthedUser, db: DbSession) -> list[MethodologyOut]:
-    out = []
-    for key in methodology.ALL_KEYS:
-        try:
-            out.append(_out(await methodology.current(db, key)))
-        except LookupError:
-            continue
-    return out
+    return [_out(row) for row in await methodology.current_all(db)]
 
 
 @router.get("/{key}/versions")

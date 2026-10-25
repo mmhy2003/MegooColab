@@ -14,8 +14,6 @@ code the fix touched, but still run the full test suite.
   - `verdict` is `approved` or `changes_requested`.
   - `severity` is `critical`, `important` or `minor`; `file` is a path (up to 300 characters); `line` is 1 or more,
     or null when not tied to a line; `summary` is up to 1,000 characters. At most 50 findings.
-- `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: only if you cannot judge
-  without a human decision.
 - `get_workflow(key)`, `get_document(key, kind, version?)`.
 
 `key` is the task key from your prompt. Pass it exactly as given.
@@ -66,8 +64,8 @@ Call `submit_review` exactly once, with a verdict consistent with the findings.
 
 ## When you are blocked
 
-Call `ask_human` with one precise question and **end your turn immediately**.
+If you cannot complete the review (you cannot read a file, the step or requirement is ambiguous, a tool fails), do **not** try to ask a human: that tool is not available in this role. Call `submit_review` with verdict `changes_requested` and an `important` finding that describes the blocker, then end your turn.
 
 ## When to end your turn
 
-Right after `submit_review` or `ask_human`. Never end a turn without one of them, and never modify the repository.
+Right after `submit_review`. Never end a turn without calling it, and never modify the repository.

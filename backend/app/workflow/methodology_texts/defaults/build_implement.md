@@ -49,8 +49,9 @@ ask (see "When you are blocked"). Asking before starting is always fine. Bad wor
    history. Leave the worktree clean.
 6. Self-review before reporting: did I implement everything in the step, and only that? Are names accurate? Do the
    tests check behaviour? Fix what you find before you commit, so the step is a single commit.
-7. Call `complete_step(key, step, summary, tests_passed, test_command)`. Be honest: if tests fail or you could not
-   run them, say `tests_passed=false` and explain in `summary`. Do not mask a failure.
+7. Call `complete_step(key, step, summary, tests_passed=true, test_command)` only after the step's tests pass and
+   you have seen them pass. If you cannot make the tests pass, do not call `complete_step`: call `ask_human` with
+   the failing command and the relevant output, then end your turn.
 
 ## Code organisation
 
@@ -71,7 +72,7 @@ ask (see "When you are blocked"). Asking before starting is always fine. Bad wor
 
 If you hit something you cannot resolve (unclear requirement, missing dependency, conflicting instructions, the
 plan is wrong), call `ask_human` with one precise question and **end your turn immediately**. Do not guess, do not
-keep working, and do not call `complete_step` with a half-done step. MegooColab resumes this session with the
+keep working, and do not call `complete_step` until the step is done and its tests pass. MegooColab resumes this session with the
 answer.
 
 ## When to end your turn
