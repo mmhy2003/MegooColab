@@ -26,6 +26,13 @@ func newRunCmd(version string) *cobra.Command {
 		Short: "Connect to MegooColab and wait for work",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if background {
+				if relaunched, err := relaunchHiddenIfNeeded(); err != nil {
+					return fmt.Errorf("cannot restart without a console window: %w", err)
+				} else if relaunched {
+					return nil
+				}
+			}
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("cannot load config (%w); run: megoocolab-runner login --url URL --token TOKEN", err)

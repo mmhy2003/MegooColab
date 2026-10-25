@@ -36,9 +36,29 @@ func parsePID(b []byte) (int, bool) {
 	return pid, err == nil && pid > 0
 }
 
-// sameImage compares two executable paths the way Windows does.
-func sameImage(a, b string) bool {
-	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+// sameFile reports whether two paths are the same file. It compares file
+// identity, not strings: Scoop runs the runner through a "current" junction
+// while the OS reports the real path of a running image.
+func sameFile(a, b string) bool {
+	fa, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	fb, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(fa, fb)
+}
+
+// relaunchEnv marks a process that was already started hidden, so it never
+// relaunches itself again.
+const relaunchEnv = "MEGOOCOLAB_RUNNER_HIDDEN"
+
+// shouldRelaunchHidden decides whether `run --background` must restart itself
+// without a visible console (the Windows Run key starts a console exe).
+func shouldRelaunchHidden(marker string, ownsVisibleConsole bool) bool {
+	return marker == "" && ownsVisibleConsole
 }
 
 func statusText(installed, running bool, pid int) string {
@@ -64,7 +84,15 @@ func beginBackground(root string) (func(), error) {
 	if err := os.WriteFile(pidPath(root), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
 		return nil, err
 	}
-	return func() { _ = os.Remove(pidPath(root)) }, nil
+	// Remove the pid file only while it still holds our pid: another runner
+	// may have overwritten it.
+	return func() {
+		if b, err := os.ReadFile(pidPath(root)); err == nil {
+			if pid, ok := parsePID(b); ok && pid == os.Getpid() {
+				_ = os.Remove(pidPath(root))
+			}
+		}
+	}, nil
 }
 
 // watchStopFile calls cancel once path exists, or returns when ctx ends.

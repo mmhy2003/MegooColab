@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -66,7 +67,7 @@ func (m winManager) runningPID() (int, bool) {
 		return 0, false
 	}
 	image, alive := processImage(pid)
-	return pid, alive && sameImage(image, m.exe)
+	return pid, alive && sameFile(image, m.exe)
 }
 
 func processImage(pid int) (string, bool) {
@@ -120,15 +121,9 @@ func (m winManager) Start() error {
 	}
 	_ = os.Remove(pidPath(m.root))
 	_ = os.Remove(stopPath(m.root))
-	cmd := exec.Command(m.exe, "run", "--background")
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: windows.CREATE_NO_WINDOW | windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP,
-		HideWindow:    true,
-	}
-	if err := cmd.Start(); err != nil {
+	if err := spawnHidden(m.exe, "run", "--background"); err != nil {
 		return err
 	}
-	_ = cmd.Process.Release()
 	for i := 0; i < 30; i++ {
 		time.Sleep(100 * time.Millisecond)
 		if _, ok := m.runningPID(); ok {
@@ -155,16 +150,14 @@ func (m winManager) Stop() error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	// Graceful stop timed out. Kill only if the pid is still this runner.
-	if image, alive := processImage(pid); !alive || !sameImage(image, m.exe) {
+	if image, alive := processImage(pid); !alive || !sameFile(image, m.exe) {
 		return nil
 	}
-	h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
-	if err != nil {
-		return err
-	}
-	defer windows.CloseHandle(h)
-	if err := windows.TerminateProcess(h, 1); err != nil {
-		return err
+	// Kill the whole tree (adapters and their children), not just the runner.
+	_ = exec.Command("taskkill", "/T", "/F", "/PID", strconv.Itoa(pid)).Run()
+	if h, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid)); err == nil {
+		_ = windows.TerminateProcess(h, 1)
+		windows.CloseHandle(h)
 	}
 	_ = os.Remove(pidPath(m.root))
 	return nil
@@ -177,4 +170,49 @@ func (m winManager) Status() (string, error) {
 	}
 	pid, running := m.runningPID()
 	return statusText(installed, running, pid), nil
+}
+
+// spawnHidden starts exe with a hidden console of its own. CREATE_NO_WINDOW
+// gives the process a console without a window that its children (git, node)
+// inherit; adding DETACHED_PROCESS would cancel that and every child would pop
+// up its own console window.
+func spawnHidden(exe string, args ...string) error {
+	cmd := exec.Command(exe, args...)
+	cmd.Env = append(os.Environ(), relaunchEnv+"=1")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: windows.CREATE_NO_WINDOW | windows.CREATE_NEW_PROCESS_GROUP,
+		HideWindow:    true,
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}
+
+var (
+	kernel32         = windows.NewLazySystemDLL("kernel32.dll")
+	user32           = windows.NewLazySystemDLL("user32.dll")
+	procConsoleWnd   = kernel32.NewProc("GetConsoleWindow")
+	procIsWindowVisi = user32.NewProc("IsWindowVisible")
+)
+
+// relaunchHiddenIfNeeded is called first by `run --background`. The Run key
+// starts the console exe with a visible console window (closing it would kill
+// the runner), so restart once without one and let this process exit. The
+// child carries relaunchEnv and never relaunches.
+func relaunchHiddenIfNeeded() (bool, error) {
+	hwnd, _, _ := procConsoleWnd.Call()
+	visible := false
+	if hwnd != 0 {
+		r, _, _ := procIsWindowVisi.Call(hwnd)
+		visible = r != 0
+	}
+	if !shouldRelaunchHidden(os.Getenv(relaunchEnv), visible) {
+		return false, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return false, err
+	}
+	return true, spawnHidden(exe, os.Args[1:]...)
 }

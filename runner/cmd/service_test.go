@@ -3,8 +3,11 @@ package cmd
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -75,12 +78,75 @@ func TestStatusText(t *testing.T) {
 	}
 }
 
-func TestSameImage(t *testing.T) {
-	if !sameImage(`C:\Bin\Runner.EXE`, `c:\bin\runner.exe`) {
-		t.Error("case difference should match")
+func TestSameFile(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real")
+	if err := os.Mkdir(real, 0o700); err != nil {
+		t.Fatal(err)
 	}
-	if sameImage(`C:\Bin\runner.exe`, `C:\Bin\notepad.exe`) {
-		t.Error("different images matched")
+	exe := filepath.Join(real, "runner.exe")
+	other := filepath.Join(real, "other.exe")
+	for _, f := range []string{exe, other} {
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !sameFile(exe, exe) {
+		t.Error("a file is the same file as itself")
+	}
+	if sameFile(exe, other) {
+		t.Error("different files matched")
+	}
+	if sameFile(exe, filepath.Join(real, "missing.exe")) {
+		t.Error("a missing file matched")
+	}
+	if runtime.GOOS == "windows" && !sameFile(exe, strings.ToUpper(exe)) {
+		t.Error("case difference should match on Windows")
+	}
+	// Scoop runs the app through a "current" junction.
+	link := filepath.Join(dir, "current")
+	if runtime.GOOS == "windows" {
+		if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, real).CombinedOutput(); err != nil {
+			t.Skipf("cannot create a junction: %v %s", err, out)
+		}
+	} else if err := os.Symlink(real, link); err != nil {
+		t.Skipf("cannot create a symlink: %v", err)
+	}
+	if !sameFile(filepath.Join(link, "runner.exe"), exe) {
+		t.Error("a path through a junction/symlink must match the real path")
+	}
+}
+
+func TestShouldRelaunchHidden(t *testing.T) {
+	cases := []struct {
+		marker  string
+		visible bool
+		want    bool
+	}{
+		{"", true, true},
+		{"", false, false},
+		{"1", true, false},
+		{"1", false, false},
+	}
+	for _, c := range cases {
+		if got := shouldRelaunchHidden(c.marker, c.visible); got != c.want {
+			t.Errorf("shouldRelaunchHidden(%q,%v) = %v", c.marker, c.visible, got)
+		}
+	}
+}
+
+func TestSystemdEnvLine(t *testing.T) {
+	c := serviceConfig(`/opt/my tools/bin:/100%:/q"x`)
+	script := c.Option["SystemdScript"].(string)
+	want := `Environment="PATH=/opt/my tools/bin:/100%%:/q` + "\\" + `"x"`
+	if !strings.Contains(script, want) {
+		t.Errorf("missing %s in: %s", want, script)
+	}
+	if strings.Contains(script, "{{ENV}}") || strings.Contains(script, "EnvVars") {
+		t.Errorf("template placeholders left in script")
+	}
+	if strings.Contains(serviceConfig("").Option["SystemdScript"].(string), "Environment=") {
+		t.Errorf("empty PATH must not emit an Environment line")
 	}
 }
 
@@ -126,9 +192,19 @@ func TestPidFileLifecycle(t *testing.T) {
 	if pid, ok := parsePID(b); !ok || pid != os.Getpid() {
 		t.Errorf("pid file = %q", b)
 	}
+	if err := os.WriteFile(pidPath(root), []byte("999999"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cleanup()
+	if _, err := os.Stat(pidPath(root)); err != nil {
+		t.Errorf("another runner's pid file must be left alone: %v", err)
+	}
+	if err := os.WriteFile(pidPath(root), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cleanup()
 	if _, err := os.Stat(pidPath(root)); !os.IsNotExist(err) {
-		t.Errorf("pid file not removed: %v", err)
+		t.Errorf("own pid file not removed: %v", err)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
@@ -41,8 +42,7 @@ StandardError=file:{{LogDirectory}}/{{Name}}.err
 {{end}}RestartSec=120
 EnvironmentFile=-/etc/sysconfig/{{Name}}
 
-{{range EnvVars}}{{.}}
-{{end}}[Install]
+{{ENV}}[Install]
 WantedBy=default.target
 `
 
@@ -53,6 +53,7 @@ WantedBy=default.target
 // at install time: launchd and systemd --user start with a minimal PATH that
 // would not find npx.
 func serviceConfig(path string) *service.Config {
+	script := strings.Replace(systemdUserScript, "{{ENV}}", systemdEnvLine(path), 1)
 	c := &service.Config{
 		Name:        serviceName,
 		DisplayName: "MegooColab Runner",
@@ -60,13 +61,26 @@ func serviceConfig(path string) *service.Config {
 		Arguments:   []string{"run"},
 		Option: service.KeyValue{
 			"UserService":   true,
-			"SystemdScript": systemdUserScript,
+			"SystemdScript": script,
 		},
 	}
 	if path != "" {
 		c.EnvVars = map[string]string{"PATH": path}
 	}
 	return c
+}
+
+// systemdEnvLine renders Environment="PATH=..." with systemd quoting
+// (backslash, double quote and % escaped). kardianos writes its own EnvVars
+// unquoted, which breaks on spaces, so systemd gets this line instead and
+// EnvVars is left for launchd. A value containing the template delimiter is
+// skipped rather than risk being parsed as template code.
+func systemdEnvLine(path string) string {
+	if path == "" || strings.Contains(path, "{{") {
+		return ""
+	}
+	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "%", "%%")
+	return `Environment="PATH=` + r.Replace(path) + `"` + "\n\n"
 }
 
 // serviceManager is the per-platform way of registering and controlling the

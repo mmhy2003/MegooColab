@@ -66,7 +66,7 @@ The service runs as you, because the adapters need your agent logins and reposit
   logged out.
 - **macOS:** a LaunchAgent in `~/Library/LaunchAgents`, loaded at login.
 - **Windows:** an `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry that starts `megoocolab-runner run --background`
-  (no console window) at logon. `service start` launches it detached right away,
+  at logon; it restarts itself once without a console window, so you may see a brief console flash at logon. `service start` launches it detached right away,
   `service stop` asks it to cancel its runs and exit (and ends it after 15 s if it does
   not), `service status` shows `running (pid N)`, `stopped` or `not installed`.
   Windows has no crash restart for this: after a crash it comes back at the next logon or
@@ -74,7 +74,7 @@ The service runs as you, because the adapters need your agent logins and reposit
 
 No admin rights are needed on any OS. On Linux and macOS, `service install` captures your
 current `PATH` into the unit (launchd and systemd start with a minimal one, which would not
-find `npx`). Re-run `service install` after changing your Node.js installation. On Windows
+find `npx`). Re-run `service install` after changing your Node.js installation; it replaces the existing installation. On Windows
 the process inherits your normal logon environment.
 
 ### Logs
