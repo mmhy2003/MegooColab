@@ -131,7 +131,7 @@ async def ask(
     )
     db.add(q)
     await db.flush()
-    await engine._event(db, task, None, "question.asked", {"question_id": str(q.id), "has_mockup": bool(mockup_row)})
+    await engine.record_workflow_event(db, task, None, "question.asked", {"question_id": str(q.id), "has_mockup": bool(mockup_row)})
     return q
 
 
@@ -173,7 +173,7 @@ async def answer(db, user: User, task: Task, question_id: uuid.UUID, choice: str
     q.answer_choice = choice
     q.answer_text = text
     q.answered_at = datetime.now(UTC)
-    await engine._event(
+    await engine.record_workflow_event(
         db, task, user.id, "question.answered", {"question_id": str(q.id), "choice": choice, "has_text": bool(text)}
     )
     await audit.record(

@@ -35,7 +35,7 @@ from app.core.db import SessionLocal
 from app.core.events import Event, publish
 from app.projects.access import can_manage_project, project_team_ids
 from app.projects.models import BoardColumn, Project
-from app.tasks.models import Task
+from app.tasks.models import Task, TaskType
 from app.tasks.service import apply_column, end_position, record_event
 from app.teams.service import user_team_ids
 from app.workflow.context import FIX_ROLES, MAX_PROMPT_CHARS, build_prompt, resume_text
@@ -82,6 +82,7 @@ STAGE_ROLE: dict[Stage, RunRole] = {
     Stage.done: RunRole.finish,
 }
 
+WORKFLOW_TYPES = (TaskType.story, TaskType.task, TaskType.bug)  # what a workflow can run on
 MAX_FAILURES = 3  # consecutive failed runs before escalating retries_exhausted (AGT-19)
 ACTIVE = (WorkflowStatus.running, WorkflowStatus.waiting_human)
 CONTINUE_TEXT = "Your previous run ended before it finished. Continue the same work from where you left off."
@@ -144,7 +145,7 @@ async def lock_task(db: AsyncSession, task: Task, *, create: bool = False) -> Ta
     return await lock_workflow(db, task.id)
 
 
-async def _event(db: AsyncSession, task: Task, actor_id: uuid.UUID | None, kind: str, data: dict | None = None) -> None:
+async def record_workflow_event(db: AsyncSession, task: Task, actor_id: uuid.UUID | None, kind: str, data: dict | None = None) -> None:
     await record_event(db, task, actor_id, kind, data or {})
     await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
 
@@ -244,7 +245,7 @@ async def set_stage(db: AsyncSession, wf: TaskWorkflow, task: Task, to: Stage) -
     wf.nudged = False
     if to == Stage.plan:
         wf.sessions.pop(session_key(RunRole.plan, None), None)
-    await _event(db, task, None, "workflow.stage", {"from": str(frm), "to": str(to)})
+    await record_workflow_event(db, task, None, "workflow.stage", {"from": str(frm), "to": str(to)})
 
 
 def set_step(wf: TaskWorkflow, n: int | None) -> None:
@@ -263,7 +264,7 @@ async def escalate(db: AsyncSession, wf: TaskWorkflow, reason: str) -> None:
     task = await db.get(Task, wf.task_id)
     wait_for(wf, Needs.escalation)
     wf.escalation_reason = reason
-    await _event(db, task, None, "workflow.escalated", {"reason": reason})
+    await record_workflow_event(db, task, None, "workflow.escalated", {"reason": reason})
 
 
 async def _latest_findings(db: AsyncSession, task_id: uuid.UUID, role: RunRole, step: int | None) -> list[dict]:
@@ -384,6 +385,8 @@ async def _owner_deactivated(db: AsyncSession, run: AgentRun) -> bool:
 
 async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     """Start the agent-driven workflow at brainstorm with a fresh brainstorm run."""
+    if task.type not in WORKFLOW_TYPES:  # plan subtasks cannot hang under an epic or a subtask
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
     agent = await _usable_agent(db, user, task)
     wf = await lock_task(db, task, create=True)
     if wf.status in (*ACTIVE, WorkflowStatus.paused):
@@ -403,7 +406,7 @@ async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     wf.sessions.clear()
     wf.started_at = _now()
     wf.finished_at = None
-    await _event(db, task, user.id, "workflow.started", {"agent_id": str(agent.id)})
+    await record_workflow_event(db, task, user.id, "workflow.started", {"agent_id": str(agent.id)})
     await enqueue(db, wf, task, RunRole.brainstorm, requested_by=user.id)
     return wf
 
@@ -416,7 +419,7 @@ async def pause(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     await _require_can_use(db, user, task, wf)
     wf.status = WorkflowStatus.paused
     wf.needs = None  # an escalation keeps its reason, so resuming returns to it
-    await _event(db, task, user.id, "workflow.paused")
+    await record_workflow_event(db, task, user.id, "workflow.paused")
     run = await active_run(db, task.id)
     if run is not None:
         await cancel_run(db, user, run)
@@ -459,7 +462,7 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
         raise HTTPException(status.HTTP_409_CONFLICT, "workflow_not_paused")
     wf.agent_id = agent.id
     wf.failures = 0
-    await _event(db, task, user.id, "workflow.resumed")
+    await record_workflow_event(db, task, user.id, "workflow.resumed")
     need = await _pending_need(db, wf)
     if need == Needs.design_approval:
         await set_stage(db, wf, task, Stage.design)  # what the brainstorm handler would have done
@@ -506,7 +509,7 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
     reason = wf.escalation_reason
     if action == "accept" and reason not in ACCEPT_HANDLERS:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "cannot_accept_here")
-    await _event(db, task, user.id, "escalation.decided", {"action": action, "reason": reason})
+    await record_workflow_event(db, task, user.id, "escalation.decided", {"action": action, "reason": reason})
     await audit.record(
         db, f"workflow.{action}", actor_id=user.id, target_type="task", target_id=task.id, data={"reason": reason}
     )
@@ -514,7 +517,7 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
     wf.needs = None
     if action == "pause":
         wf.status = WorkflowStatus.paused
-        await _event(db, task, user.id, "workflow.paused")
+        await record_workflow_event(db, task, user.id, "workflow.paused")
     elif action == "retry":
         wf.failures = 0
         wf.status = WorkflowStatus.running
@@ -552,7 +555,7 @@ async def set_manual(db: AsyncSession, user: User, task: Task, stage: Stage) -> 
     wf.status = WorkflowStatus.finished if wf.stage == Stage.done else WorkflowStatus.idle
     wf.finished_at = _now() if wf.stage == Stage.done else None
     if frm != wf.stage:
-        await _event(db, task, user.id, "workflow.stage", {"from": str(frm), "to": str(wf.stage)})
+        await record_workflow_event(db, task, user.id, "workflow.stage", {"from": str(frm), "to": str(wf.stage)})
     return wf
 
 
@@ -614,19 +617,19 @@ async def _on_run_finished(db: AsyncSession, run: AgentRun) -> None:
     if run.status == RunStatus.cancelled and run.cancelled_by is not None:
         # a human cancelled the run itself: the workflow pauses with it, and the run is never retried
         wf.status = WorkflowStatus.paused
-        await _event(db, task, run.cancelled_by, "workflow.paused", {"run_id": str(run.id)})
+        await record_workflow_event(db, task, run.cancelled_by, "workflow.paused", {"run_id": str(run.id)})
         return
     if role in READ_ONLY_ROLES and _git_changed(run):
         # R1, whatever the outcome: an agent that commits and then errors out is caught too, never retried
         wf.enforcement = Enforcement.partially_enforced
-        await _event(db, task, None, "enforcement.violation", {"stage": str(run.stage), "role": role.value})
+        await record_workflow_event(db, task, None, "enforcement.violation", {"stage": str(run.stage), "role": role.value})
         await escalate(db, wf, "enforcement_violation")
         return
     owner_id = await _owner_id(db, run)
     if run.status == RunStatus.cancelled and run.reason == "user_deactivated" and await _owner_deactivated(db, run):
         # the agent's owner is gone: nothing could ever run, so the workflow pauses instead of retrying
         wf.status = WorkflowStatus.paused
-        await _event(db, task, None, "workflow.paused", {"reason": "owner_deactivated"})
+        await record_workflow_event(db, task, None, "workflow.paused", {"reason": "owner_deactivated"})
         return
     if run.status in (RunStatus.failed, RunStatus.cancelled):  # a cancel nobody asked for counts as a failure
         wf.failures += 1
@@ -715,6 +718,6 @@ async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
     task.position = await end_position(db, column.id)
     apply_column(task, column)
     task.updated_at = _now()
-    await _event(db, task, None, "status_changed", {
+    await record_workflow_event(db, task, None, "status_changed", {
         "from_column": str(frm), "to_column": str(column.id), "to_category": str(column.category), "by": "workflow",
     })

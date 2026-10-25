@@ -418,6 +418,10 @@ async def update_task(db: AsyncSession, user: User, project: Project, task: Task
     if "type" in fields or "parent_id" in fields:
         await validate_parent(db, project, new_type, new_parent, task_id=task.id)
         if new_type != task.type:
+            # imported here: the workflow engine imports this module
+            from app.workflow import board
+
+            await board.before_type_change(db, task, new_type)
             await validate_children_after_type_change(db, task, new_type)
         task.type, task.parent_id = new_type, new_parent
     if "assignee_user_id" in fields or "assignee_agent_id" in fields:

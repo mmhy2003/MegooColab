@@ -6,13 +6,23 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from app.auth.models import User
 from app.core.db import SessionLocal
 from app.tasks.models import Task
 from app.workflow import documents, questions
 from app.workflow.models import WorkflowDocument
+from tests.agent_runs.test_dispatch import _task
 from tests.factories import DEFAULT_PASSWORD
-from tests.runner.test_runner_ws import tc_factory  # noqa: F401  (tc_factory is a fixture)
-from tests.workflow.test_engine import _events, _finish, _runs, _started, _wf
+from tests.runner.test_runner_ws import tc_factory  # noqa: F401, F811  (tc_factory is a fixture)
+from tests.workflow.test_engine import (
+    _board,
+    _events,
+    _finish,
+    _move,
+    _runs,
+    _started,
+    _wf,
+)
 
 STEPS = [{"title": f"Do {n}", "detail": f"detail {n}"} for n in (1, 2, 3)]
 
@@ -167,30 +177,43 @@ async def test_resubmission_supersedes_old_version(db, tc_factory):
     assert _decide(tc, b, "design", 2, True).status_code == 200
 
 
+HTML = '<html><body><button data-megoo-choice="a">A</button></body></html>'
+
+
+async def _ask_and_answer(b, run, choice, *, choices=(), mockup_choices=("a", "b")):
+    """A question with a mockup, asked by `run` and answered through the real answer path."""
+    async with SessionLocal() as s:
+        task = await s.get(Task, b.task_id)
+        q = await questions.ask(
+            s, run, task, "Layout?", list(choices), {"title": "L", "html": HTML, "choices": list(mockup_choices)}
+        )
+        await s.commit()
+        mockup_id, qid = str(q.mockup_id), q.id
+    async with SessionLocal() as s:
+        await questions.answer(s, await s.get(User, b.manager.id), await s.get(Task, b.task_id), qid, choice, None)
+        await s.commit()
+    return mockup_id
+
+
 async def test_design_attaches_chosen_mockup(db, tc_factory):
     tc = tc_factory(lifespan=True)
     b, run = await _started(db, tc)
-    html = '<html><body><button data-megoo-choice="a">A</button></body></html>'
-    async with SessionLocal() as s:
-        task = await s.get(Task, b.task_id)
-        chosen = await questions.ask(s, run, task, "Layout?", [], {"title": "L1", "html": html, "choices": ["a", "b"]})
-        await s.commit()
-        mockup_id = str(chosen.mockup_id)
-        qid = chosen.id
-    async with SessionLocal() as s:  # a second mockup nobody chose from
-        task = await s.get(Task, b.task_id)
-        await questions.ask(s, run, task, "Colours?", [], {"title": "L2", "html": html, "choices": ["x"]})
-        await s.commit()
-    # answer the first (now withdrawn) question directly: the choice is one of its mockup's ids
-    async with SessionLocal() as s:
-        from app.workflow.models import WorkflowQuestion
-
-        q = await s.get(WorkflowQuestion, qid)
-        q.status, q.answer_choice = "answered", "a"
-        await s.commit()
+    chosen = await _ask_and_answer(b, run, "a")
+    # a later mockup question answered with an ordinary choice attaches nothing
+    pg = [{"id": "pg", "label": "Postgres", "description": "", "recommended": False}]
+    await _ask_and_answer(b, run, "pg", choices=pg, mockup_choices=("x",))
     await _submit(b, run)
     out = tc.get(f"/api/tasks/{b.key}/documents/design/1").json()
-    assert out["attached_mockup_ids"] == [mockup_id]
+    assert out["attached_mockup_ids"] == [chosen]
+
+
+async def test_design_attaches_nothing_when_a_non_mockup_choice_was_picked(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    pg = [{"id": "pg", "label": "Postgres", "description": "", "recommended": False}]
+    await _ask_and_answer(b, run, "pg", choices=pg)
+    await _submit(b, run)
+    assert tc.get(f"/api/tasks/{b.key}/documents/design/1").json()["attached_mockup_ids"] == []
 
 
 async def test_plan_requires_steps_and_design_forbids_them(db, tc_factory):
@@ -225,7 +248,7 @@ async def test_decision_guards(db, tc_factory):
     assert _decide(tc, b, "design", 9, True).status_code == 404
     await _finish(b.manager.id, run, "completed")
     r = _decide(tc, b, "design", 1, False, "x" * 4001)
-    assert r.status_code == 422
+    assert r.status_code == 422 and r.json()["detail"] == "too_large"
     assert len(await _runs(b.task_id)) == 1
 
 
@@ -243,3 +266,66 @@ async def test_deleted_plan_subtask_does_not_break_build(db, tc_factory):
     assert (last.workflow_role, last.step) == ("implement", 1) and last.id != run.id
     out = tc.get(f"/api/tasks/{b.key}/workflow").json()
     assert out["steps_total"] == 3 and out["current_step"] == 1
+
+
+async def test_concurrent_plan_approvals_create_subtasks_once(db, tc_factory, client_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _plan_waiting(db, tc)
+    clients = [client_factory(), client_factory()]
+    for c in clients:
+        r = await c.post("/api/auth/login", json={"email": b.manager.email, "password": DEFAULT_PASSWORD})
+        assert r.status_code == 200
+    url = f"/api/tasks/{b.key}/documents/plan/1/decision"
+    rs = await asyncio.gather(*(c.post(url, json={"approve": True}) for c in clients))
+    assert sorted(r.status_code for r in rs) == [200, 409]
+    assert [r.json()["detail"] for r in rs if r.status_code == 409] == ["already_decided"]
+    async with SessionLocal() as s:
+        subs = (await s.execute(select(Task).where(Task.parent_id == b.task_id))).scalars().all()
+    assert len(subs) == len(STEPS)
+    assert len([r for r in await _runs(b.task_id) if r.workflow_role == "implement"]) == 1
+
+
+async def test_plan_subtasks_publish_task_created(db, tc_factory, monkeypatch):
+    from app.tasks import service as task_service
+
+    published = []
+    real = task_service.publish
+
+    async def spy(db_, event):
+        published.append(event)
+        await real(db_, event)
+
+    monkeypatch.setattr(task_service, "publish", spy)
+    tc = tc_factory(lifespan=True)
+    b, _ = await _plan_waiting(db, tc)
+    published.clear()
+    assert _decide(tc, b, "plan", 1, True).status_code == 200
+    async with SessionLocal() as s:
+        subs = (await s.execute(select(Task).where(Task.parent_id == b.task_id))).scalars().all()
+    created = [e.task_id for e in published if e.type == "task.created"]
+    assert sorted(created) == sorted(t.id for t in subs) and len(created) == len(STEPS)
+
+
+async def test_workflow_refused_on_epic_and_subtask(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _board(db, tc)
+    epic = _task(tc, b.agent, title="E", type="epic")
+    parent = _task(tc, b.agent, title="P")
+    sub = _task(tc, b.agent, title="S", type="subtask", parent_id=parent["id"])
+    for t in (epic, sub):
+        r = tc.post(f"/api/tasks/{t['key']}/workflow/start")
+        assert r.status_code == 422 and r.json()["detail"] == "workflow_not_supported_for_type", t["type"]
+        r = _move(tc, t["key"], b.cols["working"])
+        assert r.status_code == 422 and r.json()["detail"] == "workflow_not_supported_for_type", t["type"]
+    assert tc.get(f"/api/tasks/{epic['key']}").json()["column_id"] != b.cols["working"]["id"]
+
+
+async def test_type_change_to_epic_refused_while_workflow_active(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _started(db, tc)
+    r = tc.patch(f"/api/tasks/{b.key}", json={"type": "epic"})
+    assert r.status_code == 409 and r.json()["detail"] == "workflow_active"
+    assert tc.get(f"/api/tasks/{b.key}").json()["type"] == b.task["type"]
+    # a task whose workflow has not started can change type
+    other = _task(tc, b.agent, title="Other")
+    assert tc.patch(f"/api/tasks/{other['key']}", json={"type": "epic"}).status_code == 200

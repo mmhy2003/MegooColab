@@ -13,7 +13,7 @@ from app.core.text import strip_nul
 from app.projects.models import Project
 from app.tasks.models import Task, TaskType
 from app.tasks.schemas import TaskCreate
-from app.tasks.service import create_task, first_before_column
+from app.tasks.service import create_task, first_before_column, task_changed
 from app.workflow import engine
 from app.workflow.models import (
     DocKind,
@@ -121,7 +121,7 @@ async def submit(
     )
     db.add(doc)
     await db.flush()
-    await engine._event(db, task, None, "document.submitted", {"kind": kind.value, "version": version})
+    await engine.record_workflow_event(db, task, None, "document.submitted", {"kind": kind.value, "version": version})
     return doc
 
 
@@ -162,9 +162,9 @@ async def decide(
     doc.decision_comment = comment
     data = {"kind": kind.value, "version": version}
     if approve:
-        await engine._event(db, task, user.id, "document.approved", data)
+        await engine.record_workflow_event(db, task, user.id, "document.approved", data)
     else:
-        await engine._event(db, task, user.id, "document.rejected", {**data, "comment": comment})
+        await engine.record_workflow_event(db, task, user.id, "document.rejected", {**data, "comment": comment})
     await audit.record(
         db, "workflow.approve" if approve else "workflow.reject", actor_id=user.id, target_type="task",
         target_id=task.id, data={**data, "document_id": str(doc.id)},
@@ -197,6 +197,7 @@ async def _start_build(db, user: User, wf, task: Task, doc: WorkflowDocument) ->
                 description_md=step.get("detail", ""), column_id=column.id, parent_id=task.id,
             ),
         )
+        await task_changed(db, subtask, "task.created")  # live boards show the new subtask
         steps.append({**step, "subtask_id": str(subtask.id)})
     doc.steps = steps  # a new list: edits inside nested dicts are not tracked
     await engine.set_stage(db, wf, task, Stage.build)

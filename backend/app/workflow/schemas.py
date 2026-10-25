@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.core.text import NoNulStr
 from app.workflow.models import (
@@ -81,4 +81,4 @@ class DocumentOut(DocumentInfo):
 
 class DocumentDecisionIn(BaseModel):
     approve: bool
-    comment: NoNulStr | None = Field(default=None, max_length=4_000)
+    comment: NoNulStr | None = None

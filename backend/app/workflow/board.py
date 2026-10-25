@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.projects.models import BoardColumn, ColumnCategory
-from app.tasks.models import Task
+from app.tasks.models import Task, TaskType
 from app.workflow import engine
 from app.workflow.models import Driver, WorkflowStatus
 
@@ -58,3 +58,13 @@ async def before_reassign(db: AsyncSession, task: Task, new_agent_id: uuid.UUID 
     if wf.status == WorkflowStatus.paused:
         wf.sessions.clear()
         wf.agent_id = new_agent_id
+
+
+async def before_type_change(db: AsyncSession, task: Task, new_type: TaskType) -> None:
+    """A task with a started, unfinished workflow cannot become an epic or a subtask: its plan's subtasks
+    could not be created under it."""
+    if new_type in engine.WORKFLOW_TYPES:
+        return
+    wf = await engine.lock_task(db, task)
+    if wf is not None and wf.status not in (WorkflowStatus.idle, WorkflowStatus.finished):
+        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_active")
