@@ -59,6 +59,20 @@ func waitErr(t *testing.T, done <-chan error) error {
 	}
 }
 
+func TestHelloAdvertisesWorkflowCapability(t *testing.T) {
+	s := testserver.New(t, token)
+	c := newTestClient(t, s, token)
+	start(t, c)
+
+	var hello protocol.Hello
+	if err := json.Unmarshal(s.WaitFrame(t, "hello").Raw, &hello); err != nil {
+		t.Fatal(err)
+	}
+	if len(hello.Capabilities) != 1 || hello.Capabilities[0] != "workflow/1" {
+		t.Fatalf("capabilities = %v", hello.Capabilities)
+	}
+}
+
 func TestHelloAndHeartbeat(t *testing.T) {
 	s := testserver.New(t, token)
 	c := newTestClient(t, s, token)

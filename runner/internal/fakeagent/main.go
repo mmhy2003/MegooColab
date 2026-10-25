@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -204,6 +206,18 @@ func (a *fakeAgent) run(ctx context.Context, sid acp.SessionId, st Step) error {
 		if err != nil {
 			res.Error = err.Error()
 		}
+	case st.Commit != nil:
+		out, err := exec.CommandContext(ctx, "git", "-c", "user.name=fakeagent", "-c", "user.email=fakeagent@localhost", "commit", "--allow-empty", "-q", "-m", st.Commit.Message).CombinedOutput()
+		ok := err == nil
+		res.OK = &ok
+		if err != nil {
+			res.Error = strings.TrimSpace(string(out))
+		}
+	case st.ReportFile != nil:
+		b, err := os.ReadFile(st.ReportFile.Path)
+		exists := err == nil
+		res.Exists = &exists
+		res.Content = string(b)
 	case st.SleepMS != nil:
 		select {
 		case <-time.After(time.Duration(*st.SleepMS) * time.Millisecond):

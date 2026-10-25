@@ -43,7 +43,12 @@ type Hello struct {
 	OS            string              `json:"os"`
 	Arch          string              `json:"arch"`
 	Agents        []AgentAvailability `json:"agents"`
+	Capabilities  []string            `json:"capabilities"`
 }
+
+// CapabilityWorkflow is advertised in every hello: the runner understands the
+// protocol v2 run_start fields and reports git state and session id.
+const CapabilityWorkflow = "workflow/1"
 
 // Heartbeat is sent every 15 s.
 type Heartbeat struct {
@@ -67,13 +72,26 @@ type RunUpdate struct {
 	Data  map[string]any `json:"data"`
 }
 
+// GitState is the repository state of a run's worktree. Head is nil when the
+// repository has no commits yet.
+type GitState struct {
+	Head   *string `json:"head"`
+	Branch *string `json:"branch"`
+	Dirty  bool    `json:"dirty"`
+}
+
 // RunFinished ends a run. Outcome is completed, failed or cancelled.
+// GitBefore/GitAfter are omitted when git could not be read; SessionID when
+// the agent session never started.
 type RunFinished struct {
-	Type    string  `json:"type"`
-	RunID   string  `json:"run_id"`
-	Outcome string  `json:"outcome"`
-	Summary string  `json:"summary"`
-	Error   *string `json:"error,omitempty"`
+	Type      string    `json:"type"`
+	RunID     string    `json:"run_id"`
+	Outcome   string    `json:"outcome"`
+	Summary   string    `json:"summary"`
+	Error     *string   `json:"error,omitempty"`
+	SessionID *string   `json:"session_id,omitempty"`
+	GitBefore *GitState `json:"git_before,omitempty"`
+	GitAfter  *GitState `json:"git_after,omitempty"`
 }
 
 // WelcomeBinding is a project bound to an agent.
@@ -106,6 +124,18 @@ type RunTask struct {
 	ProjectKey    string `json:"project_key"`
 }
 
+// File is a path (relative, slash-separated) and its text content.
+type File struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+// McpAccess is where and how the agent reaches MegooColab's MCP server.
+type McpAccess struct {
+	URL   string `json:"url"`
+	Token string `json:"token"`
+}
+
 // RunStart tells the runner to start a run. Policy is read_only or workspace.
 type RunStart struct {
 	Type      string  `json:"type"`
@@ -115,6 +145,17 @@ type RunStart struct {
 	LocalPath string  `json:"local_path"`
 	Policy    string  `json:"policy"`
 	Prompt    string  `json:"prompt"`
+
+	// Protocol v2: only sent for workflow runs.
+	Role            string     `json:"role,omitempty"`
+	Stage           string     `json:"stage,omitempty"`
+	Step            *int       `json:"step,omitempty"`
+	ResumeSessionID string     `json:"resume_session_id,omitempty"`
+	ResumePrompt    string     `json:"resume_prompt,omitempty"`
+	Mcp             *McpAccess `json:"mcp,omitempty"`
+	Files           []File     `json:"files,omitempty"`
+	RepoFiles       []File     `json:"repo_files,omitempty"`
+	CommitMessage   string     `json:"commit_message,omitempty"`
 }
 
 // RunCancel asks the runner to stop a run.
@@ -137,7 +178,7 @@ func NewHello(version, os, arch string, agents []AgentAvailability) Hello {
 		}
 		out[i] = a
 	}
-	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out}
+	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow}}
 }
 
 // NewHeartbeat builds a heartbeat.

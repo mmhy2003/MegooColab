@@ -21,6 +21,7 @@ import (
 	"github.com/mmhy2003/megoocolab/runner/internal/acpclient"
 	"github.com/mmhy2003/megoocolab/runner/internal/adapters"
 	"github.com/mmhy2003/megoocolab/runner/internal/conn"
+	"github.com/mmhy2003/megoocolab/runner/internal/gitstate"
 	"github.com/mmhy2003/megoocolab/runner/internal/policy"
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
 	"github.com/mmhy2003/megoocolab/runner/internal/worktree"
@@ -31,6 +32,7 @@ const (
 	earlyCancelLimit = 256
 	summaryLimit     = 2000
 	errorLimit       = 300
+	sessionIDLimit   = 200
 	logCap           = 5 << 20
 	shutdownWait     = 10 * time.Second
 )
@@ -96,6 +98,9 @@ type run struct {
 	session         acp.SessionId
 	cmd             *exec.Cmd
 	summary         string
+	sessionID       string
+	gitBefore       *protocol.GitState
+	gitAfter        *protocol.GitState
 }
 
 // emit sends one metadata update with the next seq. The acpclient calls it in order.
@@ -267,7 +272,16 @@ func (m *Manager) Active() int {
 }
 
 func (m *Manager) finish(runID, outcome, summary, errMsg string) {
-	rf := protocol.RunFinished{Type: protocol.TypeRunFinished, RunID: runID, Outcome: outcome, Summary: truncate(summary, summaryLimit)}
+	m.finishRun(runID, outcome, summary, errMsg, "", nil, nil)
+}
+
+// finishRun is finish for a run that got far enough to have a session and git states.
+func (m *Manager) finishRun(runID, outcome, summary, errMsg, sessionID string, before, after *protocol.GitState) {
+	rf := protocol.RunFinished{Type: protocol.TypeRunFinished, RunID: runID, Outcome: outcome, Summary: truncate(summary, summaryLimit), GitBefore: before, GitAfter: after}
+	if sessionID != "" {
+		s := truncate(sessionID, sessionIDLimit)
+		rf.SessionID = &s
+	}
 	if errMsg != "" {
 		e := truncate(errMsg, errorLimit)
 		rf.Error = &e
@@ -447,7 +461,7 @@ func (m *Manager) execute(r *run, rs protocol.RunStart, agent protocol.WelcomeAg
 	}
 	r.closeEmit()
 	r.mu.Lock()
-	summary := r.summary
+	summary, sessionID, before, after := r.summary, r.sessionID, r.gitBefore, r.gitAfter
 	r.mu.Unlock()
 	r.abort()
 	close(r.done)
@@ -456,7 +470,7 @@ func (m *Manager) execute(r *run, rs protocol.RunStart, agent protocol.WelcomeAg
 	delete(m.runs, r.id)
 	m.mu.Unlock()
 	if !r.stale() {
-		m.finish(r.id, outcome, summary, errMsg)
+		m.finishRun(r.id, outcome, summary, errMsg, sessionID, before, after)
 	}
 }
 
@@ -538,6 +552,45 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return fail("policy_failed", err)
 	}
 
+	// The states are read even when the run fails or is cancelled. A side that
+	// cannot be read is left out: the server never gets a guessed state.
+	readBefore := func() {
+		st, err := gitstate.Read(wt)
+		if err != nil {
+			fmt.Fprintf(logf, "runner: git_before: %v\n", err)
+			return
+		}
+		r.mu.Lock()
+		r.gitBefore = &st
+		r.mu.Unlock()
+	}
+	// Registered before the adapter's reap, so it runs once the adapter is gone.
+	defer func() {
+		st, err := gitstate.Read(wt)
+		if err != nil {
+			fmt.Fprintf(logf, "runner: git_after: %v\n", err)
+			return
+		}
+		r.mu.Lock()
+		r.gitAfter = &st
+		r.mu.Unlock()
+	}()
+	if len(rs.Files) > 0 {
+		if err := gitstate.Materialize(wt, rs.Files); err != nil {
+			readBefore()
+			return fail("files_failed", err)
+		}
+	}
+	// git_before is read after the documents' commit, so that commit is the
+	// run's starting point and not mistaken for the agent's change (R1).
+	if len(rs.RepoFiles) > 0 {
+		if err := gitstate.CommitRepoFiles(wt, rs.RepoFiles, rs.CommitMessage); err != nil {
+			readBefore()
+			return fail("commit_failed", err)
+		}
+	}
+	readBefore()
+
 	cmd := exec.Command(spec.Command, spec.Args...)
 	cmd.Dir = wt
 	cmd.Env = append(os.Environ(), spec.Env...)
@@ -587,6 +640,9 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if err != nil {
 		return fail("session_failed", err)
 	}
+	r.mu.Lock()
+	r.sessionID = string(sess.SessionId)
+	r.mu.Unlock()
 	var available []string
 	if sess.Modes != nil {
 		for _, md := range sess.Modes.AvailableModes {

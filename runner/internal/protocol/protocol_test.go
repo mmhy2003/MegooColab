@@ -17,13 +17,16 @@ func TestWireFieldNames(t *testing.T) {
 		keys []string
 	}{
 		{"hello", NewHello("1", "linux", "amd64", []AgentAvailability{{AgentID: "a", Available: true}}),
-			[]string{"agents", "arch", "os", "runner_version", "type"}},
+			[]string{"agents", "arch", "capabilities", "os", "runner_version", "type"}},
 		{"agent report", AgentAvailability{AgentID: "a", Problems: []string{}}, []string{"agent_id", "available", "problems"}},
 		{"heartbeat", NewHeartbeat(), []string{"type"}},
 		{"agent_status", NewAgentStatus("a", true, nil), []string{"agent_id", "available", "problems", "type"}},
 		{"run_update", RunUpdate{Type: TypeRunUpdate, Data: map[string]any{}}, []string{"data", "kind", "run_id", "seq", "type"}},
 		{"run_finished", RunFinished{Type: TypeRunFinished, Error: &errStr}, []string{"error", "outcome", "run_id", "summary", "type"}},
 		{"run_finished no error", RunFinished{Type: TypeRunFinished}, []string{"outcome", "run_id", "summary", "type"}},
+		{"run_finished v2", RunFinished{Type: TypeRunFinished, SessionID: new(string), GitBefore: &GitState{}, GitAfter: &GitState{}},
+			[]string{"git_after", "git_before", "outcome", "run_id", "session_id", "summary", "type"}},
+		{"git state", GitState{}, []string{"branch", "dirty", "head"}},
 		{"welcome", Welcome{Type: TypeWelcome, Agents: []WelcomeAgent{{Bindings: []WelcomeBinding{{}}}}}, []string{"agents", "type", "user_id"}},
 		{"welcome agent", WelcomeAgent{}, []string{"agent_id", "bindings", "max_concurrent_runs", "name", "program"}},
 		{"welcome binding", WelcomeBinding{}, []string{"local_path", "project_key"}},
@@ -64,7 +67,7 @@ func TestWireFieldNames(t *testing.T) {
 
 func TestListsNeverNull(t *testing.T) {
 	data, _ := json.Marshal(NewHello("1", "linux", "amd64", nil))
-	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[]}` {
+	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1"]}` {
 		t.Fatalf("hello = %s", data)
 	}
 	data, _ = json.Marshal(NewHello("1", "l", "a", []AgentAvailability{{AgentID: "x"}}))

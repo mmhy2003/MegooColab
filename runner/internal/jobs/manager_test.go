@@ -125,6 +125,20 @@ func (e *env) startRun(runID, key, policy string) {
 	}
 }
 
+// startRunWith is startRun for a workflow run: tweak adds the v2 fields.
+func (e *env) startRunWith(runID, key string, tweak func(*protocol.RunStart)) {
+	e.t.Helper()
+	rs := protocol.RunStart{
+		Type: protocol.TypeRunStart, RunID: runID, AgentID: "agent-1",
+		Task:      protocol.RunTask{Key: key, Title: "Do the thing", ProjectKey: "MEG"},
+		LocalPath: e.repo, Policy: "workspace", Prompt: "please",
+	}
+	tweak(&rs)
+	if err := e.srv.Send(rs); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
 func (e *env) finished(runID string) protocol.RunFinished {
 	e.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -186,6 +200,11 @@ type agentReport struct {
 	Meta      json.RawMessage `json:"meta"`
 	ModesSet  []string        `json:"modes_set"`
 	Cancelled bool            `json:"cancelled"`
+	Steps     []struct {
+		Type    string `json:"type"`
+		Exists  *bool  `json:"exists"`
+		Content string `json:"content"`
+	} `json:"steps"`
 }
 
 func (e *env) readReport() agentReport {
@@ -744,5 +763,80 @@ func TestReadOnlyRequestedCancelStaysCancelled(t *testing.T) {
 	}
 	if rf := e.finished("run-c"); rf.Outcome != "cancelled" {
 		t.Fatalf("finished = %+v", rf)
+	}
+}
+
+func TestRunFinishedCarriesGitStates(t *testing.T) {
+	e := newEnvWithCache(t, `[{"commit":{"message":"agent work"}},{"say":"done"}]`, 1, t.TempDir())
+	e.startRun("run-git", "MEG-10", "workspace")
+
+	rf := e.finished("run-git")
+	if rf.Outcome != "completed" || rf.SessionID == nil || *rf.SessionID != "fake-session-1" {
+		t.Fatalf("finished = %+v", rf)
+	}
+	b, a := rf.GitBefore, rf.GitAfter
+	if b == nil || a == nil || b.Head == nil || a.Head == nil || *a.Head == *b.Head || a.Dirty || b.Dirty {
+		t.Fatalf("git_before = %+v, git_after = %+v", b, a)
+	}
+	if b.Branch == nil || *b.Branch != "megoo/MEG-10-do-the-thing" {
+		t.Fatalf("branch = %q", *b.Branch)
+	}
+}
+
+func TestWorkflowRunMaterializesFilesAndCommitsDocsBeforeGitBefore(t *testing.T) {
+	scenario := `[{"report_file":{"path":".megoocolab/plan.md"}},{"commit":{"message":"agent work"}}]`
+	e := newEnvWithCache(t, scenario, 1, t.TempDir())
+	e.startRunWith("run-wf", "MEG-11", func(rs *protocol.RunStart) {
+		rs.Files = []protocol.File{{Path: ".megoocolab/plan.md", Content: "the plan"}}
+		rs.RepoFiles = []protocol.File{{Path: "docs/superpowers/specs/d.md", Content: "# design"}}
+		rs.CommitMessage = "docs: design"
+	})
+	rf := e.finished("run-wf")
+	if rf.Outcome != "completed" || rf.GitBefore == nil || rf.GitAfter == nil {
+		t.Fatalf("finished = %+v", rf)
+	}
+	r := e.readReport()
+	if len(r.Steps) < 1 || r.Steps[0].Exists == nil || !*r.Steps[0].Exists || r.Steps[0].Content != "the plan" {
+		t.Fatalf("agent saw %+v", r.Steps)
+	}
+	wt := e.worktree("MEG-11")
+	log, err := exec.Command("git", "-C", wt, "log", "--format=%s", "-3").Output()
+	if err != nil || !strings.HasPrefix(string(log), "agent work\ndocs: design\n") {
+		t.Fatalf("log = %q, %v", log, err)
+	}
+	// the docs commit is the starting point (git_before), not part of the agent's change
+	head, _ := exec.Command("git", "-C", wt, "rev-parse", "HEAD~1").Output()
+	if strings.TrimSpace(string(head)) != *rf.GitBefore.Head {
+		t.Fatalf("git_before head %s is not the docs commit %s", *rf.GitBefore.Head, head)
+	}
+	if rf.GitBefore.Dirty || rf.GitAfter.Dirty {
+		t.Fatal(".megoocolab must not make the tree dirty")
+	}
+}
+
+func TestBadFilesFailTheRunWithStableCode(t *testing.T) {
+	for code, tweak := range map[string]func(*protocol.RunStart){
+		"files_failed": func(rs *protocol.RunStart) {
+			rs.Files = []protocol.File{{Path: "../escape", Content: "x"}}
+		},
+		"commit_failed": func(rs *protocol.RunStart) {
+			rs.RepoFiles = []protocol.File{{Path: "outside/x.md", Content: "x"}}
+			rs.CommitMessage = "m"
+		},
+	} {
+		t.Run(code, func(t *testing.T) {
+			e := newEnvWithCache(t, `[{"say":"never"}]`, 1, t.TempDir())
+			e.startRunWith("run-bad", "MEG-12", tweak)
+			rf := e.finished("run-bad")
+			if rf.Outcome != "failed" || rf.Error == nil || *rf.Error != code {
+				t.Fatalf("finished = %+v", rf)
+			}
+			if rf.GitBefore == nil || rf.GitAfter == nil {
+				t.Fatal("git states are still reported for a failed run")
+			}
+			if _, err := os.Stat(filepath.Join(e.cache, "worktrees", "agent-1", "MEG-12", "escape")); err == nil {
+				t.Fatal("escaped file written")
+			}
+		})
 	}
 }

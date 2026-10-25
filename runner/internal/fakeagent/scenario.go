@@ -8,15 +8,27 @@ import (
 
 // Step is one scripted action. Exactly one field is set.
 type Step struct {
-	Say         *string    `json:"say,omitempty"`
-	Plan        [][]string `json:"plan,omitempty"`
-	Tool        *ToolStep  `json:"tool,omitempty"`
-	Write       *FileStep  `json:"write,omitempty"`
-	Read        *FileStep  `json:"read,omitempty"`
-	Exec        *ExecStep  `json:"exec,omitempty"`
-	DirectWrite *FileStep  `json:"direct_write,omitempty"`
-	SleepMS     *int       `json:"sleep_ms,omitempty"`
-	Stop        *string    `json:"stop,omitempty"`
+	Say         *string     `json:"say,omitempty"`
+	Plan        [][]string  `json:"plan,omitempty"`
+	Tool        *ToolStep   `json:"tool,omitempty"`
+	Write       *FileStep   `json:"write,omitempty"`
+	Read        *FileStep   `json:"read,omitempty"`
+	Exec        *ExecStep   `json:"exec,omitempty"`
+	DirectWrite *FileStep   `json:"direct_write,omitempty"`
+	SleepMS     *int        `json:"sleep_ms,omitempty"`
+	Stop        *string     `json:"stop,omitempty"`
+	Commit      *CommitStep `json:"commit,omitempty"`
+	ReportFile  *PathStep   `json:"report_file,omitempty"`
+}
+
+// CommitStep runs `git commit --allow-empty -m Message` in the agent's cwd.
+type CommitStep struct {
+	Message string `json:"message"`
+}
+
+// PathStep names a file (relative to the agent's cwd) to look at.
+type PathStep struct {
+	Path string `json:"path"`
 }
 
 type ToolStep struct {
@@ -55,6 +67,10 @@ func (s Step) typeName() string {
 		return "sleep"
 	case s.Stop != nil:
 		return "stop"
+	case s.Commit != nil:
+		return "commit"
+	case s.ReportFile != nil:
+		return "report_file"
 	}
 	return "unknown"
 }
@@ -78,7 +94,9 @@ type StepResult struct {
 	Outcome string `json:"outcome,omitempty"` // tool/exec: allowed | rejected | cancelled
 	OK      *bool  `json:"ok,omitempty"`      // write
 	Error   string `json:"error,omitempty"`
-	Length  *int   `json:"length,omitempty"` // read: characters read, not the content
+	Length  *int   `json:"length,omitempty"`  // read: characters read, not the content
+	Exists  *bool  `json:"exists,omitempty"`  // report_file
+	Content string `json:"content,omitempty"` // report_file: the file's text, if it exists
 }
 
 // Report is written to FAKEAGENT_REPORT on exit.
