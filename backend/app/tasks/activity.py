@@ -15,6 +15,7 @@ from app.auth.schemas import UserOut
 from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.events import Event, publish
+from app.core.text import NoNulStr, strip_nul
 from app.projects.access import get_project_for
 from app.tasks.models import Attachment, Comment, Task, TaskEvent
 from app.tasks.service import get_task_for
@@ -26,7 +27,7 @@ CHUNK = 1024 * 1024
 
 
 class CommentIn(BaseModel):
-    body_md: str = Field(min_length=1, max_length=50_000)
+    body_md: NoNulStr = Field(min_length=1, max_length=50_000)
 
 
 class CommentOut(BaseModel):
@@ -137,6 +138,7 @@ async def task_activity(
 
 
 async def create_comment(db, user: User, key: str, body_md: str) -> Comment:
+    body_md = strip_nul(body_md)  # also reached by MCP, which bypasses CommentIn
     task, _ = await get_task_for(db, user, key, write=True)
     comment = Comment(task_id=task.id, author_user_id=user.id, body_md=body_md)
     db.add(comment)

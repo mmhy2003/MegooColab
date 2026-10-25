@@ -4,6 +4,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.core.text import NoNulStr
 from app.projects.models import ColumnCategory, RepoProvider
 
 ProjectKey = Annotated[str, StringConstraints(pattern=r"^[A-Z][A-Z0-9]{1,9}$")]
@@ -12,14 +13,14 @@ HexColor = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
 
 class ProjectIn(BaseModel):
     key: ProjectKey
-    name: str = Field(min_length=1, max_length=200)
-    description: str = ""
+    name: NoNulStr = Field(min_length=1, max_length=200)
+    description: NoNulStr = ""
     team_ids: list[uuid.UUID] = Field(min_length=1)
 
 
 class ProjectPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
+    name: NoNulStr | None = Field(default=None, min_length=1, max_length=200)
+    description: NoNulStr | None = None
     sprints_enabled: bool | None = None
     team_ids: list[uuid.UUID] | None = Field(default=None, min_length=1)
 
@@ -35,12 +36,12 @@ class ProjectOut(BaseModel):
 
 
 class ColumnIn(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
+    name: NoNulStr = Field(min_length=1, max_length=100)
     category: ColumnCategory
 
 
 class ColumnPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=100)
+    name: NoNulStr | None = Field(default=None, min_length=1, max_length=100)
     category: ColumnCategory | None = None
 
 
@@ -59,17 +60,17 @@ class ColumnOrderIn(BaseModel):
 
 
 class RepoIn(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    url: str = Field(min_length=1, max_length=1000)
+    name: NoNulStr = Field(min_length=1, max_length=200)
+    url: NoNulStr = Field(min_length=1, max_length=1000)
     provider: RepoProvider
-    default_branch: str = "main"
+    default_branch: NoNulStr = "main"
 
 
 class RepoPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=200)
-    url: str | None = Field(default=None, min_length=1, max_length=1000)
+    name: NoNulStr | None = Field(default=None, min_length=1, max_length=200)
+    url: NoNulStr | None = Field(default=None, min_length=1, max_length=1000)
     provider: RepoProvider | None = None
-    default_branch: str | None = Field(default=None, min_length=1, max_length=200)
+    default_branch: NoNulStr | None = Field(default=None, min_length=1, max_length=200)
 
 
 class RepoOut(BaseModel):
@@ -83,12 +84,12 @@ class RepoOut(BaseModel):
 
 
 class LabelIn(BaseModel):
-    name: str = Field(min_length=1, max_length=50)
+    name: NoNulStr = Field(min_length=1, max_length=50)
     color: HexColor
 
 
 class LabelPatch(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=50)
+    name: NoNulStr | None = Field(default=None, min_length=1, max_length=50)
     color: HexColor | None = None
 
 

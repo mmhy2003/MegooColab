@@ -36,6 +36,7 @@ class AgentRun(IdMixin, Base):
     status: Mapped[RunStatus] = mapped_column(String(20), default=RunStatus.queued)
     reason: Mapped[str | None] = mapped_column(String(100))
     summary: Mapped[str | None] = mapped_column(Text)
+    cancelled_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     last_seq: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

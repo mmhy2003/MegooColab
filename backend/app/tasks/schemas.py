@@ -4,15 +4,16 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.core.text import NoNulStr
 from app.projects.models import ColumnCategory
 from app.projects.schemas import LabelOut
 from app.tasks.models import LinkKind, Priority, TaskType
 
 
 class TaskCreate(BaseModel):
-    title: str = Field(min_length=1, max_length=500)
+    title: NoNulStr = Field(min_length=1, max_length=500)
     type: TaskType = TaskType.task
-    description_md: str = ""
+    description_md: NoNulStr = ""
     column_id: uuid.UUID | None = None
     priority: Priority = Priority.medium
     story_points: int | None = Field(default=None, ge=0, le=1000)
@@ -26,9 +27,9 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     """Only fields present in the request body are changed (null clears a nullable field)."""
 
-    title: str | None = Field(default=None, min_length=1, max_length=500)
+    title: NoNulStr | None = Field(default=None, min_length=1, max_length=500)
     type: TaskType | None = None
-    description_md: str | None = None
+    description_md: NoNulStr | None = None
     priority: Priority | None = None
     story_points: int | None = Field(default=None, ge=0, le=1000)
     due_date: date | None = None

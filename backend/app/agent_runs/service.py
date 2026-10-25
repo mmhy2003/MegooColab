@@ -15,6 +15,7 @@ from app.agents.service import can_use_agent, is_usable_binding, owner_can_acces
 from app.auth.models import User
 from app.core.db import SessionLocal
 from app.core.events import Event, publish
+from app.core.text import strip_nul
 from app.projects.models import Project
 from app.runner.protocol import CLOSE_UNAUTHORIZED, RunCancel, RunStart, RunTask
 from app.runner.registry import RunnerClosed, RunnerConn, registry
@@ -75,7 +76,9 @@ async def start_run(
     if not await is_usable_binding(db, agent.id, project.id):  # also when its owner lost access
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agent_not_bound")
     # one active run per task (they would share its worktree); the task row lock serialises racing starts
-    await db.execute(select(Task.id).where(Task.id == task.id).with_for_update(key_share=True))
+    locked = await db.scalar(select(Task.id).where(Task.id == task.id).with_for_update(key_share=True))
+    if locked is None:  # deleted since it was loaded
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "task_not_found")
     active = await db.scalar(
         select(AgentRun.id).where(AgentRun.task_id == task.id, AgentRun.status.in_(ACTIVE_STATUSES)).limit(1)
     )
@@ -248,6 +251,7 @@ async def cancel_run(db: AsyncSession, user: User, run: AgentRun) -> None:
     run = await _lock_run(db, run.id)
     if run.status not in ACTIVE_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "run_not_active")
+    run.cancelled_by = user.id  # the actor of the cancelled event, whenever the run is closed
     if run.status == RunStatus.running:
         conn = registry.conn_for_user(agent.owner_id)
         if conn is not None and run.id in conn.run_ids:
@@ -310,6 +314,9 @@ async def stop_runs_before_delete(db: AsyncSession, task_ids) -> None:
 
     The run rows are locked: a dispatch in flight finishes its send first (and the cancel follows it), and
     a queued run cannot be claimed and started before the delete commits."""
+    # lock the tasks first: a start_run racing this delete either committed its run (and is seen below) or
+    # finds the task gone (404); a bare run-row lock would miss a run inserted after the snapshot
+    await db.execute(select(Task.id).where(Task.id.in_(task_ids)).order_by(Task.id).with_for_update())
     rows = (
         await db.execute(
             select(AgentRun, Agent.owner_id, Task.project_id)
@@ -411,13 +418,8 @@ def _pick(fields: dict) -> dict:
     return {k: v for k, v in fields.items() if v is not None}
 
 
-def _no_nul(value: str) -> str:
-    """Postgres text and JSONB reject NUL characters."""
-    return value.replace("\x00", "")
-
-
 def _text(value, limit: int) -> str | None:
-    return _no_nul(value)[:limit] if isinstance(value, str) else None
+    return strip_nul(value)[:limit] if isinstance(value, str) else None
 
 
 def _choice(value, allowed: set[str]) -> str | None:
@@ -434,7 +436,7 @@ def _safe_path(value) -> str | None:
     """Relative paths without `..` are kept; anything else is replaced, never echoed."""
     if not isinstance(value, str):
         return None
-    value = _no_nul(value)
+    value = strip_nul(value)
     if (
         not value
         or value.startswith(("/", "\\", "~"))
@@ -446,7 +448,7 @@ def _safe_path(value) -> str | None:
 
 
 def _first_token(value) -> str | None:
-    parts = _no_nul(value).split() if isinstance(value, str) else []
+    parts = strip_nul(value).split() if isinstance(value, str) else []
     return parts[0][:MAX_COMMAND] if parts else None
 
 
@@ -534,19 +536,25 @@ async def finish_run(
     cancelled by deactivation) keeps its status and only gets finished_at and summary if they are empty.
     Commits, then dispatches the owner's pending runs."""
     run = await _lock_run(db, run_id)
-    agent = await db.get(Agent, run.agent_id) if run is not None else None
-    if run is None or agent is None or agent.owner_id != conn_user_id or run.status == RunStatus.queued:
+    if run is None:  # deleted with its task: the slot it held is free, so the owner's queue moves on
+        await db.rollback()
+        async with SessionLocal() as dispatch_db:
+            await dispatch_pending(dispatch_db, conn_user_id)
+            await dispatch_db.commit()
+        return
+    agent = await db.get(Agent, run.agent_id)
+    if agent is None or agent.owner_id != conn_user_id or run.status == RunStatus.queued:
         await db.rollback()
         return
-    summary = _no_nul(summary)[:2000]
+    summary = strip_nul(summary)[:2000]
     if run.status == RunStatus.running:
         reason = None
         if outcome == "failed":
             reason = "agent_error"  # the runner's error text is logged, not stored: it is not allowed metadata
-            log.warning("run %s failed on the runner: %.200s", run.id, _no_nul(error or ""))
+            log.warning("run %s failed on the runner: %.200s", run.id, strip_nul(error or ""))
         await _transition(
             db, run, RunStatus(outcome), f"agent_run_{outcome}", owner_id=agent.owner_id,
-            reason=reason, summary=summary, extra={"summary": summary},
+            actor_id=run.cancelled_by if outcome == "cancelled" else None, reason=reason, summary=summary, extra={"summary": summary},
         )
     else:
         run.finished_at = run.finished_at or _now()
