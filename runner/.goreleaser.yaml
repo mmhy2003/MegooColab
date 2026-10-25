@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: megoocolab-runner
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: runner
+    main: .
+    binary: megoocolab-runner
+    env:
+      - CGO_ENABLED=0
+    goos: [windows, linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: runner
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "megoocolab-runner_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  disable: true
+
+# The repository holds several projects, so runner releases are tagged
+# runner-vX.Y.Z. GoReleaser's monorepo and release.tag options are Pro only, so
+# runner-release.yml sets GORELEASER_CURRENT_TAG=vX.Y.Z (making {{.Version}}
+# X.Y.Z), builds with --skip=publish and publishes dist/ under the real tag.

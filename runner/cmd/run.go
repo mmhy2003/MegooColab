@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 
+	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
 
 	"github.com/mmhy2003/megoocolab/runner/internal/config"
@@ -17,7 +19,8 @@ import (
 )
 
 func newRunCmd(version string) *cobra.Command {
-	return &cobra.Command{
+	var background bool
+	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Connect to MegooColab and wait for work",
 		Args:  cobra.NoArgs,
@@ -26,11 +29,29 @@ func newRunCmd(version string) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("cannot load config (%w); run: megoocolab-runner login --url URL --token TOKEN", err)
 			}
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return runConnection(ctx, cmd.OutOrStdout(), cfg, version)
+			out := cmd.OutOrStdout()
+			// Under a service manager (or with --background) there is no
+			// terminal, so state lines go to <cache>/megoocolab/logs/runner.log.
+			if background || !service.Interactive() {
+				cacheDir, err := os.UserCacheDir()
+				if err != nil {
+					return fmt.Errorf("cannot find the cache directory: %w", err)
+				}
+				f, err := openRunLog(filepath.Join(cacheDir, "megoocolab"))
+				if err != nil {
+					return fmt.Errorf("cannot open the log file: %w", err)
+				}
+				defer f.Close()
+				out = f
+			}
+			return runConnection(ctx, out, cfg, version)
 		},
 	}
+	cmd.Flags().BoolVar(&background, "background", false, "write output to the log file instead of stdout (used by the service)")
+	_ = cmd.Flags().MarkHidden("background")
+	return cmd
 }
 
 // runConnection connects, prints state changes and executes the runs the

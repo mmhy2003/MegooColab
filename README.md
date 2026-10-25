@@ -28,6 +28,17 @@ Without email, admins copy invite and reset links from the Users page.
 **Upgrade:** `git pull && docker compose up -d --build` (migrations run on start).
 **Backups:** the `pgdata` (database) and `uploads` (attachments) volumes hold all data.
 
+## Runner and MCP
+
+**Runner.** Coding agents run on your own machine through `megoocolab-runner`, which
+connects to the server over a WebSocket and only reports metadata (never file contents).
+Install, login, service mode and the permission policies are described in
+[runner/README.md](runner/README.md).
+
+**MCP.** The server exposes an MCP endpoint (streamable HTTP, stateless) at `/api/mcp`.
+Create a personal access token with the `mcp` scope and send it as
+`Authorization: Bearer mgc_...`; a missing or invalid token gets HTTP 401.
+
 ## Development quick-start
 
 Requirements: Docker, [uv](https://docs.astral.sh/uv/), Node.js 22+.
