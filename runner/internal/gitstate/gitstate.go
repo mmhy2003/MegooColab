@@ -9,6 +9,7 @@ package gitstate
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,7 +17,10 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
 )
@@ -83,22 +87,74 @@ func checkFiles(files []protocol.File, prefix string) error {
 	return nil
 }
 
-// git runs git in dir. quotepath is off so paths come back as they are.
+var (
+	gitBin  = "git"
+	timeout = 30 * time.Second // per git call; a var so tests can shorten it
+
+	hooksMu  sync.Mutex
+	hooksDir string
+)
+
+// SetHooksDir sets the empty directory every runner git call uses as
+// core.hooksPath (e.g. <cacheRoot>/empty-hooks); it is created on demand.
+func SetHooksDir(dir string) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	hooksMu.Lock()
+	hooksDir = dir
+	hooksMu.Unlock()
+}
+
+func emptyHooksDir() string {
+	hooksMu.Lock()
+	defer hooksMu.Unlock()
+	if hooksDir == "" || !isDir(hooksDir) {
+		if d, err := os.MkdirTemp("", "megoocolab-empty-hooks-"); err == nil {
+			hooksDir = d
+		}
+	}
+	return hooksDir
+}
+
+func isDir(p string) bool { fi, err := os.Stat(p); return err == nil && fi.IsDir() }
+
+// HardenedArgs are the git options every runner git call starts with. A
+// worktree's config is writable by the agent, and these keep it from making
+// git run code (hooks, fsmonitor) or from changing what we read.
+func HardenedArgs() []string {
+	return []string{
+		"-c", "core.quotepath=off",
+		"-c", "core.hooksPath=" + emptyHooksDir(),
+		"-c", "core.fsmonitor=false",
+		"-c", "core.untrackedCache=false",
+	}
+}
+
+// git runs git in dir with a timeout.
 func git(dir string, args ...string) (string, error) {
-	full := append([]string{"-C", dir, "-c", "core.quotepath=off"}, args...)
-	cmd := exec.Command("git", full...)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	full := append(append([]string{"-C", dir}, HardenedArgs()...), args...)
+	cmd := exec.CommandContext(ctx, gitBin, full...)
 	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+	cmd.WaitDelay = time.Second // a grandchild holding a pipe cannot block forever
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return out.String(), fmt.Errorf("git %s: timed out after %v", args[0], timeout)
+		}
 		return out.String(), fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(errb.String()))
 	}
 	return out.String(), nil
 }
 
 // Read returns the worktree's HEAD, branch and whether it has changes outside
-// .megoocolab/. Head is nil when the repository has no commits. An error means
-// the state is unknown; callers must not send a guess.
+// .megoocolab/. Head is nil when the repository has no commits. A tracked file
+// flagged skip-worktree or assume-unchanged counts as dirty: those flags hide
+// edits from status. An error means the state is unknown; callers must not
+// send a guess.
 func Read(dir string) (protocol.GitState, error) {
 	var st protocol.GitState
 	if _, err := git(dir, "rev-parse", "--git-dir"); err != nil {
@@ -125,7 +181,65 @@ func Read(dir string) (protocol.GitState, error) {
 		return st, err
 	}
 	st.Dirty = dirty(out)
+	if !st.Dirty {
+		lv, err := git(dir, "ls-files", "-v", "-z")
+		if err != nil {
+			return st, err
+		}
+		st.Dirty = flagged(lv)
+	}
 	return st, nil
+}
+
+// flagged reports a tracked file tagged S (skip-worktree) or with a lowercase
+// tag (assume-unchanged) in `ls-files -v -z` output.
+func flagged(out string) bool {
+	for _, e := range strings.Split(out, "\x00") {
+		if len(e) >= 2 && (e[0] == 'S' || (e[0] >= 'a' && e[0] <= 'z')) {
+			return true
+		}
+	}
+	return false
+}
+
+// Snapshot is a Read plus what Read alone cannot tell: the untracked-but-ignored
+// files and the stash, which a run can use to hide its changes from status.
+type Snapshot struct {
+	State   protocol.GitState
+	ignored string
+	stash   string
+}
+
+// Capture reads a Snapshot.
+func Capture(dir string) (Snapshot, error) {
+	st, err := Read(dir)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	out, err := git(dir, "ls-files", "-o", "-i", "--exclude-standard", "--directory", "-z")
+	if err != nil {
+		return Snapshot{}, err
+	}
+	var ign []string
+	for _, p := range strings.Split(out, "\x00") {
+		if p != "" && !strings.HasPrefix(p, FilesPrefix) {
+			ign = append(ign, p)
+		}
+	}
+	sort.Strings(ign)
+	stash, _ := git(dir, "rev-parse", "--verify", "-q", "refs/stash") // absent: empty
+	return Snapshot{State: st, ignored: strings.Join(ign, "\x00"), stash: strings.TrimSpace(stash)}, nil
+}
+
+// After is the state to report once a run ended: after's own state, dirty also
+// when the run changed the set of ignored files or the stash since before. With
+// no baseline only after's own state is known.
+func After(before *Snapshot, after Snapshot) protocol.GitState {
+	st := after.State
+	if before != nil && (before.ignored != after.ignored || before.stash != after.stash) {
+		st.Dirty = true
+	}
+	return st
 }
 
 func truncateRunes(s string, n int) string {
@@ -152,7 +266,7 @@ func dirty(out string) bool {
 			i++
 		}
 		for _, p := range paths {
-			if p != strings.TrimSuffix(FilesPrefix, "/") && !strings.HasPrefix(p, FilesPrefix) {
+			if !strings.HasPrefix(p, FilesPrefix) {
 				return true
 			}
 		}
@@ -161,7 +275,11 @@ func dirty(out string) bool {
 }
 
 // resolve joins a validated relative path onto root, refusing to pass through
-// a symlink (an agent could have replaced a directory with a link).
+// isLink reports a symlink or a Windows junction/mount point.
+func isLink(fi os.FileInfo) bool { return fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 }
+
+// resolve joins a validated relative path onto root, refusing to pass through
+// a symlink or junction (an agent could have replaced a directory with a link).
 func resolve(root, rel string, create bool) (string, error) {
 	cur := root
 	parts := strings.Split(rel, "/")
@@ -170,8 +288,8 @@ func resolve(root, rel string, create bool) (string, error) {
 		fi, err := os.Lstat(cur)
 		switch {
 		case err == nil:
-			if fi.Mode()&os.ModeSymlink != 0 {
-				return "", fmt.Errorf("%q is a symlink", rel)
+			if isLink(fi) {
+				return "", fmt.Errorf("%q is a link", rel)
 			}
 			if i < len(parts)-1 && !fi.IsDir() {
 				return "", fmt.Errorf("%q: parent is not a directory", rel)
@@ -209,14 +327,27 @@ func writeFile(root string, f protocol.File, mode os.FileMode) error {
 	return os.Chmod(p, mode)
 }
 
+// removeEntry deletes a file, link or empty directory itself, never what a
+// link points to. Only a regular file is made writable first (chmod would
+// follow a link).
+func removeEntry(p string, fi os.FileInfo) error {
+	if fi.Mode().IsRegular() {
+		_ = os.Chmod(p, 0o644) // Windows cannot delete a read-only file
+	}
+	return os.Remove(p)
+}
+
 // Materialize makes .megoocolab/ in the worktree hold exactly files, read-only,
-// and keeps it out of git status via the repository's info/exclude.
+// and keeps it out of git status via the repository info/exclude. With no
+// files it only removes what an earlier run left behind.
 func Materialize(worktree string, files []protocol.File) error {
 	if err := checkFiles(files, FilesPrefix); err != nil {
 		return err
 	}
-	if err := ensureExcluded(worktree); err != nil {
-		return err
+	if len(files) > 0 {
+		if err := ensureExcluded(worktree); err != nil {
+			return err
+		}
 	}
 	keep := map[string]bool{}
 	for _, f := range files {
@@ -234,7 +365,8 @@ func Materialize(worktree string, files []protocol.File) error {
 }
 
 // pruneStale removes files under .megoocolab/ that are not in keep, then any
-// directories left empty.
+// directories left empty. A .megoocolab that is not a real directory (a file,
+// a link) is removed itself, never followed.
 func pruneStale(worktree string, keep map[string]bool) error {
 	root := filepath.Join(worktree, strings.TrimSuffix(FilesPrefix, "/"))
 	fi, err := os.Lstat(root)
@@ -244,8 +376,8 @@ func pruneStale(worktree string, keep map[string]bool) error {
 	if err != nil {
 		return err
 	}
-	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
-		return fmt.Errorf("%s is not a directory", FilesPrefix)
+	if isLink(fi) || !fi.IsDir() {
+		return removeEntry(root, fi)
 	}
 	var dirs []string
 	err = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
@@ -254,17 +386,20 @@ func pruneStale(worktree string, keep map[string]bool) error {
 		}
 		rel, _ := filepath.Rel(worktree, p)
 		rel = filepath.ToSlash(rel)
-		if d.IsDir() {
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if fi.IsDir() && !isLink(fi) {
 			if p != root {
 				dirs = append(dirs, p)
 			}
 			return nil
 		}
-		if keep[rel] && d.Type().IsRegular() {
+		if keep[rel] && fi.Mode().IsRegular() {
 			return nil
 		}
-		_ = os.Chmod(p, 0o644) // Windows cannot delete a read-only file
-		return os.Remove(p)
+		return removeEntry(p, fi)
 	})
 	if err != nil {
 		return err
@@ -275,20 +410,80 @@ func pruneStale(worktree string, keep map[string]bool) error {
 	return nil
 }
 
+func sameFile(a, b string) bool {
+	fa, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	fb, err := os.Stat(b)
+	return err == nil && os.SameFile(fa, fb)
+}
+
+// gitCommonDir returns the repository common git dir after checking that it
+// really belongs to this worktree: either <worktree>/.git itself, or a linked
+// worktree whose admin dir points back at <worktree>/.git. An agent can edit
+// the .git file, and the exclude file must not be written into another repo.
+func gitCommonDir(worktree string) (string, error) {
+	abs := func(args ...string) (string, error) {
+		out, err := git(worktree, args...)
+		if err != nil {
+			return "", err
+		}
+		d := strings.TrimSpace(out)
+		if !filepath.IsAbs(d) {
+			d = filepath.Join(worktree, d)
+		}
+		return filepath.Clean(d), nil
+	}
+	gitdir, err := abs("rev-parse", "--git-dir")
+	if err != nil {
+		return "", err
+	}
+	common, err := abs("rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	dotgit := filepath.Join(worktree, ".git")
+	if sameFile(gitdir, common) {
+		if !sameFile(common, dotgit) {
+			return "", errors.New("git dir does not belong to this worktree")
+		}
+		return common, nil
+	}
+	back, err := os.ReadFile(filepath.Join(gitdir, "gitdir"))
+	if err != nil || !sameFile(strings.TrimSpace(string(back)), dotgit) ||
+		filepath.Base(filepath.Dir(gitdir)) != "worktrees" || !sameFile(filepath.Dir(filepath.Dir(gitdir)), common) {
+		return "", errors.New("git dir does not belong to this worktree")
+	}
+	return common, nil
+}
+
 // ensureExcluded adds /.megoocolab/ to <git-common-dir>/info/exclude once.
 func ensureExcluded(worktree string) error {
-	out, err := git(worktree, "rev-parse", "--git-common-dir")
+	dir, err := gitCommonDir(worktree)
 	if err != nil {
 		return err
 	}
-	dir := strings.TrimSpace(out)
-	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(worktree, dir)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, "info"), 0o755); err != nil {
+	info := filepath.Join(dir, "info")
+	p := filepath.Join(info, "exclude")
+	if fi, err := os.Lstat(info); err == nil {
+		if isLink(fi) || !fi.IsDir() {
+			return errors.New("info is not a plain directory")
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		if err := os.Mkdir(info, 0o755); err != nil {
+			return err
+		}
+	} else {
 		return err
 	}
-	p := filepath.Join(dir, "info", "exclude")
+	if fi, err := os.Lstat(p); err == nil {
+		if isLink(fi) || !fi.Mode().IsRegular() {
+			return errors.New("info/exclude is not a plain file")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	cur, err := os.ReadFile(p)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -332,14 +527,17 @@ func CommitRepoFiles(worktree string, files []protocol.File, message string) err
 		}
 		paths = append(paths, f.Path)
 	}
-	if _, err := git(worktree, append([]string{"--literal-pathspecs", "add", "--"}, paths...)...); err != nil {
+	// -f: the paths are validated and ours; a .gitignore must not stop them.
+	if _, err := git(worktree, append([]string{"--literal-pathspecs", "add", "-f", "--"}, paths...)...); err != nil {
 		return err
 	}
 	if _, err := git(worktree, append([]string{"--literal-pathspecs", "diff", "--cached", "--quiet", "--"}, paths...)...); err == nil {
 		return nil // nothing changed
 	}
-	// --no-verify: repo hooks must not run as part of MegooColab's own commit
-	// (they are the project's checks on the agent's work, not on our documents).
+	// --no-verify skips pre-commit and commit-msg; every runner git call also
+	// runs with core.hooksPath pointing at an empty directory (HardenedArgs), so
+	// no repo hook (prepare-commit-msg, post-commit, ...) runs as part of our
+	// own commit.
 	args := []string{"--literal-pathspecs"}
 	if out, _ := git(worktree, "config", "user.email"); strings.TrimSpace(out) == "" {
 		args = append(args, "-c", "user.name=MegooColab", "-c", "user.email=megoocolab@localhost")

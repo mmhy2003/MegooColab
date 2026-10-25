@@ -65,6 +65,7 @@ type Manager struct {
 
 // New builds a manager. send writes a message to the server (conn.Client.Send).
 func New(send func(any) error, cacheRoot string) *Manager {
+	gitstate.SetHooksDir(filepath.Join(cacheRoot, "empty-hooks"))
 	return &Manager{
 		LookPath:    exec.LookPath,
 		Kill:        killTree,
@@ -101,6 +102,7 @@ type run struct {
 	sessionID       string
 	gitBefore       *protocol.GitState
 	gitAfter        *protocol.GitState
+	snapBefore      *gitstate.Snapshot
 }
 
 // emit sends one metadata update with the next seq. The acpclient calls it in order.
@@ -260,7 +262,7 @@ func (m *Manager) probe() []protocol.AgentAvailability {
 }
 
 func isGitWorkTree(path string) bool {
-	out, err := exec.Command("git", "-C", path, "rev-parse", "--is-inside-work-tree").Output()
+	out, err := exec.Command("git", append(append([]string{"-C", path}, gitstate.HardenedArgs()...), "rev-parse", "--is-inside-work-tree")...).Output()
 	return err == nil && strings.TrimSpace(string(out)) == "true"
 }
 
@@ -555,31 +557,31 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	// The states are read even when the run fails or is cancelled. A side that
 	// cannot be read is left out: the server never gets a guessed state.
 	readBefore := func() {
-		st, err := gitstate.Read(wt)
+		snap, err := gitstate.Capture(wt)
 		if err != nil {
 			fmt.Fprintf(logf, "runner: git_before: %v\n", err)
 			return
 		}
 		r.mu.Lock()
-		r.gitBefore = &st
+		r.gitBefore, r.snapBefore = &snap.State, &snap
 		r.mu.Unlock()
 	}
 	// Registered before the adapter's reap, so it runs once the adapter is gone.
 	defer func() {
-		st, err := gitstate.Read(wt)
+		snap, err := gitstate.Capture(wt)
 		if err != nil {
 			fmt.Fprintf(logf, "runner: git_after: %v\n", err)
 			return
 		}
 		r.mu.Lock()
+		st := gitstate.After(r.snapBefore, snap)
 		r.gitAfter = &st
 		r.mu.Unlock()
 	}()
-	if len(rs.Files) > 0 {
-		if err := gitstate.Materialize(wt, rs.Files); err != nil {
-			readBefore()
-			return fail("files_failed", err)
-		}
+	// Also with no files: it removes what an earlier run left in .megoocolab/.
+	if err := gitstate.Materialize(wt, rs.Files); err != nil {
+		readBefore()
+		return fail("files_failed", err)
 	}
 	// git_before is read after the documents' commit, so that commit is the
 	// run's starting point and not mistaken for the agent's change (R1).

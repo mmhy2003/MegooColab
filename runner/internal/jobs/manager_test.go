@@ -840,3 +840,39 @@ func TestBadFilesFailTheRunWithStableCode(t *testing.T) {
 		})
 	}
 }
+
+func TestRunWithoutFilesPrunesStaleMegoocolabFiles(t *testing.T) {
+	e := newEnvWithCache(t, `[{"say":"ok"}]`, 1, t.TempDir())
+	e.startRunWith("run-a", "MEG-13", func(rs *protocol.RunStart) {
+		rs.Files = []protocol.File{{Path: ".megoocolab/plan.md", Content: "old"}}
+	})
+	e.finished("run-a")
+	stale := filepath.Join(e.worktree("MEG-13"), ".megoocolab", "plan.md")
+	if _, err := os.Stat(stale); err != nil {
+		t.Fatal(err)
+	}
+	e.startRunWith("run-b", "MEG-13", func(rs *protocol.RunStart) {})
+	e.finished("run-b")
+	if _, err := os.Stat(stale); err == nil {
+		t.Fatal("stale file survived a run without files")
+	}
+}
+
+func TestStashMadeBeforeTheRunIsNotTheRunsDoing(t *testing.T) {
+	e := newEnvWithCache(t, `[{"say":"ok"}]`, 1, t.TempDir())
+	// a stash made between two runs of the same worktree is part of both snapshots
+	e.startRun("run-s1", "MEG-14", "workspace")
+	e.finished("run-s1")
+	wt := e.worktree("MEG-14")
+	if err := os.WriteFile(filepath.Join(wt, "README.md"), []byte("edited"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", wt, "stash").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	e.startRun("run-s2", "MEG-14", "workspace")
+	rf := e.finished("run-s2")
+	if rf.GitAfter == nil || rf.GitAfter.Dirty {
+		t.Fatalf("a stash made before the run is not the run's doing: %+v", rf.GitAfter)
+	}
+}

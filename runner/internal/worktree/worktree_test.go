@@ -130,3 +130,18 @@ func TestEnsureRejectsUnsafeIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureRunsNoRepoHooks(t *testing.T) {
+	repo := newRepo(t)
+	marker := filepath.Join(t.TempDir(), "ran")
+	hook := "#!/bin/sh\necho ran >> \"" + filepath.ToSlash(marker) + "\"\n"
+	if err := os.WriteFile(filepath.Join(repo, ".git", "hooks", "post-checkout"), []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Ensure(repo, t.TempDir(), "agent-1", "MEG-1", "Title"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("post-checkout hook ran")
+	}
+}

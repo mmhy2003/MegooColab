@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/mmhy2003/megoocolab/runner/internal/gitstate"
 )
 
 var safeID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -42,7 +44,7 @@ func Slug(title string) string {
 }
 
 func git(repo string, args ...string) (string, error) {
-	out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+	out, err := exec.Command("git", append(append([]string{"-C", repo}, gitstate.HardenedArgs()...), args...)...).CombinedOutput()
 	s := strings.TrimSpace(string(out))
 	if err != nil {
 		return s, fmt.Errorf("git %s: %w: %s", args[0], err, s)
