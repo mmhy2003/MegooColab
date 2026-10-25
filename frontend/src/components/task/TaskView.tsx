@@ -13,8 +13,11 @@ import { useColumns, useLabels, useProject, useSprints, useTasks, useUsers } fro
 import { qk } from "@/lib/queries";
 import type { ActivityItem, Attachment, Task } from "@/lib/types";
 
+import { DocumentView } from "@/components/workflow/DocumentView";
+import { WorkflowPanel } from "@/components/workflow/WorkflowPanel";
+import { useWorkflow } from "@/lib/workflow";
+
 import { ActivityThread } from "./ActivityThread";
-import { AgentRunPanel } from "./AgentRunPanel";
 import { Attachments } from "./Attachments";
 import { CommentBox } from "./CommentBox";
 import { Description } from "./Description";
@@ -62,6 +65,7 @@ export function TaskView({
   const agents = useProjectAgents(projectKey);
   const sprints = useSprints(projectKey, project.data?.sprints_enabled ?? false);
   const all = useTasks(projectKey);
+  const workflow = useWorkflow(taskKey);
   const [error, setError] = useState<string | null>(null);
 
   const userNames = useMemo(() => new Map(users.data?.map((u) => [u.id, u.name])), [users.data]);
@@ -151,6 +155,14 @@ export function TaskView({
               />
             </Section>
           )}
+          {(["design", "plan"] as const).map(
+            (kind) =>
+              workflow.data?.documents.some((d) => d.kind === kind) && (
+                <Section key={kind} title={kind === "design" ? "Design" : "Plan"}>
+                  <DocumentView taskKey={t.key} kind={kind} />
+                </Section>
+              ),
+          )}
           <Section title="Linked tasks">
             <Links
               task={t}
@@ -210,10 +222,13 @@ export function TaskView({
             onSprint={(sprint_id) => void run(() => api(`/api/tasks/${t.key}/sprint`, { method: "PUT", json: { sprint_id } }))}
             onWatch={(watch) => void run(() => api(`/api/tasks/${t.key}/watch`, { method: watch ? "PUT" : "DELETE" }))}
           />
-          {(() => {
-            const assigned = t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined;
-            return assigned && <AgentRunPanel taskKey={t.key} agent={assigned} disabled={disabled} />;
-          })()}
+          {["story", "task", "bug"].includes(t.type) && (
+            <WorkflowPanel
+              taskKey={t.key}
+              agent={t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined}
+              disabled={disabled}
+            />
+          )}
           <p className="text-[11px] text-muted">
             Reported by {t.reporter_id ? userNames.get(t.reporter_id) ?? "someone" : "someone"} ·{" "}
             {new Date(t.created_at).toLocaleDateString()}
