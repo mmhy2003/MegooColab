@@ -75,10 +75,23 @@ docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers
 
 ### Agents end-to-end test
 
-`frontend/e2e/agents.spec.ts` drives the whole path (UI, server, runner, agent) against the same stack as above. It needs the Go toolchain and `git` on the PATH. The test builds the runner and the fake agent itself into a temp directory (`go build -o <tmp>/megoocolab-runner ./runner`, `go build -o <tmp>/fakeagent ./runner/internal/fakeagent`), runs the runner on the host with an isolated config and cache directory (HOME, USERPROFILE, APPDATA, LOCALAPPDATA, XDG_CONFIG_HOME and XDG_CACHE_HOME all point at a temp dir), and points `MEGOO_ADAPTER_CLAUDE_CODE` at the fake agent. It needs a fresh stack: it creates the "Agents Team" team and the AGT project, which already exist on a stack it has run against, so bring the stack down with `down -v` before each run. When it ends, pass or fail, it removes its temp directory (binaries, repository, worktree and the runner config with the token). To run it:
+`frontend/e2e/agents.spec.ts` drives the whole path (UI, server, runner, agent) against the same stack as above. It needs the Go toolchain and `git` on the PATH. The test builds the runner and the fake agent itself into a temp directory (`go build -o <tmp>/megoocolab-runner ./runner`, `go build -o <tmp>/fakeagent ./runner/internal/fakeagent`), runs the runner on the host with an isolated config and cache directory (HOME, USERPROFILE, APPDATA, LOCALAPPDATA, XDG_CONFIG_HOME and XDG_CACHE_HOME all point at a temp dir), and points `MEGOO_ADAPTER_CLAUDE_CODE` at the fake agent. It covers the token, the agent and its binding, online and offline, a workflow run queued while the runner is offline that starts once when it connects (a read-only brainstorm whose write is denied), and MCP `create_task`. It needs a fresh stack: it creates the "Agents Team" team and the AGT project, which already exist on a stack it has run against, so bring the stack down with `down -v` before each run. When it ends, pass or fail, it removes its temp directory (binaries, repository, worktree and the runner config with the token). To run it:
 
 ```bash
 cd frontend && npx playwright test e2e/agents.spec.ts
 # optional: E2E_SCREENSHOT_DIR=<dir> saves light and dark screenshots of the agent pages
 #           E2E_RUNNER_LOG=1 prints the runner output at the end
+```
+
+### Workflow end-to-end test
+
+`frontend/e2e/workflow.spec.ts` takes a task from To Do to Done through the whole workflow (Brainstorm, Design, Plan, Build, Review, Done) with the fake agent, on the same stack and with the same requirements and set-up as the agents test. It creates the "Workflow Team" team and the WFL project, so it too needs a fresh stack; it can run alone or after the other specs (`npx playwright test` runs all three on one stack, each with its own project key).
+
+The fake agent plays every role from one scenario (`FAKEAGENT_SCENARIO`): its steps are grouped by `if_prompt_contains` on text that only that role's prompt holds (the methodology heading, `## Step n of 2`, a resume text), and `mcp_call` steps call MegooColab's MCP tools with the run's own token. The runner also gets `FAKEAGENT_SESSIONS_DIR` (sessions survive across runs, so answers and fixes resume them), `FAKEAGENT_RESUME=1`, and `FAKEAGENT_REPORT_DIR`, where each agent process (one per run) writes its own report; the test reads them to check session resumes and that `.megoocolab/plan.md` was in the worktree during Build.
+
+Along the way it answers a question through the sandboxed mockup, approves the design, rejects and then approves the plan, follows the thread's document version links, sees a step review ask for changes and the fix pass, stops and restarts the runner during step 2 (step 2 is retried once, nothing before it re-runs), and checks the pull request link and that the developer's checkout is untouched. Last, a second task's mockup tries to call `/api/auth/me`, read `document.cookie`, navigate the top window and post an undeclared choice; the test checks each is blocked and that no answer is recorded. To run it:
+
+```bash
+cd frontend && npx playwright test e2e/workflow.spec.ts
+# optional: E2E_RUNNER_LOG=1 prints the runner output at the end
 ```

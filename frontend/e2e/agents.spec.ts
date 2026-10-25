@@ -1,15 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
-import { buildBinaries, startRunner, type Binaries, type RunnerHandle } from "./helpers/runner";
+import { buildBinaries, mcp, onPrompt, say, startRunner, type Binaries, type RunnerHandle } from "./helpers/runner";
 
 /**
- * End-to-end test of Plan 2: UI -> server -> runner -> (fake) agent and back.
+ * End-to-end test of Plan 2: UI -> server -> runner -> (fake) agent and back. Runs are workflow runs (Plan 3):
+ * moving the card into In Progress starts the workflow, whose first run is a read-only brainstorm.
  * Needs the Go toolchain and git on the PATH; the runner runs on the host and
  * connects to the stack under test. See README "Agents end-to-end test".
  */
@@ -18,19 +19,24 @@ const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
 const SHOTS = process.env.E2E_SCREENSHOT_DIR; // optional: also capture review screenshots
 const AGENT_NAME = `${ADMIN.name}'s Claude Code`;
 
-const say = (text: string) => ({ say: text });
-const SCENARIO_WORKSPACE = [
-  say("Looking at the code"),
-  { plan: [["Read the code", "completed"], ["Write notes", "in_progress"]] },
-  { write: { path: "notes.txt", content: "hello\n" } },
-  say("Done"),
+// the brainstorm run (read-only): it reports progress, tries to write, then asks a question
+const SCENARIO = [
+  onPrompt(
+    "## Task AGT-1",
+    say("Looking at the code"),
+    { plan: [["Read the code", "completed"], ["Write notes", "in_progress"]] },
+    { write: { path: "notes.txt", content: "tampered\n" } },
+    say("Read-only done"),
+    mcp("ask_human", {
+      key: "AGT-1",
+      question: "Which sync bug should I look at first?",
+      choices: [
+        { id: "orders", label: "Orders" },
+        { id: "refunds", label: "Refunds" },
+      ],
+    }),
+  ),
 ];
-const SCENARIO_WRITE_ATTEMPT = [
-  say("Trying to write"),
-  { write: { path: "notes.txt", content: "tampered\n" } },
-  say("Read-only done"),
-];
-const SCENARIO_BACK = [say("Back online")];
 
 async function shot(page: Page, name: string) {
   if (!SHOTS) return;
@@ -74,8 +80,8 @@ test("agents end to end", async ({ browser, request }) => {
   git(repo, "add", ".");
   git(repo, "commit", "-q", "-m", "init");
   const home = join(work, "home");
-  const launch = (token: string, scenario: unknown[]) => {
-    leftovers.runner = startRunner({ url: BASE, token, home, adapterOverride: bins.fakeAgent, scenario, runnerBin: bins.runner });
+  const launch = (token: string) => {
+    leftovers.runner = startRunner({ url: BASE, token, home, adapterOverride: bins.fakeAgent, scenario: SCENARIO, runnerBin: bins.runner });
   };
   const stopRunner = async () => {
     await leftovers.runner?.stop();
@@ -133,14 +139,14 @@ test("agents end to end", async ({ browser, request }) => {
   await expect(page.getByText("Offline")).toBeVisible();
 
   // 4-5. start the runner; the agent is online within 5 s
-  launch(token, SCENARIO_WORKSPACE);
+  launch(token);
   await expect(page.getByText("Online")).toBeVisible({ timeout: 5_000 });
   await shot(page, "agents-settings");
   const agents = await (await page.request.get("/api/agents/mine")).json();
   const agentId: string = agents[0].id;
   const worktree = join(home, "cache", "megoocolab", "worktrees", agentId, "AGT-1");
 
-  // 6. a task assigned to the agent
+  // 6. a task assigned to the agent; its workflow has not started
   await page.goto("/projects/AGT/board");
   await page.getByLabel("New task in To Do").fill("Investigate sync");
   await page.getByLabel("New task in To Do").press("Enter");
@@ -149,67 +155,65 @@ test("agents end to end", async ({ browser, request }) => {
   await expect(drawer).toBeVisible();
   await drawer.getByLabel("Assignee").selectOption({ label: AGENT_NAME });
   await expect(drawer.getByText(`assigned this to ${AGENT_NAME}`)).toBeVisible();
-  const panel = drawer.getByRole("region", { name: "Agent" });
-  await expect(panel).toBeVisible();
+  const panel = drawer.getByRole("region", { name: "Workflow" });
+  await expect(panel.getByText("Not started")).toBeVisible();
+  await expect(panel.getByText("Online", { exact: true })).toBeVisible();
 
-  // 7. workspace run: edits land in the worktree, not in the repo
-  await panel.getByLabel("Run policy").selectOption("workspace");
-  await panel.getByRole("button", { name: "Run agent" }).click();
-  await expect(drawer.getByText("started working")).toBeVisible({ timeout: 15_000 });
+  // 7. runner stopped: the agent goes offline, and the run the workflow queues waits for it.
+  // Wait for Offline first, or a later Online check could pass on the old runner's state.
+  await stopRunner();
+  await expect(panel.getByText("Offline", { exact: true })).toBeVisible({ timeout: 60_000 });
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+  const card = page.getByRole("region", { name: "To Do column" }).getByRole("button", { name: /AGT-1 Investigate sync/ });
+  const from = (await card.boundingBox())!;
+  const to = (await page.getByRole("region", { name: "In Progress column" }).boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2 + 20, from.y + from.height / 2, { steps: 5 });
+  await page.mouse.move(to.x + to.width / 2, to.y + 120, { steps: 15 });
+  await page.mouse.up();
+  const moved = page.getByRole("region", { name: "In Progress column" }).getByRole("button", { name: /AGT-1 Investigate sync/ });
+  await expect(moved).toBeVisible();
+  await moved.click();
+  await expect(panel.getByText(`Agent offline — the run starts when ${ADMIN.name}'s runner connects.`)).toBeVisible();
+  await expect(panel.getByText("brainstorm · queued · read-only")).toBeVisible();
+  await expect(drawer.getByText("started the workflow")).toBeVisible();
+  await expect(drawer.getByText("queued a run")).toHaveCount(1);
+
+  // 8. runner back: the queued run starts once and its progress reaches the thread. It is read-only, so its
+  // write is denied and touches neither the worktree nor the repo. It ends with the agent's question.
+  launch(token);
+  await expect(drawer.getByText("started working")).toBeVisible({ timeout: 30_000 });
   await expect(drawer.getByText("Looking at the code")).toBeVisible({ timeout: 15_000 });
   await expect(drawer.getByText("updated the plan (2 steps)")).toBeVisible({ timeout: 15_000 });
-  await expect(drawer.getByText("changed notes.txt (+1 −0)")).toBeVisible({ timeout: 15_000 });
-  await expect(drawer.getByText("finished: Done")).toBeVisible({ timeout: 15_000 });
-  expect(existsSync(join(worktree, "notes.txt"))).toBe(true);
-  expect(readFileSync(join(worktree, "notes.txt"), "utf8")).toBe("hello\n");
-  expect(existsSync(join(repo, "notes.txt"))).toBe(false);
-  await shot(page, "task-run");
-
-  // 8. read-only run whose agent tries to write: denied, file untouched.
-  // Wait for Offline first, or the Online check could pass on the old runner's state.
-  await stopRunner();
-  await expect(panel.getByText("Offline", { exact: true })).toBeVisible({ timeout: 60_000 });
-  launch(token, SCENARIO_WRITE_ATTEMPT);
-  await expect(panel.getByText("Online", { exact: true })).toBeVisible({ timeout: 10_000 });
-  await panel.getByLabel("Run policy").selectOption("read_only");
-  await panel.getByRole("button", { name: "Run agent" }).click();
   await expect(drawer.getByText(/was denied: /)).toBeVisible({ timeout: 15_000 });
+  await expect(drawer.getByText("Which sync bug should I look at first?")).toBeVisible({ timeout: 15_000 });
   await expect(drawer.getByText("finished: Read-only done")).toBeVisible({ timeout: 15_000 });
-  expect(readFileSync(join(worktree, "notes.txt"), "utf8")).toBe("hello\n");
-
+  await expect(panel.getByText("Waiting: Answer the agent's question")).toBeVisible();
+  await expect(drawer.getByText("started working")).toHaveCount(1);
+  await shot(page, "task-run");
+  expect(existsSync(join(worktree, "notes.txt"))).toBe(false);
   expect(existsSync(join(repo, "notes.txt"))).toBe(false);
-
-  // 9. runner stopped: agent offline, a new run waits
-  await stopRunner();
-  await expect(panel.getByText("Offline", { exact: true })).toBeVisible({ timeout: 60_000 });
-  await expect(panel.getByText(`Agent offline — the run starts when ${ADMIN.name}'s runner connects.`)).toBeVisible();
-  await panel.getByRole("button", { name: "Run agent" }).click();
-  await expect(panel.getByText(/queued · read-only/)).toBeVisible();
-  await expect(drawer.getByText("queued a run")).toHaveCount(3); // one per run so far
-
-  // 10. runner back: the queued run starts once and completes
-  launch(token, SCENARIO_BACK);
-  await expect(drawer.getByText("finished: Back online")).toBeVisible({ timeout: 30_000 });
-  await expect(drawer.getByText("started working")).toHaveCount(3);
-  await expect(drawer.getByText("finished: Back online")).toHaveCount(1);
-  // and on the server: exactly 3 runs, each started and completed once, none failed or cancelled
-  const runs: { id: string; status: string }[] = await (await page.request.get("/api/tasks/AGT-1/agent-runs")).json();
-  expect(runs.map((r) => r.status)).toEqual(["completed", "completed", "completed"]);
+  // and on the server: exactly 1 run, started and completed once, none failed or cancelled
+  const runs: { id: string; status: string; workflow_role: string | null }[] = await (
+    await page.request.get("/api/tasks/AGT-1/agent-runs")
+  ).json();
+  expect(runs.map((r) => [r.workflow_role, r.status])).toEqual([["brainstorm", "completed"]]);
   const activity: { kind?: string; data?: { run_id?: string } }[] = await (
     await page.request.get("/api/tasks/AGT-1/activity?limit=200")
   ).json();
   const runIdsOf = (kind: string) => activity.filter((i) => i.kind === kind).map((i) => i.data?.run_id);
-  const runIds = runs.map((r) => r.id).sort();
-  expect(runIdsOf("agent_run_started").sort()).toEqual(runIds);
-  expect(runIdsOf("agent_run_completed").sort()).toEqual(runIds);
+  expect(runIdsOf("agent_run_started")).toEqual([runs[0].id]);
+  expect(runIdsOf("agent_run_completed")).toEqual([runs[0].id]);
   expect(runIdsOf("agent_run_failed")).toEqual([]);
   expect(runIdsOf("agent_run_cancelled")).toEqual([]);
 
-  // 11. MCP create_task: the new task shows up on the open board without a reload
+  // 9. MCP create_task: the new task shows up on the open board without a reload
   // (same page, so its live socket has been open all along)
   await page.keyboard.press("Escape");
   await expect(drawer).toBeHidden();
-  await expect(page.getByRole("region", { name: "To Do column" }).getByText("Investigate sync")).toBeVisible();
+  await expect(page.getByRole("region", { name: "In Progress column" }).getByText("Investigate sync")).toBeVisible();
   const created = await request.post("/api/mcp", {
     headers: {
       Authorization: `Bearer ${token}`,

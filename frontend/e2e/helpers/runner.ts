@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const WIN = process.platform === "win32";
@@ -30,6 +30,8 @@ export type StartRunnerOptions = {
   scenario: unknown[];
   /** Path to the built megoocolab-runner. */
   runnerBin: string;
+  /** Extra environment for the runner and so for the fake agent (FAKEAGENT_SESSIONS_DIR, FAKEAGENT_RESUME, ...). */
+  env?: Record<string, string>;
 };
 
 export type RunnerHandle = { stop(): Promise<void>; output(): string };
@@ -60,6 +62,7 @@ export function startRunner(opts: StartRunnerOptions): RunnerHandle {
     ...isolatedEnv(opts.home),
     MEGOO_ADAPTER_CLAUDE_CODE: `"${opts.adapterOverride}"`,
     FAKEAGENT_SCENARIO: JSON.stringify(opts.scenario),
+    ...opts.env,
   };
   execFileSync(opts.runnerBin, ["login", "--url", opts.url, "--token", opts.token], { env, stdio: "pipe" });
   const child: ChildProcess = spawn(opts.runnerBin, ["run"], {
@@ -89,4 +92,34 @@ export function startRunner(opts: StartRunnerOptions): RunnerHandle {
       await exited;
     },
   };
+}
+
+// ---- fake agent scenarios ------------------------------------------------------------------------
+
+export type ScenarioStep = Record<string, unknown>;
+
+export const say = (text: string): ScenarioStep => ({ say: text });
+
+/** Steps that run only in a turn whose prompt contains `text`, so one scenario can drive many runs. */
+export const onPrompt = (text: string, ...then: ScenarioStep[]): ScenarioStep => ({ if_prompt_contains: text, then });
+
+/** A call of one of MegooColab's MCP tools, over the run's own MCP server and token. */
+export const mcp = (tool: string, args: Record<string, unknown>): ScenarioStep => ({ mcp_call: { tool, args } });
+
+/** What one fake agent process saw and did (runner/internal/fakeagent Report). */
+export type FakeAgentReport = {
+  cwd: string;
+  prompts: string[] | null;
+  session_events: string[] | null;
+  steps: { type: string; ok?: boolean; error?: string; exists?: boolean; content?: string; tool?: string; result?: string }[];
+};
+
+/** Every report in a FAKEAGENT_REPORT_DIR (one per agent process, so one per run), oldest first. */
+export function readReports(dir: string): FakeAgentReport[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => /^report-\d+-\d+\.json$/.test(f))
+    // by the start time in ns (too big for a Number): as equal-length strings
+    .sort((a, b) => (a.split("-")[1].padStart(24, "0") < b.split("-")[1].padStart(24, "0") ? -1 : 1))
+    .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as FakeAgentReport);
 }
