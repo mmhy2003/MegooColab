@@ -437,7 +437,12 @@ async def stop_runs_before_delete(db: AsyncSession, task_ids) -> None:
 
 async def cancel_user_runs(db: AsyncSession, user_id: uuid.UUID) -> None:
     """Deactivation: cancel the user's queued and running runs, on their agents or requested by them.
-    Running ones get a best-effort run_cancel on the agent owner's connection."""
+    Running ones get a best-effort run_cancel on the agent owner's connection.
+
+    A running run on someone else's live runner (the user only requested it) stays running until that
+    runner's run_finished ends it, as with cancel_run: the runner still holds the run, so a retry sent
+    sooner would find the agent busy, or share the worktree with the run being cancelled. The user's own
+    runs end now: their runner's connection is being closed."""
     theirs = (Agent.owner_id == user_id) | (AgentRun.requested_by == user_id)
     async for run, owner_id in _lock_runs_one_by_one(db, ACTIVE_STATUSES, theirs):
         if run.status == RunStatus.running:
@@ -445,6 +450,8 @@ async def cancel_user_runs(db: AsyncSession, user_id: uuid.UUID) -> None:
             if conn is not None:
                 try:
                     await conn.send(RunCancel(run_id=run.id))
+                    if owner_id != user_id and run.id in conn.run_ids:
+                        continue
                 except RunnerClosed:
                     pass
         await _transition(db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, reason="user_deactivated")

@@ -619,30 +619,88 @@ async def test_owner_deactivated_mid_run_pauses_without_retry(db, tc_factory):
     assert paused.data == {"reason": "owner_deactivated"} and paused.actor_user_id is None
 
 
-async def test_requester_deactivated_retry_is_dispatched(db, tc_factory):
+async def _requester(db, tc, rc):
+    """A second manager of the project, logged in on `rc`: may start workflows on the owner's agent."""
     from app.auth.models import Role
 
-    tc, rc = tc_factory(lifespan=True), tc_factory()
-    ac = await _admin_client(db, tc_factory)
-    b = await _board(db, tc)
     requester = await make_user(db, role=Role.manager)
     team_id = tc.get("/api/projects/PAY").json()["team_ids"][0]
     db.add(TeamMember(team_id=uuid.UUID(team_id), user_id=requester.id))
     await db.commit()
     _login(rc, requester)
+    return requester
+
+
+class _LimitOneRunner:
+    """A fake runner holding at most one run per agent, like the real one with max_concurrent_runs = 1: a
+    run_start that arrives while it still holds a run is answered `failed` with error `busy`."""
+
+    def __init__(self, ws):
+        self.ws, self.holding, self.busy = ws, set(), []
+
+    def next(self, kind: str) -> dict:
+        while True:
+            msg = _next_of_any(self.ws)
+            if msg["type"] == "run_start":
+                if self.holding:
+                    self.busy.append(msg["run_id"])
+                    self.ws.send_json({"type": "run_finished", "run_id": msg["run_id"], "outcome": "failed",
+                                       "summary": "", "error": "busy"})
+                    continue
+                self.holding.add(msg["run_id"])
+            if msg["type"] == kind:
+                return msg
+
+    def finish(self, run_id: str, outcome: str) -> None:
+        self.holding.discard(run_id)
+        self.ws.send_json({"type": "run_finished", "run_id": run_id, "outcome": outcome, "summary": ""})
+
+
+def _next_of_any(ws) -> dict:
+    while True:
+        msg = ws.receive_json()
+        if msg["type"] not in {"welcome", "config_changed"}:
+            return msg
+
+
+async def test_requester_deactivated_running_run_retries_after_the_runner_confirms(db, tc_factory):
+    tc, rc = tc_factory(lifespan=True), tc_factory()
+    ac = await _admin_client(db, tc_factory)
+    b = await _board(db, tc)
+    requester = await _requester(db, tc, rc)
     with tc.websocket_connect(URL, headers=b.token["headers"]) as ws:
         ws.receive_json()
         ws.send_json(_hello_v2(b.agent))
         _wait_status(tc, b.agent["id"], "online")
+        runner = _LimitOneRunner(ws)
         assert _move(rc, b.key, b.cols["working"]).status_code == 200  # a manager starts it on the owner's agent
-        first = _next_of(ws, "run_start")
+        first = runner.next("run_start")
         assert ac.post(f"/api/admin/users/{requester.id}/deactivate").status_code == 204
-        assert _next_of(ws, "run_cancel")["run_id"] == first["run_id"]
-        retry = _next_of(ws, "run_start")  # dispatched after the deactivation commits
+        assert runner.next("run_cancel")["run_id"] == first["run_id"]
+        # the runner still holds the run: it stays running, and nothing else is sent to the runner
+        assert [r.status for r in await _runs(b.task_id)] == ["running"]
+        runner.finish(first["run_id"], "cancelled")  # the runner confirms the cancel
+        retry = runner.next("run_start")
         assert retry["run_id"] != first["run_id"] and retry["role"] == "brainstorm"
+        assert runner.busy == []
         runs = await _runs(b.task_id)
-        assert [r.status for r in runs] == ["cancelled", "running"] and runs[1].requested_by == b.manager.id
-        assert (await _wf(b.task_id)).failures == 1
+        assert [r.status for r in runs] == ["cancelled", "running"]  # exactly one retry
+        assert runs[1].requested_by == b.manager.id
+        wf = await _wf(b.task_id)
+        assert (wf.status, wf.failures) == ("running", 1)
+        assert all(e.data.get("reason") != "agent_error" for e in await _events(b.task_id, "agent_run_failed"))
+
+
+async def test_requester_deactivated_queued_run_is_cancelled_and_retried(db, tc_factory):
+    tc, rc = tc_factory(lifespan=True), tc_factory()
+    ac = await _admin_client(db, tc_factory)
+    b = await _board(db, tc)
+    requester = await _requester(db, tc, rc)
+    assert _move(rc, b.key, b.cols["working"]).status_code == 200  # no runner: the run waits queued
+    assert ac.post(f"/api/admin/users/{requester.id}/deactivate").status_code == 204
+    runs = await _runs(b.task_id)
+    assert [(r.status, r.reason) for r in runs] == [("cancelled", "user_deactivated"), ("queued", None)]
+    assert runs[1].requested_by == b.manager.id and (await _wf(b.task_id)).status == "running"
 
 
 async def test_failed_read_only_run_that_changed_git_escalates_instead_of_retrying(db, tc_factory):
