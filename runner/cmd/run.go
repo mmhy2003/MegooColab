@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
@@ -35,16 +36,27 @@ func newRunCmd(version string) *cobra.Command {
 			// Under a service manager (or with --background) there is no
 			// terminal, so state lines go to <cache>/megoocolab/logs/runner.log.
 			if background || !service.Interactive() {
-				cacheDir, err := os.UserCacheDir()
+				root, err := cacheRoot()
 				if err != nil {
-					return fmt.Errorf("cannot find the cache directory: %w", err)
+					return err
 				}
-				f, err := openRunLog(filepath.Join(cacheDir, "megoocolab"))
+				f, err := openRunLog(root)
 				if err != nil {
 					return fmt.Errorf("cannot open the log file: %w", err)
 				}
 				defer f.Close()
 				out = f
+				// `service stop` on Windows asks for a graceful stop by creating
+				// a stop file; turn it into cancellation so agents are cancelled.
+				cleanup, err := beginBackground(root)
+				if err != nil {
+					return fmt.Errorf("cannot write the pid file: %w", err)
+				}
+				defer cleanup()
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				defer cancel()
+				go watchStopFile(ctx, stopPath(root), time.Second, cancel)
 			}
 			return runConnection(ctx, out, cfg, version)
 		},

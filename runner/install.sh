@@ -14,7 +14,11 @@ SYSTEM=0
 for arg in "$@"; do
   case "$arg" in
     --system) SYSTEM=1 ;;
-    -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
+    -h|--help)
+      echo "usage: sh install.sh [--system]"
+      echo "  installs megoocolab-runner to ~/.local/bin, or /usr/local/bin with --system (sudo)"
+      echo "  MEGOO_RUNNER_VERSION=1.2.3 pins a version instead of the latest runner release"
+      exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -66,7 +70,8 @@ archive="megoocolab-runner_${version}_${os}_${arch}.tar.gz"
 base="https://github.com/$REPO/releases/download/runner-v$version"
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
+trap 'rm -rf "$tmp"' EXIT
+trap 'rm -rf "$tmp"; exit 1' INT TERM
 
 echo "Downloading megoocolab-runner $version ($os/$arch)"
 fetch "$base/$archive" "$tmp/$archive" || fail "cannot download $base/$archive"

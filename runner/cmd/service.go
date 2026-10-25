@@ -16,18 +16,57 @@ const (
 	maxLogBytes = 5 << 20
 )
 
+// systemdUserScript is kardianos' systemd template with one change: a user
+// unit must be wanted by default.target, because user managers never reach
+// multi-user.target and `systemctl --user enable` would not autostart it.
+const systemdUserScript = `[Unit]
+Description={{Description}}
+ConditionFileIsExecutable={{Path | cmdEscape}}
+{{range Dependencies}}{{.}}
+{{end}}
+[Service]
+StartLimitInterval=5
+StartLimitBurst=10
+ExecStart={{Path | cmdEscape}}{{range Arguments}} {{. | cmd}}{{end}}
+{{if ChRoot}}RootDirectory={{ChRoot | cmd}}
+{{end}}{{if WorkingDirectory}}WorkingDirectory={{WorkingDirectory | cmdEscape}}
+{{end}}{{if UserName}}User={{UserName}}
+{{end}}{{if ReloadSignal}}ExecReload=/bin/kill -{{ReloadSignal}} "$MAINPID"
+{{end}}{{if PIDFile}}PIDFile={{PIDFile | cmd}}
+{{end}}{{if OutputFileSupport}}StandardOutput=file:{{LogDirectory}}/{{Name}}.out
+StandardError=file:{{LogDirectory}}/{{Name}}.err
+{{end}}{{if LimitNOFILE}}LimitNOFILE={{LimitNOFILE}}
+{{end}}{{if Restart}}Restart={{Restart}}
+{{end}}{{if SuccessExitStatus}}SuccessExitStatus={{SuccessExitStatus}}
+{{end}}RestartSec=120
+EnvironmentFile=-/etc/sysconfig/{{Name}}
+
+{{range EnvVars}}{{.}}
+{{end}}[Install]
+WantedBy=default.target
+`
+
 // serviceConfig describes the background service. It is a pure function so it
 // can be tested without touching the real service manager. The service runs as
 // the current user (systemd --user, launchd LaunchAgent) because the agent
-// adapters need that user's logins and repositories.
-func serviceConfig() *service.Config {
-	return &service.Config{
+// adapters need that user's logins and repositories. path is the PATH captured
+// at install time: launchd and systemd --user start with a minimal PATH that
+// would not find npx.
+func serviceConfig(path string) *service.Config {
+	c := &service.Config{
 		Name:        serviceName,
 		DisplayName: "MegooColab Runner",
 		Description: "Runs coding agents on this machine for MegooColab.",
 		Arguments:   []string{"run"},
-		Option:      service.KeyValue{"UserService": true},
+		Option: service.KeyValue{
+			"UserService":   true,
+			"SystemdScript": systemdUserScript,
+		},
 	}
+	if path != "" {
+		c.EnvVars = map[string]string{"PATH": path}
+	}
+	return c
 }
 
 // serviceManager is the per-platform way of registering and controlling the

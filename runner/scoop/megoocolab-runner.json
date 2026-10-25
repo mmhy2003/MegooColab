@@ -15,8 +15,8 @@
     },
     "bin": "megoocolab-runner.exe",
     "checkver": {
-        "github": "https://github.com/mmhy2003/MegooColab",
-        "regex": "runner-v([\\d.]+)"
+        "url": "https://api.github.com/repos/mmhy2003/MegooColab/releases",
+        "regex": "\"tag_name\":\\s*\"runner-v([\\d.]+)\""
     },
     "autoupdate": {
         "architecture": {

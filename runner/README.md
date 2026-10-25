@@ -29,6 +29,10 @@ Windows (Scoop):
 scoop install https://raw.githubusercontent.com/mmhy2003/MegooColab/main/runner/scoop/megoocolab-runner.json
 ```
 
+The manifest's version and hashes are placeholders: Scoop's `checkver -u` /
+autoupdate fills them in from the first `runner-v*` release (the release workflow does
+not edit the manifest).
+
 Manual: download the archive for your platform from the
 [releases page](https://github.com/mmhy2003/MegooColab/releases) (tags `runner-v*`),
 check it against `checksums.txt`, and put `megoocolab-runner` on your PATH.
@@ -54,11 +58,24 @@ megoocolab-runner service stop
 megoocolab-runner service uninstall
 ```
 
-The service runs as you, because the adapters need your agent logins and repositories:
-a systemd user unit on Linux, a LaunchAgent on macOS, and on Windows a per-user
-scheduled task that starts at logon (Windows services cannot run as an ordinary user
-without a password). On Linux, `loginctl enable-linger $USER` keeps the unit running
-when you are logged out.
+The service runs as you, because the adapters need your agent logins and repositories.
+`service install` only registers it; run `service start` to start it now.
+
+- **Linux:** a systemd user unit, enabled for `default.target`, so it starts when your user
+  manager does. Run `loginctl enable-linger $USER` once to keep it running when you are
+  logged out.
+- **macOS:** a LaunchAgent in `~/Library/LaunchAgents`, loaded at login.
+- **Windows:** an `HKCUSoftwareMicrosoftWindowsCurrentVersionRun` entry that starts `megoocolab-runner run --background`
+  (no console window) at logon. `service start` launches it detached right away,
+  `service stop` asks it to cancel its runs and exit (and ends it after 15 s if it does
+  not), `service status` shows `running (pid N)`, `stopped` or `not installed`.
+  Windows has no crash restart for this: after a crash it comes back at the next logon or
+  with `service start`.
+
+No admin rights are needed on any OS. On Linux and macOS, `service install` captures your
+current `PATH` into the unit (launchd and systemd start with a minimal one, which would not
+find `npx`). Re-run `service install` after changing your Node.js installation. On Windows
+the process inherits your normal logon environment.
 
 ### Logs
 

@@ -2,7 +2,11 @@
 
 package cmd
 
-import "github.com/kardianos/service"
+import (
+	"os"
+
+	"github.com/kardianos/service"
+)
 
 type noopProgram struct{}
 
@@ -12,7 +16,7 @@ func (noopProgram) Stop(service.Service) error  { return nil }
 type libManager struct{ svc service.Service }
 
 func newServiceManager() (serviceManager, error) {
-	s, err := service.New(noopProgram{}, serviceConfig())
+	s, err := service.New(noopProgram{}, serviceConfig(os.Getenv("PATH")))
 	if err != nil {
 		return nil, err
 	}
