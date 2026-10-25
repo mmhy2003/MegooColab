@@ -1,6 +1,7 @@
 """Runner protocol v2: capabilities, workflow run_start fields, run tokens and run metadata."""
 
 import json
+import time
 import uuid
 
 import pytest
@@ -418,11 +419,10 @@ def test_runner_reported_strings_are_bounded_and_nul_free():
         {"type": "agent_status", "agent_id": agent, "available": False, "problems": ["a\u0000b"]}
     )
     assert msg.problems == ["ab"]
-    for problems in (["x"] * 11, ["x" * 201]):
-        with pytest.raises(ValidationError):
-            runner_message.validate_python(
-                {"type": "agent_status", "agent_id": agent, "available": False, "problems": problems}
-            )
+    long = runner_message.validate_python(
+        {"type": "agent_status", "agent_id": agent, "available": False, "problems": ["x" * 250] + ["y"] * 11}
+    )
+    assert len(long.problems) == 10 and len(long.problems[0]) == 200  # truncated, never rejected
     assert runner_message.validate_python({"type": "run_update", "run_id": agent, "seq": 1, "kind": "m\u0000", "data": {}}).kind == "m"
 
 
@@ -452,3 +452,26 @@ def test_v2_start_fields_are_exactly_the_non_v1_fields():
     assert V2_START_FIELDS == {
         "role", "stage", "step", "resume_session_id", "resume_prompt", "mcp", "files", "repo_files", "commit_message",
     }
+
+
+async def test_hello_with_too_many_or_too_long_problems_is_truncated_not_rejected(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, _task = _setup(tc)
+    problems = ["C:\\" + "d" * 250 + " is not a git repository"] + [f"problem {i}" for i in range(10)]
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json({
+            **_hello([{"agent_id": agent["id"], "available": False, "problems": problems}]),
+            "runner_version": "v" * 300,
+        })
+        ws.send_json({"type": "heartbeat"})  # the socket is still up
+        deadline = time.monotonic() + 3
+        while True:
+            mine = next(a for a in tc.get("/api/agents/mine").json() if a["id"] == agent["id"])
+            if mine["problems"][:1] and len(mine["problems"]) > 1:
+                break
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
+        shown = [p for p in mine["problems"] if p != WORKFLOW_PROBLEM]
+        assert len(shown) == 10 and all(len(p) <= 200 for p in shown)

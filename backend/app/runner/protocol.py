@@ -8,9 +8,16 @@ import re
 import uuid
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    field_validator,
+)
 
-from app.core.text import NoNulStr
+from app.core.text import NoNulStr, strip_nul
 
 CLOSE_UNAUTHORIZED = 4401  # missing, invalid or revoked token / deactivated user
 CLOSE_REPLACED = 4409  # a newer connection for the same user took over
@@ -22,7 +29,20 @@ class _FromRunner(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-Problems = Annotated[list[Annotated[NoNulStr, Field(max_length=200)]], Field(max_length=10)]
+def _trunc(limit: int):
+    """NUL-free and cut to `limit` characters. For fields a v1 runner already sends: a long value must
+    never make the whole message (and so the connection) invalid."""
+    return BeforeValidator(lambda v: strip_nul(v)[:limit] if isinstance(v, str) else v)
+
+
+def _problems(v):
+    """At most 10 problems of 200 characters each, NUL stripped; the rest is dropped, not rejected."""
+    if not isinstance(v, list):
+        return v
+    return [strip_nul(p)[:200] if isinstance(p, str) else p for p in v[:10]]
+
+
+Problems = Annotated[list[str], BeforeValidator(_problems)]
 
 
 class AgentReport(_FromRunner):
@@ -33,9 +53,9 @@ class AgentReport(_FromRunner):
 
 class Hello(_FromRunner):
     type: Literal["hello"]
-    runner_version: NoNulStr = Field(max_length=100)
-    os: NoNulStr = Field(max_length=100)
-    arch: NoNulStr = Field(max_length=100)
+    runner_version: Annotated[str, _trunc(100)]
+    os: Annotated[str, _trunc(100)]
+    arch: Annotated[str, _trunc(100)]
     agents: list[AgentReport] = []
     capabilities: list[Annotated[NoNulStr, Field(max_length=50)]] = Field(default=[], max_length=50)
 
@@ -55,7 +75,7 @@ class RunUpdate(_FromRunner):
     type: Literal["run_update"]
     run_id: uuid.UUID
     seq: int
-    kind: NoNulStr = Field(max_length=40)
+    kind: Annotated[str, _trunc(40)]
     data: dict[str, Any]
 
 
@@ -70,7 +90,7 @@ class RunFinished(_FromRunner):
     run_id: uuid.UUID
     outcome: Literal["completed", "failed", "cancelled"]
     summary: NoNulStr = Field(max_length=2000)
-    error: NoNulStr | None = Field(default=None, max_length=10000)
+    error: Annotated[str, _trunc(10000)] | None = None
     session_id: NoNulStr | None = Field(default=None, max_length=200)
     git_before: GitState | None = None
     git_after: GitState | None = None
