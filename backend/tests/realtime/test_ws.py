@@ -30,9 +30,8 @@ def _project(tc: TestClient, key: str, team) -> dict:
 
 async def test_ws_rejects_without_session(tc_factory):
     tc = tc_factory(lifespan=True)
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with tc.websocket_connect("/api/ws") as ws:
-            ws.receive_json()
+    with pytest.raises(WebSocketDisconnect) as exc, tc.websocket_connect("/api/ws") as ws:
+        ws.receive_json()
     assert exc.value.code == 4401
 
 
@@ -83,7 +82,10 @@ async def test_ws_stops_receiving_after_removed_from_team(db, tc_factory):
         assert ws.receive_json()["type"] == "task.created"
         r = mc.put(f"/api/teams/{team.id}/members", json={"user_ids": [str(manager.id)]})
         assert r.status_code == 200
-        assert ws.receive_json() == {"type": "membership.changed", "project_id": None, "task_id": None, "user_id": str(member.id)}
+        assert ws.receive_json() == {
+            "type": "membership.changed", "project_id": None, "task_id": None, "user_id": str(member.id),
+            "team_id": None, "space_id": None,
+        }
         mc.post("/api/projects/PAY/tasks", json={"title": "hidden", "type": "task"})
         ac.post("/api/projects/OWN/tasks", json={"title": "still visible", "type": "task"})
         msg = ws.receive_json()

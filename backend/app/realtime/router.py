@@ -4,10 +4,12 @@ import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.auth.deps import user_from_session_token
+from app.auth.models import Role
 from app.auth.service import SESSION_COOKIE
 from app.core.db import SessionLocal
 from app.core.events import Event, hub
 from app.projects.access import accessible_project_ids
+from app.teams.service import user_team_ids
 
 router = APIRouter()
 
@@ -17,20 +19,29 @@ CLOSE_UNAUTHORIZED = 4401
 RECHECK_EVENTS = {"membership.changed", "sessions.revoked"}
 
 
-async def _authorize(token: str | None) -> tuple[uuid.UUID, set[uuid.UUID] | None] | None:
-    """(user id, visible project ids — None means all) for a live session, else None."""
+Access = tuple[uuid.UUID, set[uuid.UUID] | None, set[uuid.UUID] | None]
+
+
+async def _authorize(token: str | None) -> Access | None:
+    """(user id, visible project ids, team ids — None means all) for a live session, else None."""
     async with SessionLocal() as db:
         user = await user_from_session_token(db, token)
         if user is None:
             return None
-        return user.id, await accessible_project_ids(db, user)
+        teams = None if user.role == Role.admin else await user_team_ids(db, user.id)
+        return user.id, await accessible_project_ids(db, user), teams
 
 
-def _visible(event: Event, user_id: uuid.UUID, allowed: set[uuid.UUID] | None) -> bool:
+def _visible(
+    event: Event, user_id: uuid.UUID, allowed: set[uuid.UUID] | None, teams: set[uuid.UUID] | None
+) -> bool:
+    if event.team_id is not None:
+        return teams is None or event.team_id in teams
     if event.user_id is not None and event.project_id is None:
         return event.user_id == user_id
     if event.project_id is None:
-        return False
+        # org Knowledge Base space: everyone
+        return event.space_id is not None
     return allowed is None or event.project_id in allowed
 
 
@@ -45,7 +56,7 @@ async def events_socket(websocket: WebSocket) -> None:
         if auth is None:
             await websocket.close(code=CLOSE_UNAUTHORIZED)
             return
-        user_id, allowed = auth
+        user_id, allowed, teams = auth
         while True:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=PING_EVERY_SECONDS)
@@ -60,10 +71,10 @@ async def events_socket(websocket: WebSocket) -> None:
                 if auth is None:
                     await websocket.close(code=CLOSE_UNAUTHORIZED)
                     return
-                _, allowed = auth
+                _, allowed, teams = auth
             if event is None:
                 await websocket.send_json({"type": "ping"})
-            elif event.type != "sessions.revoked" and _visible(event, user_id, allowed):
+            elif event.type != "sessions.revoked" and _visible(event, user_id, allowed, teams):
                 await websocket.send_text(event.model_dump_json())
     except WebSocketDisconnect:
         pass

@@ -24,6 +24,7 @@ from app.core.db import SessionLocal
 from app.core.events import hub
 from app.jobs.router import router as jobs_router
 from app.kb.access import ensure_spaces
+from app.kb.router import router as kb_router
 from app.mcp_server.server import MCP_PATH, build_mcp
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
@@ -121,6 +122,7 @@ def create_app() -> FastAPI:
         workflow_router,
         jobs_router,
         ai_router,
+        kb_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect

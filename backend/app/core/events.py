@@ -23,6 +23,9 @@ class Event(BaseModel):
     project_id: uuid.UUID | None = None
     task_id: uuid.UUID | None = None
     user_id: uuid.UUID | None = None
+    # Knowledge Base events: team-space events reach the team; space-only events reach everyone
+    team_id: uuid.UUID | None = None
+    space_id: uuid.UUID | None = None
 
 
 async def publish(db: AsyncSession, event: Event) -> None:
@@ -82,7 +85,7 @@ class EventHub:
             try:
                 conn = await asyncpg.connect(dsn)
                 closed = asyncio.Event()
-                conn.add_termination_listener(lambda _c: closed.set())
+                conn.add_termination_listener(lambda _c, closed=closed: closed.set())
                 await conn.add_listener(CHANNEL, self._dispatch)
                 self.ready.set()
                 backoff = 0.5
