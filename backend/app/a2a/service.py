@@ -194,6 +194,19 @@ async def _who(db: AsyncSession, user_id, agent_id) -> Who:
                agent=Ref(id=agent.id, name=agent.name) if agent else None)
 
 
+async def _answering(db: AsyncSession, q: Question) -> Who | None:
+    agent_id = None
+    if q.status == QuestionStatus.routed:
+        agent_id = await db.scalar(
+            select(AgentRun.agent_id).where(AgentRun.question_id == q.id, AgentRun.status.in_(ACTIVE_STATUSES))
+            .order_by(AgentRun.created_at.desc()).limit(1)
+        )
+    elif q.status == QuestionStatus.draft:
+        agent_id = q.draft_agent_id
+    agent = await db.get(Agent, agent_id) if agent_id else None
+    return await _who(db, agent.owner_id, agent.id) if agent else None
+
+
 async def can_approve(db: AsyncSession, user: User, q: Question) -> bool:
     if q.status != QuestionStatus.draft:
         return False
@@ -221,7 +234,8 @@ async def question_out(db: AsyncSession, user: User, q: Question) -> QuestionOut
         id=q.id, ref=ref_of(project, q), target=Target(key=project.key, name=project.name), title=q.title,
         body=q.body, context=q.context, status=q.status, answer_md=q.answer_md,
         citations=[Citation(**c) for c in q.citations or []], answer_source=q.answer_source,
-        answered_by=await _who(db, q.answered_by_user_id, q.answered_by_agent_id), draft=draft,
+        answered_by=await _who(db, q.answered_by_user_id, q.answered_by_agent_id),
+        answering=await _answering(db, q), draft=draft,
         reject_reason=q.reject_reason, redacted=q.redacted, attempts=q.attempts, from_task=task_ref,
         asked_by=await _who(db, q.asked_by_user_id, q.asked_by_agent_id), kb_document_id=q.kb_document_id,
         created_at=q.created_at, answered_at=q.answered_at,

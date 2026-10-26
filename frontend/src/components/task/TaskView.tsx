@@ -15,6 +15,7 @@ import type { ActivityItem, Attachment, Task } from "@/lib/types";
 
 import { DocumentView } from "@/components/workflow/DocumentView";
 import { KbReferences } from "@/components/kb/KbReferences";
+import { TaskQuestions, WaitingBadge } from "@/components/questions/TaskQuestions";
 import { WorkflowPanel } from "@/components/workflow/WorkflowPanel";
 import { useWorkflow } from "@/lib/workflow";
 
@@ -106,6 +107,7 @@ export function TaskView({
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-xs text-muted">
             <TypeIcon size={12} aria-hidden /> {t.key}
+            <WaitingBadge projects={t.waiting_on} />
           </p>
           <input
             aria-label="Title"
@@ -174,6 +176,7 @@ export function TaskView({
             />
           </Section>
           <KbReferences taskKey={t.key} />
+          <TaskQuestions taskKey={t.key} />
           <Section title="Attachments">
             <Attachments
               items={attachments.data ?? []}

@@ -31,6 +31,7 @@ const task: Task = {
   subtask_done_count: 2,
   links: [],
   watcher_ids: [],
+  waiting_on: [],
 };
 
 describe("TaskCardView", () => {

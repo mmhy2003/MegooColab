@@ -37,6 +37,8 @@ export function invalidationsFor(event: LiveEvent, keyById: Map<string, string>)
     case "agents":
       // a project-scoped event whose project is not in the cached list still refreshes every project's agents
       return event.project_id ? [scoped("project-agents"), ["agents"], ["team"]] : [["agents"], ["team"]];
+    case "question":
+      return [["questions"], ["task"]];
     case "kb":
       return [["kb"]];
     case "membership":

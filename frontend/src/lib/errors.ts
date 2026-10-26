@@ -84,6 +84,13 @@ const MESSAGES: Record<string, string> = {
   task_assigned_to_agent: "This task is assigned to an agent, so it can't be run by hand.",
   methodology_not_found: "That instruction text doesn't exist.",
   methodology_conflict: "Someone else saved this text first. Reload and try again.",
+  too_many_open_questions: "You have 20 open questions. Wait for answers or withdraw some first.",
+  question_not_routed: "That question isn't waiting for this agent's answer any more.",
+  not_a_draft: "That draft was already approved or rejected.",
+  already_answered: "Someone already answered this question.",
+  not_open: "This question is closed.",
+  invalid_answer: "Write an answer of up to 20,000 characters.",
+  invalid_citations: "Some cited files or line ranges are invalid.",
   forbidden: "You don't have permission to do that.",
   validation_error: "Some fields are invalid.",
 };

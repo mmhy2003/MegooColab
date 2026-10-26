@@ -10,7 +10,7 @@ from app.a2a.schemas import (
     AnswerIn,
     ApproveIn,
     AskIn,
-    AskOut,
+    AskQuestionOut,
     QuestionOut,
     RejectIn,
     SuggestIn,
@@ -43,12 +43,12 @@ async def suggest(body: SuggestIn, user: AuthedUser, db: DbSession) -> list[Sugg
 
 
 @router.post("/api/questions", status_code=status.HTTP_201_CREATED)
-async def ask(body: AskIn, user: AuthedUser, db: DbSession) -> AskOut:
+async def ask(body: AskIn, user: AuthedUser, db: DbSession) -> AskQuestionOut:
     q, suggestions = await service.ask(
         db, user, project_key=body.project_key, body=body.body, title=body.title, context=body.context,
         task_key=body.task_key,
     )
-    out = AskOut(question=await service.question_out(db, user, q), suggestions=suggestions)
+    out = AskQuestionOut(question=await service.question_out(db, user, q), suggestions=suggestions)
     await engine.dispatch_queued(db)  # an answering run may have been queued on a live runner
     return out
 

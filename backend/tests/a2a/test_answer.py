@@ -220,3 +220,21 @@ async def test_same_question_later_gets_suggestion_from_filed_answer(client_fact
     # someone who can read QBB's Knowledge Base asks the same again: the filed Q&A document is suggested
     again = (await _ask(b, body="How are orders webhooks signed?")).json()
     assert "Q1: How are orders webhooks signed?" in [s["title"] for s in again["suggestions"]]
+
+
+async def test_question_names_who_is_answering(client_factory, db):
+    _asker, target_member, _outsider, a, _b, _c = await _world(client_factory, db)
+    q = (await _ask(a)).json()["question"]
+    assert (await a.get(f"/api/questions/{q['id']}")).json()["answering"] is None  # queued
+    _run, agent = await _routed(db, target_member, uuid.UUID(q["id"]))
+    who = (await a.get(f"/api/questions/{q['id']}")).json()["answering"]
+    assert (who["agent"]["name"], who["user"]["name"]) == (agent.name, "Target member")
+    await _draft_from(_run)
+    who = (await a.get(f"/api/questions/{q['id']}")).json()
+    assert who["status"] == "draft" and who["answering"]["user"]["name"] == "Target member" and who["draft"] is None
+
+
+async def _draft_from(run):
+    async with SessionLocal() as s:
+        await service.submit(s, run, "A draft", [])
+        await s.commit()

@@ -76,6 +76,7 @@ class QuestionOut(BaseModel):
     citations: list[Citation]
     answer_source: str | None
     answered_by: Who
+    answering: Who | None  # routed: the agent at work; draft: the agent whose owner approves
     draft: Draft | None
     reject_reason: str | None
     redacted: bool
@@ -90,7 +91,7 @@ class QuestionOut(BaseModel):
     can_withdraw: bool
 
 
-class AskOut(BaseModel):
+class AskQuestionOut(BaseModel):
     question: QuestionOut
     suggestions: list[Suggestion]
 

@@ -1997,6 +1997,163 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/questions/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Targets
+         * @description Every project can be asked (A2A-1), so every project's key and name is listed for addressing.
+         */
+        get: operations["targets_api_questions_targets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questions/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Suggest */
+        post: operations["suggest_api_questions_suggest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Questions */
+        get: operations["list_questions_api_questions_get"];
+        put?: never;
+        /** Ask */
+        post: operations["ask_api_questions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questions/{question_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Question */
+        get: operations["get_question_api_questions__question_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questions/{question_id}/withdraw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw */
+        post: operations["withdraw_api_questions__question_id__withdraw_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questions/{question_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_api_questions__question_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questions/{question_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject */
+        post: operations["reject_api_questions__question_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questions/{question_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer */
+        post: operations["answer_api_questions__question_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Task Questions */
+        get: operations["task_questions_api_tasks__key__questions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2124,24 +2281,15 @@ export interface components {
          * @enum {string}
          */
         AgentProgram: "claude_code" | "codex";
-        /** AnswerIn */
-        AnswerIn: {
-            /** Choice */
-            choice?: string | null;
-            /** Text */
-            text?: string | null;
-        };
         /**
          * AnswerMode
          * @enum {string}
          */
         AnswerMode: "auto" | "manual";
-        /** AskIn */
-        AskIn: {
-            /** Question */
-            question: string;
-            /** Project Key */
-            project_key?: string | null;
+        /** ApproveIn */
+        ApproveIn: {
+            /** Answer Md */
+            answer_md?: string | null;
         };
         /** AskOut */
         AskOut: {
@@ -2149,6 +2297,12 @@ export interface components {
             answer_md: string;
             /** Cited */
             cited: components["schemas"]["ConclusionOut"][];
+        };
+        /** AskQuestionOut */
+        AskQuestionOut: {
+            question: components["schemas"]["QuestionOut"];
+            /** Suggestions */
+            suggestions: components["schemas"]["Suggestion"][];
         };
         /** AssigneeAgentOut */
         AssigneeAgentOut: {
@@ -2281,6 +2435,15 @@ export interface components {
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /** Citation */
+        Citation: {
+            /** Path */
+            path: string;
+            /** Start Line */
+            start_line: number;
+            /** End Line */
+            end_line: number;
         };
         /**
          * ColumnCategory
@@ -2540,6 +2703,14 @@ export interface components {
             body_md?: string | null;
             /** Summary */
             summary?: string | null;
+        };
+        /** Draft */
+        Draft: {
+            /** Answer Md */
+            answer_md: string;
+            /** Citations */
+            citations: components["schemas"]["Citation"][];
+            agent: components["schemas"]["Ref"] | null;
         };
         /** DreamRunOut */
         DreamRunOut: {
@@ -3176,6 +3347,77 @@ export interface components {
             /** Api Base */
             api_base?: string | null;
         };
+        /** QuestionOut */
+        QuestionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ref */
+            ref: string;
+            target: components["schemas"]["Target"];
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Context */
+            context: string;
+            /** Status */
+            status: string;
+            /** Answer Md */
+            answer_md: string | null;
+            /** Citations */
+            citations: components["schemas"]["Citation"][];
+            /** Answer Source */
+            answer_source: string | null;
+            answered_by: components["schemas"]["Who"];
+            answering: components["schemas"]["Who"] | null;
+            draft: components["schemas"]["Draft"] | null;
+            /** Reject Reason */
+            reject_reason: string | null;
+            /** Redacted */
+            redacted: boolean;
+            /** Attempts */
+            attempts: number;
+            from_task: components["schemas"]["TaskRef"] | null;
+            asked_by: components["schemas"]["Who"];
+            /** Kb Document Id */
+            kb_document_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Answered At */
+            answered_at: string | null;
+            /** Can Answer */
+            can_answer: boolean;
+            /** Can Approve */
+            can_approve: boolean;
+            /** Can Withdraw */
+            can_withdraw: boolean;
+        };
+        /**
+         * QuestionStatus
+         * @enum {string}
+         */
+        QuestionStatus: "queued" | "routed" | "draft" | "needs_human" | "answered" | "withdrawn";
+        /** Ref */
+        Ref: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** RejectIn */
+        RejectIn: {
+            /** Reason */
+            reason: string;
+        };
         /** RepoIn */
         RepoIn: {
             /** Name */
@@ -3528,6 +3770,36 @@ export interface components {
          * @enum {string}
          */
         Stage: "brainstorm" | "design" | "plan" | "build" | "review" | "done";
+        /** SuggestIn */
+        SuggestIn: {
+            /** Project Key */
+            project_key: string;
+            /** Body */
+            body: string;
+        };
+        /** Suggestion */
+        Suggestion: {
+            /** Kind */
+            kind: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Snippet */
+            snippet: string;
+            /** Link */
+            link: string;
+        };
+        /** Target */
+        Target: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+        };
         /** TaskCreate */
         TaskCreate: {
             /** Title */
@@ -3647,6 +3919,18 @@ export interface components {
              */
             watcher_ids: string[];
             workflow?: components["schemas"]["TaskWorkflowOut"] | null;
+            /**
+             * Waiting On
+             * @default []
+             */
+            waiting_on: string[];
+        };
+        /** TaskRef */
+        TaskRef: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
         };
         /** TaskSprintIn */
         TaskSprintIn: {
@@ -3953,6 +4237,11 @@ export interface components {
             /** Completed Points */
             completed_points: number;
         };
+        /** Who */
+        Who: {
+            user: components["schemas"]["Ref"] | null;
+            agent: components["schemas"]["Ref"] | null;
+        };
         /** WorkflowDocumentBrief */
         WorkflowDocumentBrief: {
             kind: components["schemas"]["DocKind"];
@@ -4021,6 +4310,46 @@ export interface components {
              * @enum {string}
              */
             state: "pending" | "running" | "in_review" | "done";
+        };
+        /** AnswerIn */
+        app__a2a__schemas__AnswerIn: {
+            /** Answer Md */
+            answer_md: string;
+            /**
+             * Citations
+             * @default []
+             */
+            citations: components["schemas"]["Citation"][];
+        };
+        /** AskIn */
+        app__a2a__schemas__AskIn: {
+            /** Project Key */
+            project_key: string;
+            /** Body */
+            body: string;
+            /** Title */
+            title?: string | null;
+            /**
+             * Context
+             * @default
+             */
+            context: string;
+            /** Task Key */
+            task_key?: string | null;
+        };
+        /** AskIn */
+        app__memory__schemas__AskIn: {
+            /** Question */
+            question: string;
+            /** Project Key */
+            project_key?: string | null;
+        };
+        /** AnswerIn */
+        app__workflow__router__AnswerIn: {
+            /** Choice */
+            choice?: string | null;
+            /** Text */
+            text?: string | null;
         };
     };
     responses: never;
@@ -7157,7 +7486,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AnswerIn"];
+                "application/json": components["schemas"]["app__workflow__router__AnswerIn"];
             };
         };
         responses: {
@@ -8423,7 +8752,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AskIn"];
+                "application/json": components["schemas"]["app__memory__schemas__AskIn"];
             };
         };
         responses: {
@@ -8580,6 +8909,323 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DreamRunOut"][];
+                };
+            };
+        };
+    };
+    targets_api_questions_targets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Target"][];
+                };
+            };
+        };
+    };
+    suggest_api_questions_suggest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Suggestion"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_questions_api_questions_get: {
+        parameters: {
+            query?: {
+                box?: string;
+                project?: string | null;
+                status?: components["schemas"]["QuestionStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_api_questions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__a2a__schemas__AskIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskQuestionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_question_api_questions__question_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_api_questions__question_id__withdraw_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_questions__question_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApproveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_api_questions__question_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_api_questions__question_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                question_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__a2a__schemas__AnswerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    task_questions_api_tasks__key__questions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
