@@ -27,9 +27,11 @@ from app.kb.access import ensure_spaces
 from app.kb.context import register as register_kb_context
 from app.kb.router import router as kb_router
 from app.mcp_server.server import MCP_PATH, build_mcp
+from app.memory import dream as _memory_dream  # noqa: F401 - registers the dreaming jobs
 from app.memory import extract as _memory_extract  # noqa: F401 - registers jobs and the reindex hook
 from app.memory import fakes as _memory_fakes  # noqa: F401 - fake-mode model replies
 from app.memory.entities import ensure_core_entities
+from app.memory.router import router as memory_router
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
 from app.realtime.router import router as realtime_router
@@ -129,6 +131,7 @@ def create_app() -> FastAPI:
         jobs_router,
         ai_router,
         kb_router,
+        memory_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect
