@@ -247,6 +247,26 @@ describe("TaskQuestions", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it("asks another project from the task", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/questions/targets") return json([{ key: "PAY", name: "Payments" }]);
+      if (url === "/api/questions/suggest") return json([]);
+      if (url === "/api/questions" && init?.method === "POST") return json({ question: Q, suggestions: [] }, 201);
+      return json([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<TaskQuestions taskKey="WEB-4" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Ask another project" }));
+    await screen.findByRole("option", { name: "PAY — Payments" });
+    fireEvent.change(screen.getByLabelText("Project"), { target: { value: "PAY" } });
+    fireEvent.change(screen.getByLabelText("Question"), { target: { value: "Which port?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check for existing answers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ask anyway" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Ask a project" })).toBeNull());
+    const [, init] = fetchMock.mock.calls.find(([u, i]) => u === "/api/questions" && i?.method === "POST")!;
+    expect(JSON.parse(String(init!.body)).task_key).toBe("WEB-4");
+  });
+
   it("question events refresh questions and tasks", () => {
     expect(invalidationsFor({ type: "question.updated", user_id: "u1" }, new Map())).toEqual([["questions"], ["task"]]);
   });
