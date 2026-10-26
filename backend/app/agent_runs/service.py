@@ -117,6 +117,15 @@ async def _lock_workflow_of(db: AsyncSession, run: AgentRun) -> None:
         await engine.lock_workflow(db, run.task_id)
 
 
+async def _lock_question_of(db: AsyncSession, question_id: uuid.UUID | None) -> None:
+    """For an answering run, take its question's lock before the run's own: the order of a human answer, a
+    withdrawal and submit_answer (app/a2a/service.py), since ending the run moves the question on."""
+    if question_id is not None:
+        from app.a2a.models import Question  # local: a2a imports this module
+
+        await db.execute(select(Question.id).where(Question.id == question_id).with_for_update())
+
+
 async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> AgentRun | None:
     """Under the agent lock, mark its oldest queued run running and COMMIT, if a slot is free.
 
@@ -333,8 +342,15 @@ async def dispatch_pending(db: AsyncSession, owner_id: uuid.UUID) -> None:
     Commits the session it is given (claim, then send, then record), so call it with a session of its own.
     """
     conn = registry.conn_for_user(owner_id)
-    if conn is None:
-        return
+    if conn is not None:
+        await _send_pending(db, conn, owner_id)
+    # a run that could not be started ends here, and its question may have gone to another owner's agent
+    from app.workflow import engine  # local: the engine imports this module
+
+    await engine.dispatch_queued(db)
+
+
+async def _send_pending(db: AsyncSession, conn: RunnerConn, owner_id: uuid.UUID) -> None:
     for agent_id in sorted(conn.available):
         while True:
             run = await _claim_next(db, agent_id, owner_id)
@@ -388,17 +404,18 @@ async def _lock_runs_one_by_one(
     order (its workflow, then the run) and in task id order. A run whose status changed meanwhile is skipped."""
     candidates = (
         await db.execute(
-            select(AgentRun.id, AgentRun.task_id, AgentRun.workflow_role, Agent.owner_id)
+            select(AgentRun.id, AgentRun.task_id, AgentRun.question_id, AgentRun.workflow_role, Agent.owner_id)
             .join(Agent, Agent.id == AgentRun.agent_id)
             .where(AgentRun.status.in_(statuses), *where)
             .order_by(AgentRun.task_id, AgentRun.created_at, AgentRun.id)
         )
     ).all()
-    for run_id, task_id, role, owner_id in candidates:
+    for run_id, task_id, question_id, role, owner_id in candidates:
         if role is not None:
             from app.workflow import engine
 
             await engine.lock_workflow(db, task_id)
+        await _lock_question_of(db, question_id)
         run = await _lock_run(db, run_id)
         if run is not None and run.status in statuses:
             yield run, owner_id
@@ -682,7 +699,9 @@ async def finish_run(
     cancelled by deactivation) keeps its status and only gets finished_at and summary if they are empty.
     Commits, then dispatches the owner's pending runs."""
     peek = (
-        await db.execute(select(AgentRun.task_id, AgentRun.workflow_role).where(AgentRun.id == run_id))
+        await db.execute(
+            select(AgentRun.task_id, AgentRun.question_id, AgentRun.workflow_role).where(AgentRun.id == run_id)
+        )
     ).first()
     if peek is not None and peek.workflow_role is not None:
         # the engine's lock order: the task (a completed run may move the card), its workflow, then the run
@@ -690,6 +709,8 @@ async def finish_run(
 
         await engine.lock_task_row(db, peek.task_id)
         await engine.lock_workflow(db, peek.task_id)
+    if peek is not None:
+        await _lock_question_of(db, peek.question_id)
     run = await _lock_run(db, run_id)
     if run is None:  # deleted with its task: the slot it held is free, so the owner's queue moves on
         await db.rollback()

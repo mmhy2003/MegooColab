@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.core.text import strip_nul
-from app.mcp_server.auth import tool_session
+from app.mcp_server.auth import current_run, tool_session
 from app.memory import answer as answering
 from app.memory.models import MemEntity
 from app.memory.search import search_conclusions
@@ -18,6 +18,12 @@ SEARCH_LIMIT = 10
 
 
 async def _project_id(db: AsyncSession, user: User, project_key: str | None):
+    run = current_run.get()
+    if run is not None and run.question_id is not None:
+        # an answering run sees only what matters to the asked project (A2A-7): its answer leaves the owner
+        from app.a2a.models import Question  # local: a2a imports the MCP auth module
+
+        return (await db.get(Question, run.question_id)).target_project_id
     return (await get_project_for(db, user, project_key)).id if project_key else None
 
 

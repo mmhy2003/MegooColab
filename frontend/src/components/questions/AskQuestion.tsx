@@ -18,7 +18,9 @@ import {
 const BODY_MAX = 4000;
 const CONTEXT_MAX = 8000;
 
-const FIELD = "w-full rounded border border-line bg-surface-2 px-3 py-2 text-sm text-fg focus:border-cyan focus:outline-none";
+const SUGGESTION_KIND: Record<string, string> = { question: "Earlier answer", kb: "Knowledge Base", memory: "Memory" };
+
+const FIELD ="w-full rounded border border-line bg-surface-2 px-3 py-2 text-sm text-fg focus:border-cyan focus:outline-none";
 
 /** Ask another project (A2A-1): existing answers are offered first (A2A-6), then "Ask anyway". */
 export function AskQuestion({ taskKey, onAsked }: { taskKey?: string; onAsked?: (id: string) => void }) {
@@ -140,7 +142,7 @@ export function AskQuestion({ taskKey, onAsked }: { taskKey?: string; onAsked?: 
                 {suggestions.map((s) => (
                   <li key={`${s.kind}-${s.id}`} className="text-sm">
                     <Link href={s.link}>{s.title}</Link>
-                    <span className="ml-2 text-[11px] text-muted uppercase">{s.kind === "kb" ? "Knowledge Base" : "Memory"}</span>
+                    <span className="ml-2 text-[11px] text-muted uppercase">{SUGGESTION_KIND[s.kind] ?? s.kind}</span>
                     {s.snippet && <p className="text-xs text-muted">{s.snippet}</p>}
                   </li>
                 ))}

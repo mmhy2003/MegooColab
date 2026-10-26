@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, IdMixin
 
+
 class AgentProgram(StrEnum):
     claude_code = "claude_code"
     codex = "codex"

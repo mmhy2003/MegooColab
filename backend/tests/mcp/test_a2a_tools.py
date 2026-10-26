@@ -146,3 +146,51 @@ async def test_tool_list_includes_a2a_tools():
     mcp, _ = build_mcp()
     names = {t.name for t in await mcp.list_tools()}
     assert {"find_answer", "ask_project", "get_question", "withdraw_question", "submit_answer"} <= names
+
+
+async def test_answer_run_reads_only_the_target_and_org_knowledge(db, tc_factory, client_factory):
+    """Final review: an answering run must not reach the owner's other projects (the answer goes to outsiders)."""
+    from app.memory import entities
+    from app.memory.models import MemConclusion, ScopeKind
+    from app.projects.models import Project
+
+    tc = tc_factory(lifespan=True)
+    b, _ = await _started(db, tc)
+    _member, mc = await _target(db, client_factory)
+    await kb_access.ensure_spaces(db)
+    org = await kb_access.org_space(db)
+    await db.commit()
+    pay_space = next(s for s in tc.get("/api/kb/spaces").json() if s["kind"] == "project")
+    pay_doc = tc.post(f"/api/kb/spaces/{pay_space['id']}/documents",
+                      json={"title": "Prod runbook", "body_md": "rotation runbook steps"}).json()
+    await mc.post(f"/api/kb/spaces/{org.id}/documents", json={"title": "Org runbook", "body_md": "rotation runbook"})
+    pay = (await db.execute(select(Project).where(Project.key == "PAY"))).scalar_one()
+    entity = await entities.org_entity(db)
+    db.add(MemConclusion(entity_id=entity.id, text="PAY rotation runbook lives in the vault", kind="observed",
+                         scope_kind=ScopeKind.project, scope_project_id=pay.id))
+    await db.commit()
+    _e, out = await _ask(tc, _personal(tc))
+    run, _agent = await _answer_run(db, b.manager, uuid.UUID(out["question_id"]))  # the PAY manager's agent
+    token = await _run_token(run)
+    err, found = _tool(tc, token, "kb_search", query="rotation runbook")
+    titles = {r["title"] for r in found["results"]}
+    assert not err and "Org runbook" in titles and "Prod runbook" not in titles
+    err, text = _tool(tc, token, "kb_read", document_id=pay_doc["id"])
+    assert err and "document_not_found" in text
+    err, text = _tool(tc, token, "kb_search", query="rotation", space_id=pay_space["id"])
+    assert err and "space_not_found" in text
+    err, listed = _tool(tc, token, "kb_list")
+    assert not err and pay_space["id"] not in {s["id"] for s in listed["spaces"]}
+    for args in ({}, {"project_key": "PAY"}):
+        err, mem = _tool(tc, token, "search_memory", query="rotation runbook vault", **args)
+        assert not err and all("PAY rotation" not in r["text"] for r in mem["results"]), args
+
+
+async def test_ask_project_caps_question_and_context(db, tc_factory, client_factory):
+    tc = tc_factory(lifespan=True)
+    await _started(db, tc)
+    await _target(db, client_factory)
+    err, text = _tool(tc, _personal(tc), "ask_project", project_key="QBB", question="x" * 4001)
+    assert err and "too_large" in text
+    err, text = _tool(tc, _personal(tc), "ask_project", project_key="QBB", question="ok", context="y" * 8001)
+    assert err and "too_large" in text

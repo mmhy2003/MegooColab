@@ -134,16 +134,22 @@ async def _dispatch(user_id: uuid.UUID) -> None:
 
 
 async def _fail_runs(conn: RunnerConn) -> None:
+    from app.workflow import engine  # local: the engine imports the run service
+
     async with SessionLocal() as db:
         await fail_disconnected_runs(db, conn)
         await db.commit()
+        await engine.dispatch_queued(db)  # a failed answering run's question may have gone to another agent
 
 
 async def _fail_unclaimed(conn: RunnerConn) -> None:
     try:
+        from app.workflow import engine  # local: the engine imports the run service
+
         async with SessionLocal() as db:
             await fail_unclaimed_runs(db, conn)
             await db.commit()
+            await engine.dispatch_queued(db)  # as in _fail_runs
     except Exception:
         log.exception("runner: failing leftover running runs failed")
 

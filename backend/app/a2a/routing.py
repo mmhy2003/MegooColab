@@ -8,16 +8,18 @@ import asyncio
 import contextlib
 import logging
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.a2a import prompts
 from app.a2a.models import Question, QuestionStatus
-from app.agent_runs.models import ACTIVE_STATUSES, AgentRun
+from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agent_runs.tokens import issue_run_token
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import owner_can_access
+from app.audit import service as audit
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.projects.models import Project
@@ -29,6 +31,8 @@ log = logging.getLogger(__name__)
 ROUTE_LIMIT = 50
 MAX_ATTEMPTS = 3
 ROUTE_SECONDS = 60
+# an answering run still queued this long on an agent that is not available is given up (another agent tries)
+STALE_QUEUED_SECONDS = 300
 
 
 class NotSupported(Exception):
@@ -64,6 +68,19 @@ async def candidates(db: AsyncSession, q: Question) -> list[Agent]:
     return [a for _, _, a in sorted(out, key=lambda t: (t[0], str(t[1])))]
 
 
+async def _untried_bound(db: AsyncSession, q: Question) -> bool:
+    """Is any agent bound to the project, whatever its state, still untried for this question?"""
+    tried = {uuid.UUID(t) for t in q.tried_agent_ids or []}
+    ids = (
+        await db.execute(
+            select(Agent.id)
+            .join(AgentBinding, AgentBinding.agent_id == Agent.id)
+            .where(AgentBinding.project_id == q.target_project_id, owner_can_access(q.target_project_id))
+        )
+    ).scalars().all()
+    return any(i not in tried for i in ids)
+
+
 async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun | None:
     """Queues an answering run on the best candidate. The caller commits, then dispatches (DISPATCH_KEY)."""
     q = (
@@ -76,7 +93,14 @@ async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun |
         return None
     found = await candidates(db, q)
     if not found:
-        return None
+        if q.tried_agent_ids and not await _untried_bound(db, q):
+            # every agent that could answer has tried (or had a draft rejected): ask a human (A2A-5)
+            q.status = QuestionStatus.needs_human
+            await db.flush()
+            from app.a2a.service import notify
+
+            await notify(db, q)
+        return None  # otherwise it waits for a runner
     agent = found[0]
     project = await db.get(Project, q.target_project_id)
     run = AgentRun(
@@ -111,13 +135,59 @@ async def route_queued(db: AsyncSession) -> int:
     return routed
 
 
+async def release_stale(db: AsyncSession) -> None:
+    """Answering runs queued for a while on an agent that is not available (its runner went away before the
+    run was sent) are cancelled, so their question moves on to another agent (A2A-5)."""
+    from app.agent_runs.service import (  # local: the run service imports this module
+        _lock_run,
+        _transition,
+    )
+
+    cutoff = func.now() - timedelta(seconds=STALE_QUEUED_SECONDS)
+    rows = (
+        await db.execute(
+            select(AgentRun.id, AgentRun.question_id, AgentRun.agent_id, Agent.owner_id)
+            .join(Agent, Agent.id == AgentRun.agent_id)
+            .where(AgentRun.question_id.is_not(None), AgentRun.status == RunStatus.queued,
+                   AgentRun.created_at < cutoff)
+            .order_by(AgentRun.created_at)
+        )
+    ).all()
+    for run_id, question_id, agent_id, owner_id in rows:
+        conn = registry.conn_for_user(owner_id)
+        if conn is not None and agent_id in conn.available:
+            continue
+        # the question before the run: the order of a human answer or a withdrawal
+        await db.execute(select(Question.id).where(Question.id == question_id).with_for_update())
+        run = await _lock_run(db, run_id)
+        if run is not None and run.status == RunStatus.queued:
+            await _transition(db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id,
+                              reason="agent_unavailable")
+
+
 async def route_and_dispatch() -> None:
+    """The loop's pass: give up stale runs, route queued questions, and send queued answering runs to every
+    connected owner (a run left queued when its send failed, or routed where nobody dispatched it)."""
+    from app.agent_runs.service import dispatch_pending
     from app.workflow import engine  # local: the engine imports the run service
 
     async with SessionLocal() as db:
+        await release_stale(db)
         await route_queued(db)
         await engine.dispatch_queued(db)
         await db.commit()
+        owners = (
+            await db.execute(
+                select(Agent.owner_id).join(AgentRun, AgentRun.agent_id == Agent.id)
+                .where(AgentRun.question_id.is_not(None), AgentRun.status == RunStatus.queued).distinct()
+            )
+        ).scalars().all()
+    for owner_id in sorted(owners):
+        if registry.conn_for_user(owner_id) is None:
+            continue
+        async with SessionLocal() as s:
+            await dispatch_pending(s, owner_id)
+            await s.commit()
 
 
 async def route_loop(stop: asyncio.Event) -> None:
@@ -165,7 +235,21 @@ async def on_answer_run_finished(db: AsyncSession, run: AgentRun) -> None:
             .execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
-    if q is None or q.status != QuestionStatus.routed:
+    if q is None:
+        return
+    from app.workflow.engine import (
+        _git_changed,  # local: the engine imports the run service
+    )
+
+    if _git_changed(run):
+        # R1: a read-only answering session changed the repository; its draft is not to be trusted
+        await audit.record(db, "a2a.answer.enforcement_violation", actor_id=None, target_type="question",
+                           target_id=q.id, data={"run_id": str(run.id), "agent_id": str(run.agent_id)})
+        if q.status == QuestionStatus.draft and q.draft_agent_id == run.agent_id:
+            q.draft_md, q.draft_citations, q.draft_agent_id = None, [], None
+            q.redacted = False
+            q.status = QuestionStatus.routed  # unanswered: retried below like a run that gave no answer
+    if q.status != QuestionStatus.routed:
         return
     still = await db.scalar(
         select(AgentRun.id).where(AgentRun.question_id == q.id, AgentRun.id != run.id,

@@ -12,8 +12,11 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}"), REDACTED),
     (re.compile(r"\bxox[abposr]-[A-Za-z0-9-]{10,}"), REDACTED),
     (re.compile(r"\bmg[cr]_[A-Za-z0-9_-]{20,}"), REDACTED),
-    # key = value: keep the name, drop the value
-    (re.compile(r"(?i)\b(password|passwd|secret|api[_-]?key|token)(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|\S+)"),
+    (re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]{8,}"), r"\1" + REDACTED),
+    # name = value, the name usually prefixed or suffixed (DB_PASSWORD, client_secret, AWS_SECRET_ACCESS_KEY,
+    # "password": in JSON): keep the name, drop the value
+    (re.compile(r"(?i)(password|passwd|secret|api[_-]?key|token)([A-Za-z0-9_]*[\"']?\s*[:=]\s*)"
+                r"(\"[^\"]*\"|'[^']*'|\S+)"),
      r"\1\2" + REDACTED),
 ]
 

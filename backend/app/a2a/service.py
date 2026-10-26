@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.a2a.access import (
@@ -14,6 +14,8 @@ from app.a2a.access import (
 )
 from app.a2a.models import OPEN_STATUSES, Question, QuestionStatus
 from app.a2a.schemas import (
+    BODY_MAX,
+    CONTEXT_MAX,
     Citation,
     Draft,
     QuestionOut,
@@ -62,12 +64,44 @@ async def notify(db: AsyncSession, q: Question) -> None:
         await publish(db, Event(type="task.updated", project_id=project_id, task_id=q.from_task_id))
 
 
-async def suggest(db: AsyncSession, user: User, project_id: uuid.UUID, text: str) -> list[Suggestion]:
-    """Existing answers the asker can read: the target project's KB (and the org's), then memory."""
+QUESTION_SUGGESTIONS = 2
+
+
+async def _answered_questions(db: AsyncSession, user: User, project_id: uuid.UUID, text: str) -> list[Suggestion]:
+    """Earlier answered questions to the project that the asker may read (asked by them, or from a task of a
+    project they can access): the asking side cannot read the target's Q&A document, but can read these."""
+    terms = dict.fromkeys(kb_search._terms(text))
+    words = [t for t in terms if len(t) > 2 and t not in kb_search.STOPWORDS][:50]
+    if not words:
+        return []
+    doc = func.to_tsvector(literal_column("'simple'::regconfig"),
+                           Question.title + " " + Question.body + " " + func.coalesce(Question.answer_md, ""))
+    tsq = func.websearch_to_tsquery(literal_column("'simple'::regconfig"), " or ".join(words))
+    rows = await db.execute(
+        select(Question)
+        .where(Question.target_project_id == project_id, Question.status == QuestionStatus.answered,
+               doc.op("@@")(tsq))
+        .order_by(func.ts_rank_cd(doc, tsq).desc(), Question.answered_at.desc())
+        .limit(20)
+    )
+    project = await db.get(Project, project_id)
     out: list[Suggestion] = []
+    for q in rows.scalars():
+        if len(out) >= QUESTION_SUGGESTIONS:
+            break
+        if await can_read_question(db, user, q):
+            out.append(Suggestion(kind="question", id=q.id, title=f"{ref_of(project, q)}: {q.title}"[:200],
+                                  snippet=(q.answer_md or "")[:300], link=f"/questions/{q.id}"))
+    return out
+
+
+async def suggest(db: AsyncSession, user: User, project_id: uuid.UUID, text: str) -> list[Suggestion]:
+    """Existing answers the asker can read: earlier answered questions, the target project's KB (and the
+    org's), then memory."""
+    out: list[Suggestion] = await _answered_questions(db, user, project_id, text)
     spaces = {(await kb_access.space_for_project(db, project_id)).id, (await kb_access.org_space(db)).id}
     found = await kb_search.search(db, user, text, space_ids=spaces, limit=KB_SUGGESTIONS, match_any=True)
-    for hit in found["results"]:
+    for hit in found["results"][: SUGGESTIONS - len(out)]:
         out.append(Suggestion(kind="kb", id=hit["document_id"], title=hit["title"], snippet=hit["snippet"][:300],
                               link=f"/kb/doc/{hit['document_id']}"))
     for c in await search_conclusions(db, user, text, project_id=project_id, limit=SUGGESTIONS - len(out)):
@@ -93,6 +127,8 @@ async def ask(
     context = strip_nul(context or "").strip()
     if not body:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_question")
+    if len(body) > BODY_MAX or len(context) > CONTEXT_MAX:  # MCP's ask_project has no request model
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "too_large")
     title = strip_nul(title or "").strip() or body.splitlines()[0].strip()
     title = title[:TITLE_MAX]
     task = None
@@ -373,6 +409,7 @@ async def reject(db: AsyncSession, user: User, q: Question, *, reason: str) -> Q
         tried.append(str(q.draft_agent_id))
     q.tried_agent_ids = tried
     q.draft_md, q.draft_citations, q.draft_agent_id = None, [], None
+    q.redacted = False  # the next answer is judged on its own
     q.reject_reason = reason
     q.status = QuestionStatus.queued
     await db.flush()

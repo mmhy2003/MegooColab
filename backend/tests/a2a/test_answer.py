@@ -83,6 +83,8 @@ async def test_approve_with_edit_by_owner_only_and_twice_409(client_factory, db)
 async def test_reject_requeues_and_excludes_agent(client_factory, db):
     _asker, target_member, _outsider, a, b, _c = await _world(client_factory, db)
     q = (await _ask(a)).json()["question"]
+    other = (await b.post("/api/agents", json={"program": "codex"})).json()  # another agent could still answer
+    await b.put(f"/api/agents/{other['id']}/bindings", json={"bindings": [{"project_ref": "QBB", "local_path": "/q"}]})
     agent = await _draft(db, target_member, q["id"])
     assert (await b.post(f"/api/questions/{q['id']}/reject", json={"reason": ""})).status_code == 422
     assert (await a.post(f"/api/questions/{q['id']}/reject", json={"reason": "wrong"})).status_code == 403

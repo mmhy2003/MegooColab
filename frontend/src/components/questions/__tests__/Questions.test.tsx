@@ -59,7 +59,10 @@ describe("AskQuestion", () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/questions/targets") return json([{ key: "PAY", name: "Payments" }]);
       if (url === "/api/questions/suggest")
-        return json([{ kind: "kb", id: "d1", title: "Q3: Webhook signing", snippet: "HMAC", link: "/kb/doc/d1" }]);
+        return json([
+          { kind: "kb", id: "d1", title: "Q3: Webhook signing", snippet: "HMAC", link: "/kb/doc/d1" },
+          { kind: "question", id: "q7", title: "PAY-Q7: Signing?", snippet: "HMAC", link: "/questions/q7" },
+        ]);
       if (url === "/api/questions" && init?.method === "POST") return json({ question: Q, suggestions: [] }, 201);
       return json([]);
     });
@@ -72,6 +75,7 @@ describe("AskQuestion", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check for existing answers" }));
     const link = await screen.findByRole("link", { name: "Q3: Webhook signing" });
     expect(link).toHaveAttribute("href", "/kb/doc/d1");
+    expect(screen.getByRole("link", { name: "PAY-Q7: Signing?" }).nextSibling).toHaveTextContent("Earlier answer");
     expect(fetchMock.mock.calls.some(([u]) => u === "/api/questions")).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Ask anyway" }));
     await waitFor(() => expect(onAsked).toHaveBeenCalledWith("q1"));
