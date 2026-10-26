@@ -29,7 +29,6 @@ from app.audit import service as audit
 from app.auth.models import Role, User
 from app.core.events import Event, publish
 from app.core.text import strip_nul
-from app.jobs import queue
 from app.kb import access as kb_access
 from app.kb import search as kb_search
 from app.memory.search import search_conclusions
@@ -121,7 +120,9 @@ async def ask(
     await audit.record(db, "a2a.question.asked", actor_id=user.id, target_type="question", target_id=q.id,
                        data={"target": project.key, "number": number, "agent_id": str(agent_id) if agent_id else None})
     await notify(db, q)
-    await queue.enqueue(db, "a2a.route", {}, dedupe_key="a2a.route")
+    from app.a2a.routing import route_question  # local: routing imports this module
+
+    await route_question(db, q.id)  # dispatched by the caller after it commits (engine.dispatch_queued)
     return q, await suggest(db, user, project.id, f"{title}\n{body}")
 
 

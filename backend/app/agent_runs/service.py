@@ -739,3 +739,6 @@ async def finish_run(
     async with SessionLocal() as dispatch_db:
         await dispatch_pending(dispatch_db, agent.owner_id)
         await dispatch_db.commit()
+    from app.workflow import engine  # local: the engine imports this module
+
+    await engine.dispatch_queued(db)  # a question this run left unanswered may have gone to another agent

@@ -6,7 +6,6 @@ from app.a2a.models import Question
 from app.agent_runs.models import AgentRun
 from app.audit.models import AuditLog
 from app.auth.models import Role
-from app.jobs.models import Job
 from app.kb import access as kb_access
 from app.memory import entities
 from app.memory.models import MemConclusion, ScopeKind
@@ -46,7 +45,6 @@ async def test_ask_numbers_and_audits_and_queues_route(client_factory, db):
     second = (await _ask(a)).json()["question"]
     assert second["ref"] == "QBB-Q2"
     assert (await db.execute(select(AuditLog).where(AuditLog.action == "a2a.question.asked"))).scalars().all()
-    assert "a2a.route" in [j.kind for j in (await db.execute(select(Job))).scalars()]
 
 
 async def test_title_defaults_to_first_line_and_limits(client_factory, db):

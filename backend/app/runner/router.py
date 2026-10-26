@@ -121,7 +121,12 @@ async def _apply_reports(conn: RunnerConn, reports: list[AgentReport | AgentStat
 async def _dispatch(user_id: uuid.UUID) -> None:
     """Send queued runs to agents that are now available. A failure must not kill the socket."""
     try:
+        from app.a2a.routing import route_queued  # local: a2a imports the run service
+        from app.workflow import engine
+
         async with SessionLocal() as db:
+            await route_queued(db)  # queued questions may now have an answering agent (A2A-5)
+            await engine.dispatch_queued(db)
             await dispatch_pending(db, user_id)
             await db.commit()
     except Exception:

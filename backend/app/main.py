@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from starlette.routing import Route
 
 from app.a2a.router import router as a2a_router
+from app.a2a.routing import route_loop
 from app.agent_runs.router import router as agent_runs_router
 from app.agents.router import admin_router as admin_agents_router
 from app.agents.router import project_agents_router
@@ -86,11 +87,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.wait_for(hub.ready.wait(), timeout=10)
     except TimeoutError:
         log.error("event hub not connected yet; live updates start once the database is reachable")
+    # agent-to-agent questions are routed here: runner connections live in this process (A2A-2)
+    stop_routing = asyncio.Event()
+    routing_task = asyncio.create_task(route_loop(stop_routing))
     try:
         # a mounted sub-app's own lifespan never runs, so the host enters the session manager
         async with app.state.mcp.session_manager.run():
             yield
     finally:
+        stop_routing.set()
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(routing_task, 5)
         await hub.stop()
 
 

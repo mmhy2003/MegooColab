@@ -12,6 +12,7 @@ from app.core.db import DbSession
 from app.projects.access import accessible_project_ids, get_project_for
 from app.projects.models import Project
 from app.tasks.service import get_task_for
+from app.workflow import engine
 
 router = APIRouter(tags=["questions"])
 
@@ -37,7 +38,9 @@ async def ask(body: AskIn, user: AuthedUser, db: DbSession) -> AskOut:
         db, user, project_key=body.project_key, body=body.body, title=body.title, context=body.context,
         task_key=body.task_key,
     )
-    return AskOut(question=await service.question_out(db, user, q), suggestions=suggestions)
+    out = AskOut(question=await service.question_out(db, user, q), suggestions=suggestions)
+    await engine.dispatch_queued(db)  # an answering run may have been queued on a live runner
+    return out
 
 
 @router.get("/api/questions")
