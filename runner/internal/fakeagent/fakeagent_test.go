@@ -103,7 +103,7 @@ func start(t *testing.T, scenario any, meta map[string]any) *session {
 }
 
 // startIn starts the fake agent with its working directory set to dir ("" for the test's own).
-func startIn(t *testing.T, dir string, scenario any, meta map[string]any) *session {
+func startIn(t *testing.T, dir string, scenario any, meta map[string]any, servers ...acp.McpServer) *session {
 	t.Helper()
 	bin := testutil.BuildFakeAgent(t)
 	sc, err := json.Marshal(scenario)
@@ -133,7 +133,10 @@ func startIn(t *testing.T, dir string, scenario any, meta map[string]any) *sessi
 	}); err != nil {
 		t.Fatal(err)
 	}
-	ns, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: "/ws", McpServers: []acp.McpServer{}, Meta: meta})
+	if servers == nil {
+		servers = []acp.McpServer{}
+	}
+	ns, err := conn.NewSession(ctx, acp.NewSessionRequest{Cwd: "/ws", McpServers: servers, Meta: meta})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,5 +369,64 @@ func TestFakeAgentReportFileWinsOverReportDir(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("report dir exists: %v", err)
+	}
+}
+
+// The fake agent stands in for Claude Code, so it gates an MCP call the same way: refused in plan mode, run at
+// once when allowedTools pre-approve the server, otherwise asked for (kind "other", the tool's full name).
+func TestFakeAgentGatesMcpCallsLikeClaudeCode(t *testing.T) {
+	srv := acp.McpServer{Http: &acp.McpServerHttpInline{Name: "megoocolab", Url: "http://127.0.0.1:1/mcp", Headers: []acp.HttpHeader{}}}
+	call := []any{map[string]any{"mcp_call": map[string]any{"tool": "submit_answer"}}}
+	approved := map[string]any{"claudeCode": map[string]any{"options": map[string]any{"allowedTools": []string{"mcp__megoocolab"}}}}
+	cases := []struct {
+		name    string
+		meta    map[string]any
+		mode    string
+		asked   bool
+		outcome string
+		called  bool
+	}{
+		{"plan mode refuses", approved, "plan", false, "blocked", false},
+		{"pre-approved runs at once", approved, "", false, "", true},
+		{"otherwise it asks", nil, "", true, "allowed", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := startIn(t, "", call, c.meta, srv)
+			if c.mode != "" {
+				if _, err := s.conn.SetSessionMode(context.Background(), acp.SetSessionModeRequest{SessionId: s.sid, ModeId: acp.SessionModeId(c.mode)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := s.conn.Prompt(context.Background(), acp.PromptRequest{SessionId: s.sid, Prompt: []acp.ContentBlock{acp.TextBlock("go")}}); err != nil {
+				t.Fatal(err)
+			}
+			r := s.finish(t)
+			steps, _ := r["steps"].([]any)
+			if len(steps) != 1 {
+				t.Fatalf("steps = %v", steps)
+			}
+			step := steps[0].(map[string]any)
+			if got, _ := step["outcome"].(string); got != c.outcome {
+				t.Errorf("outcome = %q, want %q (step %v)", got, c.outcome, step)
+			}
+			if ok, _ := step["ok"].(bool); ok {
+				t.Errorf("the call cannot succeed against a closed port: %v", step)
+			}
+			// a call that went ahead fails on the closed port; one that was stopped never tried
+			errText, _ := step["error"].(string)
+			if tried := !strings.Contains(errText, "plan mode") && !strings.Contains(errText, "permission"); tried != c.called {
+				t.Errorf("called = %v, want %v (error %q)", tried, c.called, errText)
+			}
+			s.client.mu.Lock()
+			reqs := s.client.permReqs
+			s.client.mu.Unlock()
+			if (len(reqs) > 0) != c.asked {
+				t.Fatalf("permission requests = %+v, want asked=%v", reqs, c.asked)
+			}
+			if c.asked && (*reqs[0].ToolCall.Kind != acp.ToolKindOther || *reqs[0].ToolCall.Title != "mcp__megoocolab__submit_answer") {
+				t.Errorf("request = kind %v title %v", *reqs[0].ToolCall.Kind, *reqs[0].ToolCall.Title)
+			}
+		})
 	}
 }

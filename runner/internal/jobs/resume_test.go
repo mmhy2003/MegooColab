@@ -104,6 +104,29 @@ func withMcp(url string) func(*protocol.RunStart) {
 	return func(rs *protocol.RunStart) { rs.Mcp = &protocol.McpAccess{URL: url, Token: runToken} }
 }
 
+// A real Claude Code agent refuses MCP calls in plan mode and asks before one unless the session pre-approves
+// the server, and the read-only policy declines what it asks (kind "other"). The fake agent gates its MCP calls
+// the same way, so this fails if read-only runs lose MegooColab's tools again (submit_design, submit_answer, ...).
+func TestReadOnlyRunCanCallMegooColabMcpTools(t *testing.T) {
+	ep := newMcpEndpoint(t)
+	e := newEnvWithCache(t, `[{"mcp_call":{"tool":"submit_answer","args":{"answer_md":"a"}}}]`, 1, t.TempDir())
+	e.startRunWith("run-ro-mcp", "MEG-1", func(rs *protocol.RunStart) {
+		withMcp(ep.URL + "/api/mcp")(rs)
+		rs.Policy = "read_only"
+	})
+	if rf := e.finished("run-ro-mcp"); rf.Outcome != "completed" {
+		t.Fatalf("finished = %+v", rf)
+	}
+	r := e.finalReport()
+	if len(r.Steps) != 1 || r.Steps[0].OK == nil || !*r.Steps[0].OK {
+		t.Fatalf("steps = %+v", r.Steps)
+	}
+	calls := ep.recorded()
+	if len(calls) != 2 || calls[1].Method != "tools/call" || calls[1].Tool != "submit_answer" {
+		t.Fatalf("calls = %+v", calls)
+	}
+}
+
 func TestMcpServerPassedWithBearerHeader(t *testing.T) {
 	ep := newMcpEndpoint(t)
 	e := newEnvWithCache(t, `[{"mcp_call":{"tool":"submit_plan","args":{"n":1}}}]`, 1, t.TempDir())

@@ -31,6 +31,8 @@ type fakeAgent struct {
 	toolSeq    int
 	history    []histMsg
 	mcp        []acp.McpServer
+	mode       string   // the session mode set by the client ("default" until then)
+	allowed    []string // Claude Code allowedTools from the session _meta
 }
 
 var _ acp.Agent = (*fakeAgent)(nil)
@@ -65,6 +67,8 @@ func (a *fakeAgent) begin(event string, id acp.SessionId, cwd string, meta map[s
 	a.sessionID = id
 	a.history = history
 	a.mcp = servers
+	a.mode = "default"
+	a.allowed = allowedTools(meta)
 	a.report.Cwd = cwd
 	if meta != nil {
 		a.report.Meta, _ = json.Marshal(meta)
@@ -139,6 +143,7 @@ func (a *fakeAgent) SetSessionMode(_ context.Context, p acp.SetSessionModeReques
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.report.ModesSet = append(a.report.ModesSet, string(p.ModeId))
+	a.mode = string(p.ModeId)
 	return acp.SetSessionModeResponse{}, nil
 }
 
@@ -313,11 +318,30 @@ func (a *fakeAgent) run(ctx context.Context, sid acp.SessionId, st Step) error {
 		a.mu.Lock()
 		srv := firstHTTPMcp(a.mcp)
 		a.mu.Unlock()
+		res.Tool = st.McpCall.Tool
+		if srv != nil {
+			stopped, err := a.mcpGate(ctx, sid, srv.Name, st.McpCall.Tool, st.McpCall.Args)
+			if err != nil {
+				return err
+			}
+			if stopped != "" {
+				ok := false
+				res.OK, res.Outcome = &ok, stopped
+				res.Error = map[string]string{"blocked": "plan mode: MCP tools are not available"}[stopped]
+				if res.Error == "" {
+					res.Error = "permission " + stopped
+				}
+				break
+			}
+			if !a.preApproved(srv.Name, st.McpCall.Tool) {
+				res.Outcome = "allowed"
+			}
+		}
 		out, ok, err := callMcpTool(ctx, srv, st.McpCall.Tool, st.McpCall.Args)
 		if err != nil && ctx.Err() != nil {
 			return err
 		}
-		res.Tool, res.OK, res.Result = st.McpCall.Tool, &ok, out
+		res.OK, res.Result = &ok, out
 		if err != nil {
 			res.Error = err.Error()
 		}
@@ -332,6 +356,56 @@ func (a *fakeAgent) run(ctx context.Context, sid acp.SessionId, st Step) error {
 	}
 	a.record(res)
 	return nil
+}
+
+// allowedTools reads Claude Code's options.allowedTools from a session's _meta.
+func allowedTools(meta map[string]any) []string {
+	cc, _ := meta["claudeCode"].(map[string]any)
+	opts, _ := cc["options"].(map[string]any)
+	list, _ := opts["allowedTools"].([]any)
+	out := make([]string, 0, len(list))
+	for _, v := range list {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// preApproved: an allowedTools rule names the MCP server ("mcp__<server>") or the tool ("mcp__<server>__<tool>").
+func (a *fakeAgent) preApproved(server, tool string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, rule := range a.allowed {
+		if rule == "mcp__"+server || rule == "mcp__"+server+"__"+tool {
+			return true
+		}
+	}
+	return false
+}
+
+// mcpGate gates an MCP tool call the way Claude Code (which the fake agent stands in for) does: refused in plan
+// mode, run at once when allowedTools pre-approve it, otherwise asked for as a tool of kind "other" titled with
+// the tool's full name. It returns "" to go ahead, else what stopped the call (blocked, rejected, cancelled).
+func (a *fakeAgent) mcpGate(ctx context.Context, sid acp.SessionId, server, tool string, args map[string]any) (string, error) {
+	a.mu.Lock()
+	plan := a.mode == "plan"
+	a.mu.Unlock()
+	if plan {
+		return "blocked", nil
+	}
+	if a.preApproved(server, tool) {
+		return "", nil
+	}
+	input := map[string]any{}
+	for k, v := range args {
+		input[k] = v
+	}
+	out, err := a.permissioned(ctx, sid, acp.ToolKindOther, "mcp__"+server+"__"+tool, nil, input)
+	if err != nil || out == "allowed" {
+		return "", err
+	}
+	return out, nil
 }
 
 // permissioned sends tool_call(pending), asks for permission, records the

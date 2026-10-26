@@ -124,7 +124,7 @@ func loadScenario() ([]Step, error) {
 // StepResult is one entry of the report's "steps" array.
 type StepResult struct {
 	Type    string `json:"type"`
-	Outcome string `json:"outcome,omitempty"` // tool/exec: allowed | rejected | cancelled
+	Outcome string `json:"outcome,omitempty"` // tool/exec: allowed | rejected | cancelled; mcp_call also blocked (plan mode)
 	OK      *bool  `json:"ok,omitempty"`      // write
 	Error   string `json:"error,omitempty"`
 	Length  *int   `json:"length,omitempty"`  // read: characters read, not the content
