@@ -31,8 +31,7 @@ export function JobModels() {
       </p>
       <div className="space-y-4">
         {(jobs.data ?? []).map((j) => (
-          // keyed by the saved values: the form starts over when they change
-          <JobRow key={`${j.job}:${j.provider_id}:${j.model}`} job={j} providers={providers.data ?? []} />
+          <JobRow key={j.job} job={j} providers={providers.data ?? []} />
         ))}
       </div>
     </section>
@@ -45,6 +44,14 @@ function JobRow({ job, providers }: { job: AiJobModel; providers: AiProvider[] }
   const [model, setModel] = useState(job.model);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const text = JOB_TEXT[job.job] ?? { label: job.job, help: "" };
+  // when the saved values change (after a save, or someone else's), the fields follow them
+  const saved = `${job.provider_id ?? ""}|${job.model}`;
+  const [synced, setSynced] = useState(saved);
+  if (synced !== saved) {
+    setSynced(saved);
+    setProviderId(job.provider_id ?? "");
+    setModel(job.model);
+  }
 
   return (
     <form

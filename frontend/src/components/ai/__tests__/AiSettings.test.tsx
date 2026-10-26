@@ -117,6 +117,34 @@ describe("JobModels", () => {
   });
 });
 
+describe("JobModels after saving", () => {
+  it("keeps the saved message when the refetched job comes back", async () => {
+    let saved = { job: "embeddings", provider_id: null as string | null, model: "" };
+    let jobFetches = 0;
+    mockFetch((url, init) => {
+      if (url === "/api/admin/ai/providers") {
+        return json([{ id: "p1", name: "OpenAI", kind: "openai", api_base: null, has_key: true }]);
+      }
+      if (url === "/api/admin/ai/jobs") {
+        jobFetches += 1;
+        return json([saved]);
+      }
+      if (init?.method === "PUT") {
+        saved = { job: "embeddings", ...JSON.parse(init.body as string) };
+        return json(saved);
+      }
+      return undefined;
+    });
+    wrap(<JobModels />);
+    fireEvent.change(await screen.findByLabelText("Provider"), { target: { value: "p1" } });
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "m" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(jobFetches).toBeGreaterThan(1));
+    await waitFor(() => expect(screen.getByLabelText("Model")).toHaveValue("m"));
+    expect(screen.getByRole("status")).toHaveTextContent("Saved.");
+  });
+});
+
 describe("UsageTable", () => {
   it("renders totals", async () => {
     mockFetch((url) => {
