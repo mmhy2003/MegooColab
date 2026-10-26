@@ -113,14 +113,14 @@ async def test_provider_change_queues_reconcile(client, db):
     await db.execute(update(Job).values(status=JobStatus.done))
     await db.commit()
     await client.patch(f"/api/admin/ai/providers/{pid}", json={"api_key": "good"})
-    kinds = [j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars()]
-    assert kinds == ["kb.reconcile"]
+    kinds = sorted(j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars())
+    assert kinds == ["kb.reconcile", "mem.reconcile"]
     # saving the same model again is also a retry
     await db.execute(update(Job).values(status=JobStatus.done))
     await db.commit()
     await client.put("/api/admin/ai/jobs/embeddings", json={"provider_id": pid, "model": "m"})
-    kinds = [j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars()]
-    assert kinds == ["kb.reconcile"]
+    kinds = sorted(j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars())
+    assert kinds == ["kb.reconcile", "mem.reconcile"]
 
 
 def test_reconcile_is_periodic():
