@@ -38,6 +38,16 @@ describe("ActivityThread", () => {
     expect(rows[4]).toContain("Ahmed Ali agent_stage_entered");
   });
 
+  it("describes questions to other projects", () => {
+    const asked: ActivityItem = { type: "event", id: "e8", at: "2026-10-22T10:07:00Z", actor, kind: "question_asked", data: { question_id: "q1", target_key: "QBB", number: 1 } };
+    const answered: ActivityItem = { type: "event", id: "e9", at: "2026-10-22T10:08:00Z", actor, kind: "question_answered", data: { question_id: "q1", target_key: "QBB", number: 1 } };
+    render(<ActivityThread items={[asked, answered]} columnNames={columnNames} userNames={userNames} />);
+    const rows = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(rows[0]).toContain("Ahmed Ali asked QBB a question (Q1)");
+    expect(rows[1]).toContain("QBB answered Q1");
+    expect(rows[1]).not.toContain("Ahmed Ali");
+  });
+
   it("says an agent was assigned, not that the task was unassigned", () => {
     const toAgent: ActivityItem = { type: "event", id: "e7", at: "2026-10-22T10:06:00Z", actor, kind: "assigned", data: { from: null, to: null, to_agent: "a1" } };
     render(<ActivityThread items={[toAgent]} columnNames={columnNames} userNames={userNames} agentNames={new Map([["a1", "Ahmed's Claude Code"]])} />);

@@ -44,6 +44,10 @@ export function describeEvent(
     }
     case "sprint_changed":
       return data.to ? "moved this into a sprint" : "moved this to the backlog";
+    case "question_asked":
+      return `asked ${str(data.target_key) ?? "another project"} a question (Q${num(data.number)})`;
+    case "question_answered":
+      return `${str(data.target_key) ?? "Another project"} answered Q${num(data.number)}`;
     default:
       return describeWorkflowEvent(kind, data) ?? describeAgentEvent(kind, data, byPerson) ?? kind;
   }
@@ -169,6 +173,7 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
 
 /** Events whose text is a full sentence of its own, with no actor in front. */
 const STANDALONE = new Set([
+  "question_answered",
   "step.completed",
   "step.approved",
   "step.no_commit",
