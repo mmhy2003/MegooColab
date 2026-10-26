@@ -26,6 +26,14 @@ func TestClaudeReadOnlyMetaDisallowsEdits(t *testing.T) {
 	if _, ok := w["disallowedTools"]; ok {
 		t.Fatal("workspace must not set disallowedTools")
 	}
+	// MegooColab's own MCP server is pre-approved in both policies: Claude's plan mode (read-only) would
+	// otherwise ask, and the read-only policy declines tools of kind "other", so submit_design,
+	// submit_answer, ask_human and submit_review could never be called by a real agent
+	for _, o := range []map[string]any{opts, w} {
+		if got := o["allowedTools"]; !reflect.DeepEqual(got, []string{"mcp__megoocolab"}) {
+			t.Fatalf("allowedTools = %#v", got)
+		}
+	}
 	if SessionMeta("codex", policy.ReadOnly) != nil {
 		t.Fatal("codex meta must be nil")
 	}
@@ -40,8 +48,10 @@ func TestModeFor(t *testing.T) {
 	}{
 		{"codex", policy.ReadOnly, []string{"read-only", "auto", "full-access"}, "read-only"},
 		{"codex", policy.Workspace, []string{"read-only", "auto", "full-access"}, "auto"},
-		{"claude_code", policy.ReadOnly, []string{"default", "plan"}, "plan"},
-		{"claude_code", policy.ReadOnly, []string{"default"}, ""},
+		// not plan mode: it blocks MegooColab's MCP tools (submit_design, submit_answer, ...); read-only is enforced by
+		// the runner's permission policy, the removed edit tools and the R1 repository check
+		{"claude_code", policy.ReadOnly, []string{"default", "plan"}, "default"},
+		{"claude_code", policy.ReadOnly, []string{"plan"}, ""},
 		{"claude_code", policy.Workspace, []string{"default", "plan"}, "default"},
 		{"codex", policy.ReadOnly, []string{"auto"}, ""},
 		{"nope", policy.ReadOnly, []string{"plan"}, ""},

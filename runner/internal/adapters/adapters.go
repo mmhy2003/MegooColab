@@ -93,8 +93,12 @@ func splitCommandLine(s string) ([]string, error) {
 	return words, nil
 }
 
+// McpServerName is how MegooColab's MCP server is named inside the agent.
+const McpServerName = "megoocolab"
+
 // SessionMeta is the _meta sent with session/new. For Claude Code it cuts off
-// the developer's own settings and, read-only, removes the edit tools.
+// the developer's own settings, pre-approves MegooColab's own MCP tools and,
+// read-only, removes the edit tools.
 func SessionMeta(program string, p policy.Kind) map[string]any {
 	if program != ClaudeCode {
 		return nil
@@ -102,6 +106,9 @@ func SessionMeta(program string, p policy.Kind) map[string]any {
 	opts := map[string]any{
 		"settingSources":                  []string{},
 		"allowDangerouslySkipPermissions": false,
+		// MegooColab's own tools (submit_design, submit_answer, ask_human, ...): without this, plan mode asks and
+		// the read-only policy declines every tool of kind "other". The server scopes each call by the run token.
+		"allowedTools": []string{"mcp__" + McpServerName},
 	}
 	if p == policy.ReadOnly {
 		opts["disallowedTools"] = []string{"Edit", "Write", "MultiEdit", "NotebookEdit"}
@@ -117,7 +124,9 @@ func ModeFor(program string, p policy.Kind, available []string) string {
 	case Codex:
 		want = map[policy.Kind]string{policy.ReadOnly: "read-only", policy.Workspace: "auto"}[p]
 	case ClaudeCode:
-		want = map[policy.Kind]string{policy.ReadOnly: "plan", policy.Workspace: "default"}[p]
+		// never "plan": it blocks MegooColab's MCP tools (submit_design, submit_answer, ...). Read-only is enforced
+		// by the runner's permission policy, the removed edit tools (SessionMeta) and the R1 repository check.
+		want = "default"
 	}
 	for _, m := range available {
 		if m == want {

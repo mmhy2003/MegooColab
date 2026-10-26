@@ -9,11 +9,12 @@ import (
 	"github.com/coder/acp-go-sdk"
 
 	"github.com/mmhy2003/megoocolab/runner/internal/acpclient"
+	"github.com/mmhy2003/megoocolab/runner/internal/adapters"
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
 )
 
-// mcpServerName is how MegooColab's MCP server is named inside the agent.
-const mcpServerName = "megoocolab"
+// mcpServerName is how MegooColab's MCP server is named inside the agent (pre-approved in adapters.SessionMeta).
+const mcpServerName = adapters.McpServerName
 
 // mcpServers is the MCP server list for a session: MegooColab's own server,
 // carrying the run's bearer token, for a workflow run; none otherwise.

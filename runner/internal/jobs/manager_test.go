@@ -316,8 +316,12 @@ func TestReadOnlyRunCannotWrite(t *testing.T) {
 	if !strings.Contains(string(r.Meta), `"disallowedTools":["Edit","Write","MultiEdit","NotebookEdit"]`) {
 		t.Errorf("session meta = %s", r.Meta)
 	}
-	if strings.Join(r.ModesSet, ",") != "plan" {
-		t.Errorf("modes set = %v, want [plan]", r.ModesSet)
+	if !strings.Contains(string(r.Meta), `"allowedTools":["mcp__megoocolab"]`) {
+		t.Errorf("session meta = %s", r.Meta)
+	}
+	// not plan mode, which blocks MegooColab's MCP tools; the denied write above is the policy at work
+	if strings.Join(r.ModesSet, ",") != "default" {
+		t.Errorf("modes set = %v, want [default]", r.ModesSet)
 	}
 }
 
