@@ -53,6 +53,7 @@ cd backend
 uv sync
 uv run pytest                      # test suite (uses the megoo_test database)
 SECRET_KEY=dev uv run fastapi dev app/main.py   # API on http://localhost:8000/api/docs
+SECRET_KEY=dev uv run python -m app.worker      # background jobs (search indexing); needs the API's migrations
 
 # 3. Frontend
 cd frontend

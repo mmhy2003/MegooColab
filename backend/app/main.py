@@ -9,6 +9,7 @@ from alembic.config import Config
 from fastapi import FastAPI
 from starlette.routing import Route
 
+from app.agent_runs.router import router as agent_runs_router
 from app.agents.router import admin_router as admin_agents_router
 from app.agents.router import project_agents_router
 from app.agents.router import router as agents_router
@@ -20,12 +21,12 @@ from app.core.config import get_settings
 from app.core.csrf import CsrfHeaderMiddleware
 from app.core.db import SessionLocal
 from app.core.events import hub
+from app.jobs.router import router as jobs_router
 from app.mcp_server.server import MCP_PATH, build_mcp
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
 from app.realtime.router import router as realtime_router
 from app.runner.router import router as runner_router
-from app.agent_runs.router import router as agent_runs_router
 from app.setup.router import router as setup_router
 from app.sprints.router import router as sprints_router
 from app.tasks.activity import router as activity_router
@@ -115,6 +116,7 @@ def create_app() -> FastAPI:
         runner_router,
         agent_runs_router,
         workflow_router,
+        jobs_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect

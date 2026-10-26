@@ -36,6 +36,19 @@ services:
       timeout: 3s
       retries: 30
 
+  worker:
+    build: ../backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      backend:
+        condition: service_healthy  # the backend applies migrations on startup
+    environment:
+      DATABASE_URL: postgresql+asyncpg://megoo:${POSTGRES_PASSWORD}@db:5432/megoo
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
+      RUN_MIGRATIONS_ON_STARTUP: "false"
+
   frontend:
     build: ../frontend
     restart: unless-stopped
