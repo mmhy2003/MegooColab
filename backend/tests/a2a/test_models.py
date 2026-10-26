@@ -117,7 +117,7 @@ async def test_require_run_task_refuses_question_runs(client, db):
     try:
         from mcp.server.mcpserver.exceptions import ToolError
 
-        with pytest.raises(ToolError, match="wrong_task"):
+        with pytest.raises(ToolError, match="not_allowed_in_role"):
             await require_run_task(db, "PAY-1")
     finally:
         current_run.reset(token)

@@ -19,6 +19,7 @@ from starlette.routing import Route
 from starlette.types import ASGIApp
 
 from app.agents.models import Agent
+from app.mcp_server.a2a_tools import register_a2a_tools
 from app.mcp_server.auth import (
     McpBearerAuth,
     current_run,
@@ -213,6 +214,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
     register_workflow_tools(mcp)
     register_kb_tools(mcp)
     register_memory_tools(mcp)
+    register_a2a_tools(mcp)
 
     http_app = mcp.streamable_http_app(
         streamable_http_path=MCP_PATH,

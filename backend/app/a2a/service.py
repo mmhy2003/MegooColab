@@ -3,7 +3,7 @@
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.a2a.access import (
@@ -228,3 +228,75 @@ async def question_out(db: AsyncSession, user: User, q: Question) -> QuestionOut
         can_answer=is_open and await can_answer_question(db, user, q), can_approve=approver,
         can_withdraw=is_open and (q.asked_by_user_id == user.id or user.role == Role.admin),
     )
+
+
+# -- answers -----------------------------------------------------------------------------------------
+
+
+def _clean_answer(answer_md: str, citations: list) -> tuple[str, list[dict], bool]:
+    """Validated, NUL-free, scrubbed answer text and citations (A2A-7)."""
+    from pydantic import TypeAdapter, ValidationError
+
+    from app.a2a.schemas import ANSWER_MAX
+    from app.a2a.scrub import scrub
+
+    text = strip_nul(answer_md or "").strip()
+    if not 1 <= len(text) <= ANSWER_MAX:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_answer")
+    try:
+        parsed = TypeAdapter(list[Citation]).validate_python(citations or [])
+    except ValidationError:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_citations") from None
+    if len(parsed) > 50 or any(c.end_line < c.start_line for c in parsed):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_citations")
+    text, redacted = scrub(text)
+    cites = []
+    for c in parsed:
+        path, changed = scrub(c.path)
+        redacted = redacted or changed
+        cites.append({"path": path, "start_line": c.start_line, "end_line": c.end_line})
+    return text, cites, redacted
+
+
+async def _mark_redacted(db: AsyncSession, q: Question, actor_id) -> None:
+    q.redacted = True
+    await audit.record(db, "a2a.answer.redacted", actor_id=actor_id, target_type="question", target_id=q.id)
+
+
+async def on_answered(db: AsyncSession, q: Question) -> None:
+    """The question has its final answer: record, tell everyone. (Filing and delivery: see filing.py.)"""
+    await audit.record(db, "a2a.question.answered", actor_id=q.answered_by_user_id, target_type="question",
+                       target_id=q.id, data={"source": q.answer_source})
+    await notify(db, q)
+
+
+async def submit(db: AsyncSession, run: AgentRun, answer_md: str, citations: list) -> Question:
+    """An answering run's answer (A2A-3/4): answered at once in auto mode, a draft for the owner in manual."""
+    live = (
+        await db.execute(select(AgentRun).where(AgentRun.id == run.id).with_for_update()
+                         .execution_options(populate_existing=True))
+    ).scalar_one_or_none()
+    if live is None or live.status != RunStatus.running or live.question_id is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "run_not_running")
+    q = await lock_question(db, live.question_id)
+    if q.status != QuestionStatus.routed:
+        raise HTTPException(status.HTTP_409_CONFLICT, "question_not_routed")
+    text, cites, redacted = _clean_answer(answer_md, citations)
+    agent = await db.get(Agent, live.agent_id)
+    if redacted:
+        await _mark_redacted(db, q, agent.owner_id)
+    from app.agents.models import AnswerMode
+
+    if agent.answer_mode == AnswerMode.auto:
+        q.answer_md, q.citations, q.answer_source = text, cites, "agent"
+        q.answered_by_user_id, q.answered_by_agent_id = agent.owner_id, agent.id
+        q.status = QuestionStatus.answered
+        q.answered_at = func.now()
+        await db.flush()
+        await on_answered(db, q)
+    else:
+        q.draft_md, q.draft_citations, q.draft_agent_id = text, cites, agent.id
+        q.status = QuestionStatus.draft
+        await db.flush()
+        await notify(db, q)
+    return q
