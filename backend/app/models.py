@@ -2,6 +2,7 @@
 
 from app.agent_runs import models as agent_runs_models  # noqa: F401
 from app.agents import models as agents_models  # noqa: F401
+from app.ai import models as ai_models  # noqa: F401
 from app.audit import models as audit_models  # noqa: F401
 from app.auth import models as auth_models  # noqa: F401
 from app.jobs import models as jobs_models  # noqa: F401

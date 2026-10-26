@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     public_url: str = "http://localhost:8080"
     db_null_pool: bool = False
     run_migrations_on_startup: bool = True
+    # tests and e2e: deterministic local embeddings, no provider calls
+    ai_fake: bool = False
 
 
 @lru_cache

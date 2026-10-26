@@ -13,6 +13,7 @@ from app.agent_runs.router import router as agent_runs_router
 from app.agents.router import admin_router as admin_agents_router
 from app.agents.router import project_agents_router
 from app.agents.router import router as agents_router
+from app.ai.router import router as ai_router
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
 from app.auth.tokens_router import router as tokens_router
@@ -117,6 +118,7 @@ def create_app() -> FastAPI:
         agent_runs_router,
         workflow_router,
         jobs_router,
+        ai_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect
