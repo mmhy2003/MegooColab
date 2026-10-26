@@ -202,7 +202,9 @@ test("a question answered across projects", async ({ browser }) => {
   await page.getByLabel("Project", { exact: true }).selectOption("QBB");
   await page.getByLabel("Question", { exact: true }).fill(QUESTION);
   await page.getByRole("button", { name: "Check for existing answers" }).click();
-  await expect(page.getByRole("list", { name: "Existing answers" }).getByRole("link", { name: TITLE })).toBeVisible();
+  const existing = page.getByRole("list", { name: "Existing answers" });
+  await expect(existing.getByRole("link", { name: TITLE, exact: true })).toHaveAttribute("href", `/kb/doc/${answered.kb_document_id}`);
+  await expect(existing.getByRole("link", { name: `QBB-${TITLE}` })).toHaveAttribute("href", `/questions/${q1.id}`);
 
   // 4. someone in neither project cannot see it; MCP find_answer offers the filed answer
   const invite = await post<{ invite_url: string }>(request, "/api/admin/users/invite", {
