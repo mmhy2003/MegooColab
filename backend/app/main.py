@@ -27,6 +27,8 @@ from app.kb.access import ensure_spaces
 from app.kb.context import register as register_kb_context
 from app.kb.router import router as kb_router
 from app.mcp_server.server import MCP_PATH, build_mcp
+from app.memory import extract as _memory_extract  # noqa: F401 - registers jobs and the reindex hook
+from app.memory import fakes as _memory_fakes  # noqa: F401 - fake-mode model replies
 from app.memory.entities import ensure_core_entities
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
