@@ -23,6 +23,7 @@ from app.core.csrf import CsrfHeaderMiddleware
 from app.core.db import SessionLocal
 from app.core.events import hub
 from app.jobs.router import router as jobs_router
+from app.kb.access import ensure_spaces
 from app.mcp_server.server import MCP_PATH, build_mcp
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
@@ -68,6 +69,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.to_thread(run_migrations)
     async with SessionLocal() as session:
         await seed_defaults(session)
+        await ensure_spaces(session)
         await session.commit()
     await hub.start(settings.database_url)
     try:

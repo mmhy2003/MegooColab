@@ -13,9 +13,17 @@ from app.auth.models import Role, User
 from app.auth.schemas import UserOut
 from app.core.db import DbSession
 from app.core.events import Event, publish
+from app.kb import access as kb_access
 from app.teams import service
 from app.teams.models import Team, TeamMember
-from app.teams.schemas import MembersIn, TeamDetail, TeamIn, TeamOut, TeamPatch, TeamSummary
+from app.teams.schemas import (
+    MembersIn,
+    TeamDetail,
+    TeamIn,
+    TeamOut,
+    TeamPatch,
+    TeamSummary,
+)
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 
@@ -87,6 +95,7 @@ async def create_team(body: TeamIn, user: AuthedUser, db: DbSession) -> TeamOut:
     await _flush_unique_name(db)
     if user.role == Role.manager:
         db.add(TeamMember(team_id=team.id, user_id=user.id))
+    await kb_access.space_for_team(db, team.id)
     await audit.record(db, "team.created", actor_id=user.id, target_type="team", target_id=team.id)
     return TeamOut.model_validate(team)
 
