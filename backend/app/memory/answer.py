@@ -1,5 +1,6 @@
 """Ask the memory (MEM-5): an answer from the conclusions the asker may read, citing the ones it used."""
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -57,7 +58,9 @@ async def answer(db: AsyncSession, user: User, question: str, *, project_id: uui
     cards = await _cards(db, user, {r.entity_id for r in rows})
     messages = prompts.answering_messages(question, cards, rows)
     try:
-        reply = await ai.complete(db, "answering", messages, timeout=ANSWER_TIMEOUT_SECONDS)
+        reply = await asyncio.wait_for(
+            ai.complete(db, "answering", messages, timeout=ANSWER_TIMEOUT_SECONDS), ANSWER_TIMEOUT_SECONDS
+        )
         out = ai.parse_json(reply, AnswerOut)
     except ai.AiNotConfigured:
         raise HTTPException(status.HTTP_409_CONFLICT, "memory_answering_not_configured") from None

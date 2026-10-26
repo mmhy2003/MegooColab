@@ -10,7 +10,9 @@ import { memKeys, type MemDreamRun } from "@/lib/memory";
 
 function statsLine(stats: Record<string, unknown>): string {
   const n = (k: string) => Number(stats[k] ?? 0);
-  return `${n("cards")} cards, ${n("replaced")} replaced, ${n("deduced")} deduced, ${n("induced")} induced`;
+  const base = `${n("cards")} cards, ${n("replaced")} replaced, ${n("deduced")} deduced, ${n("induced")} induced`;
+  const problems = [n("failed_pairs") && `${n("failed_pairs")} failed`, n("dropped") && `${n("dropped")} dropped`];
+  return [base, ...problems.filter(Boolean)].join(", ");
 }
 
 /** Dreaming (MEM-4): recent consolidation runs and a manual trigger for admins. */

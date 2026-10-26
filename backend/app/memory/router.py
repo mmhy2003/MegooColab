@@ -18,7 +18,7 @@ from app.memory import answer as answering
 from app.memory import dream as dreaming
 from app.memory import entities
 from app.memory.access import ReadableScopes, can_edit_scope, readable_scopes
-from app.memory.extract import embed_texts, scope_columns
+from app.memory.extract import clear_cards, embed_texts, scope_columns
 from app.memory.models import (
     ConclusionKind,
     ConclusionStatus,
@@ -313,6 +313,7 @@ async def correct_conclusion(cid: uuid.UUID, body: CorrectIn, user: AuthedUser, 
     await _suppress(db, c)
     c.status = ConclusionStatus.superseded
     c.superseded_by_id = new.id
+    await clear_cards(db, [c.id])  # a card must not keep summarising the corrected fact
     await audit.record(db, "memory.conclusion.corrected", actor_id=user.id, target_type="mem_conclusion",
                        target_id=c.id, data={"old": c.text, "new": text, "new_id": str(new.id)})
     await db.flush()
@@ -325,6 +326,7 @@ async def delete_conclusion(cid: uuid.UUID, user: AuthedUser, db: DbSession) -> 
     if c.status != ConclusionStatus.deleted:
         await _suppress(db, c)
         c.status = ConclusionStatus.deleted
+        await clear_cards(db, [c.id])  # a card must not keep summarising the deleted fact
         await audit.record(db, "memory.conclusion.deleted", actor_id=user.id, target_type="mem_conclusion",
                            target_id=c.id, data={"text": c.text, "entity_id": str(c.entity_id)})
     return Response(status_code=status.HTTP_204_NO_CONTENT)

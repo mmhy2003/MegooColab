@@ -51,6 +51,11 @@ async def queue_extract(db: AsyncSession, kind: str, source_id: uuid.UUID) -> No
     )
 
 
+async def queue_forget(db: AsyncSession) -> None:
+    """A source was deleted: the memory forgets what it learned from it (mem.forget)."""
+    await queue.enqueue(db, "mem.forget", {}, dedupe_key="mem.forget")
+
+
 # -- candidates --------------------------------------------------------------------------------------
 
 

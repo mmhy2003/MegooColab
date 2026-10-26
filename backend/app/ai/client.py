@@ -193,6 +193,8 @@ async def complete(
         response = await litellm.acompletion(
             model=model, messages=messages, api_key=api_key, api_base=provider.api_base, timeout=timeout,
             max_tokens=max_tokens, response_format={"type": "json_object"},
+            # jobs retry at job level, and a request (ask the memory) must not wait through SDK retries
+            max_retries=0,
         )
     except Exception as exc:
         await _record(job, model, ok=False, error_code=type(exc).__name__[:100])
@@ -206,7 +208,10 @@ async def complete(
         output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
         cost=_cost(litellm, response, "acompletion"),
     )
-    return response.choices[0].message.content or ""
+    choice = response.choices[0]
+    if getattr(choice, "finish_reason", None) == "length":
+        raise AiBadOutput("truncated: the reply hit max_tokens")
+    return choice.message.content or ""
 
 
 async def provider_key(db: AsyncSession, provider_id: uuid.UUID) -> str | None:

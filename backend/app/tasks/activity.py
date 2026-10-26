@@ -219,6 +219,10 @@ async def delete_comment(comment_id: uuid.UUID, user: AuthedUser, db: DbSession)
     comment, task = await _own_comment(db, user, comment_id, allow_admin=True)
     await db.delete(comment)
     await _changed(db, task, "comment.deleted")
+    # local: memory imports the task modules
+    from app.memory.sources import queue_forget
+
+    await queue_forget(db)
 
 
 # ---- attachments ------------------------------------------------------------

@@ -134,6 +134,9 @@ async def put_job(job: str, body: JobModelIn, db: DbSession, admin: AdminUser) -
                              "model": row.model})
     if job == "embeddings":
         await _embeddings_settings_changed(db, before)
+    elif job == "extraction" and row.model:
+        # learn what was written before extraction was configured (paged, deduplicated)
+        await queue.enqueue(db, "mem.backfill", {}, dedupe_key="mem.backfill")
     return JobModelOut(job=job, provider_id=row.provider_id, model=row.model)
 
 
@@ -161,7 +164,7 @@ async def test_job(job: str, db: DbSession, _admin: AdminUser) -> TestResult:
         if job == "embeddings":
             model, _ = await ai.embed(db, ["ping"], job=job)
         else:
-            await ai.complete(db, job, [{"role": "user", "content": 'Reply with {"ok": true}'}], timeout=30,
+            await ai.complete(db, job, [{"role": "user", "content": 'Reply with the JSON object {"ok": true}'}], timeout=30,
                               max_tokens=20)
     except ai.AiNotConfigured:
         return TestResult(ok=False, model=None, error="not_configured")

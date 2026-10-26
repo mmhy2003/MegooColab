@@ -257,6 +257,10 @@ async def delete_document(db: AsyncSession, user: User, doc: KbDocument) -> None
                        data={"title": doc.title, "space_id": str(doc.space_id)})
     await db.delete(doc)
     await _changed(db, doc, space)
+    # local: memory reads KB documents
+    from app.memory.sources import queue_forget
+
+    await queue_forget(db)
     await db.flush()
 
 

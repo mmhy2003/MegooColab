@@ -36,6 +36,9 @@ from app.teams.models import Team
 log = logging.getLogger(__name__)
 
 PAIR_LIMIT = 200
+PAIRS_PER_RUN = 50
+MAX_CONSECUTIVE_FAILURES = 3
+MAX_TOKENS = 8000
 MAX_OPS = 20
 TEXT_MAX = 500
 CARD_MAX = 2000
@@ -126,8 +129,9 @@ async def _derive(
         return None
     model, vectors = await embed_texts(db, [text])
     vector = vectors[0] if vectors else None
-    for p in premises:  # never re-derive what a human deleted or corrected from these sources
-        if await is_suppressed(db, p.source_kind, p.source_id, entity.id, text, vector, model):
+    # never re-derive what a human deleted or corrected: from these sources, or a derived fact (no source)
+    for source_kind, source_id in {(p.source_kind, p.source_id) for p in premises} | {(None, None)}:
+        if await is_suppressed(db, source_kind, source_id, entity.id, text, vector, model):
             return None
     row = MemConclusion(
         id=uuid.uuid4(), entity_id=entity.id, text=text, kind=kind, confidence=confidence,
@@ -159,7 +163,7 @@ async def _dream_pair(db: AsyncSession, entity: MemEntity, scope, stats: dict) -
             await db.delete(card)
         return
     messages = prompts.dreaming_messages(entity.name, await _scope_label(db, scope), card.summary_md if card else "", rows)
-    out = ai.parse_json(await ai.complete(db, "dreaming", messages), DreamOut)
+    out = ai.parse_json(await ai.complete(db, "dreaming", messages, max_tokens=MAX_TOKENS), DreamOut)
     by_id = {f"C{i}": c for i, c in enumerate(rows, start=1)}
     existing = {normalize(r.text) for r in rows}
 
@@ -172,7 +176,11 @@ async def _dream_pair(db: AsyncSession, entity: MemEntity, scope, stats: dict) -
         return found
 
     for op in out.replace[:MAX_OPS]:
-        targets = [c for c in pick(op.ids) if not c.pinned and c.status == ConclusionStatus.active]
+        # pinned facts and human corrections outrank consolidation
+        targets = [
+            c for c in pick(op.ids)
+            if not c.pinned and c.kind != ConclusionKind.correction and c.status == ConclusionStatus.active
+        ]
         if not targets:
             stats["dropped"] += 1
             continue
@@ -223,6 +231,9 @@ async def _set_run(run_id: uuid.UUID, **values) -> None:
 
 @queue.register("mem.dream")
 async def dream(db: AsyncSession, payload: dict) -> None:
+    """Dreams up to PAIRS_PER_RUN pairs, each in its own transaction (the rest go to the next run). The run
+    fails visibly when every pair failed, after MAX_CONSECUTIVE_FAILURES failures in a row, or when the
+    dreaming model is not configured."""
     run_id = uuid.UUID(payload["run_id"]) if payload.get("run_id") else None
     if run_id is None:
         async with SessionLocal() as s:
@@ -231,33 +242,38 @@ async def dream(db: AsyncSession, payload: dict) -> None:
             await s.commit()
             run_id = run.id
     stats = {"pairs": 0, "replaced": 0, "deduced": 0, "induced": 0, "cards": 0, "dropped": 0, "failed_pairs": 0}
-    try:
-        for entity_id, scope in await _pairs(db):
-            entity = await db.get(MemEntity, entity_id)
-            if entity is None:
-                continue
+    first_error: str | None = None
+    in_a_row = 0
+    for entity_id, scope in (await _pairs(db))[:PAIRS_PER_RUN]:
+        pair = dict.fromkeys(stats, 0)
+        try:
+            async with SessionLocal() as s:
+                entity = await s.get(MemEntity, entity_id)
+                if entity is None:
+                    continue
+                await _dream_pair(s, entity, scope, pair)
+                await s.commit()
+        except ai.AiNotConfigured:
+            await _set_run(run_id, status="failed", error="not_configured", stats=stats, finished_at=utcnow())
+            return
+        except Exception as exc:
+            log.warning("dreaming failed for entity %s", entity_id, exc_info=True)
             stats["pairs"] += 1
-            try:
-                async with db.begin_nested():
-                    await _dream_pair(db, entity, scope, stats)
-            except ai.AiNotConfigured:
-                raise
-            except Exception:
-                log.warning("dreaming failed for entity %s", entity_id, exc_info=True)
-                stats["failed_pairs"] += 1
-    except ai.AiNotConfigured:
-        await db.rollback()
-        await _set_run(run_id, status="failed", error="not_configured", stats=stats, finished_at=utcnow())
-        return
-    except Exception as exc:  # noqa: BLE001 - recorded on the run; the job is not retried
-        await db.rollback()
-        await _set_run(run_id, status="failed", error=f"{type(exc).__name__}: {exc}"[:ERROR_MAX], stats=stats,
-                       finished_at=utcnow())
-        return
-    run = await db.get(MemDreamRun, run_id)
-    run.status = "done"
-    run.stats = stats
-    run.finished_at = utcnow()
+            stats["failed_pairs"] += 1
+            first_error = first_error or f"{type(exc).__name__}: {exc}"[:ERROR_MAX]
+            in_a_row += 1
+            if in_a_row >= MAX_CONSECUTIVE_FAILURES:
+                await _set_run(run_id, status="failed", error=first_error, stats=stats, finished_at=utcnow())
+                return
+            continue
+        in_a_row = 0
+        stats["pairs"] += 1
+        for k, v in pair.items():
+            if k != "pairs":
+                stats[k] += v
+    failed = stats["pairs"] > 0 and stats["failed_pairs"] == stats["pairs"]
+    await _set_run(run_id, status="failed" if failed else "done", error=first_error if failed else None,
+                   stats=stats, finished_at=utcnow())
 
 
 @queue.register("mem.dream_tick")

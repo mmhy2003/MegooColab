@@ -49,6 +49,14 @@ describe("JobModels", () => {
 });
 
 describe("DreamPanel", () => {
+  it("shows failed pairs, dropped items and the error", async () => {
+    const failed = { ...RUN, status: "failed", stats: { pairs: 2, cards: 0, failed_pairs: 2, dropped: 3 }, error: "AiBadOutput: x" };
+    vi.stubGlobal("fetch", vi.fn(async () => json([failed])));
+    wrap(<DreamPanel />);
+    expect(await screen.findByText("0 cards, 0 replaced, 0 deduced, 0 induced, 2 failed, 3 dropped")).toBeInTheDocument();
+    expect(screen.getByText("AiBadOutput: x")).toBeInTheDocument();
+  });
+
   it("shows runs and dream now", async () => {
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
       init?.method === "POST" ? json({ ...RUN, id: "r2", status: "running", trigger: "manual" }, 201) : json([RUN]),

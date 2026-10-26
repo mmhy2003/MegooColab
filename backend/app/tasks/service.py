@@ -521,6 +521,10 @@ async def delete_task(db: AsyncSession, task: Task) -> None:
     if task.type == TaskType.epic:
         await db.execute(update(Task).where(Task.parent_id == task.id).values(parent_id=None))
     await db.delete(task)
+    # local: memory imports the task modules
+    from app.memory.sources import queue_forget
+
+    await queue_forget(db)
 
 
 async def list_tasks(
