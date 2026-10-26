@@ -3,6 +3,7 @@
 import { JobModels } from "@/components/ai/JobModels";
 import { ProviderList } from "@/components/ai/ProviderList";
 import { UsageTable } from "@/components/ai/UsageTable";
+import { DreamPanel } from "@/components/memory/DreamPanel";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useMe } from "@/lib/me";
 
@@ -24,6 +25,7 @@ export default function AdminAiPage() {
       />
       <ProviderList />
       <JobModels />
+      <DreamPanel />
       <UsageTable />
     </div>
   );

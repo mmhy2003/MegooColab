@@ -16,6 +16,15 @@ const JOB_TEXT: Record<string, { label: string; help: string }> = {
     label: "Embeddings",
     help: "Used for semantic Knowledge Base search. Changing the model re-embeds every document in the background.",
   },
+  extraction: {
+    label: "Extraction",
+    help: "Reads new comments, run summaries, reviews and documents and records short conclusions.",
+  },
+  dreaming: {
+    label: "Dreaming",
+    help: "Nightly consolidation: replaces outdated conclusions, deduces and induces new ones, refreshes summary cards.",
+  },
+  answering: { label: "Answering", help: "Answers questions asked of the memory." },
 };
 
 /** Which provider and model each AI job uses (MEM-10). */
