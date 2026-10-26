@@ -24,6 +24,8 @@ from app.teams.models import Team
 BODY_MAX = 500_000
 TITLE_MAX = 200
 CONTEXT_LINES = 3
+# above this many line pairs in the changed part, the diff is one coarse replacement (difflib is quadratic)
+MAX_DIFF_CELLS = 4_000_000
 
 _TASK_LINK = r"\[\[([A-Z][A-Z0-9]{1,9}-\d{1,9})\]\]"
 _DOC_LINK = r"\[\[doc:([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:\|[^\]\n]{0,200})?\]\]"
@@ -348,11 +350,34 @@ def _op(op: str, a_start: int, b_start: int, a_lines: list[str], b_lines: list[s
     return {"op": op, "a_start": a_start + 1, "b_start": b_start + 1, "a_lines": a_lines, "b_lines": b_lines}
 
 
+def _opcodes(a: list[str], b: list[str]) -> list[tuple[str, int, int, int, int]]:
+    """difflib opcodes for the part between the common head and tail. difflib is quadratic in the worst case
+    (many repeated lines), so a changed part larger than MAX_DIFF_CELLS is reported as one replacement."""
+    head = 0
+    while head < min(len(a), len(b)) and a[head] == b[head]:
+        head += 1
+    tail = 0
+    while tail < min(len(a), len(b)) - head and a[-1 - tail] == b[-1 - tail]:
+        tail += 1
+    a_mid, b_mid = a[head : len(a) - tail], b[head : len(b) - tail]
+    codes: list[tuple[str, int, int, int, int]] = []
+    if head:
+        codes.append(("equal", 0, head, 0, head))
+    if len(a_mid) * len(b_mid) > MAX_DIFF_CELLS:
+        codes.append(("replace", head, head + len(a_mid), head, head + len(b_mid)))
+    elif a_mid or b_mid:
+        for tag, a1, a2, b1, b2 in difflib.SequenceMatcher(None, a_mid, b_mid, autojunk=False).get_opcodes():
+            codes.append((tag, a1 + head, a2 + head, b1 + head, b2 + head))
+    if tail:
+        codes.append(("equal", len(a) - tail, len(a), len(b) - tail, len(b)))
+    return codes
+
+
 def diff(a: str, b: str) -> list[dict]:
     """Line diff of two texts. Unchanged runs longer than 2×CONTEXT_LINES keep CONTEXT_LINES of context next
     to each change and report the rest as {"op": "collapsed", "count": n}."""
     a_lines, b_lines = a.split("\n"), b.split("\n")
-    codes = difflib.SequenceMatcher(None, a_lines, b_lines, autojunk=False).get_opcodes()
+    codes = _opcodes(a_lines, b_lines)
     out: list[dict] = []
     for i, (tag, a1, a2, b1, b2) in enumerate(codes):
         if tag != "equal":

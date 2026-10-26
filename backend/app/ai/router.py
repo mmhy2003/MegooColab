@@ -72,6 +72,7 @@ async def create_provider(body: ProviderIn, db: DbSession, admin: AdminUser) -> 
 async def update_provider(provider_id: uuid.UUID, body: ProviderPatch, db: DbSession, admin: AdminUser) -> ProviderOut:
     p = await _provider(db, provider_id)
     fields = body.model_fields_set
+    before = await ai.configured_model(db, "embeddings")
     if body.name is not None:
         p.name = body.name
     if body.kind is not None:
@@ -83,6 +84,9 @@ async def update_provider(provider_id: uuid.UUID, body: ProviderPatch, db: DbSes
     await _flush_unique(db)
     await audit.record(db, "ai.provider.updated", actor_id=admin.id, target_type="ai_provider", target_id=p.id,
                        data={"fields": sorted(fields - {"api_key"}) + (["api_key"] if "api_key" in fields else [])})
+    used = await db.scalar(select(AiJobModel.job).where(AiJobModel.job == "embeddings", AiJobModel.provider_id == p.id))
+    if used:
+        await _embeddings_settings_changed(db, before)
     return _out(p)
 
 
@@ -128,9 +132,18 @@ async def put_job(job: str, body: JobModelIn, db: DbSession, admin: AdminUser) -
     await audit.record(db, "ai.job.updated", actor_id=admin.id, target_type="ai_job",
                        data={"job": job, "provider_id": str(body.provider_id) if body.provider_id else None,
                              "model": row.model})
-    if job == "embeddings" and await ai.configured_model(db, job) != before:
-        await on_embeddings_model_changed(db)
+    if job == "embeddings":
+        await _embeddings_settings_changed(db, before)
     return JobModelOut(job=job, provider_id=row.provider_id, model=row.model)
+
+
+async def _embeddings_settings_changed(db, before: str | None) -> None:
+    """A new model name re-embeds everything; any other change (a fixed key, the same model saved again)
+    retries the documents whose embedding failed."""
+    if await ai.configured_model(db, "embeddings") != before:
+        await on_embeddings_model_changed(db)
+    else:
+        await queue.enqueue(db, "kb.reconcile", {}, dedupe_key="kb.reconcile")
 
 
 async def on_embeddings_model_changed(db) -> None:

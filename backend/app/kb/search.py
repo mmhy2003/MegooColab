@@ -26,6 +26,21 @@ LIST_LIMIT = 50
 RRF_K = 60
 SNIPPET = 300
 REEMBED_PAGE = 500
+RECONCILE_SECONDS = 1800
+QUERY_TIMEOUT_SECONDS = 5
+# cosine distance above which a chunk is not a semantic match at all (0 = same direction, 1 = unrelated)
+SEMANTIC_MAX_DISTANCE = 0.6
+# words too common to make a document relevant when any word of a long query may match
+STOPWORDS = frozenset(
+    {
+        "a", "an", "and", "are", "as", "at", "be", "but", "by", "can", "do", "does", "for", "from", "has",
+        "have", "how", "i", "if", "in", "into", "is", "it", "its", "may", "not", "of", "on", "or", "our",
+        "should", "so", "than", "that", "the", "their", "them", "then", "there", "these", "they", "this",
+        "to", "was", "we", "were", "what", "when", "where", "which", "who", "will", "with", "would", "you",
+        "your",
+    }
+)
+RECONCILE_LIMIT = 1000
 
 
 def chunk(body: str, size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP, limit: int = CHUNK_LIMIT) -> list[str]:
@@ -92,6 +107,30 @@ async def reembed_all(db: AsyncSession, payload: dict) -> None:
 
 
 
+@queue.register("kb.reconcile")
+async def reconcile(db: AsyncSession, payload: dict) -> None:
+    """Queues documents without chunks of their latest revision embedded by the current model: those whose
+    embedding failed (provider outage, bad key) or that a model change left behind."""
+    model = await ai.current_model(db, "embeddings")
+    if model is None:
+        return
+    current = (
+        select(KbChunk.id)
+        .where(
+            KbChunk.document_id == KbDocument.id,
+            KbChunk.revision == KbDocument.latest_revision,
+            KbChunk.embedding_model == model,
+        )
+        .exists()
+    )
+    ids = (await db.execute(select(KbDocument.id).where(~current).limit(RECONCILE_LIMIT))).scalars()
+    for doc_id in ids:
+        await service.enqueue_embed(db, doc_id)
+
+
+queue.register_periodic("kb.reconcile", RECONCILE_SECONDS)
+
+
 # -- search ------------------------------------------------------------------------------------------
 
 
@@ -126,7 +165,8 @@ async def _semantic(db: AsyncSession, q: str, scope: set[uuid.UUID]) -> tuple[bo
     if model is None:
         return False, [], {}
     try:
-        used, (qvec,) = await ai.embed(db, [q])
+        # a query waits on the provider inside requests (and approvals): keep it short
+        used, (qvec,) = await ai.embed(db, [q], timeout=QUERY_TIMEOUT_SECONDS)
     except ai.AiNotConfigured:
         return False, [], {}
     except Exception:
@@ -139,6 +179,7 @@ async def _semantic(db: AsyncSession, q: str, scope: set[uuid.UUID]) -> tuple[bo
             KbDocument.space_id.in_(scope),
             KbChunk.embedding_model == used,
             KbChunk.embedding.is_not(None),
+            KbChunk.embedding.cosine_distance(qvec) <= SEMANTIC_MAX_DISTANCE,
         )
         .order_by(KbChunk.embedding.cosine_distance(qvec))
         .limit(LIST_LIMIT * 4)
@@ -170,7 +211,11 @@ async def search(
     terms = _terms(query)
     if not scope or not terms:
         return {"semantic": await ai.current_model(db, "embeddings") is not None, "results": []}
-    fts = await _fts(db, " or ".join(dict.fromkeys(terms[:50])) if match_any else query, scope)
+    if match_any:
+        words = [t for t in dict.fromkeys(terms) if len(t) > 2 and t not in STOPWORDS][:50]
+        fts = await _fts(db, " or ".join(words), scope) if words else []
+    else:
+        fts = await _fts(db, query, scope)
     semantic, sem, best = await _semantic(db, query, scope)
     scores: dict[uuid.UUID, float] = {}
     for ranked in (fts, sem):

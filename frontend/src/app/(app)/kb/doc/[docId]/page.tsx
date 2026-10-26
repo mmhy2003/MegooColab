@@ -19,7 +19,8 @@ export default function KbDocumentPage() {
   const [tab, setTab] = useState<"document" | "history">("document");
   const setEditing = (on: boolean) => router.replace(on ? `/kb/doc/${docId}?edit=1` : `/kb/doc/${docId}`);
 
-  if (doc.isError) {
+  // a failed refetch keeps the last data: an open editor (and its draft) must stay
+  if (doc.isError && !doc.data) {
     return (
       <div className="card mx-auto mt-10 max-w-md p-6 text-center">
         <p className="text-pink">{errorMessage(doc.error)}</p>
@@ -35,6 +36,11 @@ export default function KbDocumentPage() {
       <nav aria-label="Breadcrumb" className="text-sm">
         <Link href="/kb">Knowledge Base</Link> / <Link href={`/kb/${d.space.id}`}>{d.space.name}</Link>
       </nav>
+      {doc.isError && (
+        <p role="alert" className="rounded border border-pink/60 px-3 py-2 text-sm text-pink">
+          This document is no longer available ({errorMessage(doc.error)}). Copy any text you want to keep.
+        </p>
+      )}
       {editing && d.can_write ? (
         <DocEditor doc={d} onSaved={() => setEditing(false)} onCancel={() => setEditing(false)} />
       ) : (

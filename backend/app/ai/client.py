@@ -99,7 +99,9 @@ def _index(item) -> int:
     return item["index"] if isinstance(item, dict) else item.index
 
 
-async def embed(db: AsyncSession, texts: list[str], *, job: str = "embeddings") -> tuple[str, list[list[float]]]:
+async def embed(
+    db: AsyncSession, texts: list[str], *, job: str = "embeddings", timeout: float = TIMEOUT_SECONDS
+) -> tuple[str, list[list[float]]]:
     """Returns (model name, one vector per text). Raises AiNotConfigured when the job has no model."""
     if get_settings().ai_fake:
         await _record(job, FAKE_EMBED_MODEL, ok=True, input_tokens=sum(len(t) for t in texts) // 4, cost=0.0)
@@ -117,7 +119,7 @@ async def embed(db: AsyncSession, texts: list[str], *, job: str = "embeddings") 
         batch = texts[start : start + BATCH]
         try:
             response = await litellm.aembedding(
-                model=model, input=batch, api_key=api_key, api_base=provider.api_base, timeout=TIMEOUT_SECONDS
+                model=model, input=batch, api_key=api_key, api_base=provider.api_base, timeout=timeout
             )
         except Exception as exc:
             await _record(job, model, ok=False, error_code=type(exc).__name__[:100])

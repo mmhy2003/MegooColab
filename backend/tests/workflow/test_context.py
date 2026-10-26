@@ -205,7 +205,8 @@ async def test_max_findings_stay_inside_cap_and_balanced(client, db):
     finally:
         context.context_providers.remove(provider)
     assert len(prompt) <= 60_000 and _balanced(prompt)
-    assert "UNIQUE TITLE" in prompt and "PROVIDER" in prompt
+    # optional provider context is dropped before anything about the task (Plan 4 review)
+    assert "UNIQUE TITLE" in prompt and "PROVIDER" not in prompt
     assert " more findings omitted" in prompt
 
 

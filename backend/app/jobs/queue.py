@@ -21,6 +21,8 @@ ERROR_LIMIT = 500
 
 Handler = Callable[[AsyncSession, dict], Awaitable[None]]
 HANDLERS: dict[str, Handler] = {}
+# kind -> seconds: the worker enqueues these jobs (deduplicated) every interval
+PERIODIC: dict[str, float] = {}
 
 
 def register(kind: str) -> Callable[[Handler], Handler]:
@@ -29,6 +31,10 @@ def register(kind: str) -> Callable[[Handler], Handler]:
         return fn
 
     return deco
+
+
+def register_periodic(kind: str, seconds: float) -> None:
+    PERIODIC[kind] = seconds
 
 
 def backoff(attempts: int) -> timedelta:
@@ -110,7 +116,15 @@ async def fail(db: AsyncSession, job: Job, error: str) -> None:
     """Re-queues with backoff while attempts remain, otherwise marks the job failed."""
     job.last_error = error[:ERROR_LIMIT]
     job.locked_until = None
-    if job.attempts < job.max_attempts:
+    newer = job.dedupe_key is not None and await db.scalar(
+        select(Job.id).where(Job.dedupe_key == job.dedupe_key, Job.status == JobStatus.queued, Job.id != job.id)
+    )
+    if newer:
+        # a newer copy is queued (dedupe keeps one): it does this work again, so this attempt ends here
+        job.status = JobStatus.failed
+        job.last_error = f"{error} (a newer queued job replaces this one)"[:ERROR_LIMIT]
+        job.finished_at = func.now()
+    elif job.attempts < job.max_attempts:
         job.status = JobStatus.queued
         job.run_after = func.now() + backoff(job.attempts)
     else:

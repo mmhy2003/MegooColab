@@ -63,11 +63,29 @@ class _Wakeup:
                 await self._conn.close()
 
 
+async def enqueue_periodic(last: dict[str, float], *, now: float) -> None:
+    """Enqueues each periodic job not enqueued (per `last`) within its interval."""
+    for kind, seconds in queue.PERIODIC.items():
+        if kind in last and now - last[kind] < seconds:
+            continue
+        last[kind] = now
+        async with SessionLocal() as db:
+            await queue.enqueue(db, kind, {}, dedupe_key=kind)
+            await db.commit()
+
+
 async def run_worker(stop: asyncio.Event, *, poll_seconds: float = 10.0) -> None:
     wake = _Wakeup()
     await wake.connect()
+    loop = asyncio.get_running_loop()
+    # periodic jobs start one interval after the worker does
+    last: dict[str, float] = {kind: loop.time() for kind in queue.PERIODIC}
     try:
         while not stop.is_set():
+            try:
+                await enqueue_periodic(last, now=loop.time())
+            except Exception:
+                log.exception("periodic enqueue failed")
             try:
                 ran = await run_once()
             except Exception:

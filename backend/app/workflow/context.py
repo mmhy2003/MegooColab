@@ -4,6 +4,7 @@ Task text, thread items, answers, comments and findings are untrusted (NFR-3): e
 <untrusted source="...">, and the content cannot close the wrapper from inside.
 """
 
+import logging
 import unicodedata
 import uuid
 from collections.abc import Awaitable, Callable
@@ -23,6 +24,8 @@ from app.workflow.models import (
     RunRole,
     WorkflowDocument,
 )
+
+log = logging.getLogger(__name__)
 
 ContextProvider = Callable[[AsyncSession, Task, RunRole], Awaitable[str | None]]
 # Plans 4 and 5 append providers here; each returns a section (or None) to add after the built-in ones.
@@ -131,6 +134,16 @@ async def _approved(db: AsyncSession, task_id: uuid.UUID, kind: DocKind) -> Work
     ).scalar_one_or_none()
 
 
+async def _provided(db: AsyncSession, task: Task, role: RunRole, provider: ContextProvider) -> str | None:
+    """A provider's section; a failing provider is logged and skipped, never fails the run it builds."""
+    try:
+        async with db.begin_nested():
+            return await provider(db, task, role)
+    except Exception:
+        log.exception("context provider %s failed", getattr(provider, "__name__", provider))
+        return None
+
+
 async def build_prompt(
     db: AsyncSession,
     task: Task,
@@ -176,7 +189,7 @@ async def build_prompt(
     prev_lines = [_finding_line(f) for f in previous_findings] if previous_findings else None
     prev_shown = len(prev_lines) if prev_lines is not None else 0
 
-    extra = [s for p in context_providers if (s := await p(db, task, role))]
+    extra = [s for p in context_providers if (s := await _provided(db, task, role, p))]
 
     description = task.description_md or ""
     dropped = 0
@@ -218,7 +231,9 @@ async def build_prompt(
     prompt = render()
     while len(prompt) > MAX_PROMPT_CHARS:
         over = len(prompt) - MAX_PROMPT_CHARS
-        if thread:
+        if extra:  # optional context (the Knowledge Base) goes before anything about the task itself
+            extra.pop()
+        elif thread:
             thread.pop(0)
             dropped += 1
         elif prev_shown:

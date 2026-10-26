@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
@@ -209,7 +210,8 @@ async def get_revision(doc_id: uuid.UUID, n: int, user: AuthedUser, db: DbSessio
 async def diff_revisions(doc_id: uuid.UUID, a: int, b: int, user: AuthedUser, db: DbSession) -> list[dict]:
     doc, _ = await access.get_document_for(db, user, doc_id)
     ra, rb = await _revision(db, doc, a), await _revision(db, doc, b)
-    return service.diff(ra.body_md, rb.body_md)
+    # CPU-bound: off the event loop, so one large diff cannot stall every other request
+    return await asyncio.to_thread(service.diff, ra.body_md, rb.body_md)
 
 
 # -- links -------------------------------------------------------------------------------------------
