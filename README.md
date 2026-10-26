@@ -112,3 +112,12 @@ cd frontend && npx playwright test e2e/kb.spec.ts
 ```bash
 cd frontend && npx playwright test e2e/memory.spec.ts
 ```
+
+### Questions end-to-end test
+
+`frontend/e2e/questions.spec.ts` covers agent-to-agent questions on the same stack, with the same requirements as the workflow test (the Go toolchain and `git` on the PATH; it builds the runner and the fake agent into a temp directory). Task QAA-1 asks project QBB a question while no runner is online, so it waits ("Waiting on QBB"). The runner then starts, the fake agent answers from a temp QBB repository with a fake AWS key in the text (scrubbed to `[redacted]`), and the owner approves the draft with an edit. The answer is filed in QBB's Knowledge Base under `Q&A`, shows in QAA-1's thread, and is suggested when the same question is asked again and by the `find_answer` MCP tool. Someone in neither project gets 404, and with the runner stopped a second question is answered by a person from the Incoming tab. It creates the "Questions Team" team, a user and the QAA and QBB projects, so it needs a fresh stack. To run it:
+
+```bash
+cd frontend && npx playwright test e2e/questions.spec.ts
+# optional: E2E_RUNNER_LOG=1 prints the runner output at the end
+```
