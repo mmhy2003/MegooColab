@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     ai_fake: bool = False
     # the nightly memory consolidation (dreaming) starts in this UTC hour
     memory_dream_hour_utc: int = 3
+    # a changed source is read this long after its last change, so a burst of edits is extracted once
+    memory_extract_delay_seconds: int = 60
 
 
 @lru_cache

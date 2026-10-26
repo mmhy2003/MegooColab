@@ -30,6 +30,7 @@ services:
       UPLOAD_DIR: /data/uploads
       # tests only: local fake embeddings instead of calling a provider
       AI_FAKE: ${AI_FAKE:-false}
+      MEMORY_EXTRACT_DELAY_SECONDS: ${MEMORY_EXTRACT_DELAY_SECONDS:-60}
     volumes:
       - uploads:/data/uploads
     healthcheck:

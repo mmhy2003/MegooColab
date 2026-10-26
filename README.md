@@ -68,7 +68,7 @@ npm run dev                        # then open http://localhost:8080
 Runs against a fresh production-style stack on http://localhost:8080:
 
 ```bash
-cp deploy/.env.example .superpowers/e2e.env   # set SECRET_KEY, HTTP_PORT=8080, PUBLIC_URL=http://localhost:8080, AI_FAKE=true
+cp deploy/.env.example .superpowers/e2e.env   # set SECRET_KEY, HTTP_PORT=8080, PUBLIC_URL=http://localhost:8080, AI_FAKE=true, MEMORY_EXTRACT_DELAY_SECONDS=2
 docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env up -d --build --wait
 cd frontend && npx playwright install chromium && npx playwright test
 docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env down -v
@@ -103,4 +103,12 @@ cd frontend && npx playwright test e2e/workflow.spec.ts
 
 ```bash
 cd frontend && npx playwright test e2e/kb.spec.ts
+```
+
+### Memory end-to-end test
+
+`frontend/e2e/memory.spec.ts` covers the collective memory on the same stack. Besides `AI_FAKE=true` it needs `MEMORY_EXTRACT_DELAY_SECONDS=2` in the env file (sources are normally read 60 seconds after their last change). It sets every AI job to one provider, waits for the worker to learn a conclusion from a comment, deletes it and checks that editing the comment does not bring it back, lets the memory dream (an induced pattern with its reasoning chain and a summary card), asks the memory, checks that a member of another team sees nothing from the project, and uses the `search_memory` and `ask_memory` MCP tools. It creates the "Memory Team" and "Memory Outsiders" teams and the MEM project, so it needs a fresh stack. To run it:
+
+```bash
+cd frontend && npx playwright test e2e/memory.spec.ts
 ```

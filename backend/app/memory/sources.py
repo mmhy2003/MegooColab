@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import AgentRun
 from app.agents.models import Agent
+from app.core.config import get_settings
 from app.jobs import queue
 from app.kb.models import KbDocument, KbSpace, SpaceKind
 from app.memory.access import Scope
@@ -27,7 +28,6 @@ from app.workflow.models import StepReview
 SourceKind = Literal["task", "comment", "run", "review", "kb_document", "answer"]
 TEXT_LIMIT = 12_000
 LABEL_LIMIT = 200
-EXTRACT_DELAY = timedelta(seconds=60)
 
 
 @dataclass
@@ -47,7 +47,7 @@ async def queue_extract(db: AsyncSession, kind: str, source_id: uuid.UUID) -> No
         "mem.extract",
         {"source_kind": kind, "source_id": str(source_id)},
         dedupe_key=f"mem.extract:{kind}:{source_id}",
-        run_after=func.now() + EXTRACT_DELAY,
+        run_after=func.now() + timedelta(seconds=get_settings().memory_extract_delay_seconds),
     )
 
 

@@ -164,3 +164,13 @@ async def test_missing_source_returns_none(db):
     assert await sources.load_source(db, "comment", uuid.uuid4()) is None
     assert await sources.load_source(db, "nonsense", uuid.uuid4()) is None
 
+
+
+async def test_extract_delay_is_configurable(client, db, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "memory_extract_delay_seconds", 5)
+    await _setup(client, db)
+    job = (await db.execute(select(Job).where(Job.kind == "mem.extract"))).scalars().first()
+    delay = (await db.execute(select(Job.run_after - Job.created_at).where(Job.id == job.id))).scalar_one()
+    assert 3 <= delay.total_seconds() <= 8
