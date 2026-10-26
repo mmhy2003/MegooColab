@@ -14,6 +14,8 @@ from app.auth.schemas import UserOut
 from app.core.db import DbSession
 from app.core.events import Event, publish
 from app.kb import access as kb_access
+from app.memory import entities as mem_entities
+from app.memory.models import EntityKind
 from app.teams import service
 from app.teams.models import Team, TeamMember
 from app.teams.schemas import (
@@ -96,6 +98,7 @@ async def create_team(body: TeamIn, user: AuthedUser, db: DbSession) -> TeamOut:
     if user.role == Role.manager:
         db.add(TeamMember(team_id=team.id, user_id=user.id))
     await kb_access.space_for_team(db, team.id)
+    await mem_entities.ensure_entity(db, EntityKind.team, team.id)
     await audit.record(db, "team.created", actor_id=user.id, target_type="team", target_id=team.id)
     return TeamOut.model_validate(team)
 

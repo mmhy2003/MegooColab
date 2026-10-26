@@ -7,6 +7,7 @@ from app.audit import models as audit_models  # noqa: F401
 from app.auth import models as auth_models  # noqa: F401
 from app.jobs import models as jobs_models  # noqa: F401
 from app.kb import models as kb_models  # noqa: F401
+from app.memory import models as memory_models  # noqa: F401
 from app.org import models as org_models  # noqa: F401
 from app.projects import models as projects_models  # noqa: F401
 from app.sprints import models as sprints_models  # noqa: F401

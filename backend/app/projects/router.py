@@ -12,6 +12,8 @@ from app.auth.models import Role
 from app.core.db import DbSession
 from app.core.events import Event, publish
 from app.kb import access as kb_access
+from app.memory import entities as mem_entities
+from app.memory.models import EntityKind
 from app.projects import service
 from app.projects.access import accessible_project_ids, get_project_for, require_manage
 from app.projects.models import BoardColumn, Label, Project, ProjectRepository
@@ -77,6 +79,7 @@ async def create_project(body: ProjectIn, user: AuthedUser, db: DbSession) -> Pr
     await service.create_default_columns(db, project)
     await db.flush()
     await kb_access.space_for_project(db, project.id)
+    await mem_entities.ensure_entity(db, EntityKind.project, project.id)
     await audit.record(db, "project.created", actor_id=user.id, target_type="project", target_id=project.id)
     await _project_changed(db, project)
     return await service.project_out(db, project)

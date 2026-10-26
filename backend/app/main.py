@@ -27,6 +27,7 @@ from app.kb.access import ensure_spaces
 from app.kb.context import register as register_kb_context
 from app.kb.router import router as kb_router
 from app.mcp_server.server import MCP_PATH, build_mcp
+from app.memory.entities import ensure_core_entities
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
 from app.realtime.router import router as realtime_router
@@ -72,6 +73,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with SessionLocal() as session:
         await seed_defaults(session)
         await ensure_spaces(session)
+        await ensure_core_entities(session)
         await session.commit()
     await hub.start(settings.database_url)
     try:
