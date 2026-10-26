@@ -264,21 +264,49 @@ async def _mark_redacted(db: AsyncSession, q: Question, actor_id) -> None:
 
 
 async def on_answered(db: AsyncSession, q: Question) -> None:
-    """The question has its final answer: record, tell everyone. (Filing and delivery: see filing.py.)"""
+    """The question has its final answer: file it in the target's KB, teach the memory, deliver it to the asking
+    task, tell everyone (A2A-6). Idempotent: once filed, a second call does nothing."""
+    if q.kb_document_id is not None:
+        return
+    from app.a2a.filing import file_answer
+    from app.memory.sources import queue_extract
+
+    await file_answer(db, q)
+    await queue_extract(db, "answer", q.id)
+    if q.from_task_id is not None:
+        from app.tasks.service import record_event
+
+        task = await db.get(Task, q.from_task_id)
+        project = await db.get(Project, q.target_project_id)
+        await record_event(db, task, q.answered_by_user_id, "question_answered",
+                           {"question_id": str(q.id), "target_key": project.key, "number": q.number})
     await audit.record(db, "a2a.question.answered", actor_id=q.answered_by_user_id, target_type="question",
                        target_id=q.id, data={"source": q.answer_source})
     await notify(db, q)
 
 
+async def _answer(db: AsyncSession, q: Question, text: str, cites: list[dict], source: str,
+                  user_id: uuid.UUID | None, agent_id: uuid.UUID | None) -> None:
+    q.answer_md, q.citations, q.answer_source = text, cites, source
+    q.answered_by_user_id, q.answered_by_agent_id = user_id, agent_id
+    q.draft_md, q.draft_citations, q.draft_agent_id = None, [], None
+    q.status = QuestionStatus.answered
+    q.answered_at = func.now()
+    await db.flush()
+    await db.refresh(q, ["answered_at"])
+    await on_answered(db, q)
+
+
 async def submit(db: AsyncSession, run: AgentRun, answer_md: str, citations: list) -> Question:
-    """An answering run's answer (A2A-3/4): answered at once in auto mode, a draft for the owner in manual."""
+    """An answering run's answer (A2A-3/4): answered at once in auto mode, a draft for the owner in manual.
+    Locks the question before the run, in the same order as a human answer or a withdrawal."""
+    q = await lock_question(db, run.question_id)
     live = (
         await db.execute(select(AgentRun).where(AgentRun.id == run.id).with_for_update()
                          .execution_options(populate_existing=True))
     ).scalar_one_or_none()
-    if live is None or live.status != RunStatus.running or live.question_id is None:
+    if live is None or live.status != RunStatus.running or live.question_id != q.id:
         raise HTTPException(status.HTTP_409_CONFLICT, "run_not_running")
-    q = await lock_question(db, live.question_id)
     if q.status != QuestionStatus.routed:
         raise HTTPException(status.HTTP_409_CONFLICT, "question_not_routed")
     text, cites, redacted = _clean_answer(answer_md, citations)
@@ -288,15 +316,76 @@ async def submit(db: AsyncSession, run: AgentRun, answer_md: str, citations: lis
     from app.agents.models import AnswerMode
 
     if agent.answer_mode == AnswerMode.auto:
-        q.answer_md, q.citations, q.answer_source = text, cites, "agent"
-        q.answered_by_user_id, q.answered_by_agent_id = agent.owner_id, agent.id
-        q.status = QuestionStatus.answered
-        q.answered_at = func.now()
-        await db.flush()
-        await on_answered(db, q)
+        await _answer(db, q, text, cites, "agent", agent.owner_id, agent.id)
     else:
         q.draft_md, q.draft_citations, q.draft_agent_id = text, cites, agent.id
         q.status = QuestionStatus.draft
         await db.flush()
         await notify(db, q)
+    return q
+
+
+async def _locked_draft(db: AsyncSession, user: User, q: Question) -> Question:
+    q = await lock_question(db, q.id)
+    if q.status != QuestionStatus.draft:
+        raise HTTPException(status.HTTP_409_CONFLICT, "not_a_draft")
+    if not await can_approve(db, user, q):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
+    return q
+
+
+async def approve(db: AsyncSession, user: User, q: Question, *, answer_md: str | None) -> Question:
+    """The draft agent's owner (or an admin) approves a draft, optionally edited (A2A-4)."""
+    q = await _locked_draft(db, user, q)
+    agent = await db.get(Agent, q.draft_agent_id) if q.draft_agent_id else None
+    text, cites, redacted = _clean_answer(answer_md if answer_md is not None else q.draft_md,
+                                          list(q.draft_citations or []))
+    if redacted:
+        await _mark_redacted(db, q, user.id)
+    await audit.record(db, "a2a.answer.approved", actor_id=user.id, target_type="question", target_id=q.id,
+                       data={"edited": answer_md is not None})
+    await _answer(db, q, text, cites, "agent", agent.owner_id if agent else user.id, agent.id if agent else None)
+    return q
+
+
+async def reject(db: AsyncSession, user: User, q: Question, *, reason: str) -> Question:
+    """A rejected draft: its agent is excluded and the question goes back to the queue (A2A-4)."""
+    q = await _locked_draft(db, user, q)
+    reason = strip_nul(reason).strip()[:500]
+    if not reason:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_reason")
+    tried = list(q.tried_agent_ids or [])
+    if q.draft_agent_id and str(q.draft_agent_id) not in tried:
+        tried.append(str(q.draft_agent_id))
+    q.tried_agent_ids = tried
+    q.draft_md, q.draft_citations, q.draft_agent_id = None, [], None
+    q.reject_reason = reason
+    q.status = QuestionStatus.queued
+    await db.flush()
+    await audit.record(db, "a2a.answer.rejected", actor_id=user.id, target_type="question", target_id=q.id,
+                       data={"reason": reason})
+    await notify(db, q)
+    from app.a2a.routing import route_question  # local: routing imports this module
+
+    await route_question(db, q.id)  # dispatched by the caller after it commits (engine.dispatch_queued)
+    return q
+
+
+async def answer_by_human(
+    db: AsyncSession, user: User, q: Question, *, answer_md: str, citations: list | None = None
+) -> Question:
+    """A member of the target project answers (A2A-5); an answering run still at work is cancelled."""
+    q = await lock_question(db, q.id)
+    if not await can_answer_question(db, user, q):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
+    if q.status == QuestionStatus.answered:
+        raise HTTPException(status.HTTP_409_CONFLICT, "already_answered")
+    if q.status not in OPEN_STATUSES:
+        raise HTTPException(status.HTTP_409_CONFLICT, "not_open")
+    text, cites, redacted = _clean_answer(answer_md, citations or [])
+    if redacted:
+        await _mark_redacted(db, q, user.id)
+    q.status = QuestionStatus.answered  # before cancelling, so the run's end does not requeue the question
+    await cancel_question_runs(db, q, user.id)
+    await _answer(db, q, text, cites, "human", user.id, None)
     return q

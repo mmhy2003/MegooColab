@@ -237,6 +237,15 @@ SOURCE_LOADERS = {
 }
 
 
+async def _load_answer(db: AsyncSession, sid: uuid.UUID) -> Source | None:
+    from app.a2a.filing import load_answer  # local: a2a imports this module
+
+    return await load_answer(db, sid)
+
+
+SOURCE_LOADERS["answer"] = _load_answer
+
+
 async def load_source(db: AsyncSession, kind: str, source_id: uuid.UUID | str) -> Source | None:
     loader = SOURCE_LOADERS.get(kind)
     if loader is None:

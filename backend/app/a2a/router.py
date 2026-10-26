@@ -6,7 +6,17 @@ from sqlalchemy import select
 
 from app.a2a import service
 from app.a2a.models import Question, QuestionStatus
-from app.a2a.schemas import AskIn, AskOut, QuestionOut, SuggestIn, Suggestion, Target
+from app.a2a.schemas import (
+    AnswerIn,
+    ApproveIn,
+    AskIn,
+    AskOut,
+    QuestionOut,
+    RejectIn,
+    SuggestIn,
+    Suggestion,
+    Target,
+)
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
 from app.projects.access import accessible_project_ids, get_project_for
@@ -75,6 +85,29 @@ async def get_question(question_id: uuid.UUID, user: AuthedUser, db: DbSession) 
 async def withdraw(question_id: uuid.UUID, user: AuthedUser, db: DbSession) -> QuestionOut:
     q = await service.get_question_for(db, user, question_id)
     return await service.question_out(db, user, await service.withdraw(db, user, q))
+
+
+@router.post("/api/questions/{question_id}/approve")
+async def approve(question_id: uuid.UUID, body: ApproveIn, user: AuthedUser, db: DbSession) -> QuestionOut:
+    q = await service.get_question_for(db, user, question_id)
+    return await service.question_out(db, user, await service.approve(db, user, q, answer_md=body.answer_md))
+
+
+@router.post("/api/questions/{question_id}/reject")
+async def reject(question_id: uuid.UUID, body: RejectIn, user: AuthedUser, db: DbSession) -> QuestionOut:
+    q = await service.get_question_for(db, user, question_id)
+    out = await service.question_out(db, user, await service.reject(db, user, q, reason=body.reason))
+    await engine.dispatch_queued(db)  # the question may have been routed to another agent
+    return out
+
+
+@router.post("/api/questions/{question_id}/answer")
+async def answer(question_id: uuid.UUID, body: AnswerIn, user: AuthedUser, db: DbSession) -> QuestionOut:
+    q = await service.get_question_for(db, user, question_id)
+    citations = [c.model_dump() for c in body.citations]
+    return await service.question_out(
+        db, user, await service.answer_by_human(db, user, q, answer_md=body.answer_md, citations=citations)
+    )
 
 
 @router.get("/api/tasks/{key}/questions")

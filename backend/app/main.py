@@ -9,6 +9,7 @@ from alembic.config import Config
 from fastapi import FastAPI
 from starlette.routing import Route
 
+from app.a2a.context import register as register_a2a_context
 from app.a2a.router import router as a2a_router
 from app.a2a.routing import route_loop
 from app.agent_runs.router import router as agent_runs_router
@@ -104,6 +105,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     register_kb_context()
     register_memory_context()
+    register_a2a_context()
     app = FastAPI(
         title="MegooColab",
         lifespan=lifespan,
