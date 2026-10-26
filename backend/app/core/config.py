@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     run_migrations_on_startup: bool = True
     # tests and e2e: deterministic local embeddings, no provider calls
     ai_fake: bool = False
+    # the nightly memory consolidation (dreaming) starts in this UTC hour
+    memory_dream_hour_utc: int = 3
 
 
 @lru_cache
