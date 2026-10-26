@@ -14,6 +14,7 @@ import { qk } from "@/lib/queries";
 import type { ActivityItem, Attachment, Task } from "@/lib/types";
 
 import { DocumentView } from "@/components/workflow/DocumentView";
+import { KbReferences } from "@/components/kb/KbReferences";
 import { WorkflowPanel } from "@/components/workflow/WorkflowPanel";
 import { useWorkflow } from "@/lib/workflow";
 
@@ -172,6 +173,7 @@ export function TaskView({
               onRemove={(id) => run(() => api(`/api/tasks/${t.key}/links/${id}`, { method: "DELETE" }))}
             />
           </Section>
+          <KbReferences taskKey={t.key} />
           <Section title="Attachments">
             <Attachments
               items={attachments.data ?? []}

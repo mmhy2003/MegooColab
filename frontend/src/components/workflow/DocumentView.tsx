@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
@@ -60,6 +61,7 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
   if (list.error) return <p className="text-sm text-pink">{errorMessage(list.error)}</p>;
   if (!selected) return null;
 
+  const filed = workflow.data?.kb_documents?.find((k) => k.kind === kind)?.document_id;
   const canDecide = selected.status === "submitted" && workflow.data?.can_act === true && !disabled;
   const buildStates = selected.status === "approved" ? workflow.data?.steps : undefined;
 
@@ -121,6 +123,11 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
                 </li>
               ))}
             </ul>
+          )}
+          {filed && selected.status === "approved" && (
+            <p className="text-xs">
+              <Link href={`/kb/doc/${filed}`}>View in Knowledge Base</Link>
+            </p>
           )}
           <Markdown>{detail.data.body_md}</Markdown>
           {detail.data.steps && detail.data.steps.length > 0 && (
