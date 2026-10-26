@@ -115,7 +115,10 @@ test("memory: learn, forget, dream, ask, scope and MCP", async ({ page, browser 
     body_md: "Billing invoices go out monthly. Billing disputes are handled within five days.",
   });
   const org = await entity(request, "org", "Organization");
-  await expect.poll(async () => (await texts(request, org.id)).length, { timeout: 60_000 }).toBe(2);
+  // other specs may have taught the org things too: wait for these two
+  await expect
+    .poll(() => texts(request, org.id), { timeout: 60_000 })
+    .toEqual(expect.arrayContaining(["Billing invoices go out monthly", "Billing disputes are handled within five days"]));
   await page.goto("/admin/ai");
   await page.getByRole("button", { name: "Dream now" }).click();
   await expect
