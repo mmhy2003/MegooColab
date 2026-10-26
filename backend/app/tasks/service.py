@@ -76,6 +76,22 @@ async def task_changed(db: AsyncSession, task: Task, kind: str = "task.updated")
         await snapshot_if_active(db, task.sprint_id)
 
 
+async def _waiting_on(db: AsyncSession, task_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+    from app.a2a.models import OPEN_STATUSES, Question  # local: a2a imports this module
+
+    out: dict[uuid.UUID, list[str]] = defaultdict(list)
+    rows = await db.execute(
+        select(Question.from_task_id, Project.key)
+        .join(Project, Project.id == Question.target_project_id)
+        .where(Question.from_task_id.in_(task_ids), Question.status.in_(OPEN_STATUSES))
+        .distinct()
+        .order_by(Project.key)
+    )
+    for task_id, key in rows:
+        out[task_id].append(key)
+    return out
+
+
 async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[TaskOut]:
     if not tasks:
         return []
@@ -111,6 +127,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[T
         watchers[task_id].append(user_id)
     links = await _links_for(db, ids)
     workflows = await _workflows_for(db, tasks, viewer)
+    waiting = await _waiting_on(db, ids)
     agent_ids = {t.assignee_agent_id for t in tasks if t.assignee_agent_id}
     agents: dict[uuid.UUID, AssigneeAgentOut] = {}
     if agent_ids:
@@ -150,6 +167,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[T
             links=links.get(t.id, []),
             watcher_ids=watchers.get(t.id, []),
             workflow=workflows.get(t.id),
+            waiting_on=waiting.get(t.id, []),
         )
         for t in tasks
     ]

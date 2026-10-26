@@ -77,6 +77,8 @@ class TaskOut(BaseModel):
     links: list["TaskLinkOut"] = []
     watcher_ids: list[uuid.UUID] = []
     workflow: TaskWorkflowOut | None = None
+    # projects this task asked questions of that are still open (§6.6 A2A-5)
+    waiting_on: list[str] = []
 
 
 class LinkedTask(BaseModel):
