@@ -156,3 +156,12 @@ a {
     scroll-behavior: auto !important;
   }
 }
+
+/* Long-form Knowledge Base text reads better in a sans-serif; code and IDs stay monospace (brd §9). */
+.kb-prose {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.kb-prose code,
+.kb-prose pre {
+  font-family: var(--font-mono);
+}
