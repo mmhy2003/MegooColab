@@ -11,12 +11,12 @@ from app.kb.models import KbDocument, KbFolder, KbLink, KbRevision, KbSpace, Spa
 from app.kb.schemas import (
     DocRef,
     DocumentIn,
-    DocumentOut,
     DocumentUpdate,
     FolderIn,
     FolderOut,
     FolderPatch,
-    MoveIn,
+    KbDocumentOut,
+    KbMoveIn,
     Resolved,
     ResolveIn,
     RevisionOut,
@@ -33,13 +33,13 @@ router = APIRouter(tags=["kb"])
 _KIND_ORDER = {SpaceKind.org: 0, SpaceKind.team: 1, SpaceKind.project: 2}
 
 
-async def document_out(db, user: User, doc: KbDocument, space: KbSpace) -> DocumentOut:
+async def document_out(db, user: User, doc: KbDocument, space: KbSpace) -> KbDocumentOut:
     latest = (
         await db.execute(
             select(KbRevision).where(KbRevision.document_id == doc.id, KbRevision.revision == doc.latest_revision)
         )
     ).scalar_one_or_none()
-    return DocumentOut(
+    return KbDocumentOut(
         id=doc.id,
         space=await service.space_ref(db, space),
         folder_id=doc.folder_id,
@@ -132,20 +132,20 @@ async def delete_folder(folder_id: uuid.UUID, user: AuthedUser, db: DbSession, r
 
 
 @router.post("/api/kb/spaces/{space_id}/documents", status_code=status.HTTP_201_CREATED)
-async def create_document(space_id: uuid.UUID, body: DocumentIn, user: AuthedUser, db: DbSession) -> DocumentOut:
+async def create_document(space_id: uuid.UUID, body: DocumentIn, user: AuthedUser, db: DbSession) -> KbDocumentOut:
     space = await access.get_space_for(db, user, space_id, write=True)
     doc = await service.create_document(db, user, space, body.folder_id, body.title, body.body_md, summary=body.summary)
     return await document_out(db, user, doc, space)
 
 
 @router.get("/api/kb/documents/{doc_id}")
-async def get_document(doc_id: uuid.UUID, user: AuthedUser, db: DbSession) -> DocumentOut:
+async def get_document(doc_id: uuid.UUID, user: AuthedUser, db: DbSession) -> KbDocumentOut:
     doc, space = await access.get_document_for(db, user, doc_id)
     return await document_out(db, user, doc, space)
 
 
 @router.put("/api/kb/documents/{doc_id}")
-async def update_document(doc_id: uuid.UUID, body: DocumentUpdate, user: AuthedUser, db: DbSession) -> DocumentOut:
+async def update_document(doc_id: uuid.UUID, body: DocumentUpdate, user: AuthedUser, db: DbSession) -> KbDocumentOut:
     doc, space = await access.get_document_for(db, user, doc_id, write=True)
     doc = await service.update_document(
         db, user, doc, base_revision=body.base_revision, title=body.title, body=body.body_md, summary=body.summary
@@ -154,7 +154,7 @@ async def update_document(doc_id: uuid.UUID, body: DocumentUpdate, user: AuthedU
 
 
 @router.post("/api/kb/documents/{doc_id}/move")
-async def move_document(doc_id: uuid.UUID, body: MoveIn, user: AuthedUser, db: DbSession) -> DocumentOut:
+async def move_document(doc_id: uuid.UUID, body: KbMoveIn, user: AuthedUser, db: DbSession) -> KbDocumentOut:
     doc, _ = await access.get_document_for(db, user, doc_id, write=True)
     target = await access.get_space_for(db, user, body.space_id, write=True)
     doc = await service.move_document(db, user, doc, space=target, folder_id=body.folder_id)

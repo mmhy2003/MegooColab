@@ -66,7 +66,7 @@ class DocumentUpdate(BaseModel):
     summary: NoNulStr | None = Field(default=None, max_length=SUMMARY_MAX)
 
 
-class MoveIn(BaseModel):
+class KbMoveIn(BaseModel):
     space_id: uuid.UUID
     folder_id: uuid.UUID | None = None
 
@@ -81,7 +81,7 @@ class Author(BaseModel):
     agent: Named | None
 
 
-class DocumentOut(BaseModel):
+class KbDocumentOut(BaseModel):
     id: uuid.UUID
     space: SpaceRef
     folder_id: uuid.UUID | None
