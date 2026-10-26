@@ -143,7 +143,8 @@ async def _embeddings_settings_changed(db, before: str | None) -> None:
     if await ai.configured_model(db, "embeddings") != before:
         await on_embeddings_model_changed(db)
     else:
-        await queue.enqueue(db, "kb.reconcile", {}, dedupe_key="kb.reconcile")
+        for kind in ai.REINDEX_JOBS:
+            await queue.enqueue(db, kind, {}, dedupe_key=kind)
 
 
 async def on_embeddings_model_changed(db) -> None:
@@ -157,7 +158,11 @@ async def test_job(job: str, db: DbSession, _admin: AdminUser) -> TestResult:
     _known(job)
     model = await ai.current_model(db, job)
     try:
-        model, _ = await ai.embed(db, ["ping"], job=job)
+        if job == "embeddings":
+            model, _ = await ai.embed(db, ["ping"], job=job)
+        else:
+            await ai.complete(db, job, [{"role": "user", "content": 'Reply with {"ok": true}'}], timeout=30,
+                              max_tokens=20)
     except ai.AiNotConfigured:
         return TestResult(ok=False, model=None, error="not_configured")
     except Exception as exc:  # noqa: BLE001 - shown to the admin

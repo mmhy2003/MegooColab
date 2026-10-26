@@ -4,10 +4,14 @@ Fake mode (settings.ai_fake, tests and e2e) returns deterministic local vectors 
 """
 
 import hashlib
+import json
 import math
 import os
+import re
 import uuid
+from collections.abc import Callable
 
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +23,14 @@ from app.core.db import SessionLocal
 # use the bundled price list instead of fetching it on import
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
-JOBS: tuple[str, ...] = ("embeddings",)
+JOBS: tuple[str, ...] = ("embeddings", "extraction", "dreaming", "answering")
 FAKE_EMBED_MODEL = "fake/embed-64"
+FAKE_LLM_MODEL = "fake/llm"
+LLM_TIMEOUT_SECONDS = 120
+# fake mode: job -> deterministic reply for the given messages (registered by the modules that own the jobs)
+FAKE_COMPLETIONS: dict[str, Callable[[list[dict]], str]] = {}
+# job kinds queued when the embeddings settings change but the model name does not (retry what failed)
+REINDEX_JOBS: list[str] = ["kb.reconcile"]
 FAKE_DIM = 64
 BATCH = 64
 TIMEOUT_SECONDS = 60
@@ -28,6 +38,23 @@ TIMEOUT_SECONDS = 60
 
 class AiNotConfigured(Exception):
     pass
+
+
+class AiBadOutput(Exception):
+    """The model's reply is not the JSON the job asked for."""
+
+
+_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
+
+
+def parse_json[M: BaseModel](text: str, model: type[M]) -> M:
+    m = _FENCE.match(text or "")
+    body = m.group(1) if m else (text or "").strip()
+    try:
+        data = json.loads(body)
+        return model.model_validate(data)
+    except (ValueError, ValidationError) as exc:
+        raise AiBadOutput(f"{type(exc).__name__}: {(text or '')[:200]}") from None
 
 
 def full_model_name(kind: str, model: str) -> str:
@@ -56,7 +83,7 @@ async def configured_model(db: AsyncSession, job: str) -> str | None:
 async def current_model(db: AsyncSession, job: str) -> str | None:
     """The model calls actually use: the fake model in fake mode."""
     if get_settings().ai_fake:
-        return FAKE_EMBED_MODEL
+        return FAKE_EMBED_MODEL if job == "embeddings" else FAKE_LLM_MODEL
     return await configured_model(db, job)
 
 
@@ -84,9 +111,9 @@ async def _record(job: str, model: str, *, ok: bool, input_tokens: int = 0, outp
         await s.commit()
 
 
-def _cost(litellm, response) -> float | None:
+def _cost(litellm, response, call_type: str = "aembedding") -> float | None:
     try:
-        return float(litellm.completion_cost(completion_response=response, call_type="aembedding"))
+        return float(litellm.completion_cost(completion_response=response, call_type=call_type))
     except Exception:  # noqa: BLE001 - unknown models have no price
         return None
 
@@ -135,6 +162,51 @@ async def embed(
         )
         vectors.extend(_vector(item) for item in sorted(response.data, key=_index))
     return model, vectors
+
+
+async def complete(
+    db: AsyncSession,
+    job: str,
+    messages: list[dict],
+    *,
+    timeout: float = LLM_TIMEOUT_SECONDS,
+    max_tokens: int = 2000,
+) -> str:
+    """One JSON-mode chat completion for an LLM job; returns the reply text. Raises AiNotConfigured."""
+    if get_settings().ai_fake:
+        fake = FAKE_COMPLETIONS.get(job)
+        if fake is None:
+            raise AiNotConfigured(job)
+        reply = fake(messages)
+        await _record(job, FAKE_LLM_MODEL, ok=True, input_tokens=sum(len(m["content"]) for m in messages) // 4,
+                      output_tokens=len(reply) // 4, cost=0.0)
+        return reply
+    resolved = await _resolve(db, job)
+    if resolved is None:
+        raise AiNotConfigured(job)
+    model, provider = resolved
+    api_key = decrypt(provider.api_key_enc) if provider.api_key_enc else None
+
+    import litellm
+
+    try:
+        response = await litellm.acompletion(
+            model=model, messages=messages, api_key=api_key, api_base=provider.api_base, timeout=timeout,
+            max_tokens=max_tokens, response_format={"type": "json_object"},
+        )
+    except Exception as exc:
+        await _record(job, model, ok=False, error_code=type(exc).__name__[:100])
+        raise
+    usage = getattr(response, "usage", None)
+    await _record(
+        job,
+        model,
+        ok=True,
+        input_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+        output_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+        cost=_cost(litellm, response, "acompletion"),
+    )
+    return response.choices[0].message.content or ""
 
 
 async def provider_key(db: AsyncSession, provider_id: uuid.UUID) -> str | None:

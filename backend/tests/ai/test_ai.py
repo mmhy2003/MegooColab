@@ -163,13 +163,14 @@ async def test_delete_provider_in_use_409(client, db):
 
 async def test_jobs_list_and_unknown_job(client, db):
     await _admin(client, db)
-    assert (await client.get("/api/admin/ai/jobs")).json() == [{"job": "embeddings", "provider_id": None, "model": ""}]
-    r = await client.put("/api/admin/ai/jobs/dreaming", json={"provider_id": None, "model": ""})
+    empty = [{"job": j, "provider_id": None, "model": ""} for j in ("embeddings", "extraction", "dreaming", "answering")]
+    assert (await client.get("/api/admin/ai/jobs")).json() == empty
+    r = await client.put("/api/admin/ai/jobs/nonsense", json={"provider_id": None, "model": ""})
     assert r.status_code == 404 and r.json()["detail"] == "unknown_job"
     pid = await _configure(client)
-    assert (await client.get("/api/admin/ai/jobs")).json() == [
-        {"job": "embeddings", "provider_id": pid, "model": "text-embedding-3-small"}
-    ]
+    assert (await client.get("/api/admin/ai/jobs")).json()[0] == {
+        "job": "embeddings", "provider_id": pid, "model": "text-embedding-3-small"
+    }
     assert (await db.execute(select(AiJobModel))).scalar_one().model == "text-embedding-3-small"
 
 
