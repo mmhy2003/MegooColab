@@ -100,7 +100,7 @@ async def test_reconcile_embeds_documents_missing_current_vectors(client, db):
     async with SessionLocal() as s:
         await search.reconcile(s, {})
         await s.commit()
-    queued = (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars().all()
+    queued = (await db.execute(select(Job).where(Job.status == JobStatus.queued, Job.kind == "kb.embed"))).scalars().all()
     assert [j.payload["document_id"] for j in queued] == [a["id"]]
     assert b["id"] not in [j.payload["document_id"] for j in queued]
 

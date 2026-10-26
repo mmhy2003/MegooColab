@@ -179,6 +179,10 @@ async def create_comment(db, user: User, key: str, body_md: str) -> Comment:
     await db.flush()
     await db.refresh(comment)
     await _changed(db, task, "comment.created")
+    # local: memory imports the task modules
+    from app.memory.sources import queue_extract
+
+    await queue_extract(db, "comment", comment.id)
     return comment
 
 
@@ -203,6 +207,10 @@ async def edit_comment(comment_id: uuid.UUID, body: CommentIn, user: AuthedUser,
     comment.body_md = body.body_md
     comment.edited_at = datetime.now(UTC)
     await _changed(db, task, "comment.updated")
+    # local: memory imports the task modules
+    from app.memory.sources import queue_extract
+
+    await queue_extract(db, "comment", comment.id)
     return CommentOut.model_validate(comment)
 
 

@@ -429,6 +429,10 @@ async def create_task(db: AsyncSession, user: User, project: Project, data: Task
         await set_labels(db, project, task, data.label_ids)
     await add_watcher(db, task.id, user.id)
     await record_event(db, task, user.id, "created", {"column": str(column.id)})
+    # local: memory imports the task modules
+    from app.memory.sources import queue_extract
+
+    await queue_extract(db, "task", task.id)
     return task
 
 
@@ -494,6 +498,11 @@ async def update_task(db: AsyncSession, user: User, project: Project, task: Task
             if name != "description_md":
                 change |= {"from": _jsonable(old), "to": _jsonable(new)}
             await record_event(db, task, user.id, "field_changed", change)
+    if before["title"] != task.title or before["description_md"] != task.description_md:
+        # local: memory imports the task modules
+        from app.memory.sources import queue_extract
+
+        await queue_extract(db, "task", task.id)
     task.updated_at = _now()
     return task
 

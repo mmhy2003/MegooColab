@@ -682,6 +682,10 @@ async def finish_run(
             from app.workflow import engine
 
             await engine.on_run_finished(db, run)
+    # local: memory imports the task modules
+    from app.memory.sources import queue_extract
+
+    await queue_extract(db, "run", run.id)
     await db.commit()
     async with SessionLocal() as dispatch_db:
         await dispatch_pending(dispatch_db, agent.owner_id)

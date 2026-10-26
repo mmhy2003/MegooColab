@@ -177,6 +177,10 @@ async def submit_review(db: AsyncSession, run: AgentRun, verdict: str, findings:
         "counts": {sev: sum(f["severity"] == sev for f in clean) for sev in SEVERITIES},
         "review_id": str(review.id),
     })
+    # local: memory imports the workflow models
+    from app.memory.sources import queue_extract
+
+    await queue_extract(db, "review", review.id)
     return review
 
 

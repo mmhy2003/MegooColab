@@ -92,7 +92,7 @@ async def test_deleted_document_job_is_a_noop(client, db):
     doc = await _doc(client, w["org"].id, "Gone", "x")
     await client.delete(f"/api/kb/documents/{doc['id']}")
     await _drain()
-    jobs = (await db.execute(select(Job))).scalars().all()
+    jobs = (await db.execute(select(Job).where(Job.kind == "kb.embed"))).scalars().all()
     assert [j.status for j in jobs] == [JobStatus.done]
 
 

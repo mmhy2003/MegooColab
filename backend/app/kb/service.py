@@ -119,7 +119,12 @@ async def _changed(db: AsyncSession, doc: KbDocument, *spaces: KbSpace) -> None:
 
 
 async def enqueue_embed(db: AsyncSession, doc_id: uuid.UUID) -> None:
+    """Search indexing and memory learning both follow a document's saves."""
     await queue.enqueue(db, "kb.embed", {"document_id": str(doc_id)}, dedupe_key=f"kb.embed:{doc_id}")
+    # local: memory reads KB documents
+    from app.memory.sources import queue_extract
+
+    await queue_extract(db, "kb_document", doc_id)
 
 
 async def refresh_links(db: AsyncSession, doc: KbDocument) -> None:
@@ -234,6 +239,10 @@ async def move_document(
     doc.folder_id = folder_id
     doc.updated_at = func.now()
     await _flush_unique(db, "title_taken")
+    # local: memory reads KB documents
+    from app.memory.sources import queue_extract
+
+    await queue_extract(db, "kb_document", doc.id)
     await audit.record(db, "kb.document.moved", actor_id=user.id, target_type="kb_document", target_id=doc.id,
                        data={"from_space": str(old_space.id), "to_space": str(space.id)})
     await _changed(db, doc, old_space, *([space] if space.id != old_space.id else []))
