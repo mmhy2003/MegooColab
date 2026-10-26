@@ -47,11 +47,17 @@ async def _resolve(db: AsyncSession, job: str) -> tuple[str, AiProvider] | None:
     return full_model_name(row[1].kind, row[0].model), row[1]
 
 
-async def current_model(db: AsyncSession, job: str) -> str | None:
-    if get_settings().ai_fake:
-        return FAKE_EMBED_MODEL
+async def configured_model(db: AsyncSession, job: str) -> str | None:
+    """The admin's configured model, regardless of fake mode."""
     resolved = await _resolve(db, job)
     return resolved[0] if resolved else None
+
+
+async def current_model(db: AsyncSession, job: str) -> str | None:
+    """The model calls actually use: the fake model in fake mode."""
+    if get_settings().ai_fake:
+        return FAKE_EMBED_MODEL
+    return await configured_model(db, job)
 
 
 def fake_vector(text: str) -> list[float]:

@@ -121,3 +121,17 @@ class ResolveIn(BaseModel):
 class Resolved(BaseModel):
     title: str | None
     readable: bool
+
+
+class SearchHit(BaseModel):
+    document_id: uuid.UUID
+    space: SpaceRef
+    title: str
+    path: str
+    snippet: str
+    score: float
+
+
+class SearchOut(BaseModel):
+    semantic: bool
+    results: list[SearchHit]

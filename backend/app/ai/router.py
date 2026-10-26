@@ -21,6 +21,7 @@ from app.auth.deps import AdminUser
 from app.core.crypto import encrypt
 from app.core.db import DbSession
 from app.core.events import Event, publish
+from app.jobs import queue
 
 router = APIRouter(prefix="/api/admin/ai", tags=["ai"])
 
@@ -116,7 +117,7 @@ async def put_job(job: str, body: JobModelIn, db: DbSession, admin: AdminUser) -
     _known(job)
     if body.provider_id is not None:
         await _provider(db, body.provider_id)
-    before = await ai.current_model(db, job)
+    before = await ai.configured_model(db, job)
     row = await db.get(AiJobModel, job, with_for_update=True)
     if row is None:
         row = AiJobModel(job=job)
@@ -127,13 +128,15 @@ async def put_job(job: str, body: JobModelIn, db: DbSession, admin: AdminUser) -
     await audit.record(db, "ai.job.updated", actor_id=admin.id, target_type="ai_job",
                        data={"job": job, "provider_id": str(body.provider_id) if body.provider_id else None,
                              "model": row.model})
-    if job == "embeddings" and await ai.current_model(db, job) != before:
+    if job == "embeddings" and await ai.configured_model(db, job) != before:
         await on_embeddings_model_changed(db)
     return JobModelOut(job=job, provider_id=row.provider_id, model=row.model)
 
 
 async def on_embeddings_model_changed(db) -> None:
     await publish(db, Event(type="ai.embeddings_model_changed"))
+    # every document is re-embedded with the new model (handled by the kb.reembed_all job)
+    await queue.enqueue(db, "kb.reembed_all", {}, dedupe_key="kb.reembed_all")
 
 
 @router.post("/jobs/{job}/test")

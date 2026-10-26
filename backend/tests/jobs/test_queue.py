@@ -203,3 +203,13 @@ async def test_admin_jobs_list_admin_only(client, db):
     assert [x["id"] for x in r.json()] == [str(j.id)]
     assert set(r.json()[0]) == {"id", "kind", "status", "attempts", "last_error", "created_at", "finished_at"}
     assert (await client.get("/api/admin/jobs", params={"status": "failed"})).json() == []
+
+
+def test_worker_entry_point_loads_kb_handlers():
+    import importlib
+
+    from app import worker as entry
+
+    for name in entry.HANDLER_MODULES:
+        importlib.import_module(name)
+    assert {"kb.embed", "kb.reembed_all"} <= set(queue.HANDLERS)

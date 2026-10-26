@@ -1,12 +1,12 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import select
 
 from app.auth.deps import AuthedUser
 from app.auth.models import User
 from app.core.db import DbSession
-from app.kb import access, service
+from app.kb import access, search, service
 from app.kb.models import KbDocument, KbFolder, KbLink, KbRevision, KbSpace, SpaceKind
 from app.kb.schemas import (
     DocRef,
@@ -21,6 +21,7 @@ from app.kb.schemas import (
     ResolveIn,
     RevisionOut,
     RevisionSummary,
+    SearchOut,
     SpaceOut,
     TreeDoc,
     TreeOut,
@@ -238,3 +239,14 @@ async def resolve(body: ResolveIn, user: AuthedUser, db: DbSession) -> dict[str,
         ).scalars()
     }
     return {str(i): Resolved(title=found.get(i), readable=i in found) for i in body.doc_ids}
+
+
+@router.get("/api/kb/search")
+async def search_kb(
+    user: AuthedUser,
+    db: DbSession,
+    q: str = Query(min_length=1, max_length=500),
+    space: uuid.UUID | None = None,
+    limit: int = Query(20, ge=1, le=50),
+) -> SearchOut:
+    return SearchOut(**await search.search(db, user, q, space_ids={space} if space else None, limit=limit))

@@ -8,7 +8,7 @@ import signal
 from app.jobs.worker import run_worker
 
 # job handler modules register themselves on import
-HANDLER_MODULES: tuple[str, ...] = ()
+HANDLER_MODULES: tuple[str, ...] = ("app.kb.search",)
 
 
 async def _main() -> None:
