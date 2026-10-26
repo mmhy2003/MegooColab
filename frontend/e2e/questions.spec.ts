@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
 
-import { setupOrSignIn } from "./helpers/auth";
+import { ADMIN, setupOrSignIn } from "./helpers/auth";
 import { buildBinaries, mcp, onPrompt, startRunner, type RunnerHandle } from "./helpers/runner";
 
 /**
@@ -19,7 +19,8 @@ import { buildBinaries, mcp, onPrompt, startRunner, type RunnerHandle } from "./
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
 const WEB = { "X-Megoo-Client": "web" };
 const OUTSIDER = { name: "Quinn Outside", email: "quinn@acme.io", password: "quinn-password-1" };
-const AGENT_NAME = "QBB answerer";
+// the admin's default agent, as in the agents and workflow specs (which expect the admin to have only this one)
+const AGENT_NAME = `${ADMIN.name}'s Claude Code`;
 const QUESTION = "How are orders webhooks signed?";
 const TITLE = `Q1: ${QUESTION}`;
 const FAKE_KEY = "AKIAABCDEFGHIJKLMNOP";
@@ -122,8 +123,12 @@ test("a question answered across projects", async ({ browser }) => {
     expect((await request.patch(`/api/projects/${key}`, { data: { sprints_enabled: false }, headers: WEB })).ok()).toBeTruthy();
   }
   await post(request, "/api/projects/QAA/tasks", { title: "Sync orders from QBB", type: "task" });
-  const agent = await post<{ id: string; answer_mode: string }>(request, "/api/agents", { program: "claude_code", name: AGENT_NAME });
-  expect(agent.answer_mode).toBe("manual");
+  type Agent = { id: string; name: string; status: string };
+  const mine = await get<Agent[]>(request, "/api/agents/mine");
+  const agent = mine.find((a) => a.name === AGENT_NAME) ?? (await post<Agent>(request, "/api/agents", { program: "claude_code" }));
+  const manual = await request.patch(`/api/agents/${agent.id}`, { data: { answer_mode: "manual" }, headers: WEB });
+  expect(manual.ok(), await manual.text()).toBeTruthy();
+  // binding QBB alone replaces any binding an earlier spec left to a repository it has since deleted
   const bound = await request.put(`/api/agents/${agent.id}/bindings`, {
     data: { bindings: [{ project_ref: "QBB", local_path: repo }] },
     headers: WEB,
@@ -139,7 +144,9 @@ test("a question answered across projects", async ({ browser }) => {
   await drawer.getByLabel("Question", { exact: true }).fill(QUESTION);
   await drawer.getByLabel("Context (optional)").fill("We get 401 from the webhook endpoint.");
   await drawer.getByRole("button", { name: "Check for existing answers" }).click();
-  await expect(drawer.getByText("No existing answers found.")).toBeVisible();
+  // earlier specs on this stack may have left Knowledge Base documents or memories that match some words
+  await expect(drawer.getByText("No existing answers found.").or(drawer.getByText("These may already answer it:"))).toBeVisible();
+  await expect(drawer.getByRole("link", { name: TITLE })).toHaveCount(0);
   await drawer.getByRole("button", { name: "Ask anyway" }).click();
   const asked = drawer.getByRole("list", { name: "Questions to other projects" });
   await expect(asked.getByText("Waiting for a runner of QBB")).toBeVisible();
@@ -220,7 +227,7 @@ test("a question answered across projects", async ({ browser }) => {
   // 5. with the runner gone, a new question waits; a human answers it from the Incoming tab
   await leftovers.runner.stop();
   await expect
-    .poll(async () => (await get<{ id: string; status: string }[]>(request, "/api/agents/mine")).find((a) => a.id === agent.id)?.status, {
+    .poll(async () => (await get<Agent[]>(request, "/api/agents/mine")).find((a) => a.id === agent.id)?.status, {
       timeout: 30_000,
     })
     .toBe("offline");
