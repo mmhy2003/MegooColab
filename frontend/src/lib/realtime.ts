@@ -10,6 +10,8 @@ export type LiveEvent = {
   project_id?: string | null;
   task_id?: string | null;
   user_id?: string | null;
+  team_id?: string | null;
+  space_id?: string | null;
 };
 
 const CLOSE_UNAUTHORIZED = 4401;
@@ -35,6 +37,8 @@ export function invalidationsFor(event: LiveEvent, keyById: Map<string, string>)
     case "agents":
       // a project-scoped event whose project is not in the cached list still refreshes every project's agents
       return event.project_id ? [scoped("project-agents"), ["agents"], ["team"]] : [["agents"], ["team"]];
+    case "kb":
+      return [["kb"]];
     case "membership":
       return "all";
     default:

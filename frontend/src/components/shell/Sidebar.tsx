@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenText, Bot, BrainCircuit, FolderKanban, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
+import { BookOpen, BookOpenText, Bot, BrainCircuit, FolderKanban, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -12,6 +12,7 @@ type Item = { href: string; label: string; icon: typeof FolderKanban };
 const MAIN: Item[] = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/teams", label: "Teams", icon: UsersRound },
+  { href: "/kb", label: "Knowledge Base", icon: BookOpen },
 ];
 
 const ADMIN: Item[] = [
