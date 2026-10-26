@@ -24,6 +24,7 @@ from app.core.db import SessionLocal
 from app.core.events import hub
 from app.jobs.router import router as jobs_router
 from app.kb.access import ensure_spaces
+from app.kb.context import register as register_kb_context
 from app.kb.router import router as kb_router
 from app.mcp_server.server import MCP_PATH, build_mcp
 from app.org.router import router as org_router
@@ -86,6 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    register_kb_context()
     app = FastAPI(
         title="MegooColab",
         lifespan=lifespan,

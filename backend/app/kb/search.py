@@ -153,16 +153,24 @@ async def _semantic(db: AsyncSession, q: str, scope: set[uuid.UUID]) -> tuple[bo
 
 
 async def search(
-    db: AsyncSession, user: User, query: str, *, space_ids: set[uuid.UUID] | None = None, limit: int = 20
+    db: AsyncSession,
+    user: User,
+    query: str,
+    *,
+    space_ids: set[uuid.UUID] | None = None,
+    limit: int = 20,
+    match_any: bool = False,
 ) -> dict:
-    """Hybrid search over the spaces the user can read: {semantic, results: [...]}."""
+    """Hybrid search over the spaces the user can read: {semantic, results: [...]}. Full-text needs every word
+    unless `match_any` (used for prompt context, where the query is a whole task description). Each result also
+    carries `excerpt`, its best chunk, for callers that show more than the snippet."""
     scope = await access.readable_space_ids(db, user)
     if space_ids is not None:
         scope &= space_ids
     terms = _terms(query)
     if not scope or not terms:
         return {"semantic": await ai.current_model(db, "embeddings") is not None, "results": []}
-    fts = await _fts(db, query, scope)
+    fts = await _fts(db, " or ".join(dict.fromkeys(terms[:50])) if match_any else query, scope)
     semantic, sem, best = await _semantic(db, query, scope)
     scores: dict[uuid.UUID, float] = {}
     for ranked in (fts, sem):
@@ -184,6 +192,7 @@ async def search(
                 "path": await service.folder_path(db, doc.folder_id),
                 "snippet": snippet(doc.body_md, terms, best.get(doc_id)),
                 "score": round(scores[doc_id], 6),
+                "excerpt": best.get(doc_id) or doc.body_md[:CHUNK_SIZE],
             }
         )
     return {"semantic": semantic, "results": results}

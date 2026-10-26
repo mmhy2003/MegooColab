@@ -94,7 +94,8 @@ def register_kb_tools(mcp: MCPServer) -> None:
             return {
                 "semantic": out["semantic"],
                 "results": [
-                    {**r, "document_id": str(r["document_id"]), "space": r["space"].model_dump(mode="json")}
+                    {**{k: v for k, v in r.items() if k != "excerpt"}, "document_id": str(r["document_id"]),
+                     "space": r["space"].model_dump(mode="json")}
                     for r in out["results"]
                 ],
             }
