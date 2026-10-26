@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenText, Bot, FolderKanban, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
+import { BookOpenText, Bot, BrainCircuit, FolderKanban, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -19,6 +19,7 @@ const ADMIN: Item[] = [
   { href: "/admin/agents", label: "Agents", icon: Bot },
   { href: "/admin/settings", label: "Settings", icon: Settings2 },
   { href: "/admin/methodology", label: "Methodology", icon: BookOpenText },
+  { href: "/admin/ai", label: "AI", icon: BrainCircuit },
   { href: "/admin/audit", label: "Audit log", icon: ScrollText },
 ];
 

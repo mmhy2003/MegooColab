@@ -28,5 +28,8 @@ export const qk = {
   agentRuns: (taskKey: string) => ["agent-runs", taskKey] as const,
   projectAgents: (ref: string) => ["project-agents", ref] as const,
   adminSettings: () => ["admin-settings"] as const,
+  aiProviders: () => ["ai", "providers"] as const,
+  aiJobs: () => ["ai", "jobs"] as const,
+  aiUsage: (days: number) => ["ai", "usage", days] as const,
   audit: (filters: Record<string, string | undefined> = {}) => ["audit", filters] as const,
 };

@@ -57,3 +57,7 @@ export type ReviewDetail = S["ReviewOut"];
 export type MethodologyItem = S["MethodologyOut"];
 export type MethodologyVersionInfo = S["MethodologyVersionInfo"];
 export type MethodologyVersion = S["MethodologyVersionOut"];
+export type AiProvider = S["ProviderOut"];
+export type AiJobModel = S["JobModelOut"];
+export type AiTestResult = S["TestResult"];
+export type AiUsageRow = S["UsageRow"];

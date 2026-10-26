@@ -1446,6 +1446,368 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Jobs */
+        get: operations["list_jobs_api_admin_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Providers */
+        get: operations["list_providers_api_admin_ai_providers_get"];
+        put?: never;
+        /** Create Provider */
+        post: operations["create_provider_api_admin_ai_providers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai/providers/{provider_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Provider */
+        delete: operations["delete_provider_api_admin_ai_providers__provider_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Provider */
+        patch: operations["update_provider_api_admin_ai_providers__provider_id__patch"];
+        trace?: never;
+    };
+    "/api/admin/ai/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Jobs */
+        get: operations["list_jobs_api_admin_ai_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai/jobs/{job}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Job */
+        put: operations["put_job_api_admin_ai_jobs__job__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai/jobs/{job}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Job */
+        post: operations["test_job_api_admin_ai_jobs__job__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Usage */
+        get: operations["usage_api_admin_ai_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/spaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Spaces */
+        get: operations["list_spaces_api_kb_spaces_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/spaces/{space_id}/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Space Tree */
+        get: operations["space_tree_api_kb_spaces__space_id__tree_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/spaces/{space_id}/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Folder */
+        post: operations["create_folder_api_kb_spaces__space_id__folders_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/folders/{folder_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Folder */
+        delete: operations["delete_folder_api_kb_folders__folder_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Folder */
+        patch: operations["rename_folder_api_kb_folders__folder_id__patch"];
+        trace?: never;
+    };
+    "/api/kb/spaces/{space_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Document */
+        post: operations["create_document_api_kb_spaces__space_id__documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document */
+        get: operations["get_document_api_kb_documents__doc_id__get"];
+        /** Update Document */
+        put: operations["update_document_api_kb_documents__doc_id__put"];
+        post?: never;
+        /** Delete Document */
+        delete: operations["delete_document_api_kb_documents__doc_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{doc_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move Document */
+        post: operations["move_document_api_kb_documents__doc_id__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{doc_id}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Revisions */
+        get: operations["list_revisions_api_kb_documents__doc_id__revisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{doc_id}/revisions/{n}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Revision */
+        get: operations["get_revision_api_kb_documents__doc_id__revisions__n__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{doc_id}/revisions/{a}/diff/{b}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Diff Revisions */
+        get: operations["diff_revisions_api_kb_documents__doc_id__revisions__a__diff__b__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{doc_id}/backlinks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backlinks */
+        get: operations["backlinks_api_kb_documents__doc_id__backlinks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/kb-references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Task References */
+        get: operations["task_references_api_tasks__key__kb_references_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve */
+        post: operations["resolve_api_kb_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Kb */
+        get: operations["search_kb_api_kb_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1655,6 +2017,11 @@ export interface components {
              */
             created_at: string;
         };
+        /** Author */
+        Author: {
+            user: components["schemas"]["Named"] | null;
+            agent: components["schemas"]["Named"] | null;
+        };
         /** BindingIn */
         BindingIn: {
             /** Project Ref */
@@ -1813,6 +2180,17 @@ export interface components {
          * @enum {string}
          */
         DocKind: "design" | "plan";
+        /** DocRef */
+        DocRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            space: components["schemas"]["SpaceRef"];
+        };
         /**
          * DocStatus
          * @enum {string}
@@ -1824,6 +2202,20 @@ export interface components {
             approve: boolean;
             /** Comment */
             comment?: string | null;
+        };
+        /** DocumentIn */
+        DocumentIn: {
+            /** Folder Id */
+            folder_id?: string | null;
+            /** Title */
+            title: string;
+            /**
+             * Body Md
+             * @default
+             */
+            body_md: string;
+            /** Summary */
+            summary?: string | null;
         };
         /** DocumentInfo */
         DocumentInfo: {
@@ -1872,6 +2264,17 @@ export interface components {
             /** Subtask Id */
             subtask_id: string | null;
         };
+        /** DocumentUpdate */
+        DocumentUpdate: {
+            /** Base Revision */
+            base_revision: number;
+            /** Title */
+            title?: string | null;
+            /** Body Md */
+            body_md?: string | null;
+            /** Summary */
+            summary?: string | null;
+        };
         /**
          * Driver
          * @enum {string}
@@ -1913,6 +2316,30 @@ export interface components {
          * @enum {string}
          */
         FinishingOption: "merge_local" | "pull_request" | "keep_branch";
+        /** FolderIn */
+        FolderIn: {
+            /** Parent Id */
+            parent_id?: string | null;
+            /** Name */
+            name: string;
+        };
+        /** FolderOut */
+        FolderOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Parent Id */
+            parent_id: string | null;
+            /** Name */
+            name: string;
+        };
+        /** FolderPatch */
+        FolderPatch: {
+            /** Name */
+            name: string;
+        };
         /** ForgotIn */
         ForgotIn: {
             /**
@@ -1952,6 +2379,103 @@ export interface components {
             invite_url: string;
             /** Email Sent */
             email_sent: boolean;
+        };
+        /** JobModelIn */
+        JobModelIn: {
+            /** Provider Id */
+            provider_id: string | null;
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+        };
+        /** JobModelOut */
+        JobModelOut: {
+            /** Job */
+            job: string;
+            /** Provider Id */
+            provider_id: string | null;
+            /** Model */
+            model: string;
+        };
+        /** JobOut */
+        JobOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            status: components["schemas"]["JobStatus"];
+            /** Attempts */
+            attempts: number;
+            /** Last Error */
+            last_error: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+        };
+        /**
+         * JobStatus
+         * @enum {string}
+         */
+        JobStatus: "queued" | "running" | "done" | "failed";
+        /** KbDocumentOut */
+        KbDocumentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            space: components["schemas"]["SpaceRef"];
+            /** Folder Id */
+            folder_id: string | null;
+            /** Path */
+            path: string;
+            /** Title */
+            title: string;
+            /** Body Md */
+            body_md: string;
+            /** Latest Revision */
+            latest_revision: number;
+            /** Created By */
+            created_by: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            updated_by: components["schemas"]["Author"];
+            /** Can Write */
+            can_write: boolean;
+            /** Can Delete */
+            can_delete: boolean;
+        };
+        /** KbFiled */
+        KbFiled: {
+            /** Kind */
+            kind: string;
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+        };
+        /** KbMoveIn */
+        KbMoveIn: {
+            /**
+             * Space Id
+             * Format: uuid
+             */
+            space_id: string;
+            /** Folder Id */
+            folder_id?: string | null;
         };
         /** LabelIn */
         LabelIn: {
@@ -2107,6 +2631,16 @@ export interface components {
             /** After Key */
             after_key?: string | null;
         };
+        /** Named */
+        Named: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /**
          * Needs
          * @enum {string}
@@ -2223,6 +2757,44 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** ProviderIn */
+        ProviderIn: {
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+            /** Api Key */
+            api_key?: string | null;
+            /** Api Base */
+            api_base?: string | null;
+        };
+        /** ProviderOut */
+        ProviderOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+            /** Api Base */
+            api_base: string | null;
+            /** Has Key */
+            has_key: boolean;
+        };
+        /** ProviderPatch */
+        ProviderPatch: {
+            /** Name */
+            name?: string | null;
+            /** Kind */
+            kind?: string | null;
+            /** Api Key */
+            api_key?: string | null;
+            /** Api Base */
+            api_base?: string | null;
+        };
         /** RepoIn */
         RepoIn: {
             /** Name */
@@ -2271,6 +2843,18 @@ export interface components {
             /** Reset Url */
             reset_url: string;
         };
+        /** ResolveIn */
+        ResolveIn: {
+            /** Doc Ids */
+            doc_ids: string[];
+        };
+        /** Resolved */
+        Resolved: {
+            /** Title */
+            title: string | null;
+            /** Readable */
+            readable: boolean;
+        };
         /** ReviewOut */
         ReviewOut: {
             /**
@@ -2289,6 +2873,38 @@ export interface components {
             verdict: "approved" | "changes_requested";
             /** Findings */
             findings: components["schemas"]["Finding"][];
+        };
+        /** RevisionOut */
+        RevisionOut: {
+            /** Revision */
+            revision: number;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string | null;
+            author: components["schemas"]["Author"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Body Md */
+            body_md: string;
+        };
+        /** RevisionSummary */
+        RevisionSummary: {
+            /** Revision */
+            revision: number;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string | null;
+            author: components["schemas"]["Author"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * Role
@@ -2346,6 +2962,30 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "queued" | "running" | "completed" | "failed" | "cancelled";
+        /** SearchHit */
+        SearchHit: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            space: components["schemas"]["SpaceRef"];
+            /** Title */
+            title: string;
+            /** Path */
+            path: string;
+            /** Snippet */
+            snippet: string;
+            /** Score */
+            score: number;
+        };
+        /** SearchOut */
+        SearchOut: {
+            /** Semantic */
+            semantic: boolean;
+            /** Results */
+            results: components["schemas"]["SearchHit"][];
+        };
         /** SetupIn */
         SetupIn: {
             /** Org Name */
@@ -2398,6 +3038,39 @@ export interface components {
              * @default false
              */
             password_set: boolean;
+        };
+        /**
+         * SpaceKind
+         * @enum {string}
+         */
+        SpaceKind: "org" | "team" | "project";
+        /** SpaceOut */
+        SpaceOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["SpaceKind"];
+            /** Name */
+            name: string;
+            /** Team Id */
+            team_id: string | null;
+            /** Project Id */
+            project_id: string | null;
+            /** Can Write */
+            can_write: boolean;
+        };
+        /** SpaceRef */
+        SpaceRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["SpaceKind"];
+            /** Name */
+            name: string;
         };
         /** SprintIn */
         SprintIn: {
@@ -2721,6 +3394,15 @@ export interface components {
              */
             to: string;
         };
+        /** TestResult */
+        TestResult: {
+            /** Ok */
+            ok: boolean;
+            /** Model */
+            model: string | null;
+            /** Error */
+            error: string | null;
+        };
         /** TokenOut */
         TokenOut: {
             /**
@@ -2782,11 +3464,59 @@ export interface components {
             /** Otpauth Uri */
             otpauth_uri: string;
         };
+        /** TreeDoc */
+        TreeDoc: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Folder Id */
+            folder_id: string | null;
+            /** Title */
+            title: string;
+            /** Latest Revision */
+            latest_revision: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** TreeOut */
+        TreeOut: {
+            /** Folders */
+            folders: components["schemas"]["FolderOut"][];
+            /** Documents */
+            documents: components["schemas"]["TreeDoc"][];
+        };
         /** UpdateUserIn */
         UpdateUserIn: {
             /** Name */
             name?: string | null;
             role?: components["schemas"]["Role"] | null;
+        };
+        /** UsageRow */
+        UsageRow: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Job */
+            job: string;
+            /** Model */
+            model: string;
+            /** Calls */
+            calls: number;
+            /** Failures */
+            failures: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Cost Usd */
+            cost_usd: number | null;
         };
         /** UserEnvelope */
         UserEnvelope: {
@@ -2888,6 +3618,11 @@ export interface components {
             open_question_id: string | null;
             /** Steps */
             steps: components["schemas"]["WorkflowStepOut"][];
+            /**
+             * Kb Documents
+             * @default []
+             */
+            kb_documents: components["schemas"]["KbFiled"][];
         };
         /**
          * WorkflowStatus
@@ -6247,6 +6982,816 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_jobs_api_admin_jobs_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["JobStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_providers_api_admin_ai_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderOut"][];
+                };
+            };
+        };
+    };
+    create_provider_api_admin_ai_providers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_provider_api_admin_ai_providers__provider_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_provider_api_admin_ai_providers__provider_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_jobs_api_admin_ai_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModelOut"][];
+                };
+            };
+        };
+    };
+    put_job_api_admin_ai_jobs__job__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobModelIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobModelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_job_api_admin_ai_jobs__job__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    usage_api_admin_ai_usage_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_spaces_api_kb_spaces_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpaceOut"][];
+                };
+            };
+        };
+    };
+    space_tree_api_kb_spaces__space_id__tree_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                space_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TreeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_folder_api_kb_spaces__space_id__folders_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                space_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_folder_api_kb_folders__folder_id__delete: {
+        parameters: {
+            query?: {
+                recursive?: boolean;
+            };
+            header?: never;
+            path: {
+                folder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_folder_api_kb_folders__folder_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                folder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_document_api_kb_spaces__space_id__documents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                space_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KbDocumentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_api_kb_documents__doc_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KbDocumentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_document_api_kb_documents__doc_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KbDocumentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_document_api_kb_documents__doc_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_document_api_kb_documents__doc_id__move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KbMoveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KbDocumentOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_revisions_api_kb_documents__doc_id__revisions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_revision_api_kb_documents__doc_id__revisions__n__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+                n: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevisionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diff_revisions_api_kb_documents__doc_id__revisions__a__diff__b__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+                a: number;
+                b: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backlinks_api_kb_documents__doc_id__backlinks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocRef"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    task_references_api_tasks__key__kb_references_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocRef"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_api_kb_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["Resolved"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_kb_api_kb_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                space?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchOut"];
                 };
             };
             /** @description Validation Error */
