@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -28,9 +28,16 @@ class RunPolicy(StrEnum):
 
 class AgentRun(IdMixin, Base):
     __tablename__ = "agent_runs"
-    __table_args__ = (Index("ix_agent_runs_agent_status", "agent_id", "status"),)
+    __table_args__ = (
+        Index("ix_agent_runs_agent_status", "agent_id", "status"),
+        # a run works on a task, or answers another project's question (§6.6)
+        CheckConstraint("(task_id IS NULL) <> (question_id IS NULL)", name="agent_runs_target_check"),
+    )
 
-    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    question_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("a2a_questions.id", ondelete="CASCADE"), index=True
+    )
     agent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"))
     requested_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     policy: Mapped[RunPolicy] = mapped_column(String(20))

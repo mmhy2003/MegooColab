@@ -39,6 +39,7 @@ class Project(IdMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(Text, default="")
     sprints_enabled: Mapped[bool] = mapped_column(default=True)
     next_task_number: Mapped[int] = mapped_column(default=1)
+    next_question_number: Mapped[int] = mapped_column(default=1, server_default="1")
     finishing_option: Mapped[FinishingOption] = mapped_column(
         String(20), default=FinishingOption.pull_request, server_default=FinishingOption.pull_request.value
     )

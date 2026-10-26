@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, true, update
+from sqlalchemy import and_, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -90,6 +90,13 @@ async def _transition(
     run.finished_at = _now()
     if summary is not None:
         run.summary = summary
+    if run.question_id is not None:
+        # an answering run (§6.6): no task thread to record on; the question moves on instead
+        from app.a2a import routing  # local: a2a imports this module
+
+        await publish_agents_updated(db, owner_id, set())
+        await routing.on_answer_run_finished(db, run)
+        return
     task = await db.get(Task, run.task_id)
     data = {"run_id": str(run.id), "agent_id": str(run.agent_id), **(extra or {})}
     if reason:
@@ -135,18 +142,28 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
     )
     run = None
     if agent.max_concurrent_runs > (running or 0):
-        # a runner without workflow/1 leaves workflow runs queued
-        runnable = true() if registry.supports(owner_id, WORKFLOW_CAPABILITY) else AgentRun.workflow_role.is_(None)
+        # a runner without workflow/1 leaves workflow and answering runs queued (they need the MCP run token)
+        runnable = (
+            true()
+            if registry.supports(owner_id, WORKFLOW_CAPABILITY)
+            else and_(AgentRun.workflow_role.is_(None), AgentRun.question_id.is_(None))
+        )
         sibling = aliased(AgentRun)
         task_running = (
             select(sibling.id)
             .where(sibling.task_id == AgentRun.task_id, sibling.status == RunStatus.running)
             .exists()
         )
+        question_running = (
+            select(sibling.id)
+            .where(sibling.question_id == AgentRun.question_id, sibling.status == RunStatus.running)
+            .exists()
+        )
         run = (
             await db.execute(
                 select(AgentRun)
-                .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued, ~task_running, runnable)
+                .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued, ~task_running,
+                       ~question_running, runnable)
                 .order_by(AgentRun.created_at, AgentRun.id)
                 .limit(1)
                 .with_for_update(skip_locked=True)
@@ -216,6 +233,8 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     if run is None or run.status != RunStatus.running:  # cancelled between the claim and now
         await db.commit()
         return True
+    if run.question_id is not None:
+        return await _send_answer_start(db, conn, agent_id, run)
     row = (
         await db.execute(
             select(Task, Project.key, AgentBinding.local_path, Agent.owner_id)
@@ -275,6 +294,35 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
         return False
     await record_event(db, task, None, "agent_run_started", {"run_id": str(run.id), "agent_id": str(agent_id)})
     await _announce(db, task, owner_id)
+    await db.commit()
+    return True
+
+
+async def _send_answer_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, run: AgentRun) -> bool:
+    """run_start for an answering run (§6.6): read-only, a synthetic task key, the run's MCP token."""
+    from app.a2a import routing  # local: a2a imports this module
+
+    owner_id = await db.scalar(select(Agent.owner_id).where(Agent.id == agent_id))
+    try:
+        task, local_path, v2 = await routing.start_fields(db, run)
+    except routing.NotSupported as exc:
+        await _transition(db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id,
+                          reason=str(exc) or "not_supported")
+        await db.commit()
+        return True
+    message = RunStart(run_id=run.id, agent_id=agent_id, task=task, local_path=local_path, policy=run.policy,
+                       prompt=run.prompt, **v2)
+    conn.run_ids.add(run.id)
+    try:
+        await conn.send(message.model_dump(mode="json"))
+    except RunnerClosed:
+        conn.run_ids.discard(run.id)
+        run.status = RunStatus.queued
+        run.started_at = None
+        run.mcp_token_hash = None
+        await db.commit()
+        return False
+    await publish_agents_updated(db, owner_id, set())
     await db.commit()
     return True
 
@@ -613,8 +661,8 @@ async def apply_update(
             .returning(AgentRun.task_id, AgentRun.agent_id)
         )
     ).first()
-    if claimed is None:
-        return
+    if claimed is None or claimed.task_id is None:
+        return  # an answering run's progress is not stored: its answer is what counts
     task = await db.get(Task, claimed.task_id)
     event = {**clean, "run_id": str(run_id), "agent_id": str(claimed.agent_id)}
     await record_event(db, task, None, f"agent_{kind}", event)
@@ -682,10 +730,11 @@ async def finish_run(
             from app.workflow import engine
 
             await engine.on_run_finished(db, run)
-    # local: memory imports the task modules
-    from app.memory.sources import queue_extract
+    if run.task_id is not None:
+        # local: memory imports the task modules
+        from app.memory.sources import queue_extract
 
-    await queue_extract(db, "run", run.id)
+        await queue_extract(db, "run", run.id)
     await db.commit()
     async with SessionLocal() as dispatch_db:
         await dispatch_pending(dispatch_db, agent.owner_id)

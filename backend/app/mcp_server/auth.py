@@ -68,7 +68,7 @@ async def require_run_task(db: AsyncSession, key: str) -> None:
     run = current_run.get()
     if run is None:
         return
-    task = await db.get(Task, run.task_id)
+    task = await db.get(Task, run.task_id) if run.task_id is not None else None  # answering runs have no task
     project = await db.get(Project, task.project_id) if task is not None else None
     if project is None or not isinstance(key, str) or key.strip().upper() != f"{project.key}-{task.number}".upper():
         raise ToolError("wrong_task")

@@ -1,5 +1,6 @@
 """Imports every model module so Base.metadata is complete (Alembic, tests)."""
 
+from app.a2a import models as a2a_models  # noqa: F401
 from app.agent_runs import models as agent_runs_models  # noqa: F401
 from app.agents import models as agents_models  # noqa: F401
 from app.ai import models as ai_models  # noqa: F401
