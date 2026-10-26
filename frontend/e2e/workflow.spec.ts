@@ -365,16 +365,27 @@ test("workflow end to end", async ({ browser }) => {
   expect(resumed.prompts![0]).toContain("Chosen: Friendly");
   await designSection.getByRole("button", { name: "Approve" }).click();
   await expect(drawer.getByText("approved the design v1")).toBeVisible();
+  // WF-9: the approved design is filed in the project's Knowledge Base, written by the agent
+  type Filed = { kb_documents: { kind: string; document_id: string }[] };
+  const filedWf: Filed = await (await page.request.get(`/api/tasks/${KEY}/workflow`)).json();
+  const filedDesign = filedWf.kb_documents.find((k) => k.kind === "design")!;
+  const filedRevs: { author: { agent: { name: string } | null } }[] = await (
+    await page.request.get(`/api/kb/documents/${filedDesign.document_id}/revisions`)
+  ).json();
+  expect(filedRevs[0].author.agent?.name).toBe(AGENT_NAME);
 
   // 5. the plan with 2 steps: v1 rejected with a comment, v2 approved; two subtasks
   const planSection = drawer.locator("#document-plan");
   await expect(planSection.getByText("Greeting plan v1")).toBeVisible({ timeout: 30_000 });
   await expect(planSection.getByRole("listitem")).toHaveCount(2);
+  // a decision is accepted once the submitting run has ended and the workflow waits for it
+  await expect(drawer.getByText("Waiting: Approve the plan")).toBeVisible({ timeout: 15_000 });
   await planSection.getByRole("button", { name: "Reject" }).click();
   await expect(planSection.getByRole("alert")).toHaveText("Add a comment explaining what should change.");
   await planSection.getByLabel("Comment").fill("Split the tests out");
   await planSection.getByRole("button", { name: "Reject" }).click();
   await expect(planSection.getByText("Greeting plan v2")).toBeVisible({ timeout: 30_000 });
+  await expect(drawer.getByText("Waiting: Approve the plan")).toBeVisible({ timeout: 15_000 });
   await planSection.getByRole("button", { name: "Approve" }).click();
   await expect(drawer.getByText("approved the plan v2")).toBeVisible();
   await expect(drawer.getByText("Subtasks (0/2)")).toBeVisible();

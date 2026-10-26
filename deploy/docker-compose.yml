@@ -28,6 +28,8 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       UPLOAD_DIR: /data/uploads
+      # tests only: local fake embeddings instead of calling a provider
+      AI_FAKE: ${AI_FAKE:-false}
     volumes:
       - uploads:/data/uploads
     healthcheck:
@@ -48,6 +50,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
       RUN_MIGRATIONS_ON_STARTUP: "false"
+      AI_FAKE: ${AI_FAKE:-false}
 
   frontend:
     build: ../frontend

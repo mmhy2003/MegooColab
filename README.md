@@ -68,7 +68,7 @@ npm run dev                        # then open http://localhost:8080
 Runs against a fresh production-style stack on http://localhost:8080:
 
 ```bash
-cp deploy/.env.example .superpowers/e2e.env   # set SECRET_KEY, HTTP_PORT=8080, PUBLIC_URL=http://localhost:8080
+cp deploy/.env.example .superpowers/e2e.env   # set SECRET_KEY, HTTP_PORT=8080, PUBLIC_URL=http://localhost:8080, AI_FAKE=true
 docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env up -d --build --wait
 cd frontend && npx playwright install chromium && npx playwright test
 docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env down -v
@@ -95,4 +95,12 @@ Along the way it answers a question through the sandboxed mockup, approves the d
 ```bash
 cd frontend && npx playwright test e2e/workflow.spec.ts
 # optional: E2E_RUNNER_LOG=1 prints the runner output at the end
+```
+
+### Knowledge Base end-to-end test
+
+`frontend/e2e/kb.spec.ts` covers the Knowledge Base on the same stack. It needs `AI_FAKE=true` in the env file: the backend and the worker then use local, deterministic embeddings instead of calling a provider (never set it in production). It configures an embeddings provider and tests it, creates a folder and a document, edits it from a stale tab (the save is refused and the draft kept), compares revisions, links a document to a task and to another document, waits for the worker to embed so that a word only semantic search can match is found, checks that a member of another team sees none of the team or project documents, uses the MCP tools with a personal token, and files an approved connect-only design. It creates the "KB Team" and "Outside Team" teams and the KBX project, so it needs a fresh stack too. To run it:
+
+```bash
+cd frontend && npx playwright test e2e/kb.spec.ts
 ```
