@@ -41,6 +41,11 @@ class WorkflowStepOut(BaseModel):
     state: Literal["pending", "running", "in_review", "done"]
 
 
+class KbFiled(BaseModel):
+    kind: str
+    document_id: uuid.UUID
+
+
 class WorkflowOut(TaskWorkflowOut):
     finishing_option: FinishingOption  # the effective option
     finishing_forced: bool = False  # human code review forces a pull request
@@ -50,6 +55,7 @@ class WorkflowOut(TaskWorkflowOut):
     documents: list[WorkflowDocumentBrief]
     open_question_id: uuid.UUID | None
     steps: list[WorkflowStepOut]
+    kb_documents: list[KbFiled] = []  # WF-9: the Knowledge Base copies of approved documents and reviews
 
 
 class EscalationDecisionIn(BaseModel):

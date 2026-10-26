@@ -29,6 +29,7 @@ from app.agent_runs.models import AgentRun
 from app.audit import service as audit
 from app.auth.models import User
 from app.core.text import strip_nul
+from app.kb import filing
 from app.projects.models import ColumnCategory, Project
 from app.tasks.models import Task
 from app.workflow import build, engine, questions
@@ -36,6 +37,7 @@ from app.workflow.models import (
     Driver,
     FinishingOption,
     Needs,
+    ReviewScope,
     RunRole,
     Stage,
     StepReview,
@@ -77,6 +79,9 @@ async def _handle_final_review(db: AsyncSession, wf: TaskWorkflow, task: Task, r
             await engine.escalate(db, wf, "review_incomplete")
         return
     if review.verdict == Verdict.approved:
+        owner = await db.get(User, requester_id)
+        await filing.file_final_review(db, task, review, summary=f"Final review round {review.round}: approved",
+                                       actor=owner)
         await enter_done(db, wf, task, requested_by=requester_id)
     elif review.round < 2:
         wf.nudged = False
@@ -109,6 +114,16 @@ async def _handle_final_fix(db: AsyncSession, wf: TaskWorkflow, task: Task, run:
 
 async def _accept_final_review(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
     """Escalation `accept` after the re-review: the human passes the final review."""
+    review = (
+        await db.execute(
+            select(StepReview)
+            .where(StepReview.task_id == task.id, StepReview.scope == ReviewScope.final)
+            .order_by(StepReview.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if review is not None:
+        await filing.file_final_review(db, task, review, summary=f"Accepted by {user.name}", actor=user)
     await enter_done(db, wf, task, requested_by=user.id)
 
 

@@ -10,6 +10,7 @@ from app.agent_runs.models import AgentRun
 from app.audit import service as audit
 from app.auth.models import User
 from app.core.text import strip_nul
+from app.kb import filing
 from app.projects.models import Project
 from app.tasks.models import Task, TaskType
 from app.tasks.schemas import TaskCreate
@@ -190,6 +191,8 @@ async def decide(
         db, "workflow.approve" if approve else "workflow.reject", actor_id=user.id, target_type="task",
         target_id=task.id, data={**data, "document_id": str(doc.id)},
     )
+    if approve:
+        await filing.file_document(db, task, kind, doc, user)  # WF-9: never undoes the approval
 
     if not approve:  # the same session revises it: the brainstorm session for a design, the plan session for a plan
         role = RunRole.brainstorm if kind == DocKind.design else RunRole.plan

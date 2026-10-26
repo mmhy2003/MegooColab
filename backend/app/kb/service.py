@@ -281,7 +281,7 @@ async def _descendant_folder_ids(db: AsyncSession, folder_id: uuid.UUID) -> list
     return list(rows.scalars())
 
 
-async def _free_title(db: AsyncSession, space_id: uuid.UUID, folder_id: uuid.UUID | None, title: str) -> str:
+async def free_title(db: AsyncSession, space_id: uuid.UUID, folder_id: uuid.UUID | None, title: str) -> str:
     taken = set(
         (
             await db.execute(
@@ -312,7 +312,7 @@ async def delete_folder(db: AsyncSession, user: User, folder: KbFolder, *, recur
     if not recursive and (docs or len(ids) > 1):
         raise HTTPException(status.HTTP_409_CONFLICT, "folder_not_empty")
     for doc in docs:
-        doc.title = await _free_title(db, folder.space_id, folder.parent_id, doc.title)
+        doc.title = await free_title(db, folder.space_id, folder.parent_id, doc.title)
         doc.folder_id = folder.parent_id
         await db.flush()
     await db.delete(folder)
