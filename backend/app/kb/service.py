@@ -6,6 +6,7 @@ import uuid
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, func, select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -260,6 +261,26 @@ async def create_folder(
     await _flush_unique(db, "folder_name_taken")
     await publish(db, space_event(space))
     return folder
+
+
+async def ensure_folder(
+    db: AsyncSession, user: User | None, space: KbSpace, parent_id: uuid.UUID | None, name: str
+) -> KbFolder:
+    """The named folder under `parent_id`, created if missing (safe against a concurrent create)."""
+    await db.execute(
+        insert(KbFolder)
+        .values(id=uuid.uuid4(), space_id=space.id, parent_id=parent_id, name=name,
+                created_by=user.id if user else None)
+        .on_conflict_do_nothing(constraint="kb_folders_space_parent_name_key")
+    )
+    return (
+        await db.execute(
+            select(KbFolder).where(
+                KbFolder.space_id == space.id, KbFolder.parent_id.is_not_distinct_from(parent_id),
+                KbFolder.name == name,
+            )
+        )
+    ).scalar_one()
 
 
 async def rename_folder(db: AsyncSession, user: User, folder: KbFolder, name: str) -> KbFolder:

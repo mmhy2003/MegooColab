@@ -27,6 +27,7 @@ from app.mcp_server.auth import (
     require_run_task,
 )
 from app.mcp_server.auth import tool_session as _tool_session
+from app.mcp_server.kb_tools import register_kb_tools
 from app.mcp_server.workflow_tools import register_workflow_tools
 from app.projects.access import accessible_project_ids, get_project_for
 from app.projects.models import BoardColumn, Project
@@ -209,6 +210,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
             return {"comment_id": str(comment.id)}
 
     register_workflow_tools(mcp)
+    register_kb_tools(mcp)
 
     http_app = mcp.streamable_http_app(
         streamable_http_path=MCP_PATH,

@@ -10,14 +10,13 @@ import re
 import uuid
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.models import Agent
 from app.audit import service as audit
 from app.auth.models import User
 from app.kb import access, service
-from app.kb.models import FilingKind, KbDocument, KbFiling, KbFolder
+from app.kb.models import FilingKind, KbDocument, KbFiling
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.workflow.models import StepReview, TaskWorkflow, WorkflowDocument
@@ -26,21 +25,6 @@ log = logging.getLogger(__name__)
 
 FOLDER = "Designs & Plans"
 TITLES = {FilingKind.design: "Design", FilingKind.plan: "Plan", FilingKind.review: "Final review"}
-
-
-async def _folder(db: AsyncSession, space_id: uuid.UUID, parent_id: uuid.UUID | None, name: str) -> KbFolder:
-    await db.execute(
-        insert(KbFolder)
-        .values(id=uuid.uuid4(), space_id=space_id, parent_id=parent_id, name=name)
-        .on_conflict_do_nothing(constraint="kb_folders_space_parent_name_key")
-    )
-    return (
-        await db.execute(
-            select(KbFolder).where(
-                KbFolder.space_id == space_id, KbFolder.parent_id.is_not_distinct_from(parent_id), KbFolder.name == name
-            )
-        )
-    ).scalar_one()
 
 
 async def _author(db: AsyncSession, task: Task, fallback: User) -> tuple[User, uuid.UUID | None]:
@@ -75,8 +59,8 @@ async def _file(
             db, author, doc, base_revision=doc.latest_revision, body=full, summary=summary[:200], agent_id=agent_id
         )
     space = await access.space_for_project(db, project.id)
-    top = await _folder(db, space.id, None, FOLDER)
-    sub = await _folder(db, space.id, top.id, key)
+    top = await service.ensure_folder(db, None, space, None, FOLDER)
+    sub = await service.ensure_folder(db, None, space, top.id, key)
     title = await service.free_title(db, space.id, sub.id, TITLES[kind])
     doc = await service.create_document(
         db, author, space, sub.id, title, full, agent_id=agent_id, summary=summary[:200]
