@@ -30,6 +30,7 @@ from app.mcp_server.server import MCP_PATH, build_mcp
 from app.memory import dream as _memory_dream  # noqa: F401 - registers the dreaming jobs
 from app.memory import extract as _memory_extract  # noqa: F401 - registers jobs and the reindex hook
 from app.memory import fakes as _memory_fakes  # noqa: F401 - fake-mode model replies
+from app.memory.context import register as register_memory_context
 from app.memory.entities import ensure_core_entities
 from app.memory.router import router as memory_router
 from app.org.router import router as org_router
@@ -94,6 +95,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     register_kb_context()
+    register_memory_context()
     app = FastAPI(
         title="MegooColab",
         lifespan=lifespan,

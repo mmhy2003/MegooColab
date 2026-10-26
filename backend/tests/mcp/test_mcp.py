@@ -97,6 +97,7 @@ async def test_tools_list_contains_expected_names(app, client, db, mcp_running):
         "get_workflow", "get_document", "ask_human", "submit_design", "submit_plan", "complete_step",
         "submit_review", "report_finish",
         "kb_search", "kb_list", "kb_read", "kb_write",
+        "search_memory", "ask_memory",
     }
     # the endpoint works without a trailing slash and other API routes are unaffected
     assert (await client.get("/api/health")).status_code == 200
