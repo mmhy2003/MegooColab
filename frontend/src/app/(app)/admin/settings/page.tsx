@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { SearchAdmin } from "@/components/admin/SearchAdmin";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
@@ -38,7 +39,12 @@ function toForm(settings: AdminSettings): Form {
 export default function AdminSettingsPage() {
   const settings = useQuery({ queryKey: qk.adminSettings(), queryFn: () => api<AdminSettings>("/api/admin/settings") });
   if (!settings.data) return <p className="text-sm text-muted">Loading…</p>;
-  return <SettingsForm settings={settings.data} />;
+  return (
+    <div className="max-w-xl space-y-4">
+      <SettingsForm settings={settings.data} />
+      <SearchAdmin />
+    </div>
+  );
 }
 
 function SettingsForm({ settings }: { settings: AdminSettings }) {
