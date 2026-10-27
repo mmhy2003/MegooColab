@@ -11,6 +11,8 @@ from app.agents.models import Agent
 from app.agents.service import agent_statuses, can_use_agent, is_usable_binding
 from app.auth.models import Role, User, UserStatus
 from app.core.events import Event, publish
+from app.notifications import service as notifications
+from app.notifications.models import Kind
 from app.projects.access import can_manage_project, get_project_for
 from app.projects.models import BoardColumn, ColumnCategory, Label, Project, ProjectTeam
 from app.projects.schemas import LabelOut
@@ -460,11 +462,27 @@ async def create_task(db: AsyncSession, user: User, project: Project, data: Task
         await set_labels(db, project, task, data.label_ids)
     await add_watcher(db, task.id, user.id)
     await record_event(db, task, user.id, "created", {"column": str(column.id)})
+    await notify_assigned(db, user, project, task)
     # local: memory imports the task modules
     from app.memory.sources import queue_extract
 
     await queue_extract(db, "task", task.id)
     return task
+
+
+async def notify_assigned(db: AsyncSession, actor: User, project: Project, task: Task) -> None:
+    """The new assignee hears about it; for an agent, its owner (NOT-1)."""
+    key = f"{project.key}-{task.number}"
+    if task.assignee_user_id is not None:
+        recipient, title = task.assignee_user_id, f"{actor.name} assigned you {key}"
+    elif task.assignee_agent_id is not None:
+        agent = await db.get(Agent, task.assignee_agent_id)
+        recipient, title = agent.owner_id, f"{actor.name} assigned {key} to {agent.name}"
+    else:
+        return
+    await notifications.notify(db, [recipient], Kind.assigned, title=title, body=task.title,
+                               link=f"/projects/{project.key}/board?task={key}", task_id=task.id,
+                               project_id=project.id, actor_id=actor.id)
 
 
 TRACKED_FIELDS = ("type", "parent_id", "title", "description_md", "priority", "story_points", "due_date")
@@ -513,6 +531,7 @@ async def update_task(db: AsyncSession, user: User, project: Project, task: Task
                 "from": _jsonable(task.assignee_user_id), "to": _jsonable(new_user),
                 "to_agent": _jsonable(new_agent)})
             task.assignee_user_id, task.assignee_agent_id = new_user, new_agent
+            await notify_assigned(db, user, project, task)
     for name in ("title", "description_md", "priority"):
         if name in fields and getattr(data, name) is not None:
             setattr(task, name, getattr(data, name))

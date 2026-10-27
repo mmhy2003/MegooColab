@@ -38,6 +38,8 @@ from app.memory import fakes as _memory_fakes  # noqa: F401 - fake-mode model re
 from app.memory.context import register as register_memory_context
 from app.memory.entities import ensure_core_entities
 from app.memory.router import router as memory_router
+from app.notifications import jobs as _notifications_jobs  # noqa: F401 - registers the email job
+from app.notifications.router import router as notifications_router
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
 from app.realtime.router import router as realtime_router
@@ -150,6 +152,7 @@ def create_app() -> FastAPI:
         a2a_router,
         git_router,
         git_webhook_router,
+        notifications_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect
