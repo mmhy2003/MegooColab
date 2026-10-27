@@ -3231,6 +3231,18 @@ export interface components {
          * @enum {string}
          */
         GitKind: "github" | "gitlab" | "gitea";
+        /** GlobalSearchOut */
+        GlobalSearchOut: {
+            /** Hits */
+            hits: components["schemas"]["Hit"][];
+            /** Total */
+            total: number;
+            facets: components["schemas"]["Facets"];
+            /** Meaning */
+            meaning: components["schemas"]["Hit"][] | null;
+            /** Meaning Available */
+            meaning_available: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -4176,6 +4188,13 @@ export interface components {
             /** Score */
             score: number;
         };
+        /** SearchOut */
+        SearchOut: {
+            /** Semantic */
+            semantic: boolean;
+            /** Results */
+            results: components["schemas"]["SearchHit"][];
+        };
         /** SetupIn */
         SetupIn: {
             /** Org Name */
@@ -4941,31 +4960,12 @@ export interface components {
             /** Task Key */
             task_key?: string | null;
         };
-        /** SearchOut */
-        app__kb__schemas__SearchOut: {
-            /** Semantic */
-            semantic: boolean;
-            /** Results */
-            results: components["schemas"]["SearchHit"][];
-        };
         /** AskIn */
         app__memory__schemas__AskIn: {
             /** Question */
             question: string;
             /** Project Key */
             project_key?: string | null;
-        };
-        /** SearchOut */
-        app__search__schemas__SearchOut: {
-            /** Hits */
-            hits: components["schemas"]["Hit"][];
-            /** Total */
-            total: number;
-            facets: components["schemas"]["Facets"];
-            /** Meaning */
-            meaning: components["schemas"]["Hit"][] | null;
-            /** Meaning Available */
-            meaning_available: boolean;
         };
         /** AnswerIn */
         app__workflow__router__AnswerIn: {
@@ -9155,7 +9155,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["app__kb__schemas__SearchOut"];
+                    "application/json": components["schemas"]["SearchOut"];
                 };
             };
             /** @description Validation Error */
@@ -10292,7 +10292,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["app__search__schemas__SearchOut"];
+                    "application/json": components["schemas"]["GlobalSearchOut"];
                 };
             };
             /** @description Validation Error */

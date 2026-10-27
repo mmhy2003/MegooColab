@@ -47,7 +47,7 @@ class Facets(BaseModel):
     label: dict[str, int]
 
 
-class SearchOut(BaseModel):
+class GlobalSearchOut(BaseModel):
     hits: list[Hit]
     total: int
     facets: Facets

@@ -10,7 +10,7 @@ from app.core.db import DbSession
 from app.jobs import queue
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
 from app.search import client, service
-from app.search.schemas import QuickOut, SearchAdminOut, SearchOut
+from app.search.schemas import QuickOut, SearchAdminOut, GlobalSearchOut
 
 router = APIRouter(tags=["search"])
 
@@ -45,7 +45,7 @@ async def search(
     sort: Annotated[str, Query(pattern="^(relevance|newest)$")] = "relevance",
     offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
     meaning: bool = False,
-) -> SearchOut:
+) -> GlobalSearchOut:
     filters = service.parse_filters(kind, project, status_, assignee, type_, label, updated)
     try:
         return await service.full(db, user, q, filters, sort=sort, offset=offset, meaning=meaning)

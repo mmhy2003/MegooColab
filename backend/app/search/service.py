@@ -30,7 +30,7 @@ from app.search.schemas import (
     ProjectFacet,
     QuickGroup,
     QuickOut,
-    SearchOut,
+    GlobalSearchOut,
 )
 from app.tasks.models import TaskType
 
@@ -221,7 +221,7 @@ async def _facets(db: AsyncSession, dist: dict[str, dict[str, int]]) -> Facets:
 
 async def full(
     db: AsyncSession, user: User, q: str, f: Filters, sort: str = "relevance", offset: int = 0, meaning: bool = False,
-) -> SearchOut:
+) -> GlobalSearchOut:
     tokens = await reader_tokens(db, user)
     params: dict[str, Any] = {
         **SEARCH_PARAMS, "filter": build_filter(tokens, f), "limit": PAGE, "offset": offset, "facets": FACETS,
@@ -241,7 +241,7 @@ async def full(
                 snippet=r.get("snippet") or "", project_key=None, status=None, updated_at=0)
             for r in found["results"] if str(r["document_id"]) not in shown
         ]
-    return SearchOut(
+    return GlobalSearchOut(
         hits=hits, total=int(res.get("estimatedTotalHits") or 0), facets=await _facets(db, res.get("facetDistribution") or {}),
         meaning=similar, meaning_available=available,
     )
