@@ -345,7 +345,8 @@ test("workflow end to end", async ({ browser }) => {
   // exactly the agent's 2 choices (recommended first), plus MegooColab's own "Other"
   const question = drawer.getByRole("listitem").filter({ has: page.getByText("Which greeting style should the app use?") });
   await expect(question.getByRole("list").getByRole("button")).toHaveText([/^Friendly/, /^Formal/, "Other"]);
-  const mockup = drawer.frameLocator('iframe[title="Mockup v1: Greeting styles"]');
+  // the question's own frame: the Mockups panel shows the same version without clickable choices
+  const mockup = question.frameLocator('iframe[title="Mockup v1: Greeting styles"]');
   await mockup.locator('[data-megoo-choice="a"]').click();
   await expect(friendly).toHaveAttribute("aria-pressed", "true");
   await drawer.getByRole("button", { name: "Send answer" }).click();
@@ -516,7 +517,9 @@ test("workflow end to end", async ({ browser }) => {
   await expect(probeDrawer.getByText("Does this probe look right?")).toBeVisible();
   const probeUrl = new RegExp(`/projects/WFL/board\\?task=${PROBE_KEY}$`);
   await expect(page).toHaveURL(probeUrl);
-  const frame = probeDrawer.frameLocator('iframe[title="Mockup v1: Sandbox probe"]');
+  // the question's own frame (the Mockups panel shows the same version, without choices)
+  const probeQuestion = probeDrawer.getByRole("listitem").filter({ has: page.getByText("Does this probe look right?") });
+  const frame = probeQuestion.frameLocator('iframe[title="Mockup v1: Sandbox probe"]');
   const probe = frame.locator("#probe");
   await expect(probe).toHaveAttribute("data-done", "1", { timeout: 15_000 });
   await frame.locator("#undeclared").click(); // a person clicking the undeclared choice: still nothing

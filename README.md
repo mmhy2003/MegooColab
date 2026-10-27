@@ -124,3 +124,11 @@ Both create their own users, teams and projects (GIT and NOT), so they need a fr
 cd frontend && npx playwright test e2e/git.spec.ts e2e/notifications.spec.ts
 # optional: E2E_RUNNER_LOG=1 prints the runner output at the end
 ```
+
+### Live mockups end-to-end test
+
+`frontend/e2e/mockups.spec.ts` covers live mockups and the agent's records on the same stack (it also builds the runner and the fake agent). While the fake agent brainstorms MCK-1, it shows two mockup versions: the open task shows v1, then v2 replaces it with no reload. **Approve this version** on v2, the version the design was submitted with, approves the design. In Build, the implementer records a decision and a test run: the task's Decisions section shows the decision, and the plan step shows "✓ 3 passed — npm test". It creates the "Mockup Team" team and the MCK project, so it needs a fresh stack. To run it:
+
+```bash
+cd frontend && npx playwright test e2e/mockups.spec.ts
+```
