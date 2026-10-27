@@ -19,7 +19,7 @@ from app.kb import access, service
 from app.kb.models import FilingKind, KbDocument, KbFiling
 from app.projects.models import Project
 from app.tasks.models import Task
-from app.workflow.models import StepReview, TaskWorkflow, WorkflowDocument
+from app.workflow.models import Mockup, StepReview, TaskWorkflow, WorkflowDocument
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +82,11 @@ async def _safely(db: AsyncSession, task: Task, kind: FilingKind, actor_id: uuid
 
 async def file_document(db: AsyncSession, task: Task, kind, doc: WorkflowDocument, approver: User) -> None:
     kind = FilingKind(str(kind))
-    await _safely(db, task, kind, approver.id, doc.body_md, f"Approved v{doc.version} by {approver.name}", approver)
+    body = doc.body_md
+    mockup = await db.get(Mockup, doc.mockup_id) if doc.mockup_id else None
+    if mockup is not None:  # WF-6d: the approved mockup stays in MegooColab; the filed design links to it
+        body += f"\n\n---\nApproved mockup: v{mockup.version} — {mockup.title} (/api/mockups/{mockup.id}/view)"
+    await _safely(db, task, kind, approver.id, body, f"Approved v{doc.version} by {approver.name}", approver)
 
 
 def _longest_backticks(text: str) -> int:

@@ -93,6 +93,7 @@ class DocumentInfo(BaseModel):
     created_at: datetime
     decided_by: uuid.UUID | None
     decision_comment: str | None
+    mockup_id: uuid.UUID | None = None  # designs: the mockup it was submitted with (approved with it)
 
 
 class DocumentStepOut(BaseModel):

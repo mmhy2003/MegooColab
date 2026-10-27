@@ -28,7 +28,15 @@ from app.mcp_server.auth import current_run, live_run, require_run_task, tool_se
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.tasks.service import get_task_for
-from app.workflow import build, documents, engine, finish, methodology, questions
+from app.workflow import (
+    build,
+    documents,
+    engine,
+    finish,
+    methodology,
+    mockups,
+    questions,
+)
 from app.workflow.context import ROLE_KEY
 from app.workflow.models import (
     DocKind,
@@ -56,11 +64,12 @@ TOOL_ROLES: dict[str, frozenset[RunRole]] = {
     "complete_step": frozenset({RunRole.implement, RunRole.step_fix}),
     "submit_review": frozenset({RunRole.step_review, RunRole.final_review}),
     "report_finish": frozenset({RunRole.finish}),
+    "show_mockup": frozenset({RunRole.brainstorm}),  # also the session resumed to revise a design
 }
 RUNNER_ONLY = frozenset({"submit_review", "report_finish"})  # connect-only workflows have no such runs
 
 RUN_NEXT: dict[RunRole, str] = {
-    RunRole.brainstorm: "Ask questions with ask_human, then submit_design.",
+    RunRole.brainstorm: "Ask questions with ask_human, show screens with show_mockup, then submit_design.",
     RunRole.plan: "Ask questions with ask_human if anything is unclear, then submit_plan with the plan and its steps.",
     RunRole.implement: "Implement step {step}, run its tests, then call complete_step with step={step}.",
     RunRole.step_fix: "Fix the review findings for step {step}, run the tests, then call complete_step with step={step}.",
@@ -210,6 +219,23 @@ def register_workflow_tools(mcp: MCPServer) -> None:
                 if wf.status == WorkflowStatus.running:  # an approval it already waits for stays the need
                     await engine.wait_for(db, wf, Needs.question)
             return ASKED
+
+    @mcp.tool()
+    async def show_mockup(key: str, html: str, title: str) -> dict[str, Any]:
+        """Show the next version of a mockup (one self-contained HTML document, at most 2 MB, and a title) to the
+        people on the task, without asking anything: keep working. Refused while a design awaits approval."""
+        async with tool_session() as (db, user):
+            task = await _task(db, user, key, "show_mockup", write=True)
+            if current_run.get() is not None:
+                row = await mockups.show(db, await live_run(db, task), task, html, title)
+            else:
+                wf = await engine.lock_connect_only(db, user, task)
+                if wf.status == WorkflowStatus.finished:
+                    raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
+                if wf.stage not in (Stage.brainstorm, Stage.design):
+                    raise HTTPException(status.HTTP_409_CONFLICT, "wrong_stage")
+                row = await mockups.show(db, None, task, html, title)
+            return {"version": row.version}
 
     @mcp.tool()
     async def submit_design(key: str, markdown: str) -> dict[str, Any]:

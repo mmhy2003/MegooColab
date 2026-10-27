@@ -95,7 +95,7 @@ async def test_tools_list_contains_expected_names(app, client, db, mcp_running):
         "whoami", "list_projects", "list_tasks", "get_task", "create_task",
         "update_task", "move_task", "comment_on_task",
         "get_workflow", "get_document", "ask_human", "submit_design", "submit_plan", "complete_step",
-        "submit_review", "report_finish",
+        "submit_review", "report_finish", "show_mockup",
         "kb_search", "kb_list", "kb_read", "kb_write",
         "search_memory", "ask_memory",
         "find_answer", "ask_project", "get_question", "withdraw_question", "submit_answer",

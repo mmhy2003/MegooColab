@@ -34,6 +34,7 @@ MAX_ANSWER_TEXT = 4_000
 MAX_MOCKUP_BYTES = 2 * 1024 * 1024
 MAX_MOCKUP_CHOICES = 12
 MAX_MOCKUP_TITLE = 200
+MAX_MOCKUPS_PER_TASK = 50  # question mockups and shown ones together
 CHOICE_ID = re.compile(r"[a-z0-9_-]{1,40}")
 
 # Appended to the mockup HTML: elements with data-megoo-choice post that choice to the parent frame.
@@ -117,12 +118,7 @@ async def ask(
         .values(status=QuestionStatus.withdrawn)
     )
     await retire_answers(db, task.id)  # an answer the asking run never saw is moot once it asks again
-    mockup_row = None
-    if clean_mockup:
-        version = (await db.scalar(select(func.max(Mockup.version)).where(Mockup.task_id == task.id)) or 0) + 1
-        mockup_row = Mockup(task_id=task.id, version=version, **clean_mockup)
-        db.add(mockup_row)
-        await db.flush()
+    mockup_row = await next_mockup(db, task, clean_mockup) if clean_mockup else None
     wf = await db.get(TaskWorkflow, task.id)
     stage = Stage(run.stage) if run is not None and run.stage else (wf.stage if wf else Stage.brainstorm)
     q = WorkflowQuestion(
@@ -133,6 +129,20 @@ async def ask(
     await db.flush()
     await engine.record_workflow_event(db, task, None, "question.asked", {"question_id": str(q.id), "has_mockup": bool(mockup_row)})
     return q
+
+
+async def next_mockup(db, task: Task, clean: dict[str, Any]) -> Mockup:
+    """Store a cleaned mockup as the task's next version, within MAX_MOCKUPS_PER_TASK. The caller holds the
+    workflow lock, so two calls cannot take the same version."""
+    count, latest = (
+        await db.execute(select(func.count(), func.max(Mockup.version)).where(Mockup.task_id == task.id))
+    ).one()
+    if count >= MAX_MOCKUPS_PER_TASK:
+        raise _422("too_many_mockups")
+    row = Mockup(task_id=task.id, version=(latest or 0) + 1, **clean)
+    db.add(row)
+    await db.flush()
+    return row
 
 
 async def answer(db, user: User, task: Task, question_id: uuid.UUID, choice: str | None, text: str | None) -> None:

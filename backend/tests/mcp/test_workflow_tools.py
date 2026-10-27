@@ -52,6 +52,7 @@ ALL_WORKFLOW_TOOLS = {
     "submit_review": {"verdict": "approved", "findings": []},
     "report_finish": {"outcome": "pr_opened", "branch": "megoo/PAY-1", "pr_url": "https://x.test/pr/1",
                       "tests_passed": True},
+    "show_mockup": {"html": "<p>x</p>", "title": "T"},
 }
 ALLOWED = {
     "ask_human": {"brainstorm", "plan", "implement", "step_fix", "final_fix", "finish"},
@@ -60,6 +61,7 @@ ALLOWED = {
     "complete_step": {"implement", "step_fix"},
     "submit_review": {"step_review", "final_review"},
     "report_finish": {"finish"},
+    "show_mockup": {"brainstorm"},
 }
 
 
@@ -481,7 +483,7 @@ async def test_get_workflow_returns_stage_instructions(db, tc_factory):
     )
     assert out["documents"] == []
     assert out["instructions"] == (await methodology.current(db, "brainstorm")).body_md
-    assert out["next"] == "Ask questions with ask_human, then submit_design."
+    assert out["next"] == "Ask questions with ask_human, show screens with show_mockup, then submit_design."
     # an implement run gets its role's hint
     await _set_role(run, "implement", step=1)
     err, out = _tool(tc, token, "get_workflow", key=b.key)

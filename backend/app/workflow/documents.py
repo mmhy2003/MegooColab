@@ -81,6 +81,13 @@ async def _attached_mockups(db, task_id: uuid.UUID) -> list[str]:
     return ids
 
 
+async def _newest_mockup(db, task_id: uuid.UUID) -> uuid.UUID | None:
+    """The mockup a design is submitted with: the task's highest version, if any."""
+    return await db.scalar(
+        select(Mockup.id).where(Mockup.task_id == task_id).order_by(Mockup.version.desc()).limit(1)
+    )
+
+
 async def submit(
     db, run: AgentRun | None, task: Task, kind: DocKind | str, body_md: str, steps: list[dict] | None = None
 ) -> WorkflowDocument:
@@ -122,6 +129,7 @@ async def submit(
         task_id=task.id, kind=kind, version=version, body_md=body_md, steps=clean,
         status=DocStatus.submitted, submitted_run_id=run.id if run else None,
         attached_mockup_ids=await _attached_mockups(db, task.id) if kind == DocKind.design else [],
+        mockup_id=await _newest_mockup(db, task.id) if kind == DocKind.design else None,
     )
     db.add(doc)
     await db.flush()

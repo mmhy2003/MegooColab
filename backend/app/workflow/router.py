@@ -367,7 +367,7 @@ async def view_mockup(mockup_id: uuid.UUID, user: AuthedUser, db: DbSession) -> 
 def _doc_info(d: WorkflowDocument) -> DocumentInfo:
     return DocumentInfo(
         kind=d.kind, version=d.version, status=d.status, created_at=d.created_at, decided_by=d.decided_by,
-        decision_comment=d.decision_comment,
+        decision_comment=d.decision_comment, mockup_id=d.mockup_id,
     )
 
 
