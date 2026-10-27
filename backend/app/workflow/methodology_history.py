@@ -12,9 +12,11 @@ DEFAULT_HISTORY: dict[str, list[str]] = {
         "c2776fe8cc214c15ed439d13acdbe031b3aaf79a51f6b716c93710ca8e90440a",
         "9b8f73e6adbc875b1b23294505ec303a8943ff7b91d7479451d6253a0ca5a393",
         "00277fef22ee863a94b51f13ee72976968543c59c6334b4cbffc1b092276381e",
+        "b20571982b08dfd817ef39072b2de6b88d80242bafce8f506147dc0bacef10a4",
     ],
     "design_revision": [
         "7b6bfa9f3eb82fdf3e709413ceb6f029ae88e91372eaa0462e06e1d0872db8fe",
+        "d9808506b33c95dc9e61e879db98128db3d589ef06013de90f0f883ab6fcb663",
     ],
     "plan": [
         "ee12eca000a1c412b2ff2d7d411acc22ee451d33151daa9fadd1a3a96b1ead8a",
@@ -29,29 +31,35 @@ DEFAULT_HISTORY: dict[str, list[str]] = {
         "878805bab9a5a706dab6dc792e3b5497397eb554e523adf69e10d4083e4ef739",
         "8d0f27d067d4055581dd1291665e41ea30ddf13f638a59ba16f2f68885947eda",
         "ef7089bf7fc0663b20a713263ee7a0adbe615fab9f057d1dfbdb3620a3ed0494",
+        "0e7dbe88ab3b98f5ce2b0add1227ee42b986b0aedeca502f8f978add24be1a50",
     ],
     "build_step_review": [
         "1040468db7144eb9bd6ef78eaab5a8f8a3d461436897d6ab442d648c5b29d33f",
         "bdad3a3e6d835653ac147e9234146c33574b38c72894bd2b5ad69a9e559963b9",
         "9193479e7f8ffca14daa85bbf047e22a2a157cc1c08501942da2308d3ef8f7df",
+        "f693cde408895d94dfe268a74934e7dd1253744406e4a9ea53877da1cb70ccac",
     ],
     "build_step_fix": [
         "fd5729364fa62da230ff345f9058ac228df7ce5ad3649700533f6ffde94dbade",
         "89558e6c9b2181777d0fc2ad07287cb56500b1e86754dbee6efb8c9b80a69dfe",
         "2566a6e6c85cb5af1d1a3859da5245590d8883f1e29c357d78eb587dc20055c0",
+        "ec156899cf2e7a89edbf553ea4c6bec27dbcac0ed7b82f0612852a2ac9c41ce7",
     ],
     "review_final": [
         "a3cf46bcf975acd92f185d2decb3bebe97981ef792054d9453061bfe56c29ea1",
         "56daf3ab279059f967226395aefca821a8c55b42f521f41237e657e7c2c5cfc7",
         "6db3cbdffef160f5f2695019694b23d3b23e820cf643ab250b072c5548e2e4a2",
+        "2cbb6ef94c2c9b5ec9b75ad286ab5f3d697dd513dee091ec545da9778838652f",
     ],
     "review_fix": [
         "a423e90a0cb1645f5e3770bc2797007a953e38c64ded16f835ea5033fc641879",
         "c456582d385e92c9f3183bae3794e1181e413f721dfcd800a11f7abb229a1758",
+        "9effeeb0d717ec0812ba3d98dca4c017d67f0f628b69736cf0806c603b43fb94",
     ],
     "finish": [
         "962d9a01582b0122e02cc13d84dda6f036f338a6c239b96e242e042ce46ccbe7",
         "1e6fcac079b77b9161d9a5f84f968f69afc6c94878baa43416e151a78537fed6",
         "bb3b5c3ecf5370c72bc20aab904aaec4c7b75d0562550ac92706d9632f30fec5",
+        "5df9f241453b334d9cc4c34128e839c84ed5376126d8dbd8ea85eec83ce8d510",
     ],
 }

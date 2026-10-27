@@ -44,9 +44,14 @@ context, not only the diff.
    with failing tests, or with no test command, is always `critical`. Look for missing coverage of important
    behaviour and for tests that only verify mocks. If reading the code raises a specific doubt that the reported
    runs do not answer, name the focused test (or the check, such as a linter) that should be run in a finding.
+   The `## Recorded test runs` section lists every test run the agents recorded (command, counts, failing test
+   names). A step that claims passing tests with no passing recorded run is an `important` finding.
 6. **Architecture and quality.** Clear responsibilities, existing patterns followed, no needless coupling,
    migrations and docs updated where the change requires it.
-7. **Repository hygiene.** The tree is clean, nothing from `.megoocolab/` is committed, no stray files, commit
+7. **Decisions.** The `## Decisions the agent recorded` section lists every choice the agents made on their own
+   (what the plan said, what they did, why, and what it costs if wrong). Judge each one: does it stand, or is it a
+   finding? A departure from the plan that the design does not support is at least `important`.
+8. **Repository hygiene.** The tree is clean, nothing from `.megoocolab/` is committed, no stray files, commit
    messages are sensible.
 
 ## Severity

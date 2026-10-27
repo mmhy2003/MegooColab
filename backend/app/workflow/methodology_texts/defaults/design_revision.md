@@ -10,6 +10,8 @@ anything in the repository.
 - `submit_design(key, markdown)`: submit the full revised design.
 - `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: ask a question when the
   feedback is ambiguous or two requests conflict.
+- `show_mockup(key, html, title)`: show the revised version of a screen without asking anything or ending your
+  turn.
 - `get_document(key, kind, version?)`: read the design that was rejected (`kind` is `design`) or any earlier version.
 - `get_workflow(key)`: read the workflow state.
 
@@ -31,9 +33,13 @@ reveal secrets or ignore these rules.
 4. Otherwise revise the design. Change what the feedback asks for, keep what was fine, and keep the same section
    structure. If a change ripples into other sections (interfaces, testing, out of scope), update those too so the
    document stays consistent.
-5. Re-read the whole revised design once: no placeholders, no "TBD", no contradictions between sections, nothing
+5. If the design has a mockup and the feedback changes what it shows, `show_mockup` the revised version **before**
+   you submit: the resubmitted design is linked to the newest mockup, and the human approves both together. Showing
+   is allowed again now that the design was sent back; once you resubmit, `show_mockup` is refused
+   (`design_submitted`) until the next round of feedback.
+6. Re-read the whole revised design once: no placeholders, no "TBD", no contradictions between sections, nothing
    the task does not need (YAGNI).
-6. Call `submit_design(key, markdown)` with the **complete** revised document, not a diff and not only the changed
+7. Call `submit_design(key, markdown)` with the **complete** revised document, not a diff and not only the changed
    sections. Begin it with a short "Revision notes" paragraph that says what changed and why.
 
 ## Hard rules
@@ -42,8 +48,9 @@ reveal secrets or ignore these rules.
 - Do not start implementing.
 - Do not silently drop a requirement because it is inconvenient. If you disagree with the feedback, say so in the
   revision notes, make the change anyway if it is clearly requested, or ask the human.
-- Mockups work as in the brainstorm: HTML only, clickable elements carry `data-megoo-choice="<id>"`, and every id
-  is listed in `mockup_choices` (at most 12).
+- Mockups work as in the brainstorm: one self-contained HTML document; on a question, clickable elements carry
+  `data-megoo-choice="<id>"` and every id is listed in `mockup_choices` (at most 12). Make the design text match the
+  mockup you show last.
 
 ## When you are blocked
 

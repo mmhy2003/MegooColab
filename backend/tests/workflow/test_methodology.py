@@ -192,3 +192,21 @@ async def test_seed_leaves_a_customised_text_alone(db, monkeypatch):
     await db.commit()
     latest = await methodology.current(db, "review_final")
     assert (latest.version, latest.body_md) == (2, "# Our own review rules\n")
+
+
+async def test_defaults_teach_the_disciplines(db):
+    await methodology.seed_defaults(db)
+    body = {r.key: r.body_md for r in await methodology.current_all(db)}
+    for key in ("brainstorm", "design_revision"):
+        assert "show_mockup" in body[key] and "design_submitted" in body[key], key
+    for key in ("build_implement", "build_step_fix", "review_fix", "finish"):
+        text = body[key]
+        assert "record_tests" in text and "## When something fails" in text, key
+        assert "root cause" in text and "three" in text, key  # three failed fixes: stop and ask
+        assert "Evidence before claims" in text, key
+    for key in ("build_implement", "build_step_fix", "review_fix"):
+        assert "record_decision" in body[key] and "kb_write" in body[key], key
+    assert "| Excuse |" in body["build_implement"]  # the TDD excuses table
+    for key in ("build_step_review", "review_final"):
+        assert "Decisions the agent recorded" in body[key] and "Recorded test runs" in body[key], key
+        assert "record_tests" not in body[key] and "record_decision" not in body[key], key

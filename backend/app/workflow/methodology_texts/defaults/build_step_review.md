@@ -44,9 +44,14 @@ Check:
    mocks? Do they cover the step's requirements and edge cases? A report of failing tests, or one that names no
    test command, is never approved. If reading the code raises a specific doubt that the reported run does not
    answer, name the focused test that should be run (file and case) in a finding.
+   The `## Recorded test runs` section lists the runs the implementer recorded for this step (command, counts,
+   failing test names). A step that claims passing tests with no passing recorded run is an `important` finding.
 4. **Code quality.** One responsibility per file, clear names, follows the repository's patterns, no dead code, no
    needless changes to unrelated code.
 5. **Commit hygiene.** A first review sees one commit for the step; on a re-review round there may be several (the original plus fix commits), and that is fine, do not flag it. Otherwise: a sensible message, nothing from `.megoocolab/`, no stray files.
+6. **Decisions.** The `## Decisions the agent recorded` section lists the choices the implementer made on its own
+   (what the plan said, what it did, why, and what it costs if wrong). Judge each one: does it stand, or is it a
+   finding? A departure from the plan that the design does not support is at least `important`.
 
 ## Re-review rounds
 

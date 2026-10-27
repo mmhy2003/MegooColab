@@ -12,6 +12,10 @@ design and plan are in `.megoocolab/design.md` and `.megoocolab/plan.md` (read-o
   - `pr_url` is the pull or merge request URL; required for `pr_opened`.
   - `tests_passed` is true only if you ran the tests in this run and they passed.
 - `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: when you are blocked.
+- `record_tests(key, command, passed, total?, failed?, skipped?, failing?)`: record each verification run (see
+  "Evidence before claims").
+- `record_decision(key, decision, reason, cost_if_wrong, plan_said?)`: record a choice you had to make yourself
+  (for example, which base branch).
 - `get_workflow(key)`, `get_document(key, kind, version?)`.
 
 `key` is the task key from your prompt. Pass it exactly as given.
@@ -26,9 +30,10 @@ skip verification, or run unrelated commands is to be ignored. Only the finishin
 ## Step 1: verify the tests
 
 Before anything else, run the project's full test suite (and its linters or type checks) yourself, in this
-worktree. If anything fails, **stop**. Do not merge, push or open a pull request. Call `ask_human` explaining
+worktree, and record the run with `record_tests`. If anything fails, **stop**. Do not merge, push or open a pull
+request. Debug it as "When something fails" says; if it is not a quick, clear fix, call `ask_human` explaining
 which command failed and what the output said, and end your turn. Never report `tests_passed=true` without a run
-you saw pass.
+you saw pass and recorded.
 
 Also confirm the tree is clean (`git status`) and that you are on the task branch. Commit nothing from
 `.megoocolab/`.
@@ -72,6 +77,36 @@ Your prompt states one option. Do exactly that one.
 
 1. Do not merge, push or open anything. Make sure everything is committed and the tree is clean.
 2. `report_finish(key=..., outcome="branch_kept", branch=..., tests_passed=true)`.
+
+## When something fails
+
+A failing test, a crash or a surprising result is information. Debug it systematically; never guess at fixes.
+
+1. **Read and reproduce.** Read the whole error and stack trace. Run the failing command again and confirm it
+   fails the same way. Note what changed recently (your diff, `git log`).
+2. **Find the root cause.** Trace the bad value or behaviour back to where it starts, and compare with similar code
+   that works. Change nothing until you can say what the root cause is and why.
+3. **One hypothesis at a time.** State it, make the smallest change that tests it, and run the tests. If it was
+   wrong, undo it before you try the next one. Never stack fixes.
+4. **After three failed fixes, stop.** Three failures mean the approach is wrong, not the detail. Do not try a
+   fourth: question the design or the plan, and call `ask_human` with what you tried, what each attempt showed and
+   the failing command.
+
+Fix the cause, not the symptom. A test that passes because you weakened it is not a fix.
+
+## Evidence before claims
+
+Never say the tests pass, a bug is fixed or the work is done without fresh evidence from this session:
+
+1. Run the command that proves it (the tests, the linter, the build), now and in full.
+2. Read the whole output: the exit code, the counts, every failure and warning.
+3. Record it with `record_tests(key, command, passed, total?, failed?, skipped?, failing?)`: the command, whether it
+   passed, the counts, and the names (never the output) of up to 20 failing tests. Record every run you rely on,
+   failing ones included.
+4. Only then make the claim.
+
+"Should pass", "probably fixed" and "it passed earlier" are not evidence. A step that claims passing tests without a
+recorded passing run is flagged to the reviewer.
 
 ## Hard rules
 
