@@ -18,6 +18,7 @@ import {
   STAGES,
   escalationReasonText,
   statusLine,
+  useRunRecords,
   useWorkflow,
   type FinishingOption,
 } from "@/lib/workflow";
@@ -52,11 +53,13 @@ export function WorkflowPanel({
   const client = useQueryClient();
   const workflow = useWorkflow(taskKey);
   const runs = useAgentRuns(taskKey);
+  const records = useRunRecords(taskKey);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showRuns, setShowRuns] = useState(false);
 
   const wf = workflow.data;
+  const decisionCount = records.data?.decisions?.length ?? 0;
   if (workflow.error) return <p className="text-sm text-pink">{errorMessage(workflow.error)}</p>;
   if (!wf) return <p className="text-sm text-muted">Loading…</p>;
 
@@ -110,6 +113,11 @@ export function WorkflowPanel({
       )}
       <StageTrack stage={wf.stage} status={status} canAct={wf.can_act && !disabled} hideStatus />
       <p className="font-semibold">{statusLine(wf)}</p>
+      {decisionCount > 0 && (
+        <a href="#decisions" className="text-xs text-cyan-ink underline">
+          {decisionCount} {decisionCount === 1 ? "decision" : "decisions"}
+        </a>
+      )}
       {!(status === "idle" && !agent) && <p className="text-xs text-muted">{ENFORCEMENT_TEXT[wf.enforcement]}</p>}
 
       {escalating && (

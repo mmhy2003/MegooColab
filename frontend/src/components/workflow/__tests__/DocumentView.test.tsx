@@ -133,3 +133,67 @@ describe("DocumentView", () => {
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
   });
 });
+
+describe("DocumentView recorded test runs", () => {
+  const testRun = (id: string, step: number | null, passed: boolean, extra: Record<string, unknown> = {}) => ({
+    id, stage: step === null ? "done" : "build", step, command: "uv run pytest", passed, total: null, failed: null,
+    skipped: null, failing: [], author: "Bot", created_at: `2026-10-27T10:0${id.length}:00Z`, ...extra,
+  });
+
+  function setupPlan() {
+    const records = {
+      decisions: [],
+      test_runs: [
+        testRun("a", 1, false, { total: 5, failed: 1, failing: ["test_x"], created_at: "2026-10-27T10:01:00Z" }),
+        testRun("b", 1, true, { total: 5, failed: 0, created_at: "2026-10-27T10:02:00Z" }),
+        testRun("c", null, true, { total: 12, failed: 0, created_at: "2026-10-27T10:03:00Z" }),
+      ],
+      unverified_steps: [2],
+    };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/records")) return new Response(JSON.stringify(records), { status: 200 });
+      if (url.endsWith("/mockups")) return new Response("[]", { status: 200 });
+      if (url.endsWith("/workflow")) {
+        return new Response(
+          JSON.stringify({ can_act: true, documents: [], steps: [{ n: 1, title: "Add model", state: "done" }, { n: 2, title: "Add API", state: "done" }] }),
+          { status: 200 },
+        );
+      }
+      if (/documents\/plan\/1$/.test(url)) {
+        return new Response(
+          JSON.stringify({
+            ...info(1, "approved"), kind: "plan", body_md: "# Plan", attached_mockup_ids: [], mockup_id: null,
+            steps: [{ title: "Add model", detail: "", subtask_id: null }, { title: "Add API", detail: "", subtask_id: null }],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify([{ ...info(1, "approved"), kind: "plan" }]), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <DocumentView taskKey="PAY-1" kind="plan" />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("shows each step's latest test run, with earlier runs behind a disclosure", async () => {
+    setupPlan();
+    expect(await screen.findByText("✓ 5 passed — uv run pytest")).toBeInTheDocument();
+    expect(screen.getByText("Earlier runs (1)")).toBeInTheDocument();
+    expect(screen.getByText("✗ 1 failed: test_x — uv run pytest")).toBeInTheDocument();
+  });
+
+  it("warns on a step that claims passing tests without a recorded run", async () => {
+    setupPlan();
+    const warning = await screen.findByText("No test run recorded");
+    expect(warning.closest("li")).toHaveTextContent("Add API");
+  });
+
+  it("shows the finish verification under the steps", async () => {
+    setupPlan();
+    expect(await screen.findByText("Finish verification: ✓ 12 passed — uv run pytest")).toBeInTheDocument();
+  });
+});

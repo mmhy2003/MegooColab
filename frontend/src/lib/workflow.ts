@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queries";
+import type { components } from "@/lib/api-types";
 import type { DocumentInfo, MockupInfo, Workflow, WorkflowNeeds, WorkflowStage } from "@/lib/types";
 
 export type FinishingOption = Workflow["finishing_option"];
@@ -42,6 +43,27 @@ export function useWorkflow(key: string) {
 /** The task's mockups, oldest first: question mockups and shown ones share one version sequence. */
 export function useMockups(key: string) {
   return useQuery({ queryKey: qk.mockups(key), queryFn: () => api<MockupInfo[]>(`/api/tasks/${key}/mockups`) });
+}
+
+export type Decision = components["schemas"]["DecisionOut"];
+export type TestRun = components["schemas"]["TestRunOut"];
+export type RunRecords = components["schemas"]["RecordsOut"];
+
+/** What the agent decided on its own and the test runs it recorded (Plan 8). */
+export function useRunRecords(key: string) {
+  return useQuery({ queryKey: qk.records(key), queryFn: () => api<RunRecords>(`/api/tasks/${key}/records`) });
+}
+
+/** One line for a recorded test run: "✓ 142 passed, 1 skipped — cmd" or "✗ 3 failed: a, b, c — cmd". */
+export function testRunText(run: TestRun): string {
+  const tail = ` — ${run.command}`;
+  if (!run.passed) {
+    const names = run.failing.length ? `: ${run.failing.join(", ")}` : "";
+    return `✗ ${run.failed != null ? `${run.failed} failed` : "failed"}${names}${tail}`;
+  }
+  if (run.total == null) return `✓ passed${tail}`;
+  const passed = run.total - (run.failed ?? 0) - (run.skipped ?? 0);
+  return `✓ ${passed} passed${run.skipped ? `, ${run.skipped} skipped` : ""}${tail}`;
 }
 
 export function useDocuments(key: string) {

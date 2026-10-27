@@ -30,9 +30,15 @@ function wf(extra: Partial<Workflow> = {}): Workflow {
   } as Workflow;
 }
 
-function setup(workflow: Workflow, opts: { runs?: unknown[]; agent?: ProjectAgent | null; post?: Response; unassigned?: boolean; disabled?: boolean } = {}) {
+function setup(
+  workflow: Workflow,
+  opts: { runs?: unknown[]; agent?: ProjectAgent | null; post?: Response; unassigned?: boolean; disabled?: boolean; decisions?: unknown[] } = {},
+) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method && init.method !== "GET" && opts.post) return opts.post.clone();
+    if (url.endsWith("/records")) {
+      return new Response(JSON.stringify({ decisions: opts.decisions ?? [], test_runs: [], unverified_steps: [] }), { status: 200 });
+    }
     if (url.includes("/agent-runs")) return new Response(JSON.stringify(opts.runs ?? []), { status: 200 });
     return new Response(JSON.stringify(workflow), { status: 200 });
   });
@@ -52,6 +58,17 @@ afterEach(() => {
 });
 
 describe("WorkflowPanel", () => {
+  it("links to the agent's decisions when there are some", async () => {
+    setup(wf({ status: "running", stage: "build" }), { decisions: [{ id: "d1" }, { id: "d2" }] });
+    expect(await screen.findByRole("link", { name: "2 decisions" })).toHaveAttribute("href", "#decisions");
+  });
+
+  it("shows no decisions link without decisions", async () => {
+    setup(wf({ status: "running", stage: "build" }));
+    await screen.findAllByText(/Build/);
+    expect(screen.queryByRole("link", { name: /decision/ })).toBeNull();
+  });
+
   it("shows Start only for idle agent task with can_use", async () => {
     setup(wf());
     expect(await screen.findByRole("button", { name: "Start" })).toBeInTheDocument();

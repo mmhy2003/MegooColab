@@ -14,11 +14,12 @@ import { qk } from "@/lib/queries";
 import type { ActivityItem, Attachment, Task } from "@/lib/types";
 
 import { DocumentView } from "@/components/workflow/DocumentView";
+import { Decisions } from "@/components/workflow/Decisions";
 import { MockupPanel } from "@/components/workflow/MockupPanel";
 import { KbReferences } from "@/components/kb/KbReferences";
 import { TaskQuestions, WaitingBadge } from "@/components/questions/TaskQuestions";
 import { WorkflowPanel } from "@/components/workflow/WorkflowPanel";
-import { useMockups, useWorkflow } from "@/lib/workflow";
+import { useMockups, useRunRecords, useWorkflow } from "@/lib/workflow";
 
 import { ActivityThread } from "./ActivityThread";
 import { Attachments } from "./Attachments";
@@ -70,6 +71,7 @@ export function TaskView({
   const all = useTasks(projectKey);
   const workflow = useWorkflow(taskKey);
   const mockups = useMockups(taskKey);
+  const decisionCount = useRunRecords(taskKey).data?.decisions.length ?? 0;
   const [error, setError] = useState<string | null>(null);
 
   const userNames = useMemo(() => new Map(users.data?.map((u) => [u.id, u.name])), [users.data]);
@@ -173,6 +175,11 @@ export function TaskView({
                   <DocumentView taskKey={t.key} kind={kind} disabled={disabled} />
                 </Section>
               ),
+          )}
+          {decisionCount > 0 && (
+            <Section id="decisions" title={`Decisions (${decisionCount})`}>
+              <Decisions taskKey={t.key} />
+            </Section>
           )}
           <Section title="Linked tasks">
             <Links

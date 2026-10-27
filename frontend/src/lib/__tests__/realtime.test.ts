@@ -32,6 +32,7 @@ describe("invalidationsFor", () => {
     const out = invalidationsFor({ type: "task.updated", project_id: "p1", task_id: "t1" }, keys);
     expect(out).toContainEqual(["tasks", "PAY"]);
     expect(out).toContainEqual(["task"]);
+    expect(out).toContainEqual(["records"]);
     expect(out).toContainEqual(["workflow"]);
     expect(out).toContainEqual(["activity"]);
     expect(out).toContainEqual(["agent-runs"]);

@@ -10,7 +10,7 @@ import { api, ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { DocKind, DocumentDetail, DocumentInfo } from "@/lib/types";
-import { useMockups, useWorkflow } from "@/lib/workflow";
+import { testRunText, useMockups, useRunRecords, useWorkflow, type TestRun } from "@/lib/workflow";
 
 import { MockupFrame } from "./MockupFrame";
 
@@ -31,6 +31,7 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
     queryFn: () => api<DocumentInfo[]>(`/api/tasks/${taskKey}/documents`),
   });
   const mockups = useMockups(taskKey);
+  const records = useRunRecords(taskKey);
   const mockupVersion = new Map((mockups.data ?? []).map((m) => [m.id, m.version]));
   const versions = (list.data ?? []).filter((d) => d.kind === kind).sort((a, b) => a.version - b.version);
   const [picked, setPicked] = useState<number | null>(null);
@@ -65,6 +66,11 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
   const filed = workflow.data?.kb_documents?.find((k) => k.kind === kind)?.document_id;
   const canDecide = selected.status === "submitted" && workflow.data?.can_act === true && !disabled;
   const buildStates = selected.status === "approved" ? workflow.data?.steps : undefined;
+  // recorded test runs belong to the plan being built: shown on the approved plan's steps only
+  const testRuns = kind === "plan" && selected.status === "approved" ? (records.data?.test_runs ?? []) : [];
+  const stepRuns = (n: number): TestRun[] => testRuns.filter((r) => r.stage === "build" && r.step === n);
+  const finishRun = testRuns.filter((r) => r.stage === "done").at(-1);
+  const unverified = new Set(kind === "plan" ? (records.data?.unverified_steps ?? []) : []);
 
   const decide = async (approve: boolean) => {
     setError(null);
@@ -136,16 +142,32 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
             <ol className="ml-5 list-decimal space-y-1.5">
               {detail.data.steps.map((s, i) => {
                 const state = buildStates?.find((b) => b.n === i + 1)?.state;
+                const runs = stepRuns(i + 1);
+                const latest = runs.at(-1);
+                const earlier = runs.slice(0, -1).reverse();
                 return (
                   <li key={i}>
                     <span className="font-semibold">{s.title}</span>
                     {state && <span className="text-xs text-muted"> · {STEP_STATE_TEXT[state]}</span>}
                     {s.detail && <p className="text-xs text-muted">{s.detail}</p>}
+                    {latest && <p className={`text-xs ${latest.passed ? "text-muted" : "text-pink"}`}>{testRunText(latest)}</p>}
+                    {unverified.has(i + 1) && <p className="text-xs text-pink">No test run recorded</p>}
+                    {earlier.length > 0 && (
+                      <details className="text-xs text-muted">
+                        <summary>Earlier runs ({earlier.length})</summary>
+                        <ul className="ml-3">
+                          {earlier.map((r) => (
+                            <li key={r.id}>{testRunText(r)}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
                   </li>
                 );
               })}
             </ol>
           )}
+          {finishRun && <p className={`text-xs ${finishRun.passed ? "text-muted" : "text-pink"}`}>Finish verification: {testRunText(finishRun)}</p>}
           {detail.data.decision_comment && selected.status === "rejected" && (
             <p className="text-xs text-muted">Rejected: {detail.data.decision_comment}</p>
           )}
