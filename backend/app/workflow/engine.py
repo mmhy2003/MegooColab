@@ -295,6 +295,27 @@ async def _previous_findings(db: AsyncSession, wf: TaskWorkflow, role: RunRole, 
     return list(found) if found else None
 
 
+async def _implementer_reports(
+    db: AsyncSession, task_id: uuid.UUID, role: RunRole, step: int | None
+) -> list[dict] | None:
+    """What the implementer reported with complete_step (summary, tests_passed, test_command), the newest report
+    per step: for the step a step review checks, or every step for the final review. Reviewers judge this
+    evidence instead of re-running the tests (they are read-only)."""
+    if role not in (RunRole.step_review, RunRole.final_review):
+        return None
+    stmt = select(AgentRun.step, AgentRun.step_result).where(
+        AgentRun.task_id == task_id,
+        AgentRun.workflow_role.in_((RunRole.implement, RunRole.step_fix)),
+        AgentRun.step_result.has_key("tests_passed"),
+    )
+    if role == RunRole.step_review:
+        stmt = stmt.where(AgentRun.step == step)
+    latest: dict[int, dict] = {}
+    for n, result in (await db.execute(stmt.order_by(AgentRun.created_at, AgentRun.id))).all():
+        latest[n] = result
+    return [{"step": n, **latest[n]} for n in sorted(latest)]
+
+
 # When the Done stage begins, finish.enter_done freezes the effective option into wf.finishing_override and records
 # wf.finish_requires_human_review, so later project changes do not affect the run.
 def requires_human_review(project: Project, wf: TaskWorkflow) -> bool:
@@ -349,6 +370,7 @@ async def enqueue(
     prompt, meth = await build_prompt(
         db, task, role, step=step, findings=findings, key_override=key_override,
         previous_findings=await _previous_findings(db, wf, role, step), extra_sections=extra,
+        reports=await _implementer_reports(db, task.id, role, step),
     )
     key = session_key(role, step)
     # a fresh-by-design role has no stored session; an answer resumes the asking run's own (resume_session_ref)

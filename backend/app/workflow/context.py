@@ -45,6 +45,7 @@ ROLE_KEY: dict[RunRole, str] = {
 MAX_PROMPT_CHARS = 60_000
 MAX_THREAD_ITEMS = 50
 MAX_RESUME_CHARS = 8_000
+REPORTS_CHARS = 8_000
 
 BUILD_ROLES = {
     RunRole.implement, RunRole.step_review, RunRole.step_fix,
@@ -133,6 +134,23 @@ async def _thread(db: AsyncSession, task: Task) -> list[str]:
     return texts[-MAX_THREAD_ITEMS:]
 
 
+def _report_section(reports: list[dict]) -> str:
+    """The implementer's complete_step reports for a reviewer: the test evidence it judges (written by the agent,
+    so wrapped as untrusted), within REPORTS_CHARS."""
+    if not reports:
+        return "## Implementer's report\n(The implementer reported nothing for this work: there is no test evidence.)"
+    entries = []
+    for r in reports:
+        passed = "yes" if r.get("tests_passed") is True else "no"
+        command = r.get("test_command") or "(none reported)"
+        head = f"Step {r.get('step')}: tests passed: {passed}; test command: {command}"
+        entries.append(f"{head}\n{r.get('summary') or ''}".rstrip())
+    text = "\n\n".join(entries)
+    if len(text) > REPORTS_CHARS:
+        text = text[: REPORTS_CHARS - 1].rstrip() + "…"
+    return "## Implementer's report\n" + wrap_untrusted("implementer_report", text)
+
+
 async def _approved(db: AsyncSession, task_id: uuid.UUID, kind: DocKind) -> WorkflowDocument | None:
     return (
         await db.execute(
@@ -167,6 +185,7 @@ async def build_prompt(
     findings: list[dict] | None = None,
     previous_findings: list[dict] | None = None,
     extra_sections: list[str] | None = None,
+    reports: list[dict] | None = None,
     key_override: str | None = None,
 ) -> tuple[str, MethodologyVersion]:
     role = RunRole(role)
@@ -187,6 +206,7 @@ async def build_prompt(
             )
 
     step_section = None
+    report_section = _report_section(reports) if reports is not None else None
     if role in STEP_ROLES and step is not None:
         if plan is None:
             raise ValueError("no approved plan")
@@ -232,6 +252,8 @@ async def build_prompt(
         parts.extend(docs)
         if step_section:
             parts.append(step_section)
+        if report_section:
+            parts.append(report_section)
         if finding_lines is not None:
             omitted = len(finding_lines) - shown
             note = f"\n({omitted} more findings omitted to fit the prompt size limit.)" if omitted else ""
