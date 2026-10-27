@@ -6,6 +6,7 @@ from app.agents import models as agents_models  # noqa: F401
 from app.ai import models as ai_models  # noqa: F401
 from app.audit import models as audit_models  # noqa: F401
 from app.auth import models as auth_models  # noqa: F401
+from app.git import models as git_models  # noqa: F401
 from app.jobs import models as jobs_models  # noqa: F401
 from app.kb import models as kb_models  # noqa: F401
 from app.memory import models as memory_models  # noqa: F401

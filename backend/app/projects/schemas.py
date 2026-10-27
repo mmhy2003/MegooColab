@@ -71,6 +71,7 @@ class RepoIn(BaseModel):
     url: NoNulStr = Field(min_length=1, max_length=1000)
     provider: RepoProvider
     default_branch: NoNulStr = "main"
+    connection_id: uuid.UUID | None = None  # GIT-3: the read-only provider connection
 
 
 class RepoPatch(BaseModel):
@@ -78,6 +79,12 @@ class RepoPatch(BaseModel):
     url: NoNulStr | None = Field(default=None, min_length=1, max_length=1000)
     provider: RepoProvider | None = None
     default_branch: NoNulStr | None = Field(default=None, min_length=1, max_length=200)
+    connection_id: uuid.UUID | None = None  # an explicit null unlinks
+
+
+class RepoConnection(BaseModel):
+    id: uuid.UUID
+    name: str
 
 
 class RepoOut(BaseModel):
@@ -88,6 +95,7 @@ class RepoOut(BaseModel):
     url: str
     provider: RepoProvider
     default_branch: str
+    connection: RepoConnection | None = None
 
 
 class LabelIn(BaseModel):

@@ -28,6 +28,7 @@ from app.projects.schemas import (
     ProjectIn,
     ProjectOut,
     ProjectPatch,
+    RepoConnection,
     RepoIn,
     RepoOut,
     RepoPatch,
@@ -198,23 +199,40 @@ async def _repo(db: AsyncSession, project: Project, repo_id: uuid.UUID) -> Proje
     return repo
 
 
+async def _repo_out(db: AsyncSession, repo: ProjectRepository) -> RepoOut:
+    from app.git.models import GitConnection  # local: git imports the project models
+
+    out = RepoOut.model_validate(repo)
+    conn = await db.get(GitConnection, repo.connection_id) if repo.connection_id else None
+    out.connection = RepoConnection(id=conn.id, name=conn.name) if conn is not None else None
+    return out
+
+
+async def _check_connection(db: AsyncSession, connection_id: uuid.UUID | None) -> None:
+    from app.git.models import GitConnection  # local: git imports the project models
+
+    if connection_id is not None and await db.get(GitConnection, connection_id) is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "git_connection_not_found")
+
+
 @router.get("/{ref}/repositories")
 async def list_repositories(ref: str, user: AuthedUser, db: DbSession) -> list[RepoOut]:
     project = await get_project_for(db, user, ref)
     rows = await db.execute(
         select(ProjectRepository).where(ProjectRepository.project_id == project.id).order_by(ProjectRepository.name)
     )
-    return [RepoOut.model_validate(r) for r in rows.scalars()]
+    return [await _repo_out(db, r) for r in rows.scalars()]
 
 
 @router.post("/{ref}/repositories", status_code=status.HTTP_201_CREATED)
 async def add_repository(ref: str, body: RepoIn, user: AuthedUser, db: DbSession) -> RepoOut:
     project = await _managed(db, user, ref)
+    await _check_connection(db, body.connection_id)
     repo = ProjectRepository(project_id=project.id, **body.model_dump())
     db.add(repo)
     await db.flush()
     await _project_changed(db, project)
-    return RepoOut.model_validate(repo)
+    return await _repo_out(db, repo)
 
 
 @router.patch("/{ref}/repositories/{repo_id}")
@@ -223,8 +241,12 @@ async def update_repository(ref: str, repo_id: uuid.UUID, body: RepoPatch, user:
     repo = await _repo(db, project, repo_id)
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(repo, field, value)
+    if "connection_id" in body.model_fields_set:
+        await _check_connection(db, body.connection_id)
+        repo.connection_id = body.connection_id
+    await db.flush()
     await _project_changed(db, project)
-    return RepoOut.model_validate(repo)
+    return await _repo_out(db, repo)
 
 
 @router.delete("/{ref}/repositories/{repo_id}", status_code=status.HTTP_204_NO_CONTENT)

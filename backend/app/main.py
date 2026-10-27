@@ -11,6 +11,7 @@ from starlette.routing import Route
 
 from app.a2a.context import register as register_a2a_context
 from app.a2a.router import router as a2a_router
+from app.git.router import router as git_router
 from app.a2a.routing import route_loop
 from app.agent_runs.router import router as agent_runs_router
 from app.agents.router import admin_router as admin_agents_router
@@ -145,6 +146,7 @@ def create_app() -> FastAPI:
         kb_router,
         memory_router,
         a2a_router,
+        git_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect

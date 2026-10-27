@@ -80,6 +80,10 @@ class ProjectRepository(IdMixin, TimestampMixin, Base):
     url: Mapped[str] = mapped_column(String(1000))
     provider: Mapped[RepoProvider] = mapped_column(String(20))
     default_branch: Mapped[str] = mapped_column(String(200), default="main")
+    # GIT-3: the read-only provider connection used to follow this repository's pull requests
+    connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("git_connections.id", ondelete="SET NULL"), index=True
+    )
 
 
 class Label(IdMixin, Base):
