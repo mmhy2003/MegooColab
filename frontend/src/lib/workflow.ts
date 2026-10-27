@@ -42,6 +42,7 @@ export function useWorkflow(key: string) {
 /** Plain words for each escalation reason; an unknown code stays readable. */
 export const ESCALATION_REASON_TEXT: Record<string, string> = {
   retries_exhausted: "The agent's runs failed 3 times in a row.",
+  pr_closed: "The pull request was closed without being merged.",
   no_output: "The agent finished twice without a question or a design.",
   enforcement_violation: "The agent changed the repository during a read-only stage.",
   step_incomplete: "The agent ended its run without finishing the step.",
@@ -58,7 +59,7 @@ export function escalationReasonText(code: string | null): string {
 }
 
 /** "Accept" is offered only where treating the work as passed makes sense. */
-export const ACCEPTABLE_REASONS = ["review_rounds_exhausted", "final_review_not_clean", "enforcement_violation"];
+export const ACCEPTABLE_REASONS = ["review_rounds_exhausted", "final_review_not_clean", "enforcement_violation", "pr_closed"];
 
 export const FINISHING_LABEL: Record<FinishingOption, string> = {
   merge_local: "Merge locally",
