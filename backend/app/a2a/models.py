@@ -75,3 +75,4 @@ class Question(IdMixin, Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    waiting_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # NOT-1, once

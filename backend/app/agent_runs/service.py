@@ -24,6 +24,8 @@ from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.events import Event, publish
 from app.core.text import strip_nul
+from app.notifications import service as notifications
+from app.notifications.models import Kind
 from app.projects.models import Project
 from app.runner.protocol import (
     CLOSE_UNAUTHORIZED,
@@ -36,7 +38,7 @@ from app.runner.protocol import (
     RunTask,
 )
 from app.runner.registry import WORKFLOW_CAPABILITY, RunnerClosed, RunnerConn, registry
-from app.tasks.models import Task
+from app.tasks.models import Task, task_watchers
 from app.tasks.service import record_event
 from app.workflow.models import (
     DocKind,
@@ -462,6 +464,22 @@ async def fail_disconnected_runs(db: AsyncSession, conn: RunnerConn) -> None:
             await _transition(
                 db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
             )
+            await _notify_offline(db, run)
+
+
+async def _notify_offline(db: AsyncSession, run: AgentRun) -> None:
+    """A task run lost its runner mid-task (NOT-1): the requester, the task's assignee and its watchers."""
+    if run.task_id is None:
+        return
+    task = await db.get(Task, run.task_id)
+    project = await db.get(Project, task.project_id)
+    watchers = (await db.execute(select(task_watchers.c.user_id).where(task_watchers.c.task_id == task.id))).scalars()
+    key = f"{project.key}-{task.number}"
+    await notifications.notify(
+        db, [run.requested_by, task.assignee_user_id, *watchers], Kind.agent_offline,
+        title=f"{key}: the agent went offline mid-task", body=task.title,
+        link=f"/projects/{project.key}/board?task={key}", task_id=task.id, project_id=project.id,
+    )
 
 
 async def fail_unclaimed_runs(db: AsyncSession, conn: RunnerConn) -> None:

@@ -95,7 +95,7 @@ async def _asked_or_answered(db: AsyncSession, wf: TaskWorkflow, task: Task, run
     """final_fix and finish may ask a human: wait for the answer, or resume the run's session with an answer
     that arrived while it was running. True when the run's end was handled that way."""
     if await questions.has_open_question(db, run.id):
-        engine.wait_for(wf, Needs.question)
+        await engine.wait_for(db, wf, Needs.question)
         return True
     pending = await questions.undelivered_answer(db, task.id, run.id)
     if pending is not None:
@@ -214,7 +214,7 @@ async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Ag
         if engine.requires_human_review(project, wf) and engine.finishing_option(project, wf) == FinishingOption.pull_request:
             from app.git import service as git  # local: git imports the workflow
 
-            engine.wait_for(wf, Needs.human_code_review)
+            await engine.wait_for(db, wf, Needs.human_code_review)
             # a tracked pull request merged (or closed) before this run ended moves on at once
             await git.settle_done(db, wf, task, await git.pull_request_of(db, task.id))
         else:

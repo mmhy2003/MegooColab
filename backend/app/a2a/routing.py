@@ -97,9 +97,10 @@ async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun |
             # every agent that could answer has tried (or had a draft rejected): ask a human (A2A-5)
             q.status = QuestionStatus.needs_human
             await db.flush()
-            from app.a2a.service import notify
+            from app.a2a.service import notify, notify_waiting
 
             await notify(db, q)
+            await notify_waiting(db, q)
         return None  # otherwise it waits for a runner
     agent = found[0]
     project = await db.get(Project, q.target_project_id)
@@ -264,9 +265,11 @@ async def on_answer_run_finished(db: AsyncSession, run: AgentRun) -> None:
     q.attempts += 1
     q.status = QuestionStatus.needs_human if q.attempts >= MAX_ATTEMPTS else QuestionStatus.queued
     await db.flush()
-    from app.a2a.service import notify
+    from app.a2a.service import notify, notify_waiting
 
     await notify(db, q)
+    if q.status == QuestionStatus.needs_human:
+        await notify_waiting(db, q)
     if q.status == QuestionStatus.queued:
         await route_question(db, q.id)
 

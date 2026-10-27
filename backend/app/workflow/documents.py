@@ -143,7 +143,7 @@ async def submit_connect_only(
     doc = await submit(db, None, task, kind, body_md, steps)
     if kind == DocKind.design:
         await engine.set_stage(db, wf, task, Stage.design)
-    engine.wait_for(wf, NEEDS_OF[kind])
+    await engine.wait_for(db, wf, NEEDS_OF[kind])
     return doc
 
 

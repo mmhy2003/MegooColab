@@ -33,6 +33,8 @@ from app.audit import service as audit
 from app.auth.models import User, UserStatus
 from app.core.db import SessionLocal
 from app.core.events import Event, publish
+from app.notifications import service as notifications
+from app.notifications.models import Kind
 from app.projects.access import can_manage_project, project_team_ids
 from app.projects.models import BoardColumn, Project
 from app.tasks.models import Task, TaskType
@@ -260,15 +262,35 @@ def set_step(wf: TaskWorkflow, n: int | None) -> None:
         wf.nudged = False
 
 
-def wait_for(wf: TaskWorkflow, needs: Needs) -> None:
+NEEDS_TITLES = {
+    Needs.question: "{key}: the agent has a question for you",
+    Needs.design_approval: "{key}: the design awaits your approval",
+    Needs.plan_approval: "{key}: the plan awaits your approval",
+    Needs.escalation: "{key} needs a decision: {reason}",
+    Needs.human_code_review: "{key}: the pull request awaits your review",
+}
+
+
+async def wait_for(db: AsyncSession, wf: TaskWorkflow, needs: Needs, *, actor_id: uuid.UUID | None = None) -> None:
+    """The workflow waits on a person: the agent's owner and the task's human assignee are told (NOT-1)."""
     wf.status = WorkflowStatus.waiting_human
     wf.needs = Needs(needs)
+    task = await db.get(Task, wf.task_id)
+    project = await db.get(Project, task.project_id)
+    agent_id = wf.agent_id or task.assignee_agent_id
+    owner = await db.scalar(select(Agent.owner_id).where(Agent.id == agent_id)) if agent_id else None
+    key = f"{project.key}-{task.number}"
+    await notifications.notify(
+        db, [owner, task.assignee_user_id], Kind.needs_you,
+        title=NEEDS_TITLES[wf.needs].format(key=key, reason=wf.escalation_reason or "escalated"), body=task.title,
+        link=f"/projects/{project.key}/board?task={key}", task_id=task.id, project_id=project.id, actor_id=actor_id,
+    )
 
 
 async def escalate(db: AsyncSession, wf: TaskWorkflow, reason: str) -> None:
     task = await db.get(Task, wf.task_id)
-    wait_for(wf, Needs.escalation)
     wf.escalation_reason = reason
+    await wait_for(db, wf, Needs.escalation)
     await record_workflow_event(db, task, None, "workflow.escalated", {"reason": reason})
 
 
@@ -579,7 +601,7 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     if need == Needs.design_approval:
         await set_stage(db, wf, task, Stage.design)  # what the brainstorm handler would have done
     if need is not None:
-        wait_for(wf, need)
+        await wait_for(db, wf, need, actor_id=user.id)
     else:
         from app.workflow import questions  # local: questions imports this module
 
@@ -735,7 +757,7 @@ async def _resume_connect_only(db: AsyncSession, user: User, wf: TaskWorkflow, t
     if need == Needs.design_approval:
         await set_stage(db, wf, task, Stage.design)
     if need is not None:
-        wait_for(wf, need)
+        await wait_for(db, wf, need, actor_id=user.id)
     else:
         wf.status = WorkflowStatus.running
         wf.needs = None
@@ -875,7 +897,7 @@ async def _handle_brainstorm_or_plan(db: AsyncSession, wf: TaskWorkflow, task: T
         .limit(1)
     )
     if asked is not None:
-        wait_for(wf, Needs.question)
+        await wait_for(db, wf, Needs.question)
         return
     role = RunRole(run.workflow_role)
     kind = STAGE_DOC[role]
@@ -891,9 +913,9 @@ async def _handle_brainstorm_or_plan(db: AsyncSession, wf: TaskWorkflow, task: T
     if submitted is not None:
         if kind == DocKind.design:
             await set_stage(db, wf, task, Stage.design)
-            wait_for(wf, Needs.design_approval)
+            await wait_for(db, wf, Needs.design_approval)
         else:
-            wait_for(wf, Needs.plan_approval)
+            await wait_for(db, wf, Needs.plan_approval)
         return
     from app.workflow import questions  # local: questions imports this module
 

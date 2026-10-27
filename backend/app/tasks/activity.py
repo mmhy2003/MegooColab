@@ -16,6 +16,8 @@ from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.events import Event, publish
 from app.core.text import NoNulStr, strip_nul
+from app.notifications import service as notifications
+from app.notifications.models import Kind
 from app.projects.access import get_project_for
 from app.tasks.models import Attachment, Comment, Task, TaskEvent
 from app.tasks.service import get_task_for
@@ -173,12 +175,18 @@ async def task_activity(
 
 async def create_comment(db, user: User, key: str, body_md: str) -> Comment:
     body_md = strip_nul(body_md)  # also reached by MCP, which bypasses CommentIn
-    task, _ = await get_task_for(db, user, key, write=True)
+    task, project = await get_task_for(db, user, key, write=True)
     comment = Comment(task_id=task.id, author_user_id=user.id, body_md=body_md)
     db.add(comment)
     await db.flush()
     await db.refresh(comment)
     await _changed(db, task, "comment.created")
+    task_key = f"{project.key}-{task.number}"
+    await notifications.notify(db, notifications.mentioned_user_ids(body_md), Kind.mentioned,
+                               title=f"{user.name} mentioned you on {task_key}",
+                               body=notifications.plain_mentions(body_md),
+                               link=f"/projects/{project.key}/board?task={task_key}", task_id=task.id,
+                               project_id=project.id, actor_id=user.id)
     # local: memory imports the task modules
     from app.memory.sources import queue_extract
 

@@ -236,7 +236,7 @@ async def _handle_work(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Agen
     """implement / step_fix ended: a question waits for its answer; a completed step with passing tests goes
     to review; otherwise one nudge, then the escalation step_incomplete."""
     if await questions.has_open_question(db, run.id):
-        engine.wait_for(wf, Needs.question)
+        await engine.wait_for(db, wf, Needs.question)
         return
     owner_id = await engine.owner_id(db, run)
     if (run.step_result or {}).get("tests_passed") is True:

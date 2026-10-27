@@ -208,7 +208,7 @@ def register_workflow_tools(mcp: MCPServer) -> None:
                     raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
                 await questions.ask(db, None, task, question, choices, mockup)
                 if wf.status == WorkflowStatus.running:  # an approval it already waits for stays the need
-                    engine.wait_for(wf, Needs.question)
+                    await engine.wait_for(db, wf, Needs.question)
             return ASKED
 
     @mcp.tool()

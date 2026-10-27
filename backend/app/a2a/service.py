@@ -1,6 +1,7 @@
 """Asking a project (A2A-1), suggestions from the KB and memory before routing (A2A-6), withdrawing."""
 
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, literal_column, select
@@ -34,9 +35,12 @@ from app.core.text import strip_nul
 from app.kb import access as kb_access
 from app.kb import search as kb_search
 from app.memory.search import search_conclusions
-from app.projects.models import Project
+from app.notifications import service as notifications
+from app.notifications.models import Kind
+from app.projects.models import Project, ProjectTeam
 from app.tasks.models import Task
 from app.tasks.service import get_task_for
+from app.teams.models import TeamMember
 
 TITLE_MAX = 200
 SUGGESTIONS = 5
@@ -62,6 +66,30 @@ async def notify(db: AsyncSession, q: Question) -> None:
     if q.from_task_id:
         project_id = await db.scalar(select(Task.project_id).where(Task.id == q.from_task_id))
         await publish(db, Event(type="task.updated", project_id=project_id, task_id=q.from_task_id))
+
+
+async def notify_draft(db: AsyncSession, q: Question) -> None:
+    """A draft answer waits for its agent's owner to approve it (NOT-1)."""
+    owner = await db.scalar(select(Agent.owner_id).where(Agent.id == q.draft_agent_id)) if q.draft_agent_id else None
+    project = await db.get(Project, q.target_project_id)
+    await notifications.notify(db, [owner], Kind.needs_you,
+                               title=f"{ref_of(project, q)}: a draft answer awaits your approval", body=q.title,
+                               link=f"/questions/{q.id}", project_id=project.id, question_id=q.id)
+
+
+async def notify_waiting(db: AsyncSession, q: Question) -> None:
+    """The question waits for a person (needs_human, or queued too long): the target project's members who can
+    answer are told, once per question (NOT-1)."""
+    if q.waiting_notified_at is not None:
+        return
+    q.waiting_notified_at = datetime.now(UTC)
+    project = await db.get(Project, q.target_project_id)
+    members = (await db.execute(
+        select(TeamMember.user_id).join(ProjectTeam, ProjectTeam.team_id == TeamMember.team_id)
+        .where(ProjectTeam.project_id == project.id))).scalars()
+    await notifications.notify(db, members, Kind.question_waiting,
+                               title=f"{ref_of(project, q)} waits for an answer", body=q.title,
+                               link=f"/questions/{q.id}", project_id=project.id, question_id=q.id)
 
 
 QUESTION_SUGGESTIONS = 2
@@ -372,6 +400,7 @@ async def submit(db: AsyncSession, run: AgentRun, answer_md: str, citations: lis
         q.status = QuestionStatus.draft
         await db.flush()
         await notify(db, q)
+        await notify_draft(db, q)
     return q
 
 

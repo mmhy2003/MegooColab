@@ -1,6 +1,7 @@
 """Who hears about what (NOT-1): `notify` writes a row per recipient, publishes it live and queues the email,
 after dropping the actor, inactive users, recipients who cannot read the subject, and repeats."""
 
+import re
 import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
@@ -58,7 +59,7 @@ async def _recent_unread(db: AsyncSession, user_ids: list[uuid.UUID], kind: Kind
 
 async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *, title: str, body: str, link: str,
                  task_id: uuid.UUID | None = None, project_id: uuid.UUID | None = None,
-                 actor_id: uuid.UUID | None = None) -> int:
+                 actor_id: uuid.UUID | None = None, question_id: uuid.UUID | None = None) -> int:
     """Returns the number of in-app rows created. The caller commits; the email goes out after that commit."""
     ids = [uid for uid in dict.fromkeys(user_ids) if uid is not None and uid != actor_id]
     if not ids:
@@ -68,7 +69,7 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
     for user in users:
         if kind == Kind.question_waiting and user.role == Role.viewer:
             continue  # a viewer cannot answer
-        if await readable_by(db, user, task_id=task_id, project_id=project_id):
+        if await readable_by(db, user, task_id=task_id, project_id=project_id, question_id=question_id):
             recipients.append(user)
     if task_id is not None and recipients:
         repeats = await _recent_unread(db, [u.id for u in recipients], kind, task_id)
@@ -92,3 +93,25 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
                                                      "link": link})
     await db.flush()
     return created
+
+
+MENTION = re.compile(r"@\[([^\]\n]{1,200})\]\(user:([0-9a-f-]{36})\)")
+MENTION_CAP = 20
+
+
+def mentioned_user_ids(body_md: str) -> list[uuid.UUID]:
+    """`@[Display Name](user:<uuid>)` tokens, in order, once each, at most 20."""
+    found: dict[uuid.UUID, None] = {}
+    for m in MENTION.finditer(body_md):
+        try:
+            found.setdefault(uuid.UUID(m.group(2)))
+        except ValueError:
+            continue
+        if len(found) == MENTION_CAP:
+            break
+    return list(found)
+
+
+def plain_mentions(body_md: str) -> str:
+    """Mention tokens as `@Name`, for a notification's text."""
+    return MENTION.sub(lambda m: f"@{m.group(1)}", body_md)
