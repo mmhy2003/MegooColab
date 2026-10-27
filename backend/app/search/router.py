@@ -10,7 +10,7 @@ from app.core.db import DbSession
 from app.jobs import queue
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
 from app.search import client, service
-from app.search.schemas import QuickOut, SearchAdminOut, GlobalSearchOut
+from app.search.schemas import GlobalSearchOut, QuickOut, SearchAdminOut
 
 router = APIRouter(tags=["search"])
 

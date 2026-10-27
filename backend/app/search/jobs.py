@@ -20,19 +20,15 @@ BATCH = 500
 ENSURE_SECONDS = 60
 
 
-def _wait(task) -> None:
-    client.client().wait_for_task(task.task_uid, timeout_in_ms=client.TASK_TIMEOUT_MS)
-
-
 @queue.register("search.sync")
 async def sync(db: AsyncSession, payload: dict) -> None:
     db.info[SKIP] = True
     kind, id = payload["kind"], uuid.UUID(payload["id"])
     doc = await documents.build(db, kind, id)
     if doc is None:
-        await client.call(lambda: _wait(client.index().delete_document(documents.doc_id(kind, id))))
+        await client.call(lambda: client.wait(client.index().delete_document(documents.doc_id(kind, id))))
     else:
-        await client.call(lambda: _wait(client.index().add_documents([doc])))
+        await client.call(lambda: client.wait(client.index().add_documents([doc], primary_key="id")))
 
 
 def _quoted(value: str) -> str:
@@ -45,7 +41,7 @@ async def purge(db: AsyncSession, payload: dict) -> None:
     if field not in ("project_id", "readers"):
         raise ValueError(f"unknown purge field {field!r}")
     flt = f"{field} = {_quoted(str(payload['value']))}"
-    await client.call(lambda: _wait(client.index().delete_documents(filter=flt)))
+    await client.call(lambda: client.wait(client.index().delete_documents(filter=flt)))
 
 
 async def _indexed_ids() -> set[str]:
@@ -73,7 +69,7 @@ async def rebuild(db: AsyncSession, payload: dict) -> None:
     async def flush() -> None:
         if batch:
             docs = list(batch)
-            await client.call(lambda: _wait(client.index().add_documents(docs)))
+            await client.call(lambda: client.wait(client.index().add_documents(docs, primary_key="id")))
             batch.clear()
 
     for kind in documents.KINDS:
@@ -93,7 +89,7 @@ async def rebuild(db: AsyncSession, payload: dict) -> None:
         for id in stale:  # rare (items deleted while Meilisearch was away); tasks run in order
             last = client.index().delete_document(id)
         if last is not None:
-            _wait(last)
+            client.wait(last)
 
     await client.call(prune)
     org = await db.get(OrgSettings, ORG_SETTINGS_ID)

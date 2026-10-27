@@ -185,3 +185,46 @@ async def test_rebuild_restores_and_prunes(client, db, meili_index):
 
 async def client_call_add(doc: dict) -> None:
     await client.call(lambda: client.client().wait_for_task(client.index().add_documents([doc]).task_uid))
+
+
+async def test_sync_works_when_the_index_was_created_without_a_primary_key(db, meili_index):
+    """Found end to end: a sync job ran before search.ensure, so Meilisearch created the index itself and could not
+    infer the primary key (id and project_id both end in "id"): every document then failed to index."""
+    await client.call(lambda: client.client().wait_for_task(client.client().delete_index(meili_index).task_uid))
+    await client.call(lambda: client.client().wait_for_task(client.client().create_index(meili_index).task_uid))
+    project, _, _ = await make_project_db(db)
+    task = Task(project_id=project.id, number=1, type="task", title="Indexed anyway", column_id=project.column_id,
+                position=1.0)
+    db.add(task)
+    await db.commit()
+    async with SessionLocal() as s:
+        await search_jobs.sync(s, {"kind": "task", "id": str(task.id)})
+    assert (await _get("task", task.id))["title"] == "Indexed anyway"
+
+
+async def test_a_failed_meilisearch_task_fails_the_job(db, meili_index, monkeypatch):
+    """A document Meilisearch refuses must not mark the job done."""
+    import pytest
+
+    async def bad_build(db_, kind, id):
+        return {"id": "not a valid id!", "kind": kind}
+
+    monkeypatch.setattr(documents, "build", bad_build)
+    async with SessionLocal() as s:
+        with pytest.raises(client.SearchUnavailable):
+            await search_jobs.sync(s, {"kind": "task", "id": str(uuid.uuid4())})
+
+
+async def make_project_db(db):
+    """A project with one column, straight in the database (no API)."""
+    from types import SimpleNamespace
+
+    from app.projects.models import BoardColumn, Project
+
+    project = Project(key="PKX", name="PK", description="")
+    db.add(project)
+    await db.flush()
+    col = BoardColumn(project_id=project.id, name="To do", position=0, category="before")
+    db.add(col)
+    await db.commit()
+    return SimpleNamespace(id=project.id, column_id=col.id), None, None

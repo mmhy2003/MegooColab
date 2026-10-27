@@ -60,8 +60,12 @@ async def call[T](fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         raise SearchUnavailable(type(e).__name__) from None
 
 
-def _wait(task) -> None:
-    client().wait_for_task(task.task_uid, timeout_in_ms=TASK_TIMEOUT_MS)
+def wait(task) -> None:
+    """Wait for a Meilisearch task; one that did not succeed raises SearchUnavailable, so its job is retried."""
+    done = client().wait_for_task(task.task_uid, timeout_in_ms=TASK_TIMEOUT_MS)
+    if done.status != "succeeded":
+        code = (done.error or {}).get("code", done.status)
+        raise SearchUnavailable(f"task {task.task_uid} {done.status}: {code}")
 
 
 async def ensure_index() -> None:
@@ -74,8 +78,8 @@ async def ensure_index() -> None:
         except MeilisearchApiError as e:
             if e.code != "index_not_found":
                 raise
-            _wait(client().create_index(name, {"primaryKey": "id"}))
-        _wait(client().index(name).update_settings(INDEX_SETTINGS))
+            wait(client().create_index(name, {"primaryKey": "id"}))
+        wait(client().index(name).update_settings(INDEX_SETTINGS))
 
     await call(run)
 

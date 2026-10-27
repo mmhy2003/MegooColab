@@ -67,9 +67,11 @@ function ResultItem({ hit }: { hit: Hit }) {
       {hit.url ? (
         <Link href={hit.url} className="font-semibold">
           {hit.key && (
-            <span className="mr-2 font-mono text-xs">
-              <Highlighted text={hit.key} />
-            </span>
+            <>
+              <span className="font-mono text-xs">
+                <Highlighted text={hit.key} />
+              </span>{" "}
+            </>
           )}
           <Highlighted text={hit.title} />
         </Link>

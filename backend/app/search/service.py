@@ -26,11 +26,11 @@ from app.search.documents import KINDS
 from app.search.schemas import (
     AssigneeFacet,
     Facets,
+    GlobalSearchOut,
     Hit,
     ProjectFacet,
     QuickGroup,
     QuickOut,
-    GlobalSearchOut,
 )
 from app.tasks.models import TaskType
 
