@@ -34,7 +34,8 @@ Create a personal access token with the `mcp` scope and send it as
 Requirements: Docker, [uv](https://docs.astral.sh/uv/), Node.js 22+.
 
 ```bash
-# 1. Database (PostgreSQL 17 + pgvector on localhost:5433; also creates megoo_test)
+# 1. Database (PostgreSQL 17 + pgvector on localhost:5433; also creates megoo_test),
+#    Meilisearch on localhost:7700 (key megoo-dev-master-key; the tests use it too)
 #    and Caddy on http://localhost:8080 (/api -> :8000, everything else -> :3000)
 docker compose -f deploy/docker-compose.dev.yml up -d
 
@@ -42,8 +43,8 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 cd backend
 uv sync
 uv run pytest                      # test suite (uses the megoo_test database)
-SECRET_KEY=dev uv run fastapi dev app/main.py   # API on http://localhost:8000/api/docs
-SECRET_KEY=dev uv run python -m app.worker      # background jobs (search indexing); needs the API's migrations
+SECRET_KEY=dev MEILI_MASTER_KEY=megoo-dev-master-key uv run fastapi dev app/main.py   # API on http://localhost:8000/api/docs
+SECRET_KEY=dev MEILI_MASTER_KEY=megoo-dev-master-key uv run python -m app.worker   # background jobs (search indexing); needs the API's migrations
 
 # 3. Frontend
 cd frontend

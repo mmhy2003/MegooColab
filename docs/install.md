@@ -41,15 +41,17 @@ Then edit `.env`. Every variable:
 | `COOKIE_SECURE` | `true` when served over HTTPS, so session cookies are only sent over HTTPS. | `true` |
 | `SECRET_KEY` | Signs sessions and encrypts stored secrets (SMTP password, AI keys, git tokens). Generate it once with `openssl rand -hex 32`; the backend refuses to start with the example value. **Keep it: changing it makes the stored secrets unreadable.** | 64 hex characters |
 | `POSTGRES_PASSWORD` | The database password, used only between the containers. | a long random string |
+| `MEILI_MASTER_KEY` | The key the backend and worker use for Meilisearch, the search service. Used only between the containers; at least 16 characters. | 64 hex characters |
 | `MEMORY_DREAM_HOUR_UTC` | The hour (0–23, UTC) the memory "dreams" each night, unless an admin sets another one under Admin → Settings. | `3` |
 | `AI_FAKE` | Tests only: local fake embeddings and no AI provider calls. Never set it in production. | *(unset)* |
 | `MEMORY_EXTRACT_DELAY_SECONDS` | Tests only: how long after a change the memory reads a source (default 60). | *(unset)* |
 
-A quick way to fill in the two secrets:
+A quick way to fill in the three secrets:
 
 ```bash
 sed -i "s/^SECRET_KEY=.*/SECRET_KEY=$(openssl rand -hex 32)/" .env
 sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env
+sed -i "s/^MEILI_MASTER_KEY=.*/MEILI_MASTER_KEY=$(openssl rand -hex 32)/" .env
 ```
 
 ## 4. Start
@@ -62,8 +64,12 @@ docker compose ps
 The first build takes a few minutes. When `docker compose ps` shows the backend as `healthy`, MegooColab is up.
 Database migrations run by themselves each time the backend starts.
 
-The stack has six services: `db` (PostgreSQL 17 with pgvector), `backend` (the API), `worker` (background
-jobs: search indexing, memory, pull-request checks, email), `frontend`, and `caddy` (the web server in front).
+The stack has seven services: `db` (PostgreSQL 17 with pgvector), `meilisearch` (global search; reachable only
+by the backend and worker), `backend` (the API), `worker` (background jobs: search indexing, memory, pull-request
+checks, email), `frontend`, and `caddy` (the web server in front).
+
+Search fills its index by itself: on a fresh install, or whenever the index is empty, the worker rebuilds it
+from the database within a minute or two. Admins can also rebuild it under Admin → Settings → Search.
 
 Check it answers:
 
@@ -218,7 +224,8 @@ Migrations run when the backend starts. Take a backup first (section 13).
 
 ## 13. Backups and restore
 
-All data lives in the database and the uploaded attachments. From the `deploy` directory:
+All data lives in the database and the uploaded attachments. The search index (the `meilidata` volume) needs no
+backup: it is rebuilt from the database by itself when it is empty. From the `deploy` directory:
 
 **Back up:**
 
@@ -248,6 +255,9 @@ docker compose exec -T backend tar xzf - -C /data/uploads < uploads.tgz
   `COOKIE_SECURE=true`, so the browser drops the session cookie. Serve it over HTTPS or set `COOKIE_SECURE=false`.
 - **No HTTPS certificate:** the domain's DNS does not point at the server yet, or ports 80/443 are blocked;
   `docker compose logs caddy` shows Let's Encrypt's answer.
+- **Search says "Search is unavailable right now":** the `meilisearch` service is down or `MEILI_MASTER_KEY`
+  differs between it and the backend; `docker compose logs meilisearch` and Admin → Settings → Search show which.
+  Everything else keeps working meanwhile, and changes made while it was down are indexed when it returns.
 - **Emails do not arrive:** use **Send test** under Admin → Settings; the error shown comes from the mail server.
 - **The agent stays Offline:** run `megoocolab-runner doctor` on the developer's computer; check the token has the
   Runner scope and that WebSockets reach `/api/runner/ws` through any proxy.

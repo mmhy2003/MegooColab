@@ -20,6 +20,8 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789abcdef")
 os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
 os.environ["DB_NULL_POOL"] = "true"
 os.environ["AI_FAKE"] = "true"
+os.environ.setdefault("MEILI_URL", "http://localhost:7700")
+os.environ.setdefault("MEILI_MASTER_KEY", "megoo-dev-master-key")
 os.environ["UPLOAD_DIR"] = tempfile.mkdtemp(prefix="megoo-uploads-")
 
 import httpx

@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     memory_dream_hour_utc: int = 3
     # a changed source is read this long after its last change, so a burst of edits is extracted once
     memory_extract_delay_seconds: int = 60
+    # global search (Plan 9): the Meilisearch service; the key never leaves the backend and worker
+    meili_url: str = "http://localhost:7700"
+    meili_master_key: str = ""
+    meili_index: str = "megoo"
 
 
 @lru_cache

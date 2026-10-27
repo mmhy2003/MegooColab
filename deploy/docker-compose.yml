@@ -16,11 +16,29 @@ services:
       timeout: 3s
       retries: 30
 
+  # global search; its index can always be rebuilt from the database, so backups skip it
+  meilisearch:
+    image: getmeili/meilisearch:v1.55.0
+    restart: unless-stopped
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in .env}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meilidata:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7700/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
   backend:
     build: ../backend
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      meilisearch:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://megoo:${POSTGRES_PASSWORD}@db:5432/megoo
@@ -32,6 +50,8 @@ services:
       AI_FAKE: ${AI_FAKE:-false}
       MEMORY_EXTRACT_DELAY_SECONDS: ${MEMORY_EXTRACT_DELAY_SECONDS:-60}
       MEMORY_DREAM_HOUR_UTC: ${MEMORY_DREAM_HOUR_UTC:-3}
+      MEILI_URL: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in .env}
     volumes:
       - uploads:/data/uploads
     # a git host on this machine (self-hosted, or the e2e fake provider) is reachable as host.docker.internal
@@ -57,6 +77,8 @@ services:
       AI_FAKE: ${AI_FAKE:-false}
       MEMORY_EXTRACT_DELAY_SECONDS: ${MEMORY_EXTRACT_DELAY_SECONDS:-60}
       MEMORY_DREAM_HOUR_UTC: ${MEMORY_DREAM_HOUR_UTC:-3}
+      MEILI_URL: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in .env}
     extra_hosts: ["host.docker.internal:host-gateway"]
 
   frontend:
@@ -85,6 +107,7 @@ services:
 
 volumes:
   pgdata:
+  meilidata:
   uploads:
   caddy_data:
   caddy_config:

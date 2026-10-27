@@ -17,6 +17,15 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  meilisearch:
+    image: getmeili/meilisearch:v1.55.0
+    environment:
+      MEILI_MASTER_KEY: megoo-dev-master-key
+      MEILI_NO_ANALYTICS: "true"
+    ports:
+      - "7700:7700"
+    volumes:
+      - devmeili:/meili_data
   caddy:
     image: caddy:2
     ports:
@@ -27,3 +36,4 @@ services:
       - "host.docker.internal:host-gateway"
 volumes:
   devpgdata:
+  devmeili:

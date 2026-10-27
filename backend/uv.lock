@@ -389,6 +389,20 @@ wheels = [
 ]
 
 [[package]]
+name = "camel-converter"
+version = "6.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/17/9e/f730007f9786ea64f319d6dbb2979853e1e7fa0e044074f401523157366f/camel_converter-6.0.0.tar.gz", hash = "sha256:46cd2c5608f81442ce36853a21c14c2b08313806cfb00dba4353e3b944575d20", size = 51163, upload-time = "2026-10-10T02:08:14.684Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f8/71/53efdd418759d57de014c2e3929022ecafd0c88176cff6b30a8518d219dc/camel_converter-6.0.0-py3-none-any.whl", hash = "sha256:ca5e712b57dd3139ee12f6959e32dd37cfa32ea27f120c281f2aa3930d2dc853", size = 6909, upload-time = "2026-10-10T02:08:13.854Z" },
+]
+
+[package.optional-dependencies]
+pydantic = [
+    { name = "pydantic" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.10.19"
 source = { registry = "https://pypi.org/simple" }
@@ -1788,6 +1802,7 @@ dependencies = [
     { name = "httpx" },
     { name = "litellm" },
     { name = "mcp" },
+    { name = "meilisearch" },
     { name = "pgvector" },
     { name = "pwdlib", extra = ["argon2"] },
     { name = "pydantic-settings" },
@@ -1812,6 +1827,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "litellm", specifier = "==1.106.4" },
     { name = "mcp", specifier = "==2.3.*" },
+    { name = "meilisearch", specifier = ">=0.43.0" },
     { name = "pgvector", specifier = "==0.5.1" },
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.3.1" },
     { name = "pydantic-settings", specifier = ">=2.16.1" },
@@ -1824,6 +1840,19 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
+]
+
+[[package]]
+name = "meilisearch"
+version = "0.43.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "camel-converter", extra = ["pydantic"] },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/98/0c0231e407683304374c26c41f225bc80424afd1944733df0d9e4bbe8e02/meilisearch-0.43.0.tar.gz", hash = "sha256:c3f578a54070e0b545f081261fe1ee47a73ae022b17d230b949d889f0d9a7e7e", size = 33980, upload-time = "2026-07-22T08:12:29.38Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1a/70/cd4e0773eb4bcb22cc1f4d6b43d487f4a20fc515dbf1078e76a67e514c75/meilisearch-0.43.0-py3-none-any.whl", hash = "sha256:4226734a510211f0183c2f16af7b6077d239f0c4ec310a58ef564ae704cabe26", size = 34638, upload-time = "2026-07-22T08:12:28.325Z" },
 ]
 
 [[package]]
