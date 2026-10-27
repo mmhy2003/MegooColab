@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { SearchLauncher } from "@/components/search/SearchBox";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar } from "@/components/ui/Avatar";
 import { api } from "@/lib/api";
@@ -38,6 +39,7 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
           </span>
         ))}
       </nav>
+      <SearchLauncher />
       <NotificationBell />
       <ThemeToggle />
       <div className="relative">
