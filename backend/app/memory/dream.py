@@ -280,7 +280,16 @@ async def dream(db: AsyncSession, payload: dict) -> None:
 async def dream_tick(db: AsyncSession, payload: dict) -> None:
     """Hourly: starts the nightly dream in the configured UTC hour, at most once per 20 hours."""
     now = utcnow()
-    if now.hour != get_settings().memory_dream_hour_utc:
+    from app.org.models import (  # local: org settings are optional here
+        ORG_SETTINGS_ID,
+        OrgSettings,
+    )
+
+    org = await db.get(OrgSettings, ORG_SETTINGS_ID)
+    if org is not None and not org.dream_enabled:
+        return
+    hour = org.dream_hour_utc if org is not None and org.dream_hour_utc is not None else get_settings().memory_dream_hour_utc
+    if now.hour != hour:
         return
     recent = await db.scalar(
         select(MemDreamRun.id).where(MemDreamRun.started_at > now - timedelta(hours=MIN_HOURS_BETWEEN)).limit(1)

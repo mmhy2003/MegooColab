@@ -14,6 +14,7 @@ from app.core.events import Event, publish
 from app.kb import access as kb_access
 from app.memory import entities as mem_entities
 from app.memory.models import EntityKind
+from app.org.models import ORG_SETTINGS_ID, OrgSettings
 from app.projects import service
 from app.projects.access import accessible_project_ids, get_project_for, require_manage
 from app.projects.models import BoardColumn, Label, Project, ProjectRepository
@@ -74,6 +75,12 @@ async def create_project(body: ProjectIn, user: AuthedUser, db: DbSession) -> Pr
     team_ids = set(body.team_ids)
     await service.check_team_ids(db, user, team_ids)
     project = Project(key=body.key, name=body.name, description=body.description, created_by=user.id)
+    org = await db.get(OrgSettings, ORG_SETTINGS_ID)
+    if org is not None:  # ADM-1: the organization's defaults for new projects
+        project.finishing_option = org.default_finishing_option
+        project.require_human_code_review = org.default_require_human_code_review
+        project.sprints_enabled = org.default_sprints_enabled
+        project.commit_docs_to_repo = org.default_commit_docs_to_repo
     db.add(project)
     await _flush_or_409(db, "project_key_taken")
     await service.set_project_teams(db, project, team_ids)

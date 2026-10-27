@@ -18,7 +18,8 @@ from app.agents.service import (
     owner_can_access,
     publish_agents_updated,
 )
-from app.auth.models import User
+from app.audit import service as audit
+from app.auth.models import Role, User
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.events import Event, publish
@@ -88,6 +89,9 @@ async def _transition(
     run.mcp_token_hash = None
     run.reason = reason
     run.finished_at = _now()
+    # ADM-2: an agent session stopped, however it ended
+    await audit.record(db, "agent_run.ended", actor_id=actor_id, target_type="agent_run", target_id=run.id,
+                       data={"status": str(to), "reason": reason})
     if summary is not None:
         run.summary = summary
     if run.question_id is not None:
@@ -302,9 +306,19 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
         await db.commit()
         return False
     await record_event(db, task, None, "agent_run_started", {"run_id": str(run.id), "agent_id": str(agent_id)})
+    await _audit_started(db, run, owner_id)
     await _announce(db, task, owner_id)
     await db.commit()
     return True
+
+
+async def _audit_started(db: AsyncSession, run: AgentRun, owner_id: uuid.UUID | None) -> None:
+    """ADM-2: an agent session started (the run reached the runner)."""
+    await audit.record(db, "agent_run.started", actor_id=run.requested_by, target_type="agent_run", target_id=run.id,
+                       data={"agent_id": str(run.agent_id), "owner_id": str(owner_id) if owner_id else None,
+                             "task_id": str(run.task_id) if run.task_id else None,
+                             "question_id": str(run.question_id) if run.question_id else None,
+                             "role": "answer" if run.question_id else run.workflow_role})
 
 
 async def _send_answer_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, run: AgentRun) -> bool:
@@ -331,6 +345,7 @@ async def _send_answer_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.
         run.mcp_token_hash = None
         await db.commit()
         return False
+    await _audit_started(db, run, owner_id)
     await publish_agents_updated(db, owner_id, set())
     await db.commit()
     return True
@@ -375,10 +390,16 @@ async def cancel_run(db: AsyncSession, user: User, run: AgentRun) -> None:
     """Queued: cancelled now. Running with a live runner: run_cancel is sent and the run is closed when its
     run_finished arrives. Running with the runner gone: cancelled now."""
     agent = await db.get(Agent, run.agent_id)
-    task = await db.get(Task, run.task_id)
-    project = await db.get(Project, task.project_id)
-    if not await can_use_agent(db, user, agent, project):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
+    if run.question_id is not None:
+        # an answering run (§6.6) has no task: its agent's owner or an admin may stop it
+        if user.role != Role.admin and (agent is None or agent.owner_id != user.id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
+        await _lock_question_of(db, run.question_id)
+    else:
+        task = await db.get(Task, run.task_id)
+        project = await db.get(Project, task.project_id)
+        if not await can_use_agent(db, user, agent, project):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
     await _lock_workflow_of(db, run)
     run = await _lock_run(db, run.id)
     if run.status not in ACTIVE_STATUSES:
