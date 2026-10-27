@@ -13,11 +13,11 @@ const info = (version: number, status: string) => ({
   decision_comment: null,
 });
 
-function setup(opts: { decision?: Response; can_act?: boolean; disabled?: boolean; kind?: "design" | "plan" } = {}) {
+function setup(opts: { decision?: Response; can_act?: boolean; disabled?: boolean; kind?: "design" | "plan"; linked?: boolean } = {}) {
   const kind = opts.kind ?? "design";
   const fetchMock = vi.fn(async (url: string) => {
     if (url.endsWith("/decision")) return (opts.decision ?? new Response("{}", { status: 200 })).clone();
-    if (url.endsWith("/mockups")) return new Response(JSON.stringify([{ id: "m1", version: 3 }]), { status: 200 });
+    if (url.endsWith("/mockups")) return new Response(JSON.stringify([{ id: "m1", version: 3, title: "Compact", choices: [] }]), { status: 200 });
     if (url.endsWith("/workflow")) {
       return new Response(JSON.stringify({ can_act: opts.can_act ?? true, steps: [], documents: [] }), { status: 200 });
     }
@@ -30,6 +30,7 @@ function setup(opts: { decision?: Response; can_act?: boolean; disabled?: boolea
           body_md: v === 2 ? "# Second design" : "# First design",
           steps: kind === "plan" ? [{ title: "Add model", detail: "d", subtask_id: null }] : null,
           attached_mockup_ids: v === 2 ? ["m1"] : [],
+          mockup_id: v === 2 && opts.linked ? "m1" : null,
         }),
         { status: 200 },
       );
@@ -58,6 +59,11 @@ describe("DocumentView", () => {
     expect(await screen.findByRole("heading", { name: "Second design" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /v1/ })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Chosen mockup v3" })).toHaveAttribute("href", "/api/mockups/m1/view");
+  });
+
+  it("shows the design's linked mockup inline", async () => {
+    setup({ linked: true });
+    expect(await screen.findByTitle("Mockup v3: Compact")).toHaveAttribute("src", "/api/mockups/m1/view");
   });
 
   it("selects the version named by the link hash, now and when it changes", async () => {

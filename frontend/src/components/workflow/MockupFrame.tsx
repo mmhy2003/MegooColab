@@ -7,7 +7,8 @@ import { useEffect, useRef } from "react";
  * A sandboxed agent mockup. `sandbox="allow-scripts"` only: no same-origin, popups or forms, so the page
  * runs with an opaque origin. The only way out is postMessage, and a message is passed on only when it comes
  * from this frame, from the opaque origin, with the right type and one of the mockup's declared choice ids.
- * `onChoice` is for preselecting: a mockup's script must never answer on a person's behalf.
+ * `onChoice` is for preselecting: a mockup's script must never answer on a person's behalf. Without `onChoice`
+ * (a shown mockup has no choices) no message is listened to at all.
  */
 export function MockupFrame({
   mockupId,
@@ -19,13 +20,14 @@ export function MockupFrame({
   mockupId: string;
   version: number;
   title: string;
-  choices: string[];
-  onChoice: (choice: string) => void;
+  choices?: string[];
+  onChoice?: (choice: string) => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const url = `/api/mockups/${mockupId}/view`;
 
   useEffect(() => {
+    if (!onChoice || !choices?.length) return;
     const onMessage = (event: MessageEvent) => {
       const win = frame.current?.contentWindow;
       if (!win || event.source !== win || event.origin !== "null") return;

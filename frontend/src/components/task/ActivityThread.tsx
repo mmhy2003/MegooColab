@@ -148,6 +148,12 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
       return `Step ${num(data.step)} completed, ${data.tests_passed ? "tests passed" : "tests not passing"}`;
     case "step.approved":
       return `Step ${num(data.step)} approved`;
+    case "mockup.shown":
+      return `Mockup v${num(data.version)} shown: ${str(data.title) ?? ""}`;
+    case "decision.recorded": {
+      const where = typeof data.step === "number" ? `on step ${data.step}` : `during ${stageName(data.stage)}`;
+      return `Decision ${where}: ${str(data.decision) ?? ""}`;
+    }
     case "step.no_commit":
       return `Step ${num(data.step)} finished without a commit`;
     case "review.result": {
@@ -177,6 +183,8 @@ const STANDALONE = new Set([
   "step.completed",
   "step.approved",
   "step.no_commit",
+  "mockup.shown",
+  "decision.recorded",
   "review.result",
   "finish.reported",
   "enforcement.violation",

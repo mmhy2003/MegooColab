@@ -1361,6 +1361,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{key}/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Records
+         * @description The agent's own decisions and its recorded test runs (Plan 8), oldest first.
+         */
+        get: operations["list_records_api_tasks__key__records_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{key}/reviews/{review_id}": {
         parameters: {
             query?: never;
@@ -2803,6 +2823,32 @@ export interface components {
             /** Secret */
             secret: string;
         };
+        /** DecisionOut */
+        DecisionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            stage: components["schemas"]["Stage"];
+            /** Step */
+            step: number | null;
+            /** Decision */
+            decision: string;
+            /** Reason */
+            reason: string;
+            /** Cost If Wrong */
+            cost_if_wrong: string;
+            /** Plan Said */
+            plan_said: string | null;
+            /** Author */
+            author: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /**
          * DocKind
          * @enum {string}
@@ -2860,6 +2906,8 @@ export interface components {
             decided_by: string | null;
             /** Decision Comment */
             decision_comment: string | null;
+            /** Mockup Id */
+            mockup_id?: string | null;
         };
         /** DocumentOut */
         DocumentOut: {
@@ -2876,6 +2924,8 @@ export interface components {
             decided_by: string | null;
             /** Decision Comment */
             decision_comment: string | null;
+            /** Mockup Id */
+            mockup_id?: string | null;
             /** Body Md */
             body_md: string;
             /** Steps */
@@ -3746,6 +3796,15 @@ export interface components {
          * @enum {string}
          */
         QuestionStatus: "queued" | "routed" | "draft" | "needs_human" | "answered" | "withdrawn";
+        /** RecordsOut */
+        RecordsOut: {
+            /** Decisions */
+            decisions: components["schemas"]["DecisionOut"][];
+            /** Test Runs */
+            test_runs: components["schemas"]["TestRunOut"][];
+            /** Unverified Steps */
+            unverified_steps: number[];
+        };
         /** Ref */
         Ref: {
             /**
@@ -4426,6 +4485,36 @@ export interface components {
             model: string | null;
             /** Error */
             error: string | null;
+        };
+        /** TestRunOut */
+        TestRunOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            stage: components["schemas"]["Stage"];
+            /** Step */
+            step: number | null;
+            /** Command */
+            command: string;
+            /** Passed */
+            passed: boolean;
+            /** Total */
+            total: number | null;
+            /** Failed */
+            failed: number | null;
+            /** Skipped */
+            skipped: number | null;
+            /** Failing */
+            failing: string[];
+            /** Author */
+            author: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** TokenOut */
         TokenOut: {
@@ -7893,6 +7982,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MockupOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_records_api_tasks__key__records_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordsOut"];
                 };
             };
             /** @description Validation Error */

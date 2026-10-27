@@ -186,6 +186,18 @@ describe("ActivityThread workflow events", () => {
     return screen.getAllByRole("listitem");
   };
 
+  it("tells of shown mockups and recorded decisions as sentences of their own", () => {
+    const list = rows([
+      ev("m", "mockup.shown", { version: 3, title: "Settings" }),
+      ev("d", "decision.recorded", { step: 2, stage: "build", decision: "Used a map" }),
+      ev("f", "decision.recorded", { step: null, stage: "done", decision: "Merged into develop" }),
+    ]).map((li) => li.textContent);
+    expect(list[0]).toContain("Mockup v3 shown: Settings");
+    expect(list[0]).not.toContain("The agent");
+    expect(list[1]).toContain("Decision on step 2: Used a map");
+    expect(list[2]).toContain("Decision during Done: Merged into develop");
+  });
+
   it("renders an enforcement violation in pink, with text", () => {
     const [row] = rows([ev("v1", "enforcement.violation", { stage: "brainstorm", role: "brainstorm" })]);
     expect(row.textContent).toContain("Enforcement violation during Brainstorm: the repository changed");

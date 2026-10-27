@@ -10,7 +10,9 @@ import { api, ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { DocKind, DocumentDetail, DocumentInfo } from "@/lib/types";
-import { useWorkflow } from "@/lib/workflow";
+import { useMockups, useWorkflow } from "@/lib/workflow";
+
+import { MockupFrame } from "./MockupFrame";
 
 const STATUS_TEXT: Record<DocumentInfo["status"], string> = {
   submitted: "waiting for a decision",
@@ -28,10 +30,7 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
     queryKey: qk.documents(taskKey),
     queryFn: () => api<DocumentInfo[]>(`/api/tasks/${taskKey}/documents`),
   });
-  const mockups = useQuery({
-    queryKey: qk.mockups(taskKey),
-    queryFn: () => api<{ id: string; version: number }[]>(`/api/tasks/${taskKey}/mockups`),
-  });
+  const mockups = useMockups(taskKey);
   const mockupVersion = new Map((mockups.data ?? []).map((m) => [m.id, m.version]));
   const versions = (list.data ?? []).filter((d) => d.kind === kind).sort((a, b) => a.version - b.version);
   const [picked, setPicked] = useState<number | null>(null);
@@ -61,6 +60,8 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
   if (list.error) return <p className="text-sm text-pink">{errorMessage(list.error)}</p>;
   if (!selected) return null;
 
+  // the mockup the design was submitted with: approving the design approves it
+  const linked = detail.data?.mockup_id ? mockups.data?.find((m) => m.id === detail.data!.mockup_id) : undefined;
   const filed = workflow.data?.kb_documents?.find((k) => k.kind === kind)?.document_id;
   const canDecide = selected.status === "submitted" && workflow.data?.can_act === true && !disabled;
   const buildStates = selected.status === "approved" ? workflow.data?.steps : undefined;
@@ -124,6 +125,7 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
               ))}
             </ul>
           )}
+          {linked && <MockupFrame mockupId={linked.id} version={linked.version} title={linked.title} />}
           {filed && selected.status === "approved" && (
             <p className="text-xs">
               <Link href={`/kb/doc/${filed}`}>View in Knowledge Base</Link>

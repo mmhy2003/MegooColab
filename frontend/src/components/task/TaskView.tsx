@@ -14,10 +14,11 @@ import { qk } from "@/lib/queries";
 import type { ActivityItem, Attachment, Task } from "@/lib/types";
 
 import { DocumentView } from "@/components/workflow/DocumentView";
+import { MockupPanel } from "@/components/workflow/MockupPanel";
 import { KbReferences } from "@/components/kb/KbReferences";
 import { TaskQuestions, WaitingBadge } from "@/components/questions/TaskQuestions";
 import { WorkflowPanel } from "@/components/workflow/WorkflowPanel";
-import { useWorkflow } from "@/lib/workflow";
+import { useMockups, useWorkflow } from "@/lib/workflow";
 
 import { ActivityThread } from "./ActivityThread";
 import { Attachments } from "./Attachments";
@@ -68,6 +69,7 @@ export function TaskView({
   const sprints = useSprints(projectKey, project.data?.sprints_enabled ?? false);
   const all = useTasks(projectKey);
   const workflow = useWorkflow(taskKey);
+  const mockups = useMockups(taskKey);
   const [error, setError] = useState<string | null>(null);
 
   const userNames = useMemo(() => new Map(users.data?.map((u) => [u.id, u.name])), [users.data]);
@@ -157,6 +159,11 @@ export function TaskView({
                 onOpen={onOpenTask}
                 onAdd={(title) => run(() => api(`/api/projects/${projectKey}/tasks`, { method: "POST", json: { title, type: "subtask", parent_id: t.id } }))}
               />
+            </Section>
+          )}
+          {(mockups.data?.length ?? 0) > 0 && (
+            <Section id="mockups" title="Mockups">
+              <MockupPanel taskKey={t.key} disabled={disabled} />
             </Section>
           )}
           {(["design", "plan"] as const).map(

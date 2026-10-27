@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queries";
-import type { Workflow, WorkflowNeeds, WorkflowStage } from "@/lib/types";
+import type { DocumentInfo, MockupInfo, Workflow, WorkflowNeeds, WorkflowStage } from "@/lib/types";
 
 export type FinishingOption = Workflow["finishing_option"];
 
@@ -37,6 +37,15 @@ export function needsText(needs: WorkflowNeeds): string {
 
 export function useWorkflow(key: string) {
   return useQuery({ queryKey: qk.workflow(key), queryFn: () => api<Workflow>(`/api/tasks/${key}/workflow`) });
+}
+
+/** The task's mockups, oldest first: question mockups and shown ones share one version sequence. */
+export function useMockups(key: string) {
+  return useQuery({ queryKey: qk.mockups(key), queryFn: () => api<MockupInfo[]>(`/api/tasks/${key}/mockups`) });
+}
+
+export function useDocuments(key: string) {
+  return useQuery({ queryKey: qk.documents(key), queryFn: () => api<DocumentInfo[]>(`/api/tasks/${key}/documents`) });
 }
 
 /** Plain words for each escalation reason; an unknown code stays readable. */
