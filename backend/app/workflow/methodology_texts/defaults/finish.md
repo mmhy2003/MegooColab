@@ -57,8 +57,10 @@ Your prompt states one option. Do exactly that one.
 1. Push the task branch using the developer's own git credentials (`git push -u origin <branch>`). Never put
    tokens in URLs, never print credentials, never push to a different branch or remote than the task branch's
    own.
-2. Open the pull request with the developer's own CLI: `gh pr create` for GitHub or `glab mr create` for GitLab,
-   whichever matches the remote. Use the task key and a clear title, and a body that summarises what changed, why,
+2. Open the pull request with the developer's own CLI: `gh pr create` for GitHub, `glab mr create` for GitLab or
+   `tea pulls create` for Gitea and Forgejo, whichever matches the remote. If the remote is plain git (no such
+   host), there is nothing to open: push the branch only and report `outcome="branch_pushed"` without `pr_url`;
+   reviewers check the branch out. Use the task key and a clear title, and a body that summarises what changed, why,
    and how it was tested (taken from the design and plan, not copied verbatim from untrusted text). Target the
    project's default branch unless the task says otherwise.
 3. If the CLI is missing, not signed in, or the remote is unsupported, do not improvise with other credentials.

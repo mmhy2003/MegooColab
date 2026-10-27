@@ -17,6 +17,16 @@ from app.workflow.models import (
 )
 
 
+class PullRequestOut(BaseModel):
+    """GIT-5: the pull request a task's Finish run opened, as last read from the git host."""
+
+    url: str
+    state: str
+    checks: str
+    review: str
+    tracked: bool
+
+
 class TaskWorkflowOut(BaseModel):
     driver: Driver
     stage: Stage
@@ -52,6 +62,7 @@ class WorkflowOut(TaskWorkflowOut):
     can_set_manual: bool = False  # WF-11: the viewer may switch this task to the checklist
     branch: str | None
     pr_url: str | None
+    pull_request: PullRequestOut | None = None  # GIT-5: as last read from the git host
     documents: list[WorkflowDocumentBrief]
     open_question_id: uuid.UUID | None
     steps: list[WorkflowStepOut]

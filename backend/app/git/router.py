@@ -1,17 +1,21 @@
-"""Admin → Git: the provider connections (ADM-1). Tokens and webhook secrets are write-only."""
+"""Admin → Git: the provider connections (ADM-1), whose tokens and webhook secrets are write-only, and the
+providers' webhooks (GIT-3)."""
 
+import hashlib
+import hmac
+import json
 import uuid
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.audit import service as audit
 from app.auth.deps import AdminUser
-from app.core.crypto import encrypt
+from app.core.crypto import decrypt, encrypt
 from app.core.db import DbSession
-from app.git import providers
-from app.git.models import GitConnection
+from app.git import providers, service
+from app.git.models import GitConnection, GitKind
 from app.git.schemas import (
     GitConnectionIn,
     GitConnectionOut,
@@ -96,3 +100,78 @@ async def test_connection(connection_id: uuid.UUID, db: DbSession, _admin: Admin
         return GitConnectionTest(ok=True, login=await providers.whoami(c))
     except providers.GitProviderError as e:
         return GitConnectionTest(ok=False, error=e.code)
+
+
+# ---- webhooks (GIT-3) -------------------------------------------------------------------------
+
+webhook_router = APIRouter(prefix="/api/git/webhooks", tags=["git"])
+WEBHOOK_MAX_BYTES = 1024 * 1024
+
+
+async def _body(request: Request) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > WEBHOOK_MAX_BYTES:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "too_large")
+    body = b""
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > WEBHOOK_MAX_BYTES:
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "too_large")
+    return body
+
+
+def _signed(conn: GitConnection, secret: str, request: Request, body: bytes) -> bool:
+    """GitHub and Gitea/Forgejo: X-Hub-Signature-256 = sha256=<hex HMAC of the raw body>. GitLab: X-Gitlab-Token."""
+    if conn.kind == GitKind.gitlab:
+        token = request.headers.get("x-gitlab-token", "")
+        return hmac.compare_digest(token.encode(), secret.encode())
+    given = request.headers.get("x-hub-signature-256", "")
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(given.encode(), expected.encode())
+
+
+def _about(conn: GitConnection, payload: dict) -> tuple[str | None, int | None, str | None]:
+    """(repository path, pull request number, head sha) a delivery mentions. Only identity is read from the
+    payload, never a state: the state is read from the provider API afterwards."""
+
+    def _int(value) -> int | None:
+        return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+    if conn.kind == GitKind.gitlab:
+        project = payload.get("project") if isinstance(payload.get("project"), dict) else {}
+        attrs = payload.get("object_attributes") if isinstance(payload.get("object_attributes"), dict) else {}
+        mr = payload.get("merge_request") if isinstance(payload.get("merge_request"), dict) else {}
+        number = _int(attrs.get("iid")) if payload.get("object_kind") == "merge_request" else _int(mr.get("iid"))
+        path = project.get("path_with_namespace")
+        return (path if isinstance(path, str) else None), number, None
+    repo = payload.get("repository") if isinstance(payload.get("repository"), dict) else {}
+    path = repo.get("full_name") if isinstance(repo.get("full_name"), str) else None
+    pr = payload.get("pull_request") if isinstance(payload.get("pull_request"), dict) else {}
+    number = _int(pr.get("number")) or _int(payload.get("number"))
+    if number is None:
+        run = payload.get("check_run") or payload.get("check_suite")
+        prs = run.get("pull_requests") if isinstance(run, dict) else None
+        if isinstance(prs, list) and prs and isinstance(prs[0], dict):
+            number = _int(prs[0].get("number"))
+    sha = payload.get("sha") if isinstance(payload.get("sha"), str) else None
+    return path, number, sha
+
+
+@webhook_router.post("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def receive_webhook(connection_id: uuid.UUID, request: Request, db: DbSession) -> Response:
+    """A provider says something changed. Verified, it only queues refreshes of the pull requests it names."""
+    conn = await db.get(GitConnection, connection_id)
+    if conn is None or not conn.webhook_secret_enc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
+    body = await _body(request)
+    if not _signed(conn, decrypt(conn.webhook_secret_enc), request, body):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_signature")
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_payload") from None
+    if isinstance(payload, dict):
+        path, number, sha = _about(conn, payload)
+        for task_id in await service.rows_for_delivery(db, conn, path, number, sha):
+            await service.queue_refresh(db, task_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

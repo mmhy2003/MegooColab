@@ -16,7 +16,7 @@ from app.kb import filing
 from app.projects.access import get_project_for
 from app.projects.models import Project
 from app.tasks.models import Task
-from app.tasks.service import get_task_for
+from app.tasks.service import get_task_for, pull_requests_of
 from app.workflow import documents, engine, finish, methodology, questions
 from app.workflow.models import (
     DocKind,
@@ -221,6 +221,7 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
         can_set_manual=can_set_manual,
         branch=wf.branch,
         pr_url=wf.pr_url,
+        pull_request=(await pull_requests_of(db, [task.id])).get(task.id),
         documents=[WorkflowDocumentBrief(kind=d.kind, version=d.version, status=d.status) for d in docs],
         open_question_id=open_question_id,
         steps=steps,

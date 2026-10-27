@@ -38,7 +38,7 @@ from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
 from app.workflow.models import DocKind, DocStatus, TaskWorkflow, WorkflowDocument
 from app.workflow.rules import can_act
-from app.workflow.schemas import TaskWorkflowOut
+from app.workflow.schemas import PullRequestOut, TaskWorkflowOut
 
 KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$")
 POSITION_STEP = 1024.0
@@ -92,6 +92,17 @@ async def _waiting_on(db: AsyncSession, task_ids: list[uuid.UUID]) -> dict[uuid.
     return out
 
 
+async def pull_requests_of(db: AsyncSession, task_ids: list[uuid.UUID]) -> dict[uuid.UUID, PullRequestOut]:
+    from app.git.models import TaskPullRequest  # local: git imports the task models
+
+    rows = await db.execute(select(TaskPullRequest).where(TaskPullRequest.task_id.in_(task_ids)))
+    return {
+        r.task_id: PullRequestOut(url=r.url, state=r.state, checks=r.checks, review=r.review,
+                                  tracked=r.connection_id is not None)
+        for r in rows.scalars()
+    }
+
+
 async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[TaskOut]:
     if not tasks:
         return []
@@ -128,6 +139,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[T
     links = await _links_for(db, ids)
     workflows = await _workflows_for(db, tasks, viewer)
     waiting = await _waiting_on(db, ids)
+    pulls = await pull_requests_of(db, ids)
     agent_ids = {t.assignee_agent_id for t in tasks if t.assignee_agent_id}
     agents: dict[uuid.UUID, AssigneeAgentOut] = {}
     if agent_ids:
@@ -168,6 +180,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[T
             watcher_ids=watchers.get(t.id, []),
             workflow=workflows.get(t.id),
             waiting_on=waiting.get(t.id, []),
+            pull_request=pulls.get(t.id),
         )
         for t in tasks
     ]

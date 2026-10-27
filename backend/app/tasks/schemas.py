@@ -8,7 +8,7 @@ from app.core.text import NoNulStr
 from app.projects.models import ColumnCategory
 from app.projects.schemas import LabelOut
 from app.tasks.models import LinkKind, Priority, TaskType
-from app.workflow.schemas import TaskWorkflowOut
+from app.workflow.schemas import PullRequestOut, TaskWorkflowOut
 
 
 class TaskCreate(BaseModel):
@@ -79,6 +79,7 @@ class TaskOut(BaseModel):
     workflow: TaskWorkflowOut | None = None
     # projects this task asked questions of that are still open (§6.6 A2A-5)
     waiting_on: list[str] = []
+    pull_request: PullRequestOut | None = None  # GIT-5
 
 
 class LinkedTask(BaseModel):

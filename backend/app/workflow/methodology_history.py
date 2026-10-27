@@ -52,5 +52,6 @@ DEFAULT_HISTORY: dict[str, list[str]] = {
     "finish": [
         "962d9a01582b0122e02cc13d84dda6f036f338a6c239b96e242e042ce46ccbe7",
         "1e6fcac079b77b9161d9a5f84f968f69afc6c94878baa43416e151a78537fed6",
+        "bb3b5c3ecf5370c72bc20aab904aaec4c7b75d0562550ac92706d9632f30fec5",
     ],
 }

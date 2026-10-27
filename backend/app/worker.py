@@ -8,7 +8,7 @@ import signal
 from app.jobs.worker import run_worker
 
 # job handler modules register themselves on import
-HANDLER_MODULES: tuple[str, ...] = ("app.kb.search", "app.memory.fakes", "app.memory.extract", "app.memory.dream")
+HANDLER_MODULES: tuple[str, ...] = ("app.git.jobs", "app.kb.search", "app.memory.fakes", "app.memory.extract", "app.memory.dream")
 
 
 async def _main() -> None:

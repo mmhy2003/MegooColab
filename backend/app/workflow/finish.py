@@ -30,7 +30,7 @@ from app.audit import service as audit
 from app.auth.models import User
 from app.core.text import strip_nul
 from app.kb import filing
-from app.projects.models import ColumnCategory, Project
+from app.projects.models import ColumnCategory, Project, ProjectRepository, RepoProvider
 from app.tasks.models import Task
 from app.workflow import build, engine, questions
 from app.workflow.models import (
@@ -49,6 +49,7 @@ from app.workflow.models import (
 MAX_BRANCH = 200
 MAX_PR_URL = 500
 
+BRANCH_PUSHED = "branch_pushed"
 FINISH_NUDGE = "Re-verify the tests, perform the finishing option, then call report_finish."
 OUTCOME_OF = {
     FinishingOption.merge_local: "merged_local",
@@ -161,7 +162,10 @@ async def report_finish(
     wf, task = await build.lock_run_role(db, run, (RunRole.finish,))
     project = await db.get(Project, task.project_id)
     option = engine.finishing_option(project, wf)
-    if outcome != OUTCOME_OF[option]:
+    allowed = {OUTCOME_OF[option]}
+    if option == FinishingOption.pull_request and await _plain_git(db, project.id):
+        allowed.add(BRANCH_PUSHED)  # GIT-2/4: no provider to open a pull request on; the branch is pushed
+    if outcome not in allowed:
         raise _422("wrong_finish")
     if not isinstance(tests_passed, bool) or not isinstance(branch, str) or (
         pr_url is not None and not isinstance(pr_url, str)
@@ -170,7 +174,7 @@ async def report_finish(
     branch = strip_nul(branch)
     if len(branch) > MAX_BRANCH:
         raise _422("too_large")
-    if option == FinishingOption.pull_request:
+    if outcome == OUTCOME_OF[FinishingOption.pull_request]:
         pr_url = strip_nul(pr_url or "").strip()
         if not pr_url:
             raise _422("pr_url_required")
@@ -186,6 +190,20 @@ async def report_finish(
     await engine.record_workflow_event(db, task, None, "finish.reported", {
         "outcome": outcome, "branch": branch, "pr_url": pr_url, "tests_passed": tests_passed,
     })
+    if pr_url:
+        from app.git import service as git  # local: git imports the workflow
+
+        await git.track_pr(db, task, pr_url)
+
+
+async def _plain_git(db: AsyncSession, project_id: uuid.UUID) -> bool:
+    """No repository of the project is on GitHub, GitLab or Gitea/Forgejo (GIT-1): plain git only."""
+    hosted = await db.scalar(
+        select(ProjectRepository.id).where(
+            ProjectRepository.project_id == project_id, ProjectRepository.provider != RepoProvider.plain
+        ).limit(1)
+    )
+    return hosted is None
 
 
 async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
@@ -194,7 +212,11 @@ async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Ag
     if (run.step_result or {}).get("tests_passed") is True:
         project = await db.get(Project, task.project_id)
         if engine.requires_human_review(project, wf) and engine.finishing_option(project, wf) == FinishingOption.pull_request:
+            from app.git import service as git  # local: git imports the workflow
+
             engine.wait_for(wf, Needs.human_code_review)
+            # a tracked pull request merged (or closed) before this run ended moves on at once
+            await git.settle_done(db, wf, task, await git.pull_request_of(db, task.id))
         else:
             await finish_workflow(db, wf, task, None)
         return
@@ -244,7 +266,13 @@ async def set_finishing(db: AsyncSession, user: User, task: Task, option: Finish
     return wf
 
 
+async def _accept_pr_closed(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
+    """The pull request was closed without merging and a person accepts the work as done anyway."""
+    await finish_workflow(db, wf, task, user.id)
+
+
 engine.ROLE_HANDLERS[RunRole.final_review] = _handle_final_review
 engine.ROLE_HANDLERS[RunRole.final_fix] = _handle_final_fix
 engine.ROLE_HANDLERS[RunRole.finish] = _handle_finish
 engine.ACCEPT_HANDLERS["final_review_not_clean"] = _accept_final_review
+engine.ACCEPT_HANDLERS["pr_closed"] = _accept_pr_closed

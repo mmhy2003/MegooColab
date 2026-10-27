@@ -11,7 +11,6 @@ from starlette.routing import Route
 
 from app.a2a.context import register as register_a2a_context
 from app.a2a.router import router as a2a_router
-from app.git.router import router as git_router
 from app.a2a.routing import route_loop
 from app.agent_runs.router import router as agent_runs_router
 from app.agents.router import admin_router as admin_agents_router
@@ -26,6 +25,8 @@ from app.core.config import get_settings
 from app.core.csrf import CsrfHeaderMiddleware
 from app.core.db import SessionLocal
 from app.core.events import hub
+from app.git.router import router as git_router
+from app.git.router import webhook_router as git_webhook_router
 from app.jobs.router import router as jobs_router
 from app.kb.access import ensure_spaces
 from app.kb.context import register as register_kb_context
@@ -114,7 +115,8 @@ def create_app() -> FastAPI:
         docs_url="/api/docs",
         redoc_url=None,
     )
-    app.add_middleware(CsrfHeaderMiddleware, exempt_paths=frozenset({MCP_PATH}))  # bearer only, no cookies
+    # bearer only, or (git webhooks) signed and cookie-free
+    app.add_middleware(CsrfHeaderMiddleware, exempt_paths=frozenset({MCP_PATH}), exempt_prefixes=("/api/git/webhooks/",))
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
@@ -147,6 +149,7 @@ def create_app() -> FastAPI:
         memory_router,
         a2a_router,
         git_router,
+        git_webhook_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect

@@ -13,12 +13,15 @@ class CsrfHeaderMiddleware(BaseHTTPMiddleware):
     cookies (e.g. the bearer-only MCP endpoint), so they answer for themselves.
     """
 
-    def __init__(self, app, exempt_paths: frozenset[str] = frozenset()) -> None:
+    def __init__(self, app, exempt_paths: frozenset[str] = frozenset(), exempt_prefixes: tuple[str, ...] = ()) -> None:
         super().__init__(app)
         self.exempt_paths = exempt_paths
+        self.exempt_prefixes = exempt_prefixes
 
     async def dispatch(self, request: Request, call_next):
-        if request.method not in SAFE_METHODS and request.url.path not in self.exempt_paths:
+        path = request.url.path
+        exempt = path in self.exempt_paths or path.startswith(self.exempt_prefixes)
+        if request.method not in SAFE_METHODS and not exempt:
             from_web = request.headers.get("x-megoo-client") == "web"
             bearer = request.headers.get("authorization", "").lower().startswith("bearer ")
             if not (from_web or bearer):
