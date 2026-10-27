@@ -75,7 +75,7 @@ async def test_task_comments_capped_at_20000_characters_newest_first(client, db)
 
 
 async def test_documents_in_project_and_team_spaces(client, db):
-    project, manager, team = await _project(client, db)
+    project, _, team = await _project(client, db)
     await kb_access.ensure_spaces(db)
     pspace = await kb_access.space_for_project(db, project.id)
     tspace = await kb_access.space_for_team(db, team.id)
