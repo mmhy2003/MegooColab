@@ -53,6 +53,8 @@ ALL_WORKFLOW_TOOLS = {
     "report_finish": {"outcome": "pr_opened", "branch": "megoo/PAY-1", "pr_url": "https://x.test/pr/1",
                       "tests_passed": True},
     "show_mockup": {"html": "<p>x</p>", "title": "T"},
+    "record_decision": {"decision": "d", "reason": "r", "cost_if_wrong": "c"},
+    "record_tests": {"command": "pytest", "passed": True},
 }
 ALLOWED = {
     "ask_human": {"brainstorm", "plan", "implement", "step_fix", "final_fix", "finish"},
@@ -62,6 +64,8 @@ ALLOWED = {
     "submit_review": {"step_review", "final_review"},
     "report_finish": {"finish"},
     "show_mockup": {"brainstorm"},
+    "record_decision": {"implement", "step_fix", "final_fix", "finish"},
+    "record_tests": {"implement", "step_fix", "final_fix", "finish"},
 }
 
 

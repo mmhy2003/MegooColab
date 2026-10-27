@@ -23,6 +23,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent_runs.models import AgentRun
 from app.auth.models import User
 from app.mcp_server.auth import current_run, live_run, require_run_task, tool_session
 from app.projects.models import Project
@@ -36,6 +37,7 @@ from app.workflow import (
     methodology,
     mockups,
     questions,
+    records,
 )
 from app.workflow.context import ROLE_KEY
 from app.workflow.models import (
@@ -65,6 +67,9 @@ TOOL_ROLES: dict[str, frozenset[RunRole]] = {
     "submit_review": frozenset({RunRole.step_review, RunRole.final_review}),
     "report_finish": frozenset({RunRole.finish}),
     "show_mockup": frozenset({RunRole.brainstorm}),  # also the session resumed to revise a design
+    # reviewers judge records; their read-only sessions cannot run the tests
+    "record_decision": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish}),
+    "record_tests": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish}),
 }
 RUNNER_ONLY = frozenset({"submit_review", "report_finish"})  # connect-only workflows have no such runs
 
@@ -238,6 +243,39 @@ def register_workflow_tools(mcp: MCPServer) -> None:
             return {"version": row.version}
 
     @mcp.tool()
+    async def record_decision(
+        key: str, decision: str, reason: str, cost_if_wrong: str, plan_said: str | None = None
+    ) -> dict[str, Any]:
+        """Record a decision you made on your own: what you decided, why, what it costs if it is wrong (each at
+        most 1,000 characters; the cost at most 500), and what the plan said, if you departed from it. People and
+        the reviewers see it on the task."""
+        async with tool_session() as (db, user):
+            task = await _task(db, user, key, "record_decision", write=True)
+            run, wf = await _record_target(db, user, task)
+            row = await records.record_decision(
+                db, task, wf, run=run, posted_by=user.id, decision=decision, reason=reason,
+                cost_if_wrong=cost_if_wrong, plan_said=plan_said,
+            )
+            return {"id": str(row.id)}
+
+    @mcp.tool()
+    async def record_tests(
+        key: str, command: str, passed: Any, total: Any = None, failed: Any = None, skipped: Any = None,
+        failing: Any = None,
+    ) -> dict[str, Any]:
+        """Record a test run you just did: the command (at most 200 characters), `passed` (true or false), the
+        optional counts `total`, `failed` and `skipped` (non-negative integers), and `failing`: up to 20 failing
+        test names (never output). Record every run you rely on before you claim the tests pass."""
+        async with tool_session() as (db, user):
+            task = await _task(db, user, key, "record_tests", write=True)
+            run, wf = await _record_target(db, user, task)
+            row = await records.record_tests(
+                db, task, wf, run=run, posted_by=user.id, command=command, passed=passed, total=total,
+                failed=failed, skipped=skipped, failing=failing,
+            )
+            return {"id": str(row.id), "passed": row.passed}
+
+    @mcp.tool()
     async def submit_design(key: str, markdown: str) -> dict[str, Any]:
         """Submit your design (markdown, at most 200,000 characters) for a human's approval."""
         async with tool_session() as (db, user):
@@ -288,6 +326,21 @@ def register_workflow_tools(mcp: MCPServer) -> None:
             task = await _task(db, user, key, "report_finish", write=True)
             await finish.report_finish(db, await live_run(db, task), outcome, branch, pr_url, tests_passed)
             return {"outcome": outcome, "branch": branch, "tests_passed": tests_passed}
+
+
+async def _record_target(db: AsyncSession, user: User, task: Task) -> tuple[AgentRun | None, TaskWorkflow]:
+    """The run (locked, still running) for a run token; for a personal token, the connect-only workflow, which
+    must be in Build."""
+    if current_run.get() is not None:
+        run = await live_run(db, task)
+        wf = await db.get(TaskWorkflow, task.id)
+        if wf is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "workflow_not_active")
+        return run, wf
+    wf = await engine.lock_connect_only(db, user, task)
+    if wf.stage != Stage.build or wf.status == WorkflowStatus.finished:
+        raise HTTPException(status.HTTP_409_CONFLICT, "wrong_stage")
+    return None, wf
 
 
 async def _submit(

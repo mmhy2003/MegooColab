@@ -2,7 +2,16 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func, text
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.mutable import MutableDict, MutableList
 from sqlalchemy.orm import Mapped, mapped_column
@@ -203,3 +212,46 @@ class MethodologyVersion(IdMixin, Base):
     body_md: Mapped[str] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = _created_at()
+
+
+class WorkflowDecision(IdMixin, Base):
+    """A decision an agent made on its own during a run (the plan said X, I did Y), shown on the task."""
+
+    __tablename__ = "workflow_decisions"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"))
+    # connect-only: the person whose personal-token agent posted it (no run, no agent row)
+    posted_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    stage: Mapped[Stage] = mapped_column(String(20))
+    step: Mapped[int | None]
+    decision: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str] = mapped_column(Text)
+    cost_if_wrong: Mapped[str] = mapped_column(Text)
+    plan_said: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class WorkflowTestRun(IdMixin, Base):
+    """A test run an agent reported: the command, its counts and failing test names, never its output (NFR-2)."""
+
+    __tablename__ = "workflow_test_runs"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"))
+    posted_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    stage: Mapped[Stage] = mapped_column(String(20))
+    step: Mapped[int | None]
+    command: Mapped[str] = mapped_column(String(200))
+    passed: Mapped[bool]
+    total: Mapped[int | None]
+    failed: Mapped[int | None]
+    skipped: Mapped[int | None]
+    failing: Mapped[list] = mapped_column(MutableList.as_mutable(JSONB), default=list)
+    created_at: Mapped[datetime] = _created_at()
+
+
+Index("ix_workflow_decisions_task_stage_step", WorkflowDecision.task_id, WorkflowDecision.stage, WorkflowDecision.step)
+Index("ix_workflow_test_runs_task_stage_step", WorkflowTestRun.task_id, WorkflowTestRun.stage, WorkflowTestRun.step)

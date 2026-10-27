@@ -17,7 +17,7 @@ from app.projects.access import get_project_for
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.tasks.service import get_task_for, pull_requests_of
-from app.workflow import documents, engine, finish, methodology, questions
+from app.workflow import documents, engine, finish, methodology, questions, records
 from app.workflow.models import (
     DocKind,
     DocStatus,
@@ -42,6 +42,7 @@ from app.workflow.schemas import (
     FinishingIn,
     HumanReviewIn,
     ManualWorkflowIn,
+    RecordsOut,
     ReviewOut,
     WorkflowDocumentBrief,
     WorkflowOut,
@@ -333,6 +334,13 @@ async def list_mockups(key: str, user: AuthedUser, db: DbSession) -> list[Mockup
         MockupOut(id=m.id, version=m.version, title=m.title, choices=list(m.choices or []), created_at=m.created_at)
         for m in rows
     ]
+
+
+@router.get("/api/tasks/{key}/records")
+async def list_records(key: str, user: AuthedUser, db: DbSession) -> RecordsOut:
+    """The agent's own decisions and its recorded test runs (Plan 8), oldest first."""
+    task, _ = await get_task_for(db, user, key)
+    return await records.task_records(db, task.id)
 
 
 @router.get("/api/tasks/{key}/reviews/{review_id}")

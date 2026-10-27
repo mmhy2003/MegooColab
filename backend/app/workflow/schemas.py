@@ -126,3 +126,35 @@ class ReviewOut(BaseModel):
     round: int
     verdict: Literal["approved", "changes_requested"]
     findings: list[Finding]
+
+
+class DecisionOut(BaseModel):
+    id: uuid.UUID
+    stage: Stage
+    step: int | None
+    decision: str
+    reason: str
+    cost_if_wrong: str
+    plan_said: str | None
+    author: str  # the agent's name, or "<person>'s connected agent"
+    created_at: datetime
+
+
+class TestRunOut(BaseModel):
+    id: uuid.UUID
+    stage: Stage
+    step: int | None
+    command: str
+    passed: bool
+    total: int | None
+    failed: int | None
+    skipped: int | None
+    failing: list[str]
+    author: str
+    created_at: datetime
+
+
+class RecordsOut(BaseModel):
+    decisions: list[DecisionOut]
+    test_runs: list[TestRunOut]
+    unverified_steps: list[int]  # claimed passing tests with no passing test run recorded
