@@ -126,12 +126,14 @@ describe("NotificationPrefs", () => {
     const prefs = [{ kind: "assigned", in_app: true, email: true }];
     let fail: (r: Response) => void = () => undefined;
     // the save stays pending until the test answers it
-    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) =>
-      init?.method === "PUT" ? new Promise<Response>((done) => (fail = done)) : Promise.resolve(json(prefs))));
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
+      init?.method === "PUT" ? new Promise<Response>((done) => (fail = done)) : Promise.resolve(json(prefs)));
+    vi.stubGlobal("fetch", fetchMock);
     wrap(<NotificationPrefs />);
     const inApp = await screen.findByRole("checkbox", { name: "In app: Assigned to me" });
     fireEvent.click(inApp);
     expect(inApp).not.toBeChecked(); // at once, before the server answers
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === "PUT")).toBe(true));
     fail(new Response(JSON.stringify({ detail: "validation_error" }), { status: 422 }));
     await waitFor(() => expect(inApp).toBeChecked());
     expect(screen.getByRole("alert")).toHaveTextContent("Some fields are invalid.");

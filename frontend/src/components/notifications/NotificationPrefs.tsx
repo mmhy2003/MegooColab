@@ -17,7 +17,13 @@ export function NotificationPrefs() {
   // a toggle shows at once; once its save settles, the saved choices (or, after a failure, the old ones) show
   const [unsaved, setUnsaved] = useState<Partial<Record<NotificationKind, NotificationPref>>>({});
   const save = useSavePref((pref) =>
-    setUnsaved((u) => (u[pref.kind] === pref ? Object.fromEntries(Object.entries(u).filter(([k]) => k !== pref.kind)) : u)),
+    setUnsaved((u) => {
+      const shown = u[pref.kind];
+      if (!shown || shown.in_app !== pref.in_app || shown.email !== pref.email) return u; // a newer toggle waits
+      const rest = { ...u };
+      delete rest[pref.kind];
+      return rest;
+    }),
   );
   if (prefs.isLoading) return <p className="text-sm text-muted">Loading…</p>;
   const toggle = (p: NotificationPref, field: "in_app" | "email") => {
