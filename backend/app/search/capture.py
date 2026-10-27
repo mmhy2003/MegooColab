@@ -8,7 +8,7 @@ projects and Knowledge Base spaces also queue `search.purge`, for the rows their
 
 from typing import Any
 
-from sqlalchemy import event, text
+from sqlalchemy import event, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -18,10 +18,12 @@ from app.auth.models import User
 from app.jobs.models import Job
 from app.jobs.queue import CHANNEL
 from app.kb.models import KbDocument, KbSpace
-from app.projects.models import Project
-from app.tasks.models import Comment, Task, TaskEvent
+from app.projects.models import BoardColumn, Label, Project
+from app.tasks.models import Comment, Task, TaskEvent, task_labels
 from app.teams.models import Team, TeamMember
 
+# index updates outlast any Meilisearch outage: the backoff caps at an hour, so this is about six weeks of retries
+MAX_ATTEMPTS = 1000
 DIRTY = "search_dirty"
 PURGE = "search_purge"
 SKIP = "search_skip"
@@ -69,11 +71,12 @@ def _before_commit(session: Session) -> None:
     if session.info.get(SKIP) or not (dirty or purge):
         return
     rows = [
-        {"kind": "search.sync", "payload": {"kind": kind, "id": id}, "dedupe_key": f"search.sync:{kind}:{id}"}
+        {"kind": "search.sync", "payload": {"kind": kind, "id": id}, "dedupe_key": f"search.sync:{kind}:{id}",
+         "max_attempts": MAX_ATTEMPTS}
         for kind, id in sorted(dirty)
     ] + [
         {"kind": "search.purge", "payload": {"field": field, "value": value},
-         "dedupe_key": f"search.purge:{field}:{value}"}
+         "dedupe_key": f"search.purge:{field}:{value}", "max_attempts": MAX_ATTEMPTS}
         for field, value in sorted(purge)
     ]
     session.execute(
@@ -83,7 +86,29 @@ def _before_commit(session: Session) -> None:
     session.execute(text("SELECT pg_notify(:c, :k)"), {"c": CHANNEL, "k": "search.sync"})
 
 
-def _after_rollback(session: Session) -> None:
+def _before_flush(session: Session, _ctx, _instances) -> None:
+    """A label or a column carries data into its tasks' documents (label names, the status): note those tasks
+    now, while a deleted label's task links still exist."""
+    if session.info.get(SKIP):
+        return
+    labels = [o.id for o in (*session.dirty, *session.deleted) if isinstance(o, Label)]
+    columns = [o.id for o in session.dirty if isinstance(o, BoardColumn)]
+    if not (labels or columns):
+        return
+    dirty: set = session.info.setdefault(DIRTY, set())
+    if labels:
+        rows = session.execute(select(task_labels.c.task_id).where(task_labels.c.label_id.in_(labels)))
+        dirty.update(("task", str(t)) for (t,) in rows)
+    if columns:
+        rows = session.execute(select(Task.id).where(Task.column_id.in_(columns)))
+        dirty.update(("task", str(t)) for (t,) in rows)
+
+
+def _after_soft_rollback(session: Session, previous_transaction) -> None:
+    # a rolled-back savepoint keeps the outer transaction's changes, and what they need indexed (re-noting is
+    # harmless: a sync rebuilds from the database)
+    if previous_transaction.nested:
+        return
     session.info.pop(DIRTY, None)
     session.info.pop(PURGE, None)
 
@@ -92,6 +117,7 @@ def install() -> None:
     """Register the hooks once, for every session (the API's and the worker's)."""
     if event.contains(Session, "after_flush", _after_flush):
         return
+    event.listen(Session, "before_flush", _before_flush)
     event.listen(Session, "after_flush", _after_flush)
     event.listen(Session, "before_commit", _before_commit)
-    event.listen(Session, "after_soft_rollback", lambda s, _t: _after_rollback(s))
+    event.listen(Session, "after_soft_rollback", _after_soft_rollback)

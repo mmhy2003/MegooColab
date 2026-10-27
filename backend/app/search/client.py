@@ -68,20 +68,27 @@ def wait(task) -> None:
         raise SearchUnavailable(f"task {task.task_uid} {done.status}: {code}")
 
 
-async def ensure_index() -> None:
-    """Create the index if it is missing and apply the settings. Idempotent."""
+async def ensure_index() -> bool:
+    """Create the index if it is missing and apply the settings. Idempotent. True when the index was new or had
+    lost its settings (Meilisearch lost its data, and a write re-created the index on the fly): it needs a
+    rebuild."""
     name = get_settings().meili_index
 
-    def run() -> None:
+    def run() -> bool:
+        fresh = False
         try:
             client().get_index(name)
+            if "readers" not in (client().index(name).get_filterable_attributes() or []):
+                fresh = True
         except MeilisearchApiError as e:
             if e.code != "index_not_found":
                 raise
             wait(client().create_index(name, {"primaryKey": "id"}))
+            fresh = True
         wait(client().index(name).update_settings(INDEX_SETTINGS))
+        return fresh
 
-    await call(run)
+    return await call(run)
 
 
 _ensured: set[tuple[str, str]] = set()

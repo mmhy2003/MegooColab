@@ -113,10 +113,15 @@ async def _has_rows(db: AsyncSession) -> bool:
 
 @queue.register("search.ensure")
 async def ensure(db: AsyncSession, payload: dict) -> None:
-    """Apply the index settings; rebuild when the index is empty but the database is not (a fresh install, or
-    lost Meilisearch data)."""
-    await client.ensure_index()
-    if await client.document_count() == 0 and await _has_rows(db):
+    """Apply the index settings, and rebuild from the database when the index may be missing data: it was just
+    created or had lost its settings, it is empty, or this install has never been rebuilt (an upgrade to search,
+    where a login or an edit may already have put a few documents in)."""
+    fresh = await client.ensure_index()
+    if not await _has_rows(db):
+        return
+    org = await db.get(OrgSettings, ORG_SETTINGS_ID)
+    never = org is not None and org.search_rebuilt_at is None
+    if fresh or never or await client.document_count() == 0:
         await queue.enqueue(db, "search.rebuild", {}, dedupe_key="search.rebuild")
 
 

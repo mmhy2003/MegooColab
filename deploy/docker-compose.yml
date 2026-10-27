@@ -38,8 +38,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # started, not healthy: search being down must not keep MegooColab down (search answers "unavailable")
       meilisearch:
-        condition: service_healthy
+        condition: service_started
     environment:
       DATABASE_URL: postgresql+asyncpg://megoo:${POSTGRES_PASSWORD}@db:5432/megoo
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}

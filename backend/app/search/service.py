@@ -6,7 +6,7 @@ lists, ids must parse as UUIDs, and the remaining strings (labels) are quoted wi
 """
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -44,9 +44,11 @@ STATUSES = ("before", "working", "review", "done")
 UPDATED = {"7d": 7, "30d": 30, "365d": 365}
 SORTS = ("relevance", "newest")
 FACETS = ["kind", "project_id", "status", "assignee", "type", "labels"]
+FACET_FILTERS = [("kind", "kinds"), ("project_id", "projects"), ("status", "statuses"), ("assignee", "assignees"),
+                 ("type", "types"), ("labels", "labels")]
 SEARCH_PARAMS: dict[str, Any] = {
     "matchingStrategy": "all",
-    "attributesToHighlight": ["title", "key"],
+    "attributesToHighlight": ["title", "key", "body", "comments"],
     "attributesToCrop": ["body", "comments"],
     "cropLength": 24,
     "highlightPreTag": PRE,
@@ -223,12 +225,26 @@ async def full(
     db: AsyncSession, user: User, q: str, f: Filters, sort: str = "relevance", offset: int = 0, meaning: bool = False,
 ) -> GlobalSearchOut:
     tokens = await reader_tokens(db, user)
-    params: dict[str, Any] = {
-        **SEARCH_PARAMS, "filter": build_filter(tokens, f), "limit": PAGE, "offset": offset, "facets": FACETS,
+    index = client.index().uid
+    main: dict[str, Any] = {
+        "indexUid": index, "q": q, **SEARCH_PARAMS, "filter": build_filter(tokens, f), "limit": PAGE,
+        "offset": offset, "facets": FACETS,
     }
     if sort == "newest":
-        params["sort"] = ["updated_at:desc"]
-    res = await client.call(lambda: client.index().search(q, params))
+        main["sort"] = ["updated_at:desc"]
+    # a chosen group's own counts leave out its own filter, so its other values stay on offer (pick several);
+    # every query keeps the readers filter
+    chosen = [(attr, name) for attr, name in FACET_FILTERS if getattr(f, name)]
+    queries = [main] + [
+        {"indexUid": index, "q": q, "matchingStrategy": "all", "limit": 0, "facets": [attr],
+         "filter": build_filter(tokens, replace(f, **{name: []}))}
+        for attr, name in chosen
+    ]
+    results = (await client.call(lambda: client.client().multi_search(queries)))["results"]
+    res = results[0]
+    dist = dict(res.get("facetDistribution") or {})
+    for (attr, _), extra in zip(chosen, results[1:], strict=True):
+        dist[attr] = (extra.get("facetDistribution") or {}).get(attr, {})
     readable = set(tokens) if tokens is not None else None
     hits = [_hit(h, readable) for h in res["hits"]]
     available = await ai.current_model(db, "embeddings") is not None
@@ -242,6 +258,6 @@ async def full(
             for r in found["results"] if str(r["document_id"]) not in shown
         ]
     return GlobalSearchOut(
-        hits=hits, total=int(res.get("estimatedTotalHits") or 0), facets=await _facets(db, res.get("facetDistribution") or {}),
+        hits=hits, total=int(res.get("estimatedTotalHits") or 0), facets=await _facets(db, dist),
         meaning=similar, meaning_available=available,
     )

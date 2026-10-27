@@ -222,6 +222,18 @@ docker compose up -d --build
 
 Migrations run when the backend starts. Take a backup first (section 13).
 
+The first time an install gets search (upgrading to a version with the `meilisearch` service), the worker
+indexes everything already in the database by itself within a minute or two. If an upgrade moves to a newer
+Meilisearch that cannot open the old index, MegooColab keeps working and search says it is unavailable: delete
+the index volume and let it rebuild:
+
+```bash
+docker compose stop meilisearch
+docker compose rm -f meilisearch
+docker volume rm megoocolab_meilidata
+docker compose up -d
+```
+
 ## 13. Backups and restore
 
 All data lives in the database and the uploaded attachments. The search index (the `meilidata` volume) needs no
@@ -245,6 +257,8 @@ docker compose exec -T db pg_restore -U megoo -d megoo --clean --if-exists --no-
 docker compose start backend worker
 docker compose exec -T backend tar xzf - -C /data/uploads < uploads.tgz
 ```
+
+Then rebuild search from the restored data: Admin → Settings → Search → **Rebuild index**.
 
 ## 14. Troubleshooting
 
