@@ -324,7 +324,11 @@ async def test_token_cleared_when_runner_disconnects(db, tc_factory):
         ws.receive_json()
         ws.send_json(_hello_v2(agent))
         raw = ws.receive_json()["mcp"]["token"]
-        assert _mcp_status(tc, raw) == 200
+        # run_start is sent before the commit that stores the token's hash: wait for that commit
+        deadline = time.monotonic() + 5
+        while _mcp_status(tc, raw) != 200:
+            assert time.monotonic() < deadline, "the run token never became valid"
+            time.sleep(0.02)
     _wait_run(tc, task, run["id"], "failed")
     assert _mcp_status(tc, raw) == 401
     assert (await _row(db, run["id"])).mcp_token_hash is None

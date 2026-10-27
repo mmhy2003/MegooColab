@@ -1,4 +1,6 @@
-from sqlalchemy import String, false, true
+from datetime import datetime
+
+from sqlalchemy import DateTime, String, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, TimestampMixin
@@ -20,6 +22,8 @@ class OrgSettings(TimestampMixin, Base):
     # ADM-1: the nightly dream (hour in UTC; null: the MEMORY_DREAM_HOUR_UTC setting)
     dream_enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
     dream_hour_utc: Mapped[int | None]
+    # global search: when the index was last rebuilt from the database
+    search_rebuilt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # ADM-1: what a new project starts with
     default_finishing_option: Mapped[str] = mapped_column(String(20), default="pull_request",
                                                           server_default="pull_request")

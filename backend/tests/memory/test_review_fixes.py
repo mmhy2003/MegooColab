@@ -253,7 +253,8 @@ async def test_deleted_comment_is_forgotten(client, db):
     db.add(card)
     await db.commit()
     assert (await client.delete(f"/api/comments/{c['id']}")).status_code == 204
-    kinds = [j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars()]
+    kinds = [j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars()
+             if not j.kind.startswith("search.")]
     assert "mem.forget" in kinds
     async with SessionLocal() as s:
         await extract.forget_missing(s, {})
@@ -270,7 +271,8 @@ async def test_deleted_task_and_kb_document_queue_forget(client, db):
     await db.execute(update(Job).values(status=JobStatus.done))
     await db.commit()
     assert (await client.delete("/api/tasks/PAY-1")).status_code == 204
-    kinds = [j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars()]
+    kinds = [j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars()
+             if not j.kind.startswith("search.")]
     assert kinds == ["mem.forget"]
     await db.execute(update(Job).values(status=JobStatus.done))
     await db.commit()
@@ -280,7 +282,8 @@ async def test_deleted_task_and_kb_document_queue_forget(client, db):
     await db.execute(update(Job).values(status=JobStatus.done))
     await db.commit()
     await client.delete(f"/api/kb/documents/{doc['id']}")
-    kinds = [j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars()]
+    kinds = [j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars()
+             if not j.kind.startswith("search.")]
     assert kinds == ["mem.forget"]
 
 
@@ -300,7 +303,8 @@ async def test_configuring_extraction_backfills_existing_sources(client, db, mon
     await login(client, admin)
     pid = (await client.post("/api/admin/ai/providers", json={"name": "P", "kind": "openai"})).json()["id"]
     await client.put("/api/admin/ai/jobs/extraction", json={"provider_id": pid, "model": "m"})
-    assert [j.kind for j in (await db.execute(select(Job))).scalars()] == ["mem.backfill"]
+    assert [j.kind for j in (await db.execute(select(Job).where(Job.kind.not_like("search.%")))).scalars()] == [
+        "mem.backfill"]
     for _ in range(10):  # chained pages
         async with SessionLocal() as s:
             pending = (await s.execute(select(Job).where(Job.kind == "mem.backfill", Job.status == JobStatus.queued))).scalars().first()

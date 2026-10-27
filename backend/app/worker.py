@@ -9,7 +9,7 @@ from app.jobs.worker import run_worker
 
 # job handler modules register themselves on import
 HANDLER_MODULES: tuple[str, ...] = ("app.git.jobs", "app.kb.search", "app.memory.fakes", "app.memory.extract", "app.memory.dream",
-                                   "app.notifications.jobs")
+                                   "app.notifications.jobs", "app.search.jobs")
 
 
 async def _main() -> None:
@@ -17,6 +17,9 @@ async def _main() -> None:
 
     for name in HANDLER_MODULES:
         importlib.import_module(name)
+    from app.search import capture  # changes made by jobs are indexed too
+
+    capture.install()
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):

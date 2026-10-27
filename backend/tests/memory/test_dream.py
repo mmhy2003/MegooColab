@@ -159,7 +159,8 @@ async def test_manual_dream_admin_only_and_409_when_running(db):
     run = await dream.start_dream(db, admin)
     await db.commit()
     assert run.trigger == "manual" and run.status == "running"
-    assert [j.payload for j in (await db.execute(select(Job))).scalars()] == [{"run_id": str(run.id)}]
+    assert [j.payload for j in (await db.execute(select(Job).where(Job.kind.not_like("search.%")))).scalars()] == [
+        {"run_id": str(run.id)}]
     with pytest.raises(HTTPException) as e:
         await dream.start_dream(db, admin)
     assert (e.value.status_code, e.value.detail) == (409, "dream_running")

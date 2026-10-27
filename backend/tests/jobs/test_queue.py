@@ -200,7 +200,7 @@ async def test_admin_jobs_list_admin_only(client, db):
     await login(client, admin)
     r = await client.get("/api/admin/jobs")
     assert r.status_code == 200
-    assert [x["id"] for x in r.json()] == [str(j.id)]
+    assert [x["id"] for x in r.json() if not x["kind"].startswith("search.")] == [str(j.id)]
     assert set(r.json()[0]) == {"id", "kind", "status", "attempts", "last_error", "created_at", "finished_at"}
     assert (await client.get("/api/admin/jobs", params={"status": "failed"})).json() == []
 

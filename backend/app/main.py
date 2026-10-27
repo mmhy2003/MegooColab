@@ -108,6 +108,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    from app.search import (
+        capture,  # local: installs session hooks that queue search index updates
+    )
+
+    capture.install()
     register_kb_context()
     register_memory_context()
     register_a2a_context()
