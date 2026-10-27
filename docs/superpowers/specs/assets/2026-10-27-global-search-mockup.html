@@ -1,0 +1,69 @@
+<h2>One search box for everything</h2>
+<p class="subtitle">My guess at the shape: a quick box for jumping, and a full page for digging with filters. Click the one that feels closest.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Quick box only (Ctrl+K)</h3>
+      <p>Opens over any page, results grouped by kind, filters typed inline like <code>project:PAY status:done</code>.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Quick box + full results page</h3>
+      <p>The quick box for jumping; "See all results" opens a page with filter controls on the side.</p>
+    </div>
+  </div>
+</div>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Quick box (Ctrl+K), typing "payment retry"</div>
+    <div class="mockup-body" style="font-size:13px">
+      <input class="mock-input" value="payment retyr" style="width:100%">
+      <p class="label" style="margin-top:10px">Did you mean "payment retry"</p>
+      <p class="label" style="margin-top:8px">Tasks</p>
+      <div>PAY-42 · Retry failed card payments · <em>In progress · Claude Code</em></div>
+      <div>PAY-17 · Payment retry backoff is too short · <em>Done</em></div>
+      <p class="label" style="margin-top:8px">Documents</p>
+      <div>Knowledge Base · Payments / Retry policy</div>
+      <div>Design · PAY-42 v2 (approved)</div>
+      <p class="label" style="margin-top:8px">Comments &amp; threads</p>
+      <div>PAY-42 · Ahmed: "retry 3 times, then give up…"</div>
+      <p class="label" style="margin-top:8px">People &amp; agents</p>
+      <div>Payments Team · Ann's Codex</div>
+      <div style="margin-top:10px;text-align:right"><button class="mock-button">See all 37 results ↵</button></div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Full results page (option B)</div>
+    <div class="mockup-body" style="display:flex;gap:10px;font-size:13px">
+      <div class="mock-sidebar" style="min-width:150px">
+        <p class="label">Kind</p>
+        <div>☑ Tasks (21)</div><div>☑ Documents (9)</div><div>☑ Comments (5)</div><div>☐ People (2)</div>
+        <p class="label" style="margin-top:8px">Project</p>
+        <div>☑ PAY &nbsp;☐ WEB</div>
+        <p class="label" style="margin-top:8px">Status</p>
+        <div>To do · In progress · Done</div>
+        <p class="label" style="margin-top:8px">Assignee</p>
+        <div>Anyone ▾</div>
+        <p class="label" style="margin-top:8px">Labels / type</p>
+        <div>bug · feature · epic</div>
+        <p class="label" style="margin-top:8px">Updated</p>
+        <div>Last 30 days ▾</div>
+      </div>
+      <div class="mock-content" style="flex:1">
+        <input class="mock-input" value="payment retry" style="width:100%">
+        <p class="subtitle">37 results · sorted by relevance ▾</p>
+        <div><strong>PAY-42</strong> Retry failed card payments<br><small>…when a card <mark>payment</mark> fails we <mark>retry</mark> after 1, 5 and 30 minutes…</small></div>
+        <hr>
+        <div><strong>Retry policy</strong> · Knowledge Base<br><small>…every <mark>payment</mark> provider call is <mark>retried</mark>…</small></div>
+        <hr>
+        <div><strong>PAY-17</strong> Payment retry backoff is too short<br><small>Done · 3 weeks ago</small></div>
+      </div>
+    </div>
+  </div>
+</div>
