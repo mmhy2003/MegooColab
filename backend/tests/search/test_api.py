@@ -73,7 +73,7 @@ async def test_quick_groups_by_kind_with_typos_and_prefix(client, db, meili_inde
     tasks = next(g for g in out["groups"] if g["kind"] == "task")
     assert len(tasks["hits"]) == 5 and out["total"] >= 9
     hit = tasks["hits"][0]
-    assert hit["url"].startswith("/projects/PAY/board?task=PAY-") and hit["key"].startswith("PAY-")
+    assert hit["url"].startswith("/projects/PAY/tasks/") and hit["key"].startswith("PAY-")
 
 
 async def test_keys_match_exactly(client, db, meili_index):

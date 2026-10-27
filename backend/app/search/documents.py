@@ -72,7 +72,7 @@ async def _task(db: AsyncSession, id: uuid.UUID) -> dict | None:
     )
     return _base(
         "task", task.id, key=key, title=task.title, body=task.description_md or "", comments="\n".join(comments),
-        url=f"/projects/{project.key}/board?task={key}", readers=[f"project:{project.id}"],
+        url=f"/projects/{project.key}/tasks/{task.number}", readers=[f"project:{project.id}"],
         project_id=str(project.id), project_key=project.key, status=str(column.category) if column else None,
         assignee=assignee, type=str(task.type), labels=list(labels), updated_at=_ts(task.updated_at),
     )

@@ -52,7 +52,7 @@ async def test_task_document(client, db):
     assert {k: doc[k] for k in ("kind", "key", "title", "body", "url", "readers", "project_id", "project_key",
                                 "status", "assignee", "type", "labels")} == {
         "kind": "task", "key": "PAY-1", "title": "Retry failed card payments",
-        "body": "Retry after 1, 5 and 30 minutes.", "url": "/projects/PAY/board?task=PAY-1",
+        "body": "Retry after 1, 5 and 30 minutes.", "url": "/projects/PAY/tasks/1",
         "readers": [f"project:{project.id}"], "project_id": str(project.id), "project_key": "PAY",
         "status": "working", "assignee": f"user:{manager.id}", "type": "task", "labels": ["bug"],
     }

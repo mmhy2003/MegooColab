@@ -59,7 +59,7 @@ npm run dev                        # then open http://localhost:8080
 Runs against a fresh production-style stack on http://localhost:8080:
 
 ```bash
-cp deploy/.env.example .superpowers/e2e.env   # set SECRET_KEY, HTTP_PORT=8080, PUBLIC_URL=http://localhost:8080, AI_FAKE=true, MEMORY_EXTRACT_DELAY_SECONDS=2
+cp deploy/.env.example .superpowers/e2e.env   # set SECRET_KEY, MEILI_MASTER_KEY, HTTP_PORT=8080, PUBLIC_URL=http://localhost:8080, AI_FAKE=true, MEMORY_EXTRACT_DELAY_SECONDS=2
 docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env up -d --build --wait
 cd frontend && npx playwright install chromium && npx playwright test
 docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env down -v
@@ -132,4 +132,12 @@ cd frontend && npx playwright test e2e/git.spec.ts e2e/notifications.spec.ts
 
 ```bash
 cd frontend && npx playwright test e2e/mockups.spec.ts
+```
+
+### Global search end-to-end test
+
+`frontend/e2e/search.spec.ts` covers global search on the same stack. The env file needs `MEILI_MASTER_KEY` (any long random string: `openssl rand -hex 32`); the stack's `meilisearch` service holds the index. Bea, a member of project SRA but not SRB, presses Ctrl+K and types "retyr": SRA-1 "Retry failed card payments" appears within seconds of its creation, and SRB-1 never does. Enter opens the task. "See all results" opens the results page, where ticking Tasks and To do keeps SRA-1. After the admin renames SRA-1, Bea's search finds the new title. It creates the "Search Team" and "Search Private" teams, a user and the SRA and SRB projects, so it needs a fresh stack. To run it:
+
+```bash
+cd frontend && npx playwright test e2e/search.spec.ts
 ```
