@@ -19,7 +19,14 @@ from app.core.events import Event, publish
 from app.core.text import strip_nul
 from app.tasks.models import Task, TaskEvent
 from app.workflow import engine
-from app.workflow.models import Stage, TaskWorkflow, WorkflowDecision, WorkflowTestRun
+from app.workflow.context import REPORTS_CHARS, wrap_untrusted
+from app.workflow.models import (
+    RunRole,
+    Stage,
+    TaskWorkflow,
+    WorkflowDecision,
+    WorkflowTestRun,
+)
 from app.workflow.schemas import DecisionOut, RecordsOut, TestRunOut
 
 MAX_TEXT = 1000
@@ -206,3 +213,64 @@ async def task_records(db: AsyncSession, task_id: uuid.UUID) -> RecordsOut:
         ],
         unverified_steps=await unverified_steps(db, task_id),
     )
+
+
+# ---- what the reviewers read (NFR-3: agent-written, so wrapped as untrusted) --------------------------------
+
+
+async def review_records(
+    db: AsyncSession, task_id: uuid.UUID, role: RunRole, step: int | None
+) -> tuple[list[WorkflowDecision], list[WorkflowTestRun]] | None:
+    """The records a reviewer judges: the step's for a step review, the whole task's for the final review."""
+    if role not in (RunRole.step_review, RunRole.final_review):
+        return None
+    decisions = await _all(db, WorkflowDecision, task_id)
+    runs = await _all(db, WorkflowTestRun, task_id)
+    if role == RunRole.step_review:
+        decisions = [d for d in decisions if d.step == step and d.stage == Stage.build]
+        runs = [r for r in runs if r.step == step and r.stage == Stage.build]
+    return decisions, runs
+
+
+def _where_label(row) -> str:
+    return f"Step {row.step}" if row.step is not None else str(row.stage).capitalize()
+
+
+def _decision_line(d: WorkflowDecision) -> str:
+    said = f"; Plan said: {d.plan_said}" if d.plan_said else ""
+    return f"{_where_label(d)}: Decision: {d.decision}{said}; Reason: {d.reason}; Cost if wrong: {d.cost_if_wrong}"
+
+
+def _test_run_line(t: WorkflowTestRun) -> str:
+    counts = [f"{name} {value}" for name, value in (("total", t.total), ("failed", t.failed), ("skipped", t.skipped))
+              if value is not None]
+    line = f"{_where_label(t)}: {'passed' if t.passed else 'FAILED'} — {t.command}"
+    if counts:
+        line += f" ({', '.join(counts)})"
+    if t.failing:
+        line += f"; failing: {', '.join(t.failing)}"
+    return line
+
+
+def _section(heading: str, source: str, lines: list[str], empty: str) -> str:
+    if not lines:
+        return f"{heading}\n{empty}"
+    text = "\n".join(lines)
+    if len(text) > REPORTS_CHARS:
+        text = text[: REPORTS_CHARS - 1].rstrip() + "…"
+    return f"{heading}\n" + wrap_untrusted(source, text)
+
+
+def decisions_section(rows: list[WorkflowDecision]) -> str:
+    return _section("## Decisions the agent recorded", "decisions", [_decision_line(d) for d in rows],
+                    "(No decisions were recorded.)")
+
+
+def test_runs_section(rows: list[WorkflowTestRun]) -> str:
+    return _section("## Recorded test runs", "test_runs", [_test_run_line(t) for t in rows],
+                    "(No test runs were recorded: treat any claim of passing tests as unverified.)")
+
+
+def decision_lines(rows: list[WorkflowDecision]) -> list[str]:
+    """For the memory: the run's decisions as plain lines."""
+    return [_decision_line(d) for d in rows]

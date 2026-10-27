@@ -174,3 +174,23 @@ async def test_extract_delay_is_configurable(client, db, monkeypatch):
     job = (await db.execute(select(Job).where(Job.kind == "mem.extract"))).scalars().first()
     delay = (await db.execute(select(Job.run_after - Job.created_at).where(Job.id == job.id))).scalar_one()
     assert 3 <= delay.total_seconds() <= 8
+
+
+async def test_run_memory_source_includes_its_decisions(client, db):
+    from app.agent_runs.models import AgentRun
+    from app.workflow.models import WorkflowDecision
+
+    _, manager, _, task = await _setup(client, db)
+    agent = Agent(owner_id=manager.id, name="Bot", program=AgentProgram.claude_code)
+    db.add(agent)
+    await db.flush()
+    run = AgentRun(task_id=task.id, agent_id=agent.id, requested_by=manager.id, policy="workspace", prompt="p",
+                   status="completed", summary="Built step 1.")
+    db.add(run)
+    await db.flush()
+    db.add(WorkflowDecision(task_id=task.id, run_id=run.id, stage="build", step=1, decision="Used a map",
+                            reason="Lookups by id", cost_if_wrong="One refactor"))
+    await db.commit()
+    src = await sources.load_source(db, "run", run.id)
+    assert "Built step 1." in src.text
+    assert "Decision: Used a map" in src.text and "Reason: Lookups by id" in src.text

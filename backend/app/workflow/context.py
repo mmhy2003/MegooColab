@@ -187,6 +187,7 @@ async def build_prompt(
     extra_sections: list[str] | None = None,
     reports: list[dict] | None = None,
     key_override: str | None = None,
+    records: tuple[list, list] | None = None,
 ) -> tuple[str, MethodologyVersion]:
     role = RunRole(role)
     meth = await methodology.current(db, key_override or ROLE_KEY[role])
@@ -207,6 +208,13 @@ async def build_prompt(
 
     step_section = None
     report_section = _report_section(reports) if reports is not None else None
+    record_sections: list[str] = []
+    if records is not None:
+        from app.workflow import (
+            records as run_records,  # local: records imports the engine, which imports this
+        )
+
+        record_sections = [run_records.decisions_section(records[0]), run_records.test_runs_section(records[1])]
     if role in STEP_ROLES and step is not None:
         if plan is None:
             raise ValueError("no approved plan")
@@ -254,6 +262,7 @@ async def build_prompt(
             parts.append(step_section)
         if report_section:
             parts.append(report_section)
+        parts.extend(record_sections)
         if finding_lines is not None:
             omitted = len(finding_lines) - shown
             note = f"\n({omitted} more findings omitted to fit the prompt size limit.)" if omitted else ""

@@ -13,7 +13,7 @@ from tests.mcp.test_workflow_tools import (
     _run_token,
     _tool,
 )
-from tests.workflow.test_engine import _events, _started
+from tests.workflow.test_engine import _events, _finish, _started
 
 DECISION = {"decision": "Used a map", "reason": "Lookups by id", "cost_if_wrong": "One refactor",
             "plan_said": "Use a list"}
@@ -180,3 +180,20 @@ async def test_unverified_steps_connect_only(db, tc_factory):
     assert not _tool(tc, token, "complete_step", key=key, step=2, summary="s", tests_passed=True)[0]
     assert tc.get(f"/api/tasks/{key}/records").json()["unverified_steps"] == [2]
 
+
+
+async def test_the_queued_step_review_prompt_carries_the_steps_records(db, tc_factory):
+    from tests.workflow.test_build import _building as _build_step_1
+    from tests.workflow.test_build import _complete, _last
+
+    tc = tc_factory(lifespan=True)
+    b, run = await _build_step_1(db, tc)
+    token = await _run_token(run)
+    assert not _tool(tc, token, "record_decision", key=b.key, **DECISION)[0]
+    assert not _tool(tc, token, "record_tests", key=b.key, **TESTS)[0]
+    await _complete(run)
+    await _finish(b.manager.id, run, "completed", session_id="impl-1")
+    review = await _last(b.task_id)
+    assert review.workflow_role == "step_review"
+    assert "## Decisions the agent recorded" in review.prompt and "Used a map" in review.prompt
+    assert "Step 1: passed — uv run pytest (total 3, failed 0, skipped 0)" in review.prompt

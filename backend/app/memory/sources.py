@@ -23,7 +23,7 @@ from app.memory.entities import ensure_entity, org_entity
 from app.memory.models import EntityKind, MemEntity, MemProductProject, ScopeKind
 from app.projects.models import Project, ProjectTeam
 from app.tasks.models import Comment, Task, TaskEvent
-from app.workflow.models import StepReview
+from app.workflow.models import StepReview, WorkflowDecision
 
 SourceKind = Literal["task", "comment", "run", "review", "kb_document", "answer"]
 TEXT_LIMIT = 12_000
@@ -164,6 +164,15 @@ async def _load_run(db: AsyncSession, sid: uuid.UUID) -> Source | None:
     if task is None:
         return None
     parts = [run.summary.strip()] if run.summary and run.summary.strip() else []
+    from app.workflow import records  # local: the workflow imports the task modules
+
+    decisions = (
+        await db.execute(
+            select(WorkflowDecision).where(WorkflowDecision.run_id == run.id)
+            .order_by(WorkflowDecision.created_at, WorkflowDecision.id)
+        )
+    ).scalars().all()
+    parts.extend(records.decision_lines(list(decisions)))
     messages = await db.execute(
         select(TaskEvent.data)
         .where(TaskEvent.task_id == task.id, TaskEvent.kind == "agent_message",

@@ -389,10 +389,15 @@ async def enqueue(
     if role == RunRole.finish:
         option = finishing_option(await db.get(Project, task.project_id), wf)
         extra = [f"## Finishing\nFinishing option: {option.value}"]
+    from app.workflow import (
+        records as run_records,  # local: records imports this module
+    )
+
     prompt, meth = await build_prompt(
         db, task, role, step=step, findings=findings, key_override=key_override,
         previous_findings=await _previous_findings(db, wf, role, step), extra_sections=extra,
         reports=await _implementer_reports(db, task.id, role, step),
+        records=await run_records.review_records(db, task.id, role, step),
     )
     key = session_key(role, step)
     # a fresh-by-design role has no stored session; an answer resumes the asking run's own (resume_session_ref)
