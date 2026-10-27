@@ -139,3 +139,56 @@ async def test_base_version_mismatch_is_409_and_match_saves(client, db):
     assert ok.status_code == 200 and ok.json()["version"] == 2
     again = await client.put("/api/methodology/plan", json={"body_md": "late", "base_version": 1})
     assert again.status_code == 409
+
+
+def test_default_history_ends_with_the_current_texts():
+    """Changing a default text needs its new hash appended to methodology_history (the upgrade relies on it)."""
+    import hashlib
+
+    from app.workflow.methodology_history import DEFAULT_HISTORY
+
+    assert sorted(DEFAULT_HISTORY) == sorted(methodology.ALL_KEYS)
+    for key in methodology.ALL_KEYS:
+        text = (methodology.DEFAULTS_DIR / f"{key}.md").read_text(encoding="utf-8")
+        assert DEFAULT_HISTORY[key][-1] == hashlib.sha256(text.encode("utf-8")).hexdigest(), key
+        assert len(set(DEFAULT_HISTORY[key])) == len(DEFAULT_HISTORY[key]), key
+
+
+def _old_default(monkeypatch, key: str, text: str) -> None:
+    """Pretend `text` shipped as an earlier default of `key`."""
+    import hashlib
+
+    from app.workflow import methodology_history
+
+    history = dict(methodology_history.DEFAULT_HISTORY)
+    history[key] = [hashlib.sha256(text.encode("utf-8")).hexdigest(), *history[key]]
+    monkeypatch.setattr(methodology_history, "DEFAULT_HISTORY", history)
+
+
+async def test_seed_upgrades_an_uncustomised_old_default_once(db, monkeypatch):
+    _old_default(monkeypatch, "review_final", "# Old review text\n")
+    db.add(MethodologyVersion(key="review_final", version=1, body_md="# Old review text\n", created_by=None))
+    await db.commit()
+    await methodology.seed_defaults(db)
+    await db.commit()
+    await methodology.seed_defaults(db)
+    await db.commit()
+    rows = (await db.execute(
+        select(MethodologyVersion).where(MethodologyVersion.key == "review_final").order_by(MethodologyVersion.version)
+    )).scalars().all()
+    current = (methodology.DEFAULTS_DIR / "review_final.md").read_text(encoding="utf-8")
+    assert [(r.version, r.body_md == current, r.created_by) for r in rows] == [(1, False, None), (2, True, None)]
+    audits = (await db.execute(select(AuditLog).where(AuditLog.action == "methodology.default_upgraded"))).scalars().all()
+    assert [(a.data["key"], a.data["version"]) for a in audits] == [("review_final", 2)]
+
+
+async def test_seed_leaves_a_customised_text_alone(db, monkeypatch):
+    admin = await make_user(db, role=Role.admin)
+    _old_default(monkeypatch, "review_final", "# Old review text\n")
+    db.add(MethodologyVersion(key="review_final", version=1, body_md="# Old review text\n", created_by=None))
+    db.add(MethodologyVersion(key="review_final", version=2, body_md="# Our own review rules\n", created_by=admin.id))
+    await db.commit()
+    await methodology.seed_defaults(db)
+    await db.commit()
+    latest = await methodology.current(db, "review_final")
+    assert (latest.version, latest.body_md) == (2, "# Our own review rules\n")

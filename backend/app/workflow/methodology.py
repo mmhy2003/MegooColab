@@ -1,5 +1,6 @@
 """Methodology library (WF-10): the nine versioned instruction texts sent to agents."""
 
+import hashlib
 from pathlib import Path
 
 from sqlalchemy import select
@@ -23,7 +24,38 @@ DEFAULTS_DIR = Path(__file__).resolve().parent / "methodology_texts" / "defaults
 
 
 async def seed_defaults(db: AsyncSession) -> None:
-    """Insert version 1 of every key that has no rows yet. Idempotent."""
+    """Insert version 1 of every key that has no rows yet, then upgrade defaults nobody customised. Idempotent."""
+    await _insert_missing(db)
+    await upgrade_defaults(db)
+
+
+async def upgrade_defaults(db: AsyncSession) -> None:
+    """A key whose latest version is still an older shipped default (methodology_history: nobody customised it)
+    gets the current default as a new version, by the system. A customised text is never touched."""
+    from app.audit import (
+        service as audit,  # local: audit is not needed to read the library
+    )
+    from app.workflow import methodology_history
+
+    for row in await current_all(db):
+        history = methodology_history.DEFAULT_HISTORY.get(row.key, [])
+        if hashlib.sha256(row.body_md.encode("utf-8")).hexdigest() not in history[:-1]:
+            continue  # the current default already, or customised
+        body = (DEFAULTS_DIR / f"{row.key}.md").read_text(encoding="utf-8")
+        added = await db.scalar(
+            insert(MethodologyVersion)
+            .values(key=row.key, version=row.version + 1, body_md=body, created_by=None)
+            .on_conflict_do_nothing(index_elements=["key", "version"])  # another process upgraded it first
+            .returning(MethodologyVersion.id)
+        )
+        if added is not None:
+            await audit.record(db, "methodology.default_upgraded", target_type="methodology", target_id=added,
+                               data={"key": row.key, "version": row.version + 1})
+    await db.flush()
+
+
+async def _insert_missing(db: AsyncSession) -> None:
+    """Insert version 1 of every key that has no rows yet."""
     existing = set((await db.execute(select(MethodologyVersion.key).distinct())).scalars())
     for key in ALL_KEYS:
         if key in existing:
