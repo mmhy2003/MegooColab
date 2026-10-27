@@ -38,7 +38,7 @@ func forOS(goos, program string, getenv func(string) string, lookPath func(strin
 	case ClaudeCode:
 		pkg = "@agentclientprotocol/claude-agent-acp@0.94.0"
 	case Codex:
-		pkg = "@zed-industries/codex-acp@0.16.0"
+		pkg = "@agentclientprotocol/codex-acp@2.3.0" // replaces the deprecated @zed-industries/codex-acp
 	default:
 		return Spec{}, fmt.Errorf("adapters: unknown program %q", program)
 	}
@@ -122,7 +122,7 @@ func ModeFor(program string, p policy.Kind, available []string) string {
 	want := ""
 	switch program {
 	case Codex:
-		want = map[policy.Kind]string{policy.ReadOnly: "read-only", policy.Workspace: "auto"}[p]
+		want = map[policy.Kind]string{policy.ReadOnly: "read-only", policy.Workspace: "workspace-write"}[p]
 	case ClaudeCode:
 		// never "plan": it blocks MegooColab's MCP tools (submit_design, submit_answer, ...). Read-only is enforced
 		// by the runner's permission policy, the removed edit tools (SessionMeta) and the R1 repository check.

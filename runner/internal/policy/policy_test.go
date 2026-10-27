@@ -141,7 +141,7 @@ func TestReadOnlyCommands(t *testing.T) {
 	}
 	denied := []string{
 		"", "   ", "git", "git push", "git push origin main", "git commit -m x", "git checkout -b x", "git reset --hard", "git -c core.pager=evil log",
-		"rm -rf x", "npm install", "python -c 1", "sh -c ls", "curl http://x", "mv a b", "sed -i s/a/b/ f", "./cat a", "..\\cat a", "bin/cat a",
+		"rm -rf x", "npm install", "python -c 1", "sh -c rm", "curl http://x", "mv a b", "sed -i s/a/b/ f", "./cat a", "..\\cat a", "bin/cat a",
 		"cat a; rm x", "ls && rm x", "ls || rm x", "ls | sh", "cat a > b", "cat a >> b", "cat < a", "echo `id`", "ls `id`", "cat $(id)", "cat ${HOME}", "cat $HOME/x",
 		"ls\nrm x", "ls & rm x", "git status; git push", `"git status`, "git log --output=out.txt", "git diff --ext-diff", "git grep -O sh foo",
 		"find . -delete", "find . -exec rm {} +", "find . -fprint out", "rg --pre ./evil foo", "rg --pre=./evil foo", "gitx status", "cat.sh a", `grep "a;b" file`,

@@ -22,19 +22,51 @@ var driveAbs = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
 // The program is the first token with quotes stripped, reduced to its lowercase
 // basename without ".exe". A first token with a directory part must be an
 // absolute path: "./cat" or "bin/cat" would run a file from the worktree.
+//
+// A shell wrapper (`powershell -Command "<script>"`, `bash -lc '<script>'`) is accepted when every command of
+// its script is (see wrappers.go).
 func ReadOnlyCommand(cmd string) bool {
-	if !plainCommand(cmd) || strings.ContainsAny(cmd, shellMeta) {
-		return false
+	if script, powerShell, ok := unwrapShell(cmd); ok {
+		return readOnlyScript(script, powerShell)
 	}
+	return readOnlyCommand(cmd, false)
+}
+
+// readOnlyCommand judges one plain command. inPowerShell: it is part of a PowerShell script, where PowerShell's
+// own read-only commands are known too and drive-qualified words ("Env:") are refused.
+func readOnlyCommand(cmd string, inPowerShell bool) bool {
 	toks, ok := tokenize(cmd)
 	if !ok || len(toks) == 0 {
 		return false
 	}
 	prog, ok := programName(toks[0])
-	if !ok || !readOnlyPrograms[prog] {
+	if !ok {
+		return false
+	}
+	psSpec, cmdlet := powerShellSpecs[prog]
+	cmdlet = cmdlet && inPowerShell
+	// rg and PowerShell's own commands never glob-expand their arguments (MSYS programs do)
+	if !plainCommand(cmd, prog == "rg" || cmdlet) || strings.ContainsAny(cmd, shellMeta) {
 		return false
 	}
 	args := toks[1:]
+	if inPowerShell {
+		for _, a := range args {
+			if powerShellDriveWord(a) {
+				return false
+			}
+		}
+	}
+	if cmdlet {
+		lower := make([]string, len(args))
+		for i, a := range args {
+			lower[i] = strings.ToLower(a)
+		}
+		return psSpec.accepts(lower)
+	}
+	if !readOnlyPrograms[prog] {
+		return false
+	}
 	key := prog
 	if prog == "git" {
 		if len(args) == 0 {
@@ -80,7 +112,10 @@ const literalStart = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012345
 //     quotes literally) still sees one word.
 //
 // Anything else, including double quotes and non-ASCII, is refused.
-func plainCommand(cmd string) bool {
+//
+// nativeGlob: the program never glob-expands its arguments itself (rg, PowerShell's own commands), so a quoted
+// word may start with a glob character ("'*.py'"); the MSYS re-expansion above cannot happen to it.
+func plainCommand(cmd string, nativeGlob bool) bool {
 	if strings.ContainsRune(cmd, '@') {
 		return false
 	}
@@ -113,7 +148,7 @@ func plainCommand(cmd string) bool {
 				return false
 			case n == 0 && r == ',':
 				return false
-			case strings.ContainsRune("*?[]", r) && !strings.ContainsRune(literalStart, first) && (wordQuote || !longFlag):
+			case !nativeGlob && strings.ContainsRune("*?[]", r) && !strings.ContainsRune(literalStart, first) && (wordQuote || !longFlag):
 				return false
 			default:
 				n++

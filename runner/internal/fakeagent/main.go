@@ -88,7 +88,7 @@ func fakeModes() *acp.SessionModeState {
 			{Id: "default", Name: "Default", Description: desc("Ask before acting")},
 			{Id: "plan", Name: "Plan", Description: desc("Plan only")},
 			{Id: "read-only", Name: "Read only", Description: desc("No edits")},
-			{Id: "auto", Name: "Auto", Description: desc("Act without asking")},
+			{Id: "workspace-write", Name: "Workspace access", Description: desc("Edit workspace files")},
 		},
 	}
 }

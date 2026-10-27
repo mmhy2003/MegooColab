@@ -46,8 +46,9 @@ func TestModeFor(t *testing.T) {
 		available []string
 		want      string
 	}{
-		{"codex", policy.ReadOnly, []string{"read-only", "auto", "full-access"}, "read-only"},
-		{"codex", policy.Workspace, []string{"read-only", "auto", "full-access"}, "auto"},
+		// @agentclientprotocol/codex-acp: read-only, workspace-write, agent (auto review), agent-full-access
+		{"codex", policy.ReadOnly, []string{"read-only", "workspace-write", "agent", "agent-full-access"}, "read-only"},
+		{"codex", policy.Workspace, []string{"read-only", "workspace-write", "agent", "agent-full-access"}, "workspace-write"},
 		// not plan mode: it blocks MegooColab's MCP tools (submit_design, submit_answer, ...); read-only is enforced by
 		// the runner's permission policy, the removed edit tools and the R1 repository check
 		{"claude_code", policy.ReadOnly, []string{"default", "plan"}, "default"},
@@ -72,7 +73,7 @@ func TestDefaultSpecs(t *testing.T) {
 		t.Fatalf("claude spec = %+v", s)
 	}
 	s, _ = forOS("linux", "codex", noEnv, lookAll)
-	if s.Command != "npx" || !reflect.DeepEqual(s.Args, []string{"-y", "@zed-industries/codex-acp@0.16.0"}) {
+	if s.Command != "npx" || !reflect.DeepEqual(s.Args, []string{"-y", "@agentclientprotocol/codex-acp@2.3.0"}) {
 		t.Fatalf("codex spec = %+v", s)
 	}
 	if _, err := forOS("linux", "other", noEnv, lookAll); err == nil {
