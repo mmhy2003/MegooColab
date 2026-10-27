@@ -24,6 +24,7 @@ ENSURE_SECONDS = 60
 async def sync(db: AsyncSession, payload: dict) -> None:
     db.info[SKIP] = True
     kind, id = payload["kind"], uuid.UUID(payload["id"])
+    await client.ensure_once()
     doc = await documents.build(db, kind, id)
     if doc is None:
         await client.call(lambda: client.wait(client.index().delete_document(documents.doc_id(kind, id))))
@@ -41,6 +42,7 @@ async def purge(db: AsyncSession, payload: dict) -> None:
     if field not in ("project_id", "readers"):
         raise ValueError(f"unknown purge field {field!r}")
     flt = f"{field} = {_quoted(str(payload['value']))}"
+    await client.ensure_once()
     await client.call(lambda: client.wait(client.index().delete_documents(filter=flt)))
 
 

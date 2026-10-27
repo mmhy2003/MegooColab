@@ -84,6 +84,23 @@ async def ensure_index() -> None:
     await call(run)
 
 
+_ensured: set[tuple[str, str]] = set()
+
+
+async def ensure_once() -> None:
+    """ensure_index, once per process and index: a write must never create the index without its settings (an
+    index Meilisearch creates on the fly has no filterable attributes). The periodic search.ensure re-checks."""
+    settings = get_settings()
+    key = (settings.meili_url, settings.meili_index)
+    if key not in _ensured:
+        await ensure_index()
+        _ensured.add(key)
+
+
+def forget_ensured() -> None:
+    _ensured.clear()
+
+
 async def document_count() -> int:
     stats = await call(lambda: index().get_stats())
     return int(stats.number_of_documents)

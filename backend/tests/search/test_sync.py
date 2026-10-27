@@ -228,3 +228,18 @@ async def make_project_db(db):
     db.add(col)
     await db.commit()
     return SimpleNamespace(id=project.id, column_id=col.id), None, None
+
+
+async def test_the_first_sync_creates_the_index_with_its_settings(db, meili_index):
+    """Found end to end: on a fresh install the first sync job ran before search.ensure, so the index existed without
+    its filterable attributes and every search failed until the periodic job caught up."""
+    await client.call(lambda: client.wait(client.client().delete_index(meili_index)))
+    client.forget_ensured()
+    project, _, _ = await make_project_db(db)
+    task = Task(project_id=project.id, number=1, type="task", title="First", column_id=project.column_id, position=1.0)
+    db.add(task)
+    await db.commit()
+    async with SessionLocal() as s:
+        await search_jobs.sync(s, {"kind": "task", "id": str(task.id)})
+    settings = await client.call(lambda: client.client().index(meili_index).get_settings())
+    assert "readers" in settings["filterableAttributes"]
