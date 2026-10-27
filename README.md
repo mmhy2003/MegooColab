@@ -4,29 +4,19 @@ Open-source, self-hosted project management for humans and coding agents. See [d
 
 ## Install (self-hosted)
 
-Requirements: a Linux server (or any Docker host) with Docker and Docker Compose.
+Requirements: a server with Docker and the Docker Compose plugin.
 
 ```bash
-git clone <this repo> megoocolab && cd megoocolab/deploy
-cp .env.example .env
-# edit .env:
-#   SECRET_KEY        -> output of: openssl rand -hex 32
-#   POSTGRES_PASSWORD -> any strong password
-#   SITE_ADDRESS      -> your domain (e.g. megoo.example.com) for automatic HTTPS,
-#                        or :80 for plain HTTP (trial / behind another proxy)
-#   PUBLIC_URL        -> the URL people open, e.g. https://megoo.example.com
-#   COOKIE_SECURE     -> true when served over HTTPS
+git clone https://github.com/mmhy2003/MegooColab.git megoocolab && cd megoocolab/deploy
+cp .env.example .env     # set SECRET_KEY (openssl rand -hex 32), POSTGRES_PASSWORD, SITE_ADDRESS, PUBLIC_URL
 docker compose up -d --build
 ```
 
-Open `PUBLIC_URL`. The first visit asks you to create the organization and its admin account.
-Database migrations run automatically when the backend starts.
+Open `PUBLIC_URL` and create the organization and its admin. The full guide, [docs/install.md](docs/install.md),
+covers every `.env` variable, HTTPS, email, AI models, git connections and webhooks, notifications, a
+developer's first agent, upgrades, backups and troubleshooting.
 
-Optional: **Admin → Settings** to configure email (SMTP) for invitations and password resets.
-Without email, admins copy invite and reset links from the Users page.
-
-**Upgrade:** `git pull && docker compose up -d --build` (migrations run on start).
-**Backups:** the `pgdata` (database) and `uploads` (attachments) volumes hold all data.
+MegooColab is licensed under the [Apache License 2.0](LICENSE); see [NOTICE](NOTICE) for third-party content.
 
 ## Runner and MCP
 

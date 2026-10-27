@@ -31,8 +31,11 @@ services:
       # tests only: local fake embeddings instead of calling a provider
       AI_FAKE: ${AI_FAKE:-false}
       MEMORY_EXTRACT_DELAY_SECONDS: ${MEMORY_EXTRACT_DELAY_SECONDS:-60}
+      MEMORY_DREAM_HOUR_UTC: ${MEMORY_DREAM_HOUR_UTC:-3}
     volumes:
       - uploads:/data/uploads
+    # a git host on this machine (self-hosted, or the e2e fake provider) is reachable as host.docker.internal
+    extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 5s
@@ -52,6 +55,9 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
       RUN_MIGRATIONS_ON_STARTUP: "false"
       AI_FAKE: ${AI_FAKE:-false}
+      MEMORY_EXTRACT_DELAY_SECONDS: ${MEMORY_EXTRACT_DELAY_SECONDS:-60}
+      MEMORY_DREAM_HOUR_UTC: ${MEMORY_DREAM_HOUR_UTC:-3}
+    extra_hosts: ["host.docker.internal:host-gateway"]
 
   frontend:
     build: ../frontend
