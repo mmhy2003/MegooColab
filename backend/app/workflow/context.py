@@ -59,6 +59,20 @@ _BRACKET_TABLE = str.maketrans(
 )
 _CLOSE = "\n</untrusted>"
 
+# The runner's read-only policy (runner/internal/policy): every command is checked before it runs, and some
+# agents (Codex) end their turn on the first refusal, so read-only sessions are told what passes.
+READ_ONLY_NOTE = """## Read-only session
+This session reads the repository and never changes it. MegooColab's runner checks every command before it runs,
+and a command it refuses can end your session at once. Run only plain read-only commands:
+- git status, log, show, diff, blame, grep, ls-files
+- rg, grep, find, ls, cat, head, tail, wc, pwd
+- in PowerShell also Get-ChildItem, Get-Content, Select-String, Select-Object, Sort-Object, Measure-Object,
+  Get-Item, Test-Path, Get-Location
+Combine commands only with ";" or "|". Do not use "&&", "||", redirection ("<", ">"), variables ("$x"), "$(...)"
+or other parentheses, "{ }", a backslash, double quotes or comments. Put a pattern with special characters in
+single quotes, and simplify a pattern that would need a backslash. Reading files with your own file tools is
+always fine."""
+
 
 def _escape(text: str) -> str:
     """Neutralise text for the prompt: drop Unicode format (Cf) characters, escape every angle bracket."""
@@ -195,8 +209,14 @@ async def build_prompt(
     dropped = 0
     notes: set[str] = set()
 
+    from app.workflow.engine import (
+        READ_ONLY_ROLES,  # local: the engine imports this module
+    )
+
     def render() -> str:
         parts = [meth.body_md.rstrip()]
+        if role in READ_ONLY_ROLES:
+            parts.append(READ_ONLY_NOTE)
         desc_note = "\n(Description truncated to fit the prompt size limit.)" if "desc" in notes else ""
         parts.append(
             f"## Task {key}\n"

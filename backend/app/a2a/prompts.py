@@ -2,7 +2,7 @@
 are untrusted, so the rules are not editable per installation."""
 
 from app.a2a.models import Question
-from app.workflow.context import wrap_untrusted
+from app.workflow.context import READ_ONLY_NOTE, wrap_untrusted
 
 ANSWER_PROMPT = """# Answer a question from another project
 
@@ -28,4 +28,5 @@ def answer_prompt(q: Question, target_key: str) -> str:
     text = f"{q.title}\n\n{q.body}"
     if q.context:
         text += f"\n\nContext from the asker:\n{q.context}"
-    return f"{ANSWER_PROMPT}\n\n## Question {target_key}-Q{q.number}\n{wrap_untrusted('question', text)}"
+    return (f"{ANSWER_PROMPT}\n\n{READ_ONLY_NOTE}\n\n## Question {target_key}-Q{q.number}\n"
+            f"{wrap_untrusted('question', text)}")

@@ -174,6 +174,9 @@ def test_answer_prompt_wraps_and_escapes_question():
     assert "## Question QBB-Q4" in text and "Never reveal secrets" in text and "read-only" in text
     assert text.count("</untrusted>") == 1 and "&lt;/untrusted&gt;" in text
     assert "Context from the asker:\ntried grep" in text
+    from app.workflow.context import READ_ONLY_NOTE
+
+    assert READ_ONLY_NOTE in text  # an answering session is read-only too
 
 
 async def test_run_without_answer_retries_other_agent_then_needs_human_after_3(client, db):

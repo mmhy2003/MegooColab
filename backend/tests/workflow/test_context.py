@@ -261,3 +261,19 @@ async def test_step_without_approved_plan_is_an_error(client, db):
 def test_default_nudge_text():
     assert context.resume_text("nudge", {}) == context.NUDGE_DEFAULT
     assert "submit_design" in context.resume_text("nudge", None)
+
+
+async def test_read_only_roles_get_the_command_rules(client, db):
+    """A read-only run's runner refuses all but plain read-only commands, and some agents (Codex) end their turn
+    on the first refusal: the prompt says what is allowed, right after the instructions."""
+    task = await _setup(client, db)
+    for role in (RunRole.brainstorm, RunRole.plan, RunRole.step_review, RunRole.final_review):
+        prompt, meth = await context.build_prompt(db, task, role)
+        assert context.READ_ONLY_NOTE in prompt, role
+        assert prompt.index(context.READ_ONLY_NOTE) == len(meth.body_md.rstrip()) + 2, role
+    for role in (RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish):
+        prompt, _ = await context.build_prompt(db, task, role)
+        assert "## Read-only session" not in prompt, role
+    for allowed in ("git status", "rg", "Get-Content", "Select-String", '";" or "|"'):
+        assert allowed in context.READ_ONLY_NOTE
+    assert "backslash" in context.READ_ONLY_NOTE and "can end your session" in context.READ_ONLY_NOTE
