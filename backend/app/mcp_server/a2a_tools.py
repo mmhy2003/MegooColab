@@ -2,7 +2,7 @@
 
 Asking (find_answer, ask_project, withdraw_question): any token except an answering run, so questions never
 loop. A task run asks on behalf of its own task. Answering (submit_answer): answering runs only, for their own
-question. get_question: anyone who may read the question; an answering run sees its own.
+question. get_question: anyone who may read the question; an answering run sees its own, a task run its task's.
 """
 
 import uuid
@@ -39,6 +39,16 @@ def _uuid(value: str) -> uuid.UUID:
         return uuid.UUID(str(value))
     except ValueError:
         raise ToolError("question_not_found") from None
+
+
+async def _readable(db, user, qid: uuid.UUID) -> Question:
+    """The question as this token may see it: a task run only its own task's questions (whatever its owner may
+    read), anything else what the user may read."""
+    q = await service.get_question_for(db, user, qid)
+    run = current_run.get()
+    if run is not None and run.task_id is not None and q.from_task_id != run.task_id:
+        raise ToolError("question_not_found")
+    return q
 
 
 def _view(q: Question, ref: str) -> dict[str, Any]:
@@ -96,7 +106,7 @@ def register_a2a_tools(mcp: MCPServer) -> None:
                     raise ToolError("question_not_found")
                 q = await db.get(Question, qid)
             else:
-                q = await service.get_question_for(db, user, qid)
+                q = await _readable(db, user, qid)
             return _view(q, service.ref_of(await db.get(Project, q.target_project_id), q))
 
     @mcp.tool()
@@ -104,7 +114,7 @@ def register_a2a_tools(mcp: MCPServer) -> None:
         """Withdraw a question you asked (for example when find_answer already answered it)."""
         _refuse_answer_runs()
         async with tool_session() as (db, user):
-            q = await service.withdraw(db, user, await service.get_question_for(db, user, _uuid(question_id)))
+            q = await service.withdraw(db, user, await _readable(db, user, _uuid(question_id)))
             return {"status": str(q.status)}
 
     @mcp.tool()

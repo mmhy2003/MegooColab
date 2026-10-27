@@ -72,7 +72,7 @@ export function QuestionView({ question: q }: { question: Question }) {
               ))}
             </ul>
           )}
-          {q.kb_document_id && <Link href={`/kb/doc/${q.kb_document_id}`}>View in Knowledge Base</Link>}
+          {q.kb_document_id && q.kb_document_readable && <Link href={`/kb/doc/${q.kb_document_id}`}>View in Knowledge Base</Link>}
         </section>
       )}
 

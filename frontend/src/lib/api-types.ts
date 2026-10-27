@@ -3725,6 +3725,8 @@ export interface components {
             asked_by: components["schemas"]["Who"];
             /** Kb Document Id */
             kb_document_id: string | null;
+            /** Kb Document Readable */
+            kb_document_readable: boolean;
             /**
              * Created At
              * Format: date-time

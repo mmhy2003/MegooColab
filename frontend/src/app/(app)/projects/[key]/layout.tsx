@@ -5,6 +5,22 @@ import { useParams, usePathname } from "next/navigation";
 
 import { errorMessage } from "@/lib/errors";
 import { useProject } from "@/lib/project";
+import { useQuestions } from "@/lib/questions";
+
+/** Questions other projects asked this one that need a person to answer. */
+function IncomingQuestions({ projectKey }: { projectKey: string }) {
+  const waiting = useQuestions("incoming", projectKey, "needs_human").data?.length ?? 0;
+  return (
+    <Link href={`/questions?tab=incoming&project=${projectKey}`} className="ml-auto pb-2 text-sm text-muted no-underline hover:text-fg">
+      Incoming questions
+      {waiting > 0 && (
+        <span className="ml-1.5 rounded-full border border-pink px-1.5 text-xs text-pink" aria-label={`${waiting} need an answer`}>
+          {waiting}
+        </span>
+      )}
+    </Link>
+  );
+}
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   const { key } = useParams<{ key: string }>();
@@ -52,6 +68,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
             );
           })}
         </nav>
+        <IncomingQuestions projectKey={p.key} />
       </div>
       {children}
     </div>

@@ -8,10 +8,15 @@ import { AskQuestion } from "@/components/questions/AskQuestion";
 import { DraftReview } from "@/components/questions/DraftReview";
 import { QuestionView } from "@/components/questions/QuestionView";
 import { TaskQuestions, WaitingBadge } from "@/components/questions/TaskQuestions";
+import QuestionsPage from "@/app/(app)/questions/page";
 import { invalidationsFor } from "@/lib/realtime";
 import type { Question } from "@/lib/questions";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => "/questions" }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => "/questions",
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -41,6 +46,7 @@ const Q: Question = {
   from_task: null,
   asked_by: { user: { id: "u1", name: "Ann" }, agent: null },
   kb_document_id: null,
+  kb_document_readable: false,
   created_at: "2026-10-26T10:00:00Z",
   answered_at: null,
   can_answer: false,
@@ -135,6 +141,7 @@ describe("QuestionView", () => {
           citations: [{ path: "app/sign.py", start_line: 3, end_line: 9 }],
           redacted: true,
           kb_document_id: "d9",
+          kb_document_readable: true,
           answered_by: AGENT,
         }}
       />,
@@ -273,5 +280,32 @@ describe("TaskQuestions", () => {
 
   it("question events refresh questions and tasks", () => {
     expect(invalidationsFor({ type: "question.updated", user_id: "u1" }, new Map())).toEqual([["questions"], ["task"]]);
+  });
+
+  it("task questions refresh on task events", () => {
+    const keys = invalidationsFor({ type: "task.updated", project_id: "p1", task_id: "t1" }, new Map([["p1", "WEB"]]));
+    expect(keys).toContainEqual(["questions", "task"]);
+  });
+
+  it("Ask hidden for viewers and without task write", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => (url === "/api/auth/me" ? json({ user: { id: "u9", name: "Vi", role: "viewer" } }) : json([]))));
+    wrap(<TaskQuestions taskKey="WEB-4" canAsk={false} />);
+    await screen.findByText("Questions to other projects");
+    expect(screen.queryByRole("button", { name: "Ask another project" })).toBeNull();
+    cleanup();
+    wrap(<QuestionsPage />);
+    await waitFor(() => expect(screen.queryByRole("tab", { name: "Ask" })).toBeNull());
+    expect(screen.getByRole("tab", { name: "My questions" })).toHaveAttribute("aria-selected", "true");
+  });
+});
+
+describe("Knowledge Base link", () => {
+  it("View in Knowledge Base only when readable", () => {
+    const answered = { ...Q, status: "answered", answer_md: "HMAC.", kb_document_id: "d1" } as Question;
+    wrap(<QuestionView question={{ ...answered, kb_document_readable: false }} />);
+    expect(screen.queryByRole("link", { name: "View in Knowledge Base" })).toBeNull();
+    cleanup();
+    wrap(<QuestionView question={{ ...answered, kb_document_readable: true }} />);
+    expect(screen.getByRole("link", { name: "View in Knowledge Base" })).toHaveAttribute("href", "/kb/doc/d1");
   });
 });

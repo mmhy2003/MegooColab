@@ -25,7 +25,7 @@ export function invalidationsFor(event: LiveEvent, keyById: Map<string, string>)
   const kind = event.type.split(".")[0];
   switch (kind) {
     case "task":
-      return [scoped("tasks"), ["task"], ["workflow"], ["activity"], ["attachments"], scoped("columns"), ["burndown"], ["agent-runs"], ["documents"], ["document"], ["mockups"], ["kb", "refs"]];
+      return [scoped("tasks"), ["task"], ["workflow"], ["activity"], ["attachments"], scoped("columns"), ["burndown"], ["agent-runs"], ["documents"], ["document"], ["mockups"], ["kb", "refs"], ["questions", "task"]];
     case "comment":
       return [["activity"]];
     case "columns":

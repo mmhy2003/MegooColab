@@ -10,8 +10,9 @@ import { Button } from "@/components/ui/Button";
 import { qk } from "@/lib/queries";
 import { type QuestionStatus, STATUS_TONE, statusLine, useTaskQuestions } from "@/lib/questions";
 
-/** The questions a task asked other projects, and asking a new one on the task's behalf. */
-export function TaskQuestions({ taskKey }: { taskKey: string }) {
+/** The questions a task asked other projects, and asking a new one on the task's behalf (for those who may
+ * change the task). */
+export function TaskQuestions({ taskKey, canAsk = true }: { taskKey: string; canAsk?: boolean }) {
   const client = useQueryClient();
   const questions = useTaskQuestions(taskKey);
   const [asking, setAsking] = useState(false);
@@ -31,7 +32,7 @@ export function TaskQuestions({ taskKey }: { taskKey: string }) {
           ))}
         </ul>
       )}
-      {asking ? (
+      {!canAsk ? null : asking ? (
         <>
           <AskQuestion
             taskKey={taskKey}

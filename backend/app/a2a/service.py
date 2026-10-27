@@ -4,7 +4,8 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, literal_column, select
+from sqlalchemy import func, literal_column, select, update
+from sqlalchemy import text as sql_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.a2a.access import (
@@ -163,11 +164,18 @@ async def ask(
     if task_key:
         task, _ = await get_task_for(db, user, task_key, write=True)
     project = await project_by_key(db, project_key)
+    # before any lock: the search can be slow, and the question's number locks the project row until commit
+    suggestions = await suggest(db, user, project.id, f"{title}\n{body}")
+    # one ask at a time per user, so concurrent asks cannot all pass the cap
+    await db.execute(sql_text("SELECT pg_advisory_xact_lock(hashtext('a2a.ask'), hashtext(:uid))"),
+                     {"uid": str(user.id)})
     if await open_question_count(db, user) >= OPEN_QUESTION_CAP:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too_many_open_questions")
-    locked = (await db.execute(select(Project).where(Project.id == project.id).with_for_update())).scalar_one()
-    number = locked.next_question_number
-    locked.next_question_number = number + 1
+    number = (await db.execute(
+        update(Project).where(Project.id == project.id)
+        .values(next_question_number=Project.next_question_number + 1)
+        .returning(Project.next_question_number - 1)
+    )).scalar_one()
     q = Question(
         target_project_id=project.id, number=number, from_task_id=task.id if task else None,
         asked_by_user_id=user.id, asked_by_agent_id=agent_id, title=title, body=body, context=context,
@@ -187,7 +195,7 @@ async def ask(
     from app.a2a.routing import route_question  # local: routing imports this module
 
     await route_question(db, q.id)  # dispatched by the caller after it commits (engine.dispatch_queued)
-    return q, await suggest(db, user, project.id, f"{title}\n{body}")
+    return q, suggestions
 
 
 async def cancel_question_runs(db: AsyncSession, q: Question, actor_id: uuid.UUID | None) -> None:
@@ -280,6 +288,14 @@ async def can_approve(db: AsyncSession, user: User, q: Question) -> bool:
     return owner == user.id
 
 
+async def _kb_document_readable(db: AsyncSession, user: User, q: Question) -> bool:
+    from app.kb.models import KbDocument, KbSpace
+
+    doc = await db.get(KbDocument, q.kb_document_id) if q.kb_document_id else None
+    space = await db.get(KbSpace, doc.space_id) if doc else None
+    return space is not None and await kb_access.can_read(db, user, space)
+
+
 async def question_out(db: AsyncSession, user: User, q: Question) -> QuestionOut:
     project = await db.get(Project, q.target_project_id)
     task = await db.get(Task, q.from_task_id) if q.from_task_id else None
@@ -302,7 +318,7 @@ async def question_out(db: AsyncSession, user: User, q: Question) -> QuestionOut
         answering=await _answering(db, q), draft=draft,
         reject_reason=q.reject_reason, redacted=q.redacted, attempts=q.attempts, from_task=task_ref,
         asked_by=await _who(db, q.asked_by_user_id, q.asked_by_agent_id), kb_document_id=q.kb_document_id,
-        created_at=q.created_at, answered_at=q.answered_at,
+        kb_document_readable=await _kb_document_readable(db, user, q), created_at=q.created_at, answered_at=q.answered_at,
         can_answer=is_open and await can_answer_question(db, user, q), can_approve=approver,
         can_withdraw=is_open and (q.asked_by_user_id == user.id or user.role == Role.admin),
     )

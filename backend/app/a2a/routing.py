@@ -57,15 +57,29 @@ async def candidates(db: AsyncSession, q: Question) -> list[Agent]:
             continue
         if not registry.supports(a.owner_id, WORKFLOW_CAPABILITY):
             continue
-        running = await db.scalar(
-            select(func.count()).select_from(AgentRun).where(
-                AgentRun.agent_id == a.id, AgentRun.status.in_(ACTIVE_STATUSES)
-            )
-        )
+        running = await _active_runs(db, a.id)
         if running >= a.max_concurrent_runs:
             continue
         out.append((running, a.id, a))
     return [a for _, _, a in sorted(out, key=lambda t: (t[0], str(t[1])))]
+
+
+async def _active_runs(db: AsyncSession, agent_id: uuid.UUID) -> int:
+    return await db.scalar(
+        select(func.count()).select_from(AgentRun).where(AgentRun.agent_id == agent_id,
+                                                         AgentRun.status.in_(ACTIVE_STATUSES))
+    )
+
+
+async def _claim_slot(db: AsyncSession, found: list[Agent]) -> Agent | None:
+    """The first candidate that still has a free slot once its row is locked: a concurrent pass for another
+    question waits here until this one commits, then counts the run this one queued."""
+    for a in found:
+        # NO KEY UPDATE: route passes queue behind each other, run inserts (a key share on the agent) do not
+        await db.execute(select(Agent.id).where(Agent.id == a.id).with_for_update(key_share=True))
+        if await _active_runs(db, a.id) < a.max_concurrent_runs:
+            return a
+    return None
 
 
 async def _untried_bound(db: AsyncSession, q: Question) -> bool:
@@ -92,7 +106,8 @@ async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun |
     if q is None or q.status != QuestionStatus.queued:
         return None
     found = await candidates(db, q)
-    if not found:
+    agent = await _claim_slot(db, found)
+    if agent is None:
         if q.tried_agent_ids and not await _untried_bound(db, q):
             # every agent that could answer has tried (or had a draft rejected): ask a human (A2A-5)
             q.status = QuestionStatus.needs_human
@@ -102,7 +117,6 @@ async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun |
             await notify(db, q)
             await notify_waiting(db, q)
         return None  # otherwise it waits for a runner
-    agent = found[0]
     project = await db.get(Project, q.target_project_id)
     run = AgentRun(
         question_id=q.id, agent_id=agent.id, requested_by=q.asked_by_user_id or agent.owner_id,

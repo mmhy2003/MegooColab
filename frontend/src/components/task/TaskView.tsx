@@ -177,7 +177,7 @@ export function TaskView({
             />
           </Section>
           <KbReferences taskKey={t.key} />
-          <TaskQuestions taskKey={t.key} />
+          <TaskQuestions taskKey={t.key} canAsk={!disabled} />
           <Section title="Attachments">
             <Attachments
               items={attachments.data ?? []}

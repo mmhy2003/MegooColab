@@ -1,12 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 import { AskQuestion } from "@/components/questions/AskQuestion";
 import { QuestionList } from "@/components/questions/QuestionList";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Select } from "@/components/ui/Select";
+import { useMe } from "@/lib/me";
 import { useProjects } from "@/lib/project";
 import { QUESTION_STATUSES, useQuestions } from "@/lib/questions";
 
@@ -17,9 +18,9 @@ const TABS: { value: Tab; label: string }[] = [
   { value: "incoming", label: "Incoming" },
 ];
 
-function Incoming() {
+function Incoming({ initialProject = "" }: { initialProject?: string }) {
   const projects = useProjects();
-  const [project, setProject] = useState("");
+  const [project, setProject] = useState(initialProject);
   const [status, setStatus] = useState("");
   const questions = useQuestions("incoming", project, status);
   return (
@@ -53,8 +54,23 @@ function Mine() {
 }
 
 export default function QuestionsPage() {
+  return (
+    <Suspense>
+      <Questions />
+    </Suspense>
+  );
+}
+
+/** `?tab=incoming&project=PAY` opens a tab (the project header links here). Viewers cannot ask. */
+function Questions() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("ask");
+  const params = useSearchParams();
+  const { data: me } = useMe();
+  const canAsk = me?.role !== "viewer";
+  const tabs = canAsk ? TABS : TABS.filter((t) => t.value !== "ask");
+  const linked = tabs.find((t) => t.value === params.get("tab"))?.value;
+  const [chosen, setTab] = useState<Tab | null>(null);
+  const tab = chosen && tabs.some((t) => t.value === chosen) ? chosen : (linked ?? tabs[0].value);
   return (
     <div className="space-y-6">
       <PageHeader
@@ -62,7 +78,7 @@ export default function QuestionsPage() {
         subtitle="Ask another project about its code. An agent of that project reads the code and answers, citing files; the answer is filed in its Knowledge Base."
       />
       <div role="tablist" aria-label="Questions" className="flex gap-2 border-b border-line">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.value}
             type="button"
@@ -77,7 +93,7 @@ export default function QuestionsPage() {
       </div>
       {tab === "ask" && <AskQuestion onAsked={(id) => router.push(`/questions/${id}`)} />}
       {tab === "mine" && <Mine />}
-      {tab === "incoming" && <Incoming />}
+      {tab === "incoming" && <Incoming initialProject={params.get("project") ?? ""} />}
     </div>
   );
 }

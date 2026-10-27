@@ -84,6 +84,7 @@ class QuestionOut(BaseModel):
     from_task: TaskRef | None
     asked_by: Who
     kb_document_id: uuid.UUID | None
+    kb_document_readable: bool  # the Q&A document lives in the target project's space
     created_at: datetime
     answered_at: datetime | None
     can_answer: bool
