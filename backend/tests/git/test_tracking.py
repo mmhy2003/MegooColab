@@ -37,8 +37,8 @@ class FakeGitHub:
         self.fail: int | Exception | None = None
         self.calls = 0
 
-    def set(self, path="acme/pay", number=7, state="open", merged=False, runs=()):
-        self.prs[(path, number)] = {"state": state, "merged": merged, "runs": list(runs)}
+    def set(self, path="acme/pay", number=7, state="open", merged=False, runs=(), ref="megoo/PAY-1"):
+        self.prs[(path, number)] = {"state": state, "merged": merged, "runs": list(runs), "ref": ref}
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.calls += 1
@@ -59,7 +59,7 @@ class FakeGitHub:
                 return httpx.Response(200, json=[])
             return httpx.Response(200, json={"state": pr["state"], "merged": pr["merged"],
                                              "merged_at": "2026-10-27T10:00:00Z" if pr["merged"] else None,
-                                             "head": {"sha": "abc123"}})
+                                             "head": {"sha": "abc123", "ref": pr["ref"]}})
         if rest[:1] == ["commits"]:
             runs = next((p["runs"] for (path, _n), p in self.prs.items() if path == key[0]), [])
             if rest[2:] == ["status"]:
@@ -322,3 +322,66 @@ async def test_finish_handlers_registered_for_pr_closed():
 
     assert engine.ACCEPT_HANDLERS["pr_closed"] is finish._accept_pr_closed
     assert (await _runs(uuid.uuid4())) == []
+
+
+async def test_merged_pr_of_another_branch_does_not_finish(db, tc_factory, github):
+    """The Finish run reported a pull request whose branch is not the task's (a wrong number, a confused agent):
+    its merge must not skip the human code review."""
+    tc = tc_factory(lifespan=True)
+    b, _conn = await _finished_waiting(db, tc, github)
+    github.set(state="closed", merged=True, ref="someone/else")
+    await _refresh(b.task_id)
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs) == ("waiting_human", "human_code_review")
+    row = await _row(b.task_id)
+    assert (row.state, row.error) == ("merged", "branch_mismatch")
+    github.set(state="closed", merged=False, ref="someone/else")
+    await _refresh(b.task_id)
+    assert (await _wf(b.task_id)).needs == "human_code_review"  # nor does closing it escalate
+    r = tc.post(f"/api/tasks/{b.key}/workflow/human-review", json={"approved": True})
+    assert r.status_code == 200 and r.json()["status"] == "finished"  # a person still can
+
+
+async def test_poll_survives_bad_rows_and_backs_them_off(db, tc_factory, github, monkeypatch):
+    """A token that cannot be sent (non-ASCII), a row whose URL no longer matches its connection, and a crash
+    in one row: the others are still polled, and the bad ones wait before the next try."""
+    tc = tc_factory(lifespan=True)
+    b, conn = await _finished_waiting(db, tc, github)
+    bad_token = await _connection(db, name="Bad token", base="https://bad.example", secret=None)
+    extra = [uuid.UUID(tc.post("/api/projects/PAY/tasks", json={"title": f"x{i}", "type": "task"}).json()["id"])
+             for i in range(2)]
+    async with SessionLocal() as s:
+        await s.execute(update(GitConnection).where(GitConnection.id == bad_token.id)
+                        .values(token_enc=encrypt("tök")))
+        s.add(TaskPullRequest(task_id=extra[0], url="https://bad.example/acme/pay/pull/1",
+                              connection_id=bad_token.id))
+        s.add(TaskPullRequest(task_id=extra[1], url="https://elsewhere.example/acme/pay/pull/2",
+                              connection_id=conn.id))  # its connection's base URL changed since
+        await s.execute(update(TaskPullRequest).values(next_check_at=datetime.now(UTC) - timedelta(minutes=1)))
+        await s.commit()
+    bad_id, moved_id = extra
+    github.set(state="closed", merged=True)
+    async with SessionLocal() as s:
+        await jobs.pr_poll(s, {})
+    assert (await _wf(b.task_id)).status == "finished"  # the good row was not held back
+    for task_id, code in ((bad_id, "bad_token"), (moved_id, "url_mismatch")):
+        row = await _row(task_id)
+        assert (row.failures, row.error) == (1, code), task_id
+        assert row.next_check_at > datetime.now(UTC) + timedelta(minutes=1)
+    with pytest.raises(providers.GitProviderError) as e:
+        async with SessionLocal() as s:
+            await providers.whoami(await s.get(GitConnection, bad_token.id))  # the connection Test, too
+    assert e.value.code == "bad_token"
+
+    async def boom(_db, _row):
+        raise RuntimeError("unexpected")
+
+    async with SessionLocal() as s:
+        await s.execute(update(TaskPullRequest).values(next_check_at=datetime.now(UTC) - timedelta(minutes=1),
+                                                       state="open"))
+        await s.commit()
+    monkeypatch.setattr(service, "refresh_pr", boom)
+    async with SessionLocal() as s:
+        await jobs.pr_poll(s, {})  # a crash in one row neither stops the poll nor loops on it
+    rows = [await _row(t) for t in (bad_id, moved_id)]
+    assert all(r.next_check_at > datetime.now(UTC) for r in rows)

@@ -52,6 +52,7 @@ class PrStatus:
     review: str  # approved | changes_requested | none
     merged_at: datetime | None
     head_sha: str | None
+    head_branch: str | None = None  # the pull request's source branch, to check it is the task's
 
 
 # ---- URLs ------------------------------------------------------------------------------------
@@ -110,7 +111,12 @@ def api_base(conn: GitConnection) -> str:
 
 
 def _headers(conn: GitConnection) -> dict[str, str]:
-    token = decrypt(conn.token_enc)
+    try:
+        token = decrypt(conn.token_enc)
+    except Exception:  # noqa: BLE001 - SECRET_KEY changed since the token was saved
+        raise GitProviderError("bad_token") from None
+    if not token.isascii() or not token.isprintable():
+        raise GitProviderError("bad_token")  # not sendable in an HTTP header
     kind = GitKind(conn.kind)
     if kind == GitKind.github:
         return {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
@@ -217,31 +223,33 @@ def _reviews(data: Any) -> str:
     return "approved" if latest else "none"
 
 
-def _pr_fields(pr: Any) -> tuple[str, datetime | None, str | None]:
+def _pr_fields(pr: Any) -> tuple[str, datetime | None, str | None, str | None]:
     if not isinstance(pr, dict) or pr.get("state") not in ("open", "closed"):
         raise GitProviderError("bad_response")
-    sha = (pr.get("head") or {}).get("sha") if isinstance(pr.get("head"), dict) else None
+    head = pr.get("head") if isinstance(pr.get("head"), dict) else {}
+    sha, ref = head.get("sha"), head.get("ref")
     state = "merged" if pr.get("merged") is True else pr["state"]
-    return state, _time(pr.get("merged_at")), sha if isinstance(sha, str) else None
+    return (state, _time(pr.get("merged_at")), sha if isinstance(sha, str) else None,
+            ref if isinstance(ref, str) else None)
 
 
 async def _github(client, conn: GitConnection, ref: PrRef) -> PrStatus:
     base = f"/repos/{ref.path}"
-    state, merged_at, sha = _pr_fields(await _get(client, conn, f"{base}/pulls/{ref.number}"))
+    state, merged_at, sha, branch = _pr_fields(await _get(client, conn, f"{base}/pulls/{ref.number}"))
     checks = "none"
     if sha:
         checks = _combine(_combined_status(await _get(client, conn, f"{base}/commits/{sha}/status")),
                           _check_runs(await _get(client, conn, f"{base}/commits/{sha}/check-runs")))
     review = _reviews(await _get(client, conn, f"{base}/pulls/{ref.number}/reviews"))
-    return PrStatus(state, checks, review, merged_at, sha)
+    return PrStatus(state, checks, review, merged_at, sha, branch)
 
 
 async def _gitea(client, conn: GitConnection, ref: PrRef) -> PrStatus:
     base = f"/repos/{ref.path}"
-    state, merged_at, sha = _pr_fields(await _get(client, conn, f"{base}/pulls/{ref.number}"))
+    state, merged_at, sha, branch = _pr_fields(await _get(client, conn, f"{base}/pulls/{ref.number}"))
     checks = _combined_status(await _get(client, conn, f"{base}/commits/{sha}/status")) if sha else "none"
     review = _reviews(await _get(client, conn, f"{base}/pulls/{ref.number}/reviews"))
-    return PrStatus(state, checks, review, merged_at, sha)
+    return PrStatus(state, checks, review, merged_at, sha, branch)
 
 
 _GITLAB_STATES = {"opened": "open", "merged": "merged", "closed": "closed", "locked": "closed"}
@@ -264,9 +272,9 @@ async def _gitlab(client, conn: GitConnection, ref: PrRef) -> PrStatus:
         checks = "pending"
     approvals = await _optional(client, conn, f"{mr_path}/approvals")
     review = "approved" if isinstance(approvals, dict) and approvals.get("approved") is True else "none"
-    sha = mr.get("sha")
+    sha, branch = mr.get("sha"), mr.get("source_branch")
     return PrStatus(_GITLAB_STATES[mr["state"]], checks, review, _time(mr.get("merged_at")),
-                    sha if isinstance(sha, str) else None)
+                    sha if isinstance(sha, str) else None, branch if isinstance(branch, str) else None)
 
 
 async def fetch_pr(conn: GitConnection, ref: PrRef, *, client: httpx.AsyncClient | None = None) -> PrStatus:

@@ -81,25 +81,35 @@ async def track_pr(db: AsyncSession, task: Task, url: str) -> TaskPullRequest:
     return row
 
 
-async def refresh_pr(db: AsyncSession, row: TaskPullRequest) -> None:
-    """Read the pull request from the provider (outside any lock), then apply what changed."""
+async def refresh_pr(db: AsyncSession, row: TaskPullRequest) -> str | None:
+    """Read the pull request from the provider (outside any lock), then apply what changed. Returns the error
+    code when it could not be read; the row then waits longer before the next try."""
     conn = await db.get(GitConnection, row.connection_id) if row.connection_id else None
-    ref = providers.parse_pr_url(row.url, conn) if conn is not None else None
-    if conn is None or ref is None:
-        return
+    if conn is None:
+        return None
     task_id = row.task_id
+    ref = providers.parse_pr_url(row.url, conn)
+    if ref is None:  # the connection's base URL changed since the pull request was reported
+        await back_off(db, task_id, "url_mismatch")
+        return "url_mismatch"
     try:
         status = await providers.fetch_pr(conn, ref)
     except providers.GitProviderError as e:
-        locked = await _lock_row(db, task_id)
-        if locked is not None:
-            locked.failures += 1
-            locked.error = e.code
-            locked.last_checked_at = _now()
-            locked.next_check_at = _now() + timedelta(minutes=min(2 ** locked.failures, MAX_BACKOFF_MINUTES))
-            await db.flush()
-        return
-    await apply_status(db, task_id, status)
+        await back_off(db, task_id, e.code)
+        return e.code
+    await apply_status(db, task_id, status, url=row.url)
+    return None
+
+
+async def back_off(db: AsyncSession, task_id: uuid.UUID, code: str) -> None:
+    """A failed check: remember why, and wait 2, 4, 8 ... up to 60 minutes before the next one."""
+    locked = await _lock_row(db, task_id)
+    if locked is not None:
+        locked.failures += 1
+        locked.error = code
+        locked.last_checked_at = _now()
+        locked.next_check_at = _now() + timedelta(minutes=min(2 ** locked.failures, MAX_BACKOFF_MINUTES))
+        await db.flush()
 
 
 async def _lock_row(db: AsyncSession, task_id: uuid.UUID) -> TaskPullRequest | None:
@@ -111,8 +121,11 @@ async def _lock_row(db: AsyncSession, task_id: uuid.UUID) -> TaskPullRequest | N
     ).scalar_one_or_none()
 
 
-async def apply_status(db: AsyncSession, task_id: uuid.UUID, status: providers.PrStatus) -> None:
-    """Store the provider's view; on a change, record it and move a waiting Done stage on."""
+async def apply_status(
+    db: AsyncSession, task_id: uuid.UUID, status: providers.PrStatus, *, url: str | None = None
+) -> None:
+    """Store the provider's view; on a change, record it and move a waiting Done stage on. `url`: the pull request
+    that was read; a report of another one since then makes this view stale."""
     from app.workflow import engine  # local: the workflow imports this module
 
     task = await db.get(Task, task_id)
@@ -120,12 +133,14 @@ async def apply_status(db: AsyncSession, task_id: uuid.UUID, status: providers.P
         return
     wf = await engine.lock_task(db, task)  # the engine's lock order: task, workflow, then our row
     row = await _lock_row(db, task_id)
-    if row is None:
+    if row is None or (url is not None and row.url != url):
         return
     changed = (row.state, row.checks, row.review) != (status.state, status.checks, status.review)
     row.state, row.checks, row.review = status.state, status.checks, status.review
     row.merged_at, row.head_sha = status.merged_at, status.head_sha
-    row.error, row.failures = None, 0
+    # a pull request of another branch is shown, but never stands in for the task's own (GIT-5)
+    other_branch = bool(wf is not None and wf.branch and status.head_branch and status.head_branch != wf.branch)
+    row.error, row.failures = ("branch_mismatch" if other_branch else None), 0
     row.last_checked_at = _now()
     row.next_check_at = _now() + timedelta(seconds=POLL_SECONDS)
     await db.flush()
@@ -144,6 +159,8 @@ async def settle_done(db: AsyncSession, wf, task: Task, row: TaskPullRequest | N
     from app.workflow.models import Needs, WorkflowStatus
 
     if row is None or row.connection_id is None or wf.status != WorkflowStatus.waiting_human:
+        return False
+    if row.error == "branch_mismatch":
         return False
     if wf.needs != Needs.human_code_review:
         return False

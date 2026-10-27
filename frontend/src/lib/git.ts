@@ -40,6 +40,7 @@ export function webhookUrl(connectionId: string): string {
 
 const TEST_ERRORS: Record<string, string> = {
   unauthorized: "The git host refused the token.",
+  bad_token: "The saved token can't be used (the server's SECRET_KEY changed, or it has odd characters). Save it again.",
   not_found: "Not found: check the base URL.",
   rate_limited: "The git host is rate-limiting this token. Try again later.",
   unreachable: "Couldn't reach the git host.",
