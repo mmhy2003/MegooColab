@@ -2359,6 +2359,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/search/quick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Quick Search */
+        get: operations["quick_search_api_search_quick_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search */
+        get: operations["search_api_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Status */
+        get: operations["search_status_api_admin_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/search/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rebuild Search */
+        post: operations["rebuild_search_api_admin_search_rebuild_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2531,6 +2599,15 @@ export interface components {
             owner_id: string;
             /** Status */
             status: string;
+        };
+        /** AssigneeFacet */
+        AssigneeFacet: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Count */
+            count: number;
         };
         /** AttachmentOut */
         AttachmentOut: {
@@ -3019,6 +3096,29 @@ export interface components {
              */
             action: "retry" | "accept" | "pause";
         };
+        /** Facets */
+        Facets: {
+            /** Kind */
+            kind: {
+                [key: string]: number;
+            };
+            /** Project */
+            project: components["schemas"]["ProjectFacet"][];
+            /** Status */
+            status: {
+                [key: string]: number;
+            };
+            /** Assignee */
+            assignee: components["schemas"]["AssigneeFacet"][];
+            /** Type */
+            type: {
+                [key: string]: number;
+            };
+            /** Label */
+            label: {
+                [key: string]: number;
+            };
+        };
         /** Finding */
         Finding: {
             /**
@@ -3135,6 +3235,31 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** Hit */
+        Hit: {
+            /** Kind */
+            kind: string;
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Key */
+            key: string;
+            /** Url */
+            url: string | null;
+            /** Snippet */
+            snippet: string;
+            /** Project Key */
+            project_key: string | null;
+            /** Status */
+            status: string | null;
+            /** Updated At */
+            updated_at: number;
+            /** Card */
+            card?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** HumanReviewIn */
         HumanReviewIn: {
@@ -3614,6 +3739,15 @@ export interface components {
              */
             commit_docs_to_repo: boolean;
         };
+        /** ProjectFacet */
+        ProjectFacet: {
+            /** Id */
+            id: string;
+            /** Key */
+            key: string;
+            /** Count */
+            count: number;
+        };
         /** ProjectIn */
         ProjectIn: {
             /** Key */
@@ -3796,6 +3930,20 @@ export interface components {
          * @enum {string}
          */
         QuestionStatus: "queued" | "routed" | "draft" | "needs_human" | "answered" | "withdrawn";
+        /** QuickGroup */
+        QuickGroup: {
+            /** Kind */
+            kind: string;
+            /** Hits */
+            hits: components["schemas"]["Hit"][];
+        };
+        /** QuickOut */
+        QuickOut: {
+            /** Groups */
+            groups: components["schemas"]["QuickGroup"][];
+            /** Total */
+            total: number;
+        };
         /** RecordsOut */
         RecordsOut: {
             /** Decisions */
@@ -4002,6 +4150,15 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "queued" | "running" | "completed" | "failed" | "cancelled";
+        /** SearchAdminOut */
+        SearchAdminOut: {
+            /** Available */
+            available: boolean;
+            /** Documents */
+            documents: number | null;
+            /** Last Rebuild At */
+            last_rebuild_at: string | null;
+        };
         /** SearchHit */
         SearchHit: {
             /**
@@ -4018,13 +4175,6 @@ export interface components {
             snippet: string;
             /** Score */
             score: number;
-        };
-        /** SearchOut */
-        SearchOut: {
-            /** Semantic */
-            semantic: boolean;
-            /** Results */
-            results: components["schemas"]["SearchHit"][];
         };
         /** SetupIn */
         SetupIn: {
@@ -4791,12 +4941,31 @@ export interface components {
             /** Task Key */
             task_key?: string | null;
         };
+        /** SearchOut */
+        app__kb__schemas__SearchOut: {
+            /** Semantic */
+            semantic: boolean;
+            /** Results */
+            results: components["schemas"]["SearchHit"][];
+        };
         /** AskIn */
         app__memory__schemas__AskIn: {
             /** Question */
             question: string;
             /** Project Key */
             project_key?: string | null;
+        };
+        /** SearchOut */
+        app__search__schemas__SearchOut: {
+            /** Hits */
+            hits: components["schemas"]["Hit"][];
+            /** Total */
+            total: number;
+            facets: components["schemas"]["Facets"];
+            /** Meaning */
+            meaning: components["schemas"]["Hit"][] | null;
+            /** Meaning Available */
+            meaning_available: boolean;
         };
         /** AnswerIn */
         app__workflow__router__AnswerIn: {
@@ -8986,7 +9155,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SearchOut"];
+                    "application/json": components["schemas"]["app__kb__schemas__SearchOut"];
                 };
             };
             /** @description Validation Error */
@@ -10061,6 +10230,120 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    quick_search_api_search_quick_get: {
+        parameters: {
+            query: {
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuickOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_api_search_get: {
+        parameters: {
+            query: {
+                q: string;
+                kind?: string[];
+                project?: string[];
+                status?: string[];
+                assignee?: string[];
+                type?: string[];
+                label?: string[];
+                updated?: string | null;
+                sort?: string;
+                offset?: number;
+                meaning?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__search__schemas__SearchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_status_api_admin_search_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchAdminOut"];
+                };
+            };
+        };
+    };
+    rebuild_search_api_admin_search_rebuild_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
