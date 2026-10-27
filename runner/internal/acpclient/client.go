@@ -8,11 +8,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/acp-go-sdk"
+	"github.com/mmhy2003/megoocolab/runner/internal/adapters"
 	"github.com/mmhy2003/megoocolab/runner/internal/policy"
 )
 
@@ -136,6 +138,18 @@ func (c *Client) addMessage(text string) {
 	}
 }
 
+// megooColabMcpTitle is how Codex's adapter titles a call of one of MegooColab's MCP tools: "mcp.<server>.<tool>".
+var megooColabMcpTitle = regexp.MustCompile(`^mcp\.` + regexp.QuoteMeta(adapters.McpServerName) + `\.[A-Za-z0-9_]+$`)
+
+// megooColabMcpCall: Codex asks before every MCP tool call (kind "execute", no command, flagged
+// _meta.is_mcp_tool_approval). MegooColab's own tools are scoped by the run token on the server, so they are
+// allowed in every policy, as Claude Code's are pre-approved in its session options (adapters.SessionMeta).
+// The flag, an empty command and the exact title must all hold, so no shell command can pass for one.
+func megooColabMcpCall(p acp.RequestPermissionRequest, title, command string) bool {
+	flagged, _ := p.Meta["is_mcp_tool_approval"].(bool)
+	return flagged && command == "" && megooColabMcpTitle.MatchString(title)
+}
+
 // RequestPermission answers by policy: allow_once or reject_once, whichever the
 // agent offers. A standing approval (allow_always) is never given. With no
 // suitable option the outcome is "cancelled", never an approval.
@@ -165,6 +179,9 @@ func (c *Client) RequestPermission(_ context.Context, p acp.RequestPermissionReq
 	}
 
 	d := c.pol.CheckTool(kind, title, locations, command)
+	if megooColabMcpCall(p, title, command) {
+		d = policy.Decision{Allow: true, Reason: "MegooColab's own MCP tool, scoped by the run token"}
+	}
 	want := acp.PermissionOptionKindRejectOnce
 	if d.Allow {
 		want = acp.PermissionOptionKindAllowOnce

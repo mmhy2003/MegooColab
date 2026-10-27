@@ -619,3 +619,54 @@ func TestEnvAssignmentSecretsNeverEmitted(t *testing.T) {
 	}
 	rec.checkShape(t)
 }
+
+// Codex asks before every MCP call: kind "execute", no command, _meta.is_mcp_tool_approval, for the tool call it
+// announced as "mcp.<server>.<tool>". MegooColab's own tools are scoped by the run token on the server, so the
+// read-only policy allows them (Claude Code's are pre-approved in its session options); nothing else that only
+// looks like one is.
+func TestMegooColabMcpApprovalAllowedInReadOnly(t *testing.T) {
+	root := t.TempDir()
+	pol, _ := policy.New(policy.ReadOnly, root)
+	rec := &recorder{}
+	c := acpclient.New(pol, root, rec.emit)
+	ctx := context.Background()
+	execute := acp.ToolKindExecute
+	opts := []acp.PermissionOption{
+		{Kind: acp.PermissionOptionKindAllowOnce, OptionId: "allow_once", Name: "Allow"},
+		{Kind: acp.PermissionOptionKindAllowAlways, OptionId: "allow_session", Name: "Allow for this session"},
+		{Kind: acp.PermissionOptionKindRejectOnce, OptionId: "cancel", Name: "Cancel"},
+	}
+	ask := func(id, title string, mcp bool, raw any) string {
+		t.Helper()
+		_ = c.SessionUpdate(ctx, acp.SessionNotification{Update: acp.StartToolCall(acp.ToolCallId(id), title, acp.WithStartKind(execute))})
+		req := acp.RequestPermissionRequest{SessionId: "s", Options: opts,
+			ToolCall: acp.ToolCallUpdate{ToolCallId: acp.ToolCallId(id), Kind: &execute, RawInput: raw}}
+		if mcp {
+			req.Meta = map[string]any{"is_mcp_tool_approval": true}
+		}
+		r, err := c.RequestPermission(ctx, req)
+		if err != nil || r.Outcome.Selected == nil {
+			t.Fatalf("%s: %+v %v", id, r, err)
+		}
+		return string(r.Outcome.Selected.OptionId)
+	}
+	if got := ask("m1", "mcp.megoocolab.submit_answer", true, nil); got != "allow_once" {
+		t.Errorf("MegooColab MCP tool = %s, want allow_once", got)
+	}
+	for _, c := range []struct {
+		id, title string
+		mcp       bool
+		raw       any
+	}{
+		{"m2", "mcp.other.delete_everything", true, nil},                                    // another server
+		{"m3", "mcp.megoocolab.submit_answer", false, nil},                                  // not an MCP approval
+		{"m4", "mcp.megoocolab.submit_answer", true, map[string]any{"command": "rm -rf x"}}, // carries a command
+		{"m5", "mcp.megoocolab.", true, nil},
+		{"m6", "mcp.megoocolab.x y", true, nil},
+		{"m7", "Run mcp.megoocolab.submit_answer", true, nil},
+	} {
+		if got := ask(c.id, c.title, c.mcp, c.raw); got != "cancel" {
+			t.Errorf("%s (%q) = %s, want cancel", c.id, c.title, got)
+		}
+	}
+}
