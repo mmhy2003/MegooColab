@@ -6,7 +6,7 @@ Meilisearch becomes `SearchUnavailable`: search answers 503, and saving anything
 
 import asyncio
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any
 
 import meilisearch
 from meilisearch.errors import (
@@ -16,8 +16,6 @@ from meilisearch.errors import (
 )
 
 from app.core.config import get_settings
-
-T = TypeVar("T")
 
 TIMEOUT_SECONDS = 5
 TASK_TIMEOUT_MS = 30_000
@@ -54,7 +52,7 @@ def index():
     return client().index(get_settings().meili_index)
 
 
-async def call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+async def call[T](fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     """Run a client call in a thread; every Meilisearch failure becomes SearchUnavailable."""
     try:
         return await asyncio.wait_for(asyncio.to_thread(fn, *args, **kwargs), TIMEOUT_SECONDS * 2)
