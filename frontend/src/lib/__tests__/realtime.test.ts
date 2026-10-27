@@ -24,6 +24,10 @@ class MockSocket {
 describe("invalidationsFor", () => {
   const keys = new Map([["p1", "PAY"]]);
 
+  it("refreshes the bell and the list on a notification event", () => {
+    expect(invalidationsFor({ type: "notification.created", user_id: "u1" }, keys)).toEqual([["notifications"]]);
+  });
+
   it("maps task events to the project's task lists and task details", () => {
     const out = invalidationsFor({ type: "task.updated", project_id: "p1", task_id: "t1" }, keys);
     expect(out).toContainEqual(["tasks", "PAY"]);

@@ -2154,6 +2154,191 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/git-connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Connections */
+        get: operations["list_connections_api_admin_git_connections_get"];
+        put?: never;
+        /** Create Connection */
+        post: operations["create_connection_api_admin_git_connections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/git-connections/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Connection */
+        delete: operations["delete_connection_api_admin_git_connections__connection_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Connection */
+        patch: operations["update_connection_api_admin_git_connections__connection_id__patch"];
+        trace?: never;
+    };
+    "/api/admin/git-connections/{connection_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Connection */
+        post: operations["test_connection_api_admin_git_connections__connection_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Connection Names
+         * @description For linking a project's repositories (a project manager's choice): names only.
+         */
+        get: operations["connection_names_api_git_connections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git/webhooks/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive Webhook
+         * @description A provider says something changed. Verified, it only queues refreshes of the pull requests it names.
+         */
+        post: operations["receive_webhook_api_git_webhooks__connection_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notifications
+         * @description Newest first, 50 per page; the next page starts before the last row's `created_at` (and `id`).
+         */
+        get: operations["list_notifications_api_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unread Count */
+        get: operations["unread_count_api_notifications_unread_count_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/{notification_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Read */
+        post: operations["mark_read_api_notifications__notification_id__read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark All Read */
+        post: operations["mark_all_read_api_notifications_read_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/notification-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Preferences */
+        get: operations["get_preferences_api_me_notification_preferences_get"];
+        /**
+         * Put Preferences
+         * @description Kinds left out keep what they had.
+         */
+        put: operations["put_preferences_api_me_notification_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2224,12 +2409,16 @@ export interface components {
             /** Name */
             name: string;
             smtp: components["schemas"]["SmtpIn"];
+            dreaming?: components["schemas"]["Dreaming"] | null;
+            project_defaults?: components["schemas"]["ProjectDefaults"] | null;
         };
         /** AdminSettingsOut */
         AdminSettingsOut: {
             /** Name */
             name: string;
             smtp: components["schemas"]["SmtpOut"];
+            dreaming: components["schemas"]["Dreaming"];
+            project_defaults: components["schemas"]["ProjectDefaults"];
         };
         /** AgentIn */
         AgentIn: {
@@ -2571,6 +2760,16 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /** ConnectionRef */
+        ConnectionRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** CorrectIn */
         CorrectIn: {
             /** Text */
@@ -2737,6 +2936,16 @@ export interface components {
             /** Finished At */
             finished_at: string | null;
         };
+        /** Dreaming */
+        Dreaming: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Hour Utc */
+            hour_utc?: number | null;
+        };
         /**
          * Driver
          * @enum {string}
@@ -2815,6 +3024,63 @@ export interface components {
              */
             email: string;
         };
+        /** GitConnectionIn */
+        GitConnectionIn: {
+            /** Name */
+            name: string;
+            kind: components["schemas"]["GitKind"];
+            /** Base Url */
+            base_url: string;
+            /** Token */
+            token: string;
+            /**
+             * Webhook Secret
+             * @default
+             */
+            webhook_secret: string;
+        };
+        /** GitConnectionOut */
+        GitConnectionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            kind: components["schemas"]["GitKind"];
+            /** Base Url */
+            base_url: string;
+            /** Token Set */
+            token_set: boolean;
+            /** Webhook Secret Set */
+            webhook_secret_set: boolean;
+        };
+        /** GitConnectionPatch */
+        GitConnectionPatch: {
+            /** Name */
+            name?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Token */
+            token?: string | null;
+            /** Webhook Secret */
+            webhook_secret?: string | null;
+        };
+        /** GitConnectionTest */
+        GitConnectionTest: {
+            /** Ok */
+            ok: boolean;
+            /** Login */
+            login?: string | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * GitKind
+         * @enum {string}
+         */
+        GitKind: "github" | "gitlab" | "gitea";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2944,6 +3210,11 @@ export interface components {
             /** Folder Id */
             folder_id?: string | null;
         };
+        /**
+         * Kind
+         * @enum {string}
+         */
+        Kind: "needs_you" | "assigned" | "mentioned" | "agent_offline" | "question_waiting";
         /** LabelIn */
         LabelIn: {
             /** Name */
@@ -3169,6 +3440,40 @@ export interface components {
          * @enum {string}
          */
         Needs: "question" | "design_approval" | "plan_approval" | "escalation" | "human_code_review";
+        /** NotificationOut */
+        NotificationOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["Kind"];
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Link */
+            link: string;
+            /** Task Id */
+            task_id: string | null;
+            /** Project Id */
+            project_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Read At */
+            read_at: string | null;
+        };
+        /** NotificationPrefIO */
+        NotificationPrefIO: {
+            kind: components["schemas"]["Kind"];
+            /** In App */
+            in_app: boolean;
+            /** Email */
+            email: boolean;
+        };
         /** OrgOut */
         OrgOut: {
             /** Name */
@@ -3238,6 +3543,26 @@ export interface components {
             bindings: components["schemas"]["BindingOut"][];
             /** Can Use */
             can_use: boolean;
+        };
+        /** ProjectDefaults */
+        ProjectDefaults: {
+            /** @default pull_request */
+            finishing_option: components["schemas"]["FinishingOption"];
+            /**
+             * Require Human Code Review
+             * @default false
+             */
+            require_human_code_review: boolean;
+            /**
+             * Sprints Enabled
+             * @default true
+             */
+            sprints_enabled: boolean;
+            /**
+             * Commit Docs To Repo
+             * @default false
+             */
+            commit_docs_to_repo: boolean;
         };
         /** ProjectIn */
         ProjectIn: {
@@ -3347,6 +3672,22 @@ export interface components {
             /** Api Base */
             api_base?: string | null;
         };
+        /**
+         * PullRequestOut
+         * @description GIT-5: the pull request a task's Finish run opened, as last read from the git host.
+         */
+        PullRequestOut: {
+            /** Url */
+            url: string;
+            /** State */
+            state: string;
+            /** Checks */
+            checks: string;
+            /** Review */
+            review: string;
+            /** Tracked */
+            tracked: boolean;
+        };
         /** QuestionOut */
         QuestionOut: {
             /**
@@ -3418,6 +3759,16 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** RepoConnection */
+        RepoConnection: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** RepoIn */
         RepoIn: {
             /** Name */
@@ -3430,6 +3781,8 @@ export interface components {
              * @default main
              */
             default_branch: string;
+            /** Connection Id */
+            connection_id?: string | null;
         };
         /** RepoOut */
         RepoOut: {
@@ -3445,6 +3798,7 @@ export interface components {
             provider: components["schemas"]["RepoProvider"];
             /** Default Branch */
             default_branch: string;
+            connection?: components["schemas"]["RepoConnection"] | null;
         };
         /** RepoPatch */
         RepoPatch: {
@@ -3455,6 +3809,8 @@ export interface components {
             provider?: components["schemas"]["RepoProvider"] | null;
             /** Default Branch */
             default_branch?: string | null;
+            /** Connection Id */
+            connection_id?: string | null;
         };
         /**
          * RepoProvider
@@ -3924,6 +4280,7 @@ export interface components {
              * @default []
              */
             waiting_on: string[];
+            pull_request?: components["schemas"]["PullRequestOut"] | null;
         };
         /** TaskRef */
         TaskRef: {
@@ -4155,6 +4512,11 @@ export interface components {
             /** Documents */
             documents: components["schemas"]["TreeDoc"][];
         };
+        /** UnreadCount */
+        UnreadCount: {
+            /** Count */
+            count: number;
+        };
         /** UpdateUserIn */
         UpdateUserIn: {
             /** Name */
@@ -4282,6 +4644,7 @@ export interface components {
             branch: string | null;
             /** Pr Url */
             pr_url: string | null;
+            pull_request?: components["schemas"]["PullRequestOut"] | null;
             /** Documents */
             documents: components["schemas"]["WorkflowDocumentBrief"][];
             /** Open Question Id */
@@ -9217,6 +9580,356 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuestionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_connections_api_admin_git_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnectionOut"][];
+                };
+            };
+        };
+    };
+    create_connection_api_admin_git_connections_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitConnectionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnectionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_connection_api_admin_git_connections__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_connection_api_admin_git_connections__connection_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GitConnectionPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnectionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_connection_api_admin_git_connections__connection_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitConnectionTest"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connection_names_api_git_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionRef"][];
+                };
+            };
+        };
+    };
+    receive_webhook_api_git_webhooks__connection_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notifications_api_notifications_get: {
+        parameters: {
+            query?: {
+                unread?: boolean;
+                before?: string | null;
+                before_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unread_count_api_notifications_unread_count_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnreadCount"];
+                };
+            };
+        };
+    };
+    mark_read_api_notifications__notification_id__read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                notification_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_all_read_api_notifications_read_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_preferences_api_me_notification_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPrefIO"][];
+                };
+            };
+        };
+    };
+    put_preferences_api_me_notification_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationPrefIO"][];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPrefIO"][];
                 };
             };
             /** @description Validation Error */

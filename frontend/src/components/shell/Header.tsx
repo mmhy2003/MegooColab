@@ -1,10 +1,11 @@
 "use client";
 
-import { Bot, KeyRound, LogOut, Menu, UserRound } from "lucide-react";
+import { Bell, Bot, KeyRound, LogOut, Menu, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar } from "@/components/ui/Avatar";
 import { api } from "@/lib/api";
@@ -37,6 +38,7 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
           </span>
         ))}
       </nav>
+      <NotificationBell />
       <ThemeToggle />
       <div className="relative">
         <button
@@ -59,6 +61,9 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
             </Link>
             <Link role="menuitem" href="/settings/agents" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded px-3 py-2 text-sm text-fg no-underline hover:bg-surface-2">
               <Bot size={14} aria-hidden /> My agents
+            </Link>
+            <Link role="menuitem" href="/settings/notifications" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded px-3 py-2 text-sm text-fg no-underline hover:bg-surface-2">
+              <Bell size={14} aria-hidden /> Notifications
             </Link>
             <button
               role="menuitem"

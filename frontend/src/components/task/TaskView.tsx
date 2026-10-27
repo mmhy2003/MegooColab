@@ -71,6 +71,7 @@ export function TaskView({
   const [error, setError] = useState<string | null>(null);
 
   const userNames = useMemo(() => new Map(users.data?.map((u) => [u.id, u.name])), [users.data]);
+  const activeUsers = useMemo(() => (users.data ?? []).filter((u) => u.status === "active"), [users.data]);
   const agentNames = useMemo(() => new Map(agents.data?.map((a) => [a.id, a.name])), [agents.data]);
   const columnNames = useMemo(() => new Map(columns.data?.map((c) => [c.id, c.name])), [columns.data]);
 
@@ -219,7 +220,7 @@ export function TaskView({
                 setOlder({ items: [...page, ...older.items], more: page.length >= ACTIVITY_PAGE });
               }}
             />
-            {!disabled && <CommentBox onSubmit={(body_md) => run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md } }))} />}
+            {!disabled && <CommentBox users={activeUsers} onSubmit={(body_md) => run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md } }))} />}
           </Section>
         </div>
         <aside className="space-y-4">
