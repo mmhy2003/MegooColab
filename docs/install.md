@@ -68,11 +68,11 @@ jobs: search indexing, memory, pull-request checks, email), `frontend`, and `cad
 Check it answers:
 
 ```bash
-curl -s http://localhost:${HTTP_PORT:-80}/api/setup/status
+curl -s http://localhost/api/setup/status
 # {"needs_setup":true}
 ```
 
-(Use your `HTTP_PORT` if you changed it.)
+(Add your `HTTP_PORT`, e.g. `http://localhost:8090/...`, if you changed it.)
 
 ## 5. First run: the organization and admin
 
