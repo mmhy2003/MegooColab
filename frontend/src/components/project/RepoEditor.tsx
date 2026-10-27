@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { useConnectionNames } from "@/lib/git";
 import type { Repo } from "@/lib/types";
 
 const PROVIDERS: Repo["provider"][] = ["github", "gitlab", "gitea", "plain"];
@@ -15,6 +16,7 @@ export function RepoEditor({ projectKey, repos, onChanged }: { projectKey: strin
   const base = `/api/projects/${projectKey}/repositories`;
   const [form, setForm] = useState({ name: "", url: "", provider: "github" as Repo["provider"], default_branch: "main" });
   const [error, setError] = useState<string | null>(null);
+  const connections = useConnectionNames();
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);
@@ -37,6 +39,18 @@ export function RepoEditor({ projectKey, repos, onChanged }: { projectKey: strin
             <span className="font-semibold">{r.name}</span>
             <span className="min-w-0 flex-1 truncate text-muted">{r.url}</span>
             <span className="text-xs text-muted">{r.provider} · {r.default_branch}</span>
+            <select
+              aria-label={`Connection for ${r.name}`}
+              title="The git connection that follows this repository's pull requests"
+              className={FIELD}
+              value={r.connection?.id ?? ""}
+              onChange={(e) => run(() => api(`${base}/${r.id}`, { method: "PATCH", json: { connection_id: e.target.value || null } }))}
+            >
+              <option value="">Not tracked</option>
+              {(connections.data ?? []).map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
             <button type="button" className="icon-btn hover:text-pink" aria-label={`Remove ${r.name}`} onClick={() => run(() => api(`${base}/${r.id}`, { method: "DELETE" }))}>
               <Trash2 size={14} aria-hidden />
             </button>

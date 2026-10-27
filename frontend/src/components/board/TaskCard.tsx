@@ -5,6 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Bookmark, Bot, Bug, CheckSquare, ChevronDown, ChevronsDown, ChevronsUp, ChevronUp, Equal, Zap } from "lucide-react";
 
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
+import { PullRequestBadge } from "@/components/git/PullRequestBadge";
 import { LabelChip } from "@/components/project/LabelEditor";
 import { Avatar } from "@/components/ui/Avatar";
 import { StageTrack } from "@/components/workflow/StageTrack";
@@ -82,6 +83,11 @@ export function TaskCardView({
               </span>
             )}
           </div>
+        </div>
+      )}
+      {task.pull_request && (
+        <div>
+          <PullRequestBadge pr={task.pull_request} />
         </div>
       )}
       {task.labels.length > 0 && (

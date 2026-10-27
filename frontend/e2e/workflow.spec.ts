@@ -443,7 +443,7 @@ test("workflow end to end", async ({ browser }) => {
   await expect(doneCard).toBeVisible({ timeout: 60_000 });
   await expect(doneCard.getByRole("group", { name: "Stage: Done (6 of 6)" })).toBeVisible();
   await expect(panel.getByText("Finished", { exact: true })).toBeVisible();
-  await expect(panel.getByRole("link", { name: "Open the pull request" })).toHaveAttribute("href", PR_URL);
+  await expect(panel.getByRole("link", { name: "PR (not tracked)" })).toHaveAttribute("href", PR_URL); // no git connection
   await expect(panel.getByText(BRANCH)).toBeVisible();
   await expect(drawer.getByText("Moved to In Review by the workflow")).toBeVisible();
   await expect(drawer.getByText("Moved to Done by the workflow")).toBeVisible();

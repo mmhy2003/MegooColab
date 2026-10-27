@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, BookOpenText, Bot, Brain, BrainCircuit, FolderKanban, MessagesSquare, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
+import { BookOpen, BookOpenText, Bot, Brain, BrainCircuit, FolderKanban, GitPullRequest, MessagesSquare, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -23,6 +23,7 @@ const ADMIN: Item[] = [
   { href: "/admin/settings", label: "Settings", icon: Settings2 },
   { href: "/admin/methodology", label: "Methodology", icon: BookOpenText },
   { href: "/admin/ai", label: "AI", icon: BrainCircuit },
+  { href: "/admin/git", label: "Git", icon: GitPullRequest },
   { href: "/admin/audit", label: "Audit log", icon: ScrollText },
 ];
 

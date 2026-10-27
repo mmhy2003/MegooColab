@@ -11,12 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.audit import service as audit
-from app.auth.deps import AdminUser
+from app.auth.deps import AdminUser, AuthedUser
 from app.core.crypto import decrypt, encrypt
 from app.core.db import DbSession
 from app.git import providers, service
 from app.git.models import GitConnection, GitKind
 from app.git.schemas import (
+    ConnectionRef,
     GitConnectionIn,
     GitConnectionOut,
     GitConnectionPatch,
@@ -24,6 +25,7 @@ from app.git.schemas import (
 )
 
 router = APIRouter(prefix="/api/admin/git-connections", tags=["git"])
+names_router = APIRouter(prefix="/api/git/connections", tags=["git"])
 
 
 def _out(c: GitConnection) -> GitConnectionOut:
@@ -50,6 +52,13 @@ async def _flush_unique(db) -> None:
 async def list_connections(db: DbSession, _admin: AdminUser) -> list[GitConnectionOut]:
     rows = await db.execute(select(GitConnection).order_by(GitConnection.created_at, GitConnection.name))
     return [_out(c) for c in rows.scalars()]
+
+
+@names_router.get("")
+async def connection_names(db: DbSession, _user: AuthedUser) -> list[ConnectionRef]:
+    """For linking a project's repositories (a project manager's choice): names only."""
+    rows = await db.execute(select(GitConnection.id, GitConnection.name).order_by(GitConnection.name))
+    return [ConnectionRef(id=i, name=n) for i, n in rows.all()]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

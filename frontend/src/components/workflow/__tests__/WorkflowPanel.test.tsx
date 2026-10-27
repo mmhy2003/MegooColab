@@ -99,9 +99,9 @@ describe("WorkflowPanel", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });
 
-  it("shows Approve PR and the PR link for human code review", async () => {
+  it("shows Mark merged and the PR link for human code review", async () => {
     setup(wf({ stage: "done", status: "waiting_human", needs: "human_code_review", pr_url: "https://x/pr/1", branch: "task/pay-1" }));
-    expect(await screen.findByRole("button", { name: "Approve PR" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Mark merged" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /pull request/i })).toHaveAttribute("href", "https://x/pr/1");
     expect(screen.getByText("task/pay-1")).toBeInTheDocument();
   });

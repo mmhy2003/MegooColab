@@ -5,6 +5,7 @@ import { Bot, ExternalLink, GitBranch } from "lucide-react";
 import { useState } from "react";
 
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
+import { PullRequestBadge } from "@/components/git/PullRequestBadge";
 import { Button } from "@/components/ui/Button";
 import { api, ApiError } from "@/lib/api";
 import { runReasonText, useAgentRuns } from "@/lib/agents";
@@ -147,7 +148,7 @@ export function WorkflowPanel({
       )}
 
       {status === "waiting_human" && wf.needs === "human_code_review" && canDecide && (
-        <Button disabled={busy} onClick={() => void post("human-review", { approved: true })}>Approve PR</Button>
+        <Button disabled={busy} onClick={() => void post("human-review", { approved: true })}>Mark merged</Button>
       )}
 
       {agentDriven && (
@@ -190,7 +191,9 @@ export function WorkflowPanel({
               <GitBranch size={12} aria-hidden /> <code className="break-all">{wf.branch}</code>
             </p>
           )}
-          {wf.pr_url && (
+          {wf.pull_request ? (
+            <PullRequestBadge pr={wf.pull_request} />
+          ) : wf.pr_url && (
             <a href={wf.pr_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-ink underline">
               Open the pull request <ExternalLink size={12} aria-hidden />
             </a>

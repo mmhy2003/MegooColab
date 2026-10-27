@@ -111,3 +111,14 @@ async def test_repository_connection_link(client, client_factory, db):
     await client.delete(f"/api/admin/git-connections/{conn['id']}")
     [listed] = (await manager_client.get("/api/projects/PAY/repositories")).json()
     assert listed["connection"] is None
+
+
+async def test_connection_names_for_repository_links(client, client_factory, db):
+    """A project manager picks a repository's connection by name; tokens, URLs and secrets stay with admins."""
+    await _admin(client, db)
+    conn = (await _create(client)).json()
+    member = client_factory()
+    await login(member, await make_user(db))
+    r = await member.get("/api/git/connections")
+    assert r.status_code == 200 and r.json() == [{"id": conn["id"], "name": "GitHub"}]
+    assert (await client_factory().get("/api/git/connections")).status_code == 401
