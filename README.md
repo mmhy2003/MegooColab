@@ -111,3 +111,16 @@ cd frontend && npx playwright test e2e/memory.spec.ts
 cd frontend && npx playwright test e2e/questions.spec.ts
 # optional: E2E_RUNNER_LOG=1 prints the runner output at the end
 ```
+
+### Git and notifications end-to-end tests
+
+`frontend/e2e/git.spec.ts` covers git integration on the same stack, with the same requirements as the workflow test (the Go toolchain and `git` on the PATH). It starts a fake GitHub Enterprise API on the host (`frontend/e2e/helpers/fakeGit.ts`, on a free port), which the stack reaches as `http://host.docker.internal:<port>` (the compose file maps that name for the backend and worker). An admin adds the connection in Admin → Git with a token and a webhook secret, and **Test** shows the fake login. Project GIT requires a human code review, and its repository is linked to the connection. The fake agent runs GIT-1 to Finish, which reports pull request #1: the task shows "PR open · checks pending" and waits. The fake host then marks it merged, and a signed webhook makes MegooColab look: the task finishes by itself. A forged or unsigned delivery gets 401. GIT-3's pull request #2 is closed without a merge: the workflow escalates `pr_closed`, and **Accept** finishes it.
+
+`frontend/e2e/notifications.spec.ts` covers notifications on the same stack (it also builds the runner and the fake agent). The admin assigns NOT-1 to an invited member, whose bell shows 1, and the notification opens the task. A mention made with the comment picker reaches her; an outsider mentioned by hand gets nothing. The admin's agent submits NOT-2's design, and the owner is told it awaits approval. Turning off in-app assignments silences the next one.
+
+Both create their own users, teams and projects (GIT and NOT), so they need a fresh stack. To run them:
+
+```bash
+cd frontend && npx playwright test e2e/git.spec.ts e2e/notifications.spec.ts
+# optional: E2E_RUNNER_LOG=1 prints the runner output at the end
+```
