@@ -19,7 +19,7 @@ from app.core.events import Event, publish
 from app.core.text import strip_nul
 from app.tasks.models import Task, TaskEvent
 from app.workflow import engine
-from app.workflow.context import REPORTS_CHARS, wrap_untrusted
+from app.workflow.context import _CLOSE, REPORTS_CHARS, _escape
 from app.workflow.models import (
     RunRole,
     Stage,
@@ -252,23 +252,48 @@ def _test_run_line(t: WorkflowTestRun) -> str:
     return line
 
 
-def _section(heading: str, source: str, lines: list[str], empty: str) -> str:
+MAX_LINE = 1500  # one record's line in a reviewer's prompt, after escaping
+
+
+def _section(heading: str, source: str, lines: list[str], priority: list[int], what: str, empty: str) -> str:
+    """The records as one untrusted block within REPORTS_CHARS, measured after escaping (an escaped bracket is four
+    characters). Lines are kept in `priority` order until the budget is spent, then shown in their own order, and
+    what was left out is said."""
     if not lines:
         return f"{heading}\n{empty}"
-    text = "\n".join(lines)
-    if len(text) > REPORTS_CHARS:
-        text = text[: REPORTS_CHARS - 1].rstrip() + "…"
-    return f"{heading}\n" + wrap_untrusted(source, text)
+    escaped = [_escape(line) for line in lines]
+    escaped = [e if len(e) <= MAX_LINE else e[: MAX_LINE - 1].rstrip() + "…" for e in escaped]
+    kept: set[int] = set()
+    used = 0
+    for i in priority:
+        if used + len(escaped[i]) + 1 > REPORTS_CHARS:
+            continue
+        kept.add(i)
+        used += len(escaped[i]) + 1
+    body = "\n".join(escaped[i] for i in range(len(lines)) if i in kept)
+    omitted = len(lines) - len(kept)
+    note = f"\n({omitted} more {what} omitted to fit the prompt size limit.)" if omitted else ""
+    return f'{heading}\n<untrusted source="{source}">\n{body}{_CLOSE}{note}'
+
+
+def _newest_first(rows: list) -> list[int]:
+    return list(range(len(rows) - 1, -1, -1))
 
 
 def decisions_section(rows: list[WorkflowDecision]) -> str:
     return _section("## Decisions the agent recorded", "decisions", [_decision_line(d) for d in rows],
-                    "(No decisions were recorded.)")
+                    _newest_first(rows), "decisions", "(No decisions were recorded.)")
 
 
 def test_runs_section(rows: list[WorkflowTestRun]) -> str:
-    return _section("## Recorded test runs", "test_runs", [_test_run_line(t) for t in rows],
-                    "(No test runs were recorded: treat any claim of passing tests as unverified.)")
+    """Each step's latest run goes in first (what the reviewer checks claims against), then the rest, newest first."""
+    latest: dict[tuple, int] = {}
+    for i, t in enumerate(rows):
+        latest[(t.stage, t.step)] = i
+    first = sorted(latest.values())
+    rest = [i for i in _newest_first(rows) if i not in set(first)]
+    return _section("## Recorded test runs", "test_runs", [_test_run_line(t) for t in rows], first + rest,
+                    "test runs", "(No test runs were recorded: treat any claim of passing tests as unverified.)")
 
 
 def decision_lines(rows: list[WorkflowDecision]) -> list[str]:

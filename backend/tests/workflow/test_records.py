@@ -197,3 +197,25 @@ async def test_the_queued_step_review_prompt_carries_the_steps_records(db, tc_fa
     assert review.workflow_role == "step_review"
     assert "## Decisions the agent recorded" in review.prompt and "Used a map" in review.prompt
     assert "Step 1: passed — uv run pytest (total 3, failed 0, skipped 0)" in review.prompt
+
+
+async def test_a_run_recorded_while_the_claim_waited_for_the_lock_counts(db, tc_factory):
+    """Final review fix: record_tests and complete_step issued in parallel. The claim's transaction starts first
+    but takes the lock after the record is in: the step is verified."""
+    from app.tasks.models import Task
+    from app.workflow import build, records
+    from app.workflow.models import TaskWorkflow
+
+    tc = tc_factory(lifespan=True)
+    b, run, _ = await _building(db, tc, step=1)
+    async with SessionLocal() as claim:
+        await claim.execute(select(AgentRun.id).limit(1))  # the claim's transaction has started
+        async with SessionLocal() as rec:
+            task = await rec.get(Task, b.task_id)
+            await records.record_tests(rec, task, await rec.get(TaskWorkflow, b.task_id), run=await rec.get(AgentRun, run.id),
+                                       posted_by=None, command="pytest", passed=True)
+            await rec.commit()
+        await build.complete_step(claim, await claim.get(AgentRun, run.id), 1, "done", True, "pytest")
+        await claim.commit()
+    async with SessionLocal() as s:
+        assert await records.unverified_steps(s, b.task_id) == []

@@ -19,7 +19,7 @@ Bookkeeping on the workflow:
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import AgentRun
@@ -85,7 +85,8 @@ async def complete_step(
     if isinstance(step, bool) or not isinstance(step, int) or step != run.step:
         raise _422("wrong_step")
     run.step_result = _clean_step_result(summary, tests_passed, test_command)
-    await engine.record_workflow_event(db, task, None, "step.completed", {"step": step, "tests_passed": tests_passed})
+    claim = await engine.record_workflow_event(db, task, None, "step.completed", {"step": step, "tests_passed": tests_passed})
+    claim.created_at = func.clock_timestamp()  # when the claim was made, as test runs are stamped (unverified steps)
 
 
 def _clean_step_result(summary: str, tests_passed: bool, test_command: str | None) -> dict:
@@ -115,7 +116,8 @@ async def complete_step_connect_only(
     if isinstance(step, bool) or not isinstance(step, int) or step != wf.current_step:
         raise _422("wrong_step")
     result = _clean_step_result(summary, tests_passed, test_command)
-    await engine.record_workflow_event(db, task, None, "step.completed", {"step": step, **result})
+    claim = await engine.record_workflow_event(db, task, None, "step.completed", {"step": step, **result})
+    claim.created_at = func.clock_timestamp()  # when the claim was made, as test runs are stamped (unverified steps)
     if not tests_passed:
         return
     steps = await _plan_steps(db, task.id)

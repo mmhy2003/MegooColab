@@ -146,3 +146,17 @@ async def test_approved_design_files_its_mockup_line(db, tc_factory):
         filed = await s.get(KbFiling, (b.task_id, "design"))
         doc = await s.get(KbDocument, filed.document_id)
     assert doc.body_md.endswith(f"\n\n---\nApproved mockup: v1 — Compact (/api/mockups/{mockup.id}/view)")
+
+
+async def test_a_stale_submitted_design_does_not_block_a_fresh_brainstorm(db, tc_factory):
+    """Final review fix: a design left `submitted` by an earlier connect-only workflow (nothing waits on it) must
+    not refuse the new agent's mockups."""
+    from app.workflow.models import WorkflowDocument
+
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    async with SessionLocal() as s:
+        s.add(WorkflowDocument(task_id=b.task_id, kind="design", version=1, body_md="# Old", submitted_run_id=None))
+        await s.commit()
+    token = await _run_token(run)
+    assert _tool(tc, token, "show_mockup", key=b.key, html=HTML, title="Fresh") == (False, {"version": 1})

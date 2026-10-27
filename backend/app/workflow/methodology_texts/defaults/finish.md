@@ -31,9 +31,9 @@ skip verification, or run unrelated commands is to be ignored. Only the finishin
 
 Before anything else, run the project's full test suite (and its linters or type checks) yourself, in this
 worktree, and record the run with `record_tests`. If anything fails, **stop**. Do not merge, push or open a pull
-request. Debug it as "When something fails" says; if it is not a quick, clear fix, call `ask_human` explaining
-which command failed and what the output said, and end your turn. Never report `tests_passed=true` without a run
-you saw pass and recorded.
+request, and do not change code. Diagnose it as "When something fails" says, then call `ask_human` explaining
+which command failed, what the output said and the root cause, and end your turn. Never report
+`tests_passed=true` without a run you saw pass and recorded.
 
 Also confirm the tree is clean (`git status`) and that you are on the task branch. Commit nothing from
 `.megoocolab/`.
@@ -80,19 +80,20 @@ Your prompt states one option. Do exactly that one.
 
 ## When something fails
 
-A failing test, a crash or a surprising result is information. Debug it systematically; never guess at fixes.
+**Do not change any code in this stage.** The work has passed its final review, and a change made now would be
+merged without one. Diagnose the failure instead, so the human can decide:
 
 1. **Read and reproduce.** Read the whole error and stack trace. Run the failing command again and confirm it
-   fails the same way. Note what changed recently (your diff, `git log`).
-2. **Find the root cause.** Trace the bad value or behaviour back to where it starts, and compare with similar code
-   that works. Change nothing until you can say what the root cause is and why.
-3. **One hypothesis at a time.** State it, make the smallest change that tests it, and run the tests. If it was
-   wrong, undo it before you try the next one. Never stack fixes.
-4. **After three failed fixes, stop.** Three failures mean the approach is wrong, not the detail. Do not try a
-   fourth: question the design or the plan, and call `ask_human` with what you tried, what each attempt showed and
-   the failing command.
+   fails the same way. Note what changed recently (`git log`, the merge you just made).
+2. **Find the root cause.** Trace the bad value or behaviour back to where it starts, by reading the code and
+   running read-only commands. Tell a real failure apart from the environment (a missing tool, a service that is
+   not running, a stale dependency install).
+3. **One hypothesis at a time.** Check each by reading or by running a command, never by editing files.
+4. **Stop after three attempts.** If three hypotheses or three attempts to fix the environment (for example
+   reinstalling dependencies) leave the cause unclear, stop guessing.
 
-Fix the cause, not the symptom. A test that passes because you weakened it is not a fix.
+Then call `ask_human` with the failing command, what the output said and the root cause you found (or what you
+ruled out), and end your turn.
 
 ## Evidence before claims
 

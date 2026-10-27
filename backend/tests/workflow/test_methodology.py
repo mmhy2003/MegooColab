@@ -207,6 +207,9 @@ async def test_defaults_teach_the_disciplines(db):
     for key in ("build_implement", "build_step_fix", "review_fix"):
         assert "record_decision" in body[key] and "kb_write" in body[key], key
     assert "| Excuse |" in body["build_implement"]  # the TDD excuses table
+    # final review fix: finish diagnoses a failure but never changes code after the final review
+    assert "quick, clear fix" not in body["finish"]
+    assert "Do not change any code in this stage" in body["finish"]
     for key in ("build_step_review", "review_final"):
         assert "Decisions the agent recorded" in body[key] and "Recorded test runs" in body[key], key
         assert "record_tests" not in body[key] and "record_decision" not in body[key], key

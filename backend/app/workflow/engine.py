@@ -37,7 +37,7 @@ from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.access import can_manage_project, project_team_ids
 from app.projects.models import BoardColumn, Project
-from app.tasks.models import Task, TaskType
+from app.tasks.models import Task, TaskEvent, TaskType
 from app.tasks.service import apply_column, end_position, record_event
 from app.teams.service import user_team_ids
 from app.workflow.context import FIX_ROLES, MAX_PROMPT_CHARS, build_prompt, resume_text
@@ -151,9 +151,12 @@ async def lock_task(db: AsyncSession, task: Task, *, create: bool = False) -> Ta
     return await lock_workflow(db, task.id)
 
 
-async def record_workflow_event(db: AsyncSession, task: Task, actor_id: uuid.UUID | None, kind: str, data: dict | None = None) -> None:
-    await record_event(db, task, actor_id, kind, data or {})
+async def record_workflow_event(
+    db: AsyncSession, task: Task, actor_id: uuid.UUID | None, kind: str, data: dict | None = None
+) -> TaskEvent:
+    event = await record_event(db, task, actor_id, kind, data or {})
     await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
+    return event
 
 
 async def manages(db: AsyncSession, user: User, project: Project) -> bool:
