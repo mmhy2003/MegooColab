@@ -121,4 +121,19 @@ describe("NotificationPrefs", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "In app: Mentioned in a comment" }));
     await waitFor(() => expect(fetchMock.mock.calls.filter(([, i]) => i?.method === "PUT")).toHaveLength(2));
   });
+
+  it("shows a toggle at once, and puts it back when saving fails", async () => {
+    const prefs = [{ kind: "assigned", in_app: true, email: true }];
+    let fail: (r: Response) => void = () => undefined;
+    // the save stays pending until the test answers it
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) =>
+      init?.method === "PUT" ? new Promise<Response>((done) => (fail = done)) : Promise.resolve(json(prefs))));
+    wrap(<NotificationPrefs />);
+    const inApp = await screen.findByRole("checkbox", { name: "In app: Assigned to me" });
+    fireEvent.click(inApp);
+    await waitFor(() => expect(inApp).not.toBeChecked()); // before the server answers
+    fail(new Response(JSON.stringify({ detail: "validation_error" }), { status: 422 }));
+    await waitFor(() => expect(inApp).toBeChecked());
+    expect(screen.getByRole("alert")).toHaveTextContent("Some fields are invalid.");
+  });
 });

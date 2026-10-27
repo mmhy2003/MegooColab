@@ -78,12 +78,21 @@ export function useNotificationPrefs() {
   });
 }
 
+/** Saves one kind's choice. The toggle shows at once; a failed save puts the saved choices back. */
 export function useSavePref() {
   const client = useQueryClient();
+  const key = notificationKeys.prefs();
   return useMutation({
     mutationFn: (pref: NotificationPref) =>
       api<NotificationPref[]>("/api/me/notification-preferences", { method: "PUT", json: [pref] }),
-    onSuccess: (prefs) => client.setQueryData(notificationKeys.prefs(), prefs),
+    onMutate: async (pref) => {
+      await client.cancelQueries({ queryKey: key });
+      const before = client.getQueryData<NotificationPref[]>(key);
+      client.setQueryData<NotificationPref[]>(key, (prefs) => prefs?.map((p) => (p.kind === pref.kind ? pref : p)));
+      return { before };
+    },
+    onError: (_err, _pref, context) => client.setQueryData(key, context?.before),
+    onSuccess: (prefs) => client.setQueryData(key, prefs),
   });
 }
 
