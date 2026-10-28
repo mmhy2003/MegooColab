@@ -3,8 +3,9 @@
 from fastapi import APIRouter
 
 from app.auth.deps import AuthedUser
+from app.auth.models import Role
 from app.core.db import DbSession
-from app.dashboard import agents, needs, tasks, workflows
+from app.dashboard import activity, agents, needs, system, tasks, workflows
 from app.dashboard.schemas import DashboardOut, NeedsCount, Numbers, ScopeName
 from app.dashboard.scope import resolve_scope
 
@@ -36,6 +37,8 @@ async def dashboard(user: AuthedUser, db: DbSession, scope: ScopeName = "teams")
         stages=stages,
         finished_daily=await tasks.finished_daily(db, s),
         projects=await tasks.projects(db, s),
+        activity=await activity.activity(db, s),
+        system=await system.system(db) if user.role == Role.admin else None,
     )
 
 
