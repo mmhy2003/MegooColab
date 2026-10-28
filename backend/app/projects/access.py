@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import Role, User
-from app.projects.models import Project, ProjectTeam
+from app.projects.models import Project, ProjectStatus, ProjectTeam
 from app.teams.models import TeamMember
 
 
@@ -46,6 +46,9 @@ async def get_project_for(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "project_not_found")
     if write and user.role == Role.viewer:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
+    if write and project.status != ProjectStatus.active:
+        # finished and archived projects are read-only; the status and delete routes load the project without write
+        raise HTTPException(status.HTTP_409_CONFLICT, "project_closed")
     return project
 
 

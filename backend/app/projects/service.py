@@ -32,6 +32,7 @@ async def project_out(db: AsyncSession, project: Project) -> ProjectOut:
         require_human_code_review=project.require_human_code_review,
         commit_docs_to_repo=project.commit_docs_to_repo,
         team_ids=sorted(await project_team_ids(db, project.id)),
+        status=project.status,
         created_at=project.created_at,
     )
 

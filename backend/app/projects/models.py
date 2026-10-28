@@ -15,6 +15,14 @@ class ColumnCategory(StrEnum):
     done = "done"
 
 
+class ProjectStatus(StrEnum):
+    """Finished and archived projects are closed: readable, but every write is refused (409 project_closed)."""
+
+    active = "active"
+    finished = "finished"
+    archived = "archived"
+
+
 class RepoProvider(StrEnum):
     github = "github"
     gitlab = "gitlab"
@@ -45,6 +53,9 @@ class Project(IdMixin, TimestampMixin, Base):
     )
     require_human_code_review: Mapped[bool] = mapped_column(default=False, server_default=false())
     commit_docs_to_repo: Mapped[bool] = mapped_column(default=False, server_default=false())
+    status: Mapped[ProjectStatus] = mapped_column(
+        String(20), default=ProjectStatus.active, server_default=ProjectStatus.active.value
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
 

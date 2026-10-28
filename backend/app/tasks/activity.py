@@ -203,7 +203,7 @@ async def _own_comment(db, user: User, comment_id: uuid.UUID, allow_admin: bool)
     comment = await db.get(Comment, comment_id)
     if comment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
-    task = await _task_for_project_object(db, user, comment.task_id)
+    task = await _task_for_project_object(db, user, comment.task_id, write=True)
     if comment.author_user_id != user.id and not (allow_admin and user.role == Role.admin):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
     return comment, task

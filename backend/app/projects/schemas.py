@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.core.text import NoNulStr
-from app.projects.models import ColumnCategory, RepoProvider
+from app.projects.models import ColumnCategory, ProjectStatus, RepoProvider
 from app.workflow.models import FinishingOption
 
 ProjectKey = Annotated[str, StringConstraints(pattern=r"^[A-Z][A-Z0-9]{1,9}$")]
@@ -39,6 +39,7 @@ class ProjectOut(BaseModel):
     require_human_code_review: bool
     commit_docs_to_repo: bool
     team_ids: list[uuid.UUID]
+    status: ProjectStatus
     created_at: datetime
 
 
