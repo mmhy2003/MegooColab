@@ -10,3 +10,4 @@ node_modules/
 runner/dist/
 runner/megoocolab-runner
 runner/megoocolab-runner.exe
+runner/bin/

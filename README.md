@@ -31,7 +31,18 @@ Create a personal access token with the `mcp` scope and send it as
 
 ## Development quick-start
 
-Requirements: Docker, [uv](https://docs.astral.sh/uv/), Node.js 22+.
+Requirements: Docker, [uv](https://docs.astral.sh/uv/), Node.js 22+, Go (for the runner) and GNU Make
+(on Windows: `winget install ezwinports.make`; the targets work from PowerShell, cmd or Git Bash).
+
+```bash
+make dev-build    # install the backend and frontend packages, build the runner into runner/bin
+make dev          # start the containers below, migrate, then run the API, worker and frontend; Ctrl+C stops them
+make dev-stop     # stop the dev containers (their data stays)
+```
+
+`make` alone lists every target. The production stack has its own: `make build` (images and the runner for
+all six platforms), `make up`, `make stop`, `make logs` and `make runner`; they read `deploy/.env`. What
+`make dev` does, step by step:
 
 ```bash
 # 1. Database (PostgreSQL 17 + pgvector on localhost:5433; also creates megoo_test),
@@ -43,8 +54,9 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 cd backend
 uv sync
 uv run pytest                      # test suite (uses the megoo_test database)
-SECRET_KEY=dev MEILI_MASTER_KEY=megoo-dev-master-key uv run fastapi dev app/main.py   # API on http://localhost:8000/api/docs
-SECRET_KEY=dev MEILI_MASTER_KEY=megoo-dev-master-key uv run python -m app.worker   # background jobs (search indexing); needs the API's migrations
+export SECRET_KEY=megoo-dev-secret-key-not-for-production MEILI_MASTER_KEY=megoo-dev-master-key   # SECRET_KEY needs 16+ characters
+uv run fastapi dev app/main.py     # API on http://localhost:8000/api/docs
+uv run python -m app.worker        # background jobs (search indexing); needs the API's migrations
 
 # 3. Frontend
 cd frontend
