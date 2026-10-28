@@ -5,15 +5,19 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 
 import { BurndownChart } from "@/components/sprint/BurndownChart";
+import { DeleteSprintButton } from "@/components/sprint/DeleteSprintButton";
 import { VelocityChart } from "@/components/sprint/VelocityChart";
 import { api } from "@/lib/api";
-import { useProject, useSprints } from "@/lib/project";
+import { canManage, useMe } from "@/lib/me";
+import { useProject, useSprints, useTasks } from "@/lib/project";
 import { qk } from "@/lib/queries";
 import type { BurndownPoint, VelocityPoint } from "@/lib/types";
 
 export default function ReportsPage() {
   const { key } = useParams<{ key: string }>();
   const project = useProject(key);
+  const { data: me } = useMe();
+  const tasks = useTasks(key);
   const sprints = useSprints(key, project.data?.sprints_enabled ?? false);
   const candidates = (sprints.data ?? []).filter((s) => s.state !== "planned");
   const active = candidates.find((s) => s.state === "active");
@@ -36,16 +40,22 @@ export default function ReportsPage() {
   return (
     <div className="space-y-4">
       {candidates.length > 0 && (
-        <select
-          aria-label="Sprint"
-          className="rounded border border-line bg-surface-2 px-2 py-1.5 text-sm"
-          value={sprintId ?? ""}
-          onChange={(e) => setPicked(e.target.value)}
-        >
-          {candidates.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}{s.state === "active" ? " (active)" : ""}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            aria-label="Sprint"
+            className="rounded border border-line bg-surface-2 px-2 py-1.5 text-sm"
+            value={sprintId ?? ""}
+            onChange={(e) => setPicked(e.target.value)}
+          >
+            {candidates.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}{s.state === "active" ? " (active)" : ""}</option>
+            ))}
+          </select>
+          {/* a completed sprint is only listed here, so this is where it is deleted */}
+          {sprint?.state === "completed" && canManage(me) && (
+            <DeleteSprintButton sprint={sprint} taskCount={(tasks.data ?? []).filter((t) => t.sprint_id === sprint.id).length} />
+          )}
+        </div>
       )}
       {sprint ? (
         <BurndownChart points={burndown.data ?? []} sprintName={sprint.name} />

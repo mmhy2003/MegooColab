@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 
 import { ColumnEditor } from "@/components/project/ColumnEditor";
+import { DeleteProjectSection } from "@/components/project/DeleteProjectSection";
 import { LabelEditor } from "@/components/project/LabelEditor";
 import { RepoEditor } from "@/components/project/RepoEditor";
 import { StatusSection } from "@/components/project/StatusSection";
@@ -108,6 +109,7 @@ export default function ProjectSettingsPage() {
         <>
           <StatusSection project={project.data} canChange={canManage(me)} />
           <General key={project.data.id} project={project.data} />
+          {me && <DeleteProjectSection project={project.data} user={me} />}
         </>
       )}
       {tab === "Columns" && columns.data && (

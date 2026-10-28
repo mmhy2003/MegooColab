@@ -8,6 +8,7 @@ import { Suspense, useMemo, useState } from "react";
 
 import { BacklogQuickCreate } from "@/components/sprint/BacklogQuickCreate";
 import { CompleteSprintDialog } from "@/components/sprint/CompleteSprintDialog";
+import { DeleteSprintButton } from "@/components/sprint/DeleteSprintButton";
 import { NewSprintDialog } from "@/components/sprint/NewSprintDialog";
 import { BACKLOG, DropZone, TaskRow, sprintLabel } from "@/components/sprint/SprintPanel";
 import { TaskDrawer } from "@/components/task/TaskDrawer";
@@ -124,14 +125,18 @@ function BacklogPage() {
                 tasks={list}
                 meta={<span className="text-xs text-muted-foreground">{s.start_date} → {s.end_date}{s.goal ? ` · ${s.goal}` : ""}</span>}
                 actions={
-                  canPlan &&
-                  (s.state === "active" ? (
-                    <Button variant="ghost" onClick={() => setCompleting(s)}>Complete</Button>
-                  ) : (
-                    <Button variant="ghost" disabled={hasActive} title={hasActive ? "Finish the active sprint first" : undefined} onClick={() => run(() => api(`/api/sprints/${s.id}/start`, { method: "POST" }))}>
-                      Start
-                    </Button>
-                  ))
+                  canPlan && (
+                    <>
+                      {s.state === "active" ? (
+                        <Button variant="ghost" onClick={() => setCompleting(s)}>Complete</Button>
+                      ) : (
+                        <Button variant="ghost" disabled={hasActive} title={hasActive ? "Finish the active sprint first" : undefined} onClick={() => run(() => api(`/api/sprints/${s.id}/start`, { method: "POST" }))}>
+                          Start
+                        </Button>
+                      )}
+                      <DeleteSprintButton sprint={s} taskCount={all.filter((t) => t.sprint_id === s.id).length} />
+                    </>
+                  )
                 }
               >
                 {rows(list)}
