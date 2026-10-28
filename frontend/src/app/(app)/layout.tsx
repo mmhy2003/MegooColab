@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { DesktopSidebar } from "@/components/shell/DesktopSidebar";
 import { Header } from "@/components/shell/Header";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { useMe } from "@/lib/me";
@@ -17,10 +18,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
   return (
     <div className="flex min-h-screen">
-      {/* Sticky and one screen tall: it stays in view while a long page scrolls, and scrolls on its own if it outgrows a short screen */}
-      <aside className="sticky top-0 hidden h-screen w-56 shrink-0 overflow-y-auto border-r border-line bg-surface-2/60 md:block">
-        <Sidebar user={user} />
-      </aside>
+      <DesktopSidebar user={user} />
       {menuOpen && (
         <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-label="Menu">
           <button type="button" aria-label="Close menu" className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMenuOpen(false)} />

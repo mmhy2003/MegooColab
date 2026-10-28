@@ -80,3 +80,34 @@ test("checkboxes are on/off switches that light up cyan", async ({ page }) => {
   await expect.poll(async () => (await look()).bg).toBe(cyan); // it lights up over 0.2s
   await expect.poll(async () => (await look()).knob).not.toBe(off.knob); // the knob slides across
 });
+
+test("the sidebar collapses to icons, opens over the page on hover, and stays collapsed", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await setupOrSignIn(page);
+  await page.goto("/projects");
+  const aside = page.locator("aside[data-collapsed]");
+  const main = page.getByRole("main");
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(aside).toHaveAttribute("data-collapsed", "true");
+  await page.mouse.move(800, 400); // away from the rail
+  await expect.poll(async () => (await aside.boundingBox())!.width).toBe(56);
+  const mainLeft = (await main.boundingBox())!.x;
+  const nav = page.getByRole("navigation", { name: "Main" });
+
+  await nav.getByRole("link", { name: "Teams" }).hover(); // rest on the rail: the menu slides out over the page
+  await expect.poll(async () => (await nav.boundingBox())!.width).toBeGreaterThan(200);
+  expect((await main.boundingBox())!.x).toBe(mainLeft); // the page did not move
+  await page.mouse.move(800, 400);
+  await expect.poll(async () => (await nav.boundingBox())!.width).toBeLessThan(60);
+
+  await page.reload(); // remembered in this browser
+  await expect(page.locator("aside[data-collapsed]")).toHaveAttribute("data-collapsed", "true");
+  await page.mouse.move(800, 400);
+  // keyboard users: tabbing into the rail opens it too
+  for (let i = 0; i < 10 && !(await nav.evaluate((el) => el.contains(document.activeElement))); i++) {
+    await page.keyboard.press("Tab");
+  }
+  await expect.poll(async () => (await nav.boundingBox())!.width).toBeGreaterThan(200);
+  await page.getByRole("button", { name: "Expand sidebar" }).click();
+  await expect(page.locator("aside[data-collapsed]")).toHaveAttribute("data-collapsed", "false");
+});
