@@ -17,6 +17,7 @@ import { ANSWER_MODE_HELP, PROGRAM_LABEL } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { Agent, AgentProgram, AnswerMode, Project } from "@/lib/types";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 function AddAgentDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [program, setProgram] = useState<AgentProgram>("claude_code");
@@ -69,32 +70,36 @@ function AddAgentDialog({ onClose, onCreated }: { onClose: () => void; onCreated
 }
 
 function AgentCard({ agent, projects, onChanged }: { agent: Agent; projects: Project[]; onChanged: () => void }) {
+  const { ask, dialog } = useConfirm();
   const [error, setError] = useState<string | null>(null);
   return (
-    <li className="card space-y-3 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="flex-1 text-sm font-bold">{agent.name}</h3>
-        <Badge>{PROGRAM_LABEL[agent.program]}</Badge>
-        <AgentStatusDot status={agent.status} />
-        <Button
-          variant="danger"
-          aria-label={`Delete ${agent.name}`}
-          onClick={async () => {
-            if (!confirm(`Delete ${agent.name}?`)) return;
-            try {
-              await api(`/api/agents/${agent.id}`, { method: "DELETE" });
-              onChanged();
-            } catch (err) {
-              setError(errorMessage(err));
-            }
-          }}
-        >
-          Delete
-        </Button>
-      </div>
-      {error && <p role="alert" className="text-sm text-pink">{error}</p>}
-      <BindingEditor agent={agent} projects={projects} onSaved={onChanged} />
-    </li>
+    <>
+      <li className="card space-y-3 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="flex-1 text-sm font-bold">{agent.name}</h3>
+          <Badge>{PROGRAM_LABEL[agent.program]}</Badge>
+          <AgentStatusDot status={agent.status} />
+          <Button
+            variant="danger"
+            aria-label={`Delete ${agent.name}`}
+            onClick={async () => {
+              if (!(await ask({ tone: "danger", title: `Delete ${agent.name}?`, text: "Its runner stops taking work for it, and it is unassigned from its tasks.", ok: "Delete" }))) return;
+              try {
+                await api(`/api/agents/${agent.id}`, { method: "DELETE" });
+                onChanged();
+              } catch (err) {
+                setError(errorMessage(err));
+              }
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+        {error && <p role="alert" className="text-sm text-pink">{error}</p>}
+        <BindingEditor agent={agent} projects={projects} onSaved={onChanged} />
+      </li>
+      {dialog}
+    </>
   );
 }
 

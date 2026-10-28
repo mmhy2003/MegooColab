@@ -91,8 +91,10 @@ test("memory: learn, forget, dream, ask, scope and MCP", async ({ page, browser 
   await page.goto(`/memory/entity/${mem.id}`);
   const item = page.getByRole("listitem").filter({ hasText: WEBHOOK_FACT });
   await expect(item.getByRole("link", { name: "Comment on MEM-1" })).toHaveAttribute("href", "/projects/MEM/tasks/1");
-  page.once("dialog", (d) => void d.accept());
   await item.getByRole("button", { name: "Delete" }).click();
+  const ask = page.getByRole("alertdialog", { name: "Delete this conclusion?" });
+  await expect(ask.getByRole("button", { name: "Cancel" })).toBeFocused(); // the safe choice first
+  await ask.getByRole("button", { name: "Delete" }).click();
   await expect.poll(() => texts(request, mem.id, "deleted"), { timeout: 10_000 }).toContain(WEBHOOK_FACT);
   const patched = await request.patch(`/api/comments/${comment.id}`, {
     data: { body_md: `${WEBHOOK_FACT.toLowerCase()}!` },

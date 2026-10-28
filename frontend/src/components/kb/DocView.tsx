@@ -12,16 +12,18 @@ import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { kbKeys, kbPath, useKbSpaces, type KbDocument } from "@/lib/kb";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 /** A document: title, where it lives, who changed it last, the rendered body and what links to it. */
 export function DocView({ doc, onEdit }: { doc: KbDocument; onEdit: () => void }) {
+  const { ask, dialog } = useConfirm();
   const router = useRouter();
   const client = useQueryClient();
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function remove() {
-    if (!confirm(`Delete "${doc.title}" and its history?`)) return;
+    if (!(await ask({ tone: "danger", title: `Delete "${doc.title}"?`, text: "The document and its history are deleted.", ok: "Delete" }))) return;
     try {
       await api(`/api/kb/documents/${doc.id}`, { method: "DELETE" });
       await client.invalidateQueries({ queryKey: kbKeys.all });
@@ -32,45 +34,48 @@ export function DocView({ doc, onEdit }: { doc: KbDocument; onEdit: () => void }
   }
 
   return (
-    <article className="space-y-4">
-      <header className="space-y-1">
-        <p className="font-mono text-xs text-muted-foreground">
-          <span>{doc.space.name}</span> · <span>{kbPath(doc)}</span>
-        </p>
-        <h1 className="text-lg font-bold text-cyan-ink glow-cyan">{doc.title}</h1>
-        <p className="text-xs text-muted-foreground">
-          <span className="font-mono">rev {doc.latest_revision}</span> · updated by {revisionAuthor(doc.updated_by)} on{" "}
-          {new Date(doc.updated_at).toLocaleString()}
-        </p>
-        <div className="flex flex-wrap gap-2 pt-1">
-          {doc.can_write && (
-            <>
-              <Button onClick={onEdit}>Edit</Button>
-              <Button variant="ghost" onClick={() => setMoving((m) => !m)}>
-                Move
-              </Button>
-            </>
-          )}
-          {doc.can_delete && (
-            <Button variant="danger" onClick={remove}>
-              Delete
-            </Button>
-          )}
-        </div>
-        {error && (
-          <p role="alert" className="text-sm text-pink">
-            {error}
+    <>
+      <article className="space-y-4">
+        <header className="space-y-1">
+          <p className="font-mono text-xs text-muted-foreground">
+            <span>{doc.space.name}</span> · <span>{kbPath(doc)}</span>
           </p>
-        )}
-      </header>
-      {moving && <MoveForm doc={doc} onDone={() => setMoving(false)} />}
-      <div className="card kb-prose p-4">
-        {doc.body_md.trim() ? <KbMarkdown>{doc.body_md}</KbMarkdown> : <p className="text-sm text-muted-foreground">This document is empty.</p>}
-      </div>
-      <div className="card p-4">
-        <Backlinks docId={doc.id} />
-      </div>
-    </article>
+          <h1 className="text-lg font-bold text-cyan-ink glow-cyan">{doc.title}</h1>
+          <p className="text-xs text-muted-foreground">
+            <span className="font-mono">rev {doc.latest_revision}</span> · updated by {revisionAuthor(doc.updated_by)} on{" "}
+            {new Date(doc.updated_at).toLocaleString()}
+          </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {doc.can_write && (
+              <>
+                <Button onClick={onEdit}>Edit</Button>
+                <Button variant="ghost" onClick={() => setMoving((m) => !m)}>
+                  Move
+                </Button>
+              </>
+            )}
+            {doc.can_delete && (
+              <Button variant="danger" onClick={remove}>
+                Delete
+              </Button>
+            )}
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-pink">
+              {error}
+            </p>
+          )}
+        </header>
+        {moving && <MoveForm doc={doc} onDone={() => setMoving(false)} />}
+        <div className="card kb-prose p-4">
+          {doc.body_md.trim() ? <KbMarkdown>{doc.body_md}</KbMarkdown> : <p className="text-sm text-muted-foreground">This document is empty.</p>}
+        </div>
+        <div className="card p-4">
+          <Backlinks docId={doc.id} />
+        </div>
+      </article>
+      {dialog}
+    </>
   );
 }
 

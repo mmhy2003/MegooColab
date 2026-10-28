@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { kbKeys, type KbFolder, type KbTreeDoc } from "@/lib/kb";
 import { Hint } from "@/components/ui/Hint";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 type Props = {
   spaceId: string;
@@ -22,6 +23,7 @@ type Props = {
 
 /** A space's folders as a tree; selecting one shows its documents. Writers create, rename and delete folders. */
 export function FolderTree({ spaceId, folders, documents, selected, onSelect, canWrite }: Props) {
+  const { ask, askText, dialog } = useConfirm();
   const client = useQueryClient();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
@@ -48,10 +50,13 @@ export function FolderTree({ spaceId, folders, documents, selected, onSelect, ca
 
   async function remove(f: KbFolder) {
     const empty = isEmpty(f.id);
-    const question = empty
-      ? `Delete folder ${f.name}?`
-      : `Delete folder ${f.name} and its subfolders? The documents inside move up to the parent folder; none are deleted.`;
-    if (!confirm(question)) return;
+    const confirmed = await ask({
+      tone: "danger",
+      title: empty ? `Delete folder ${f.name}?` : `Delete folder ${f.name} and its subfolders?`,
+      text: empty ? undefined : "The documents inside move up to the parent folder; none are deleted.",
+      ok: "Delete",
+    });
+    if (!confirmed) return;
     await run(async () => {
       await api(`/api/kb/folders/${f.id}${empty ? "" : "?recursive=true"}`, { method: "DELETE" });
       if (selected === f.id) onSelect(f.parent_id ?? null);
@@ -59,7 +64,7 @@ export function FolderTree({ spaceId, folders, documents, selected, onSelect, ca
   }
 
   async function rename(f: KbFolder) {
-    const next = prompt("New folder name", f.name)?.trim();
+    const next = await askText({ title: "Rename folder", ok: "Rename", field: { label: "Folder name", value: f.name } });
     if (!next || next === f.name) return;
     await run(() => api(`/api/kb/folders/${f.id}`, { method: "PATCH", json: { name: next } }));
   }
@@ -118,53 +123,56 @@ export function FolderTree({ spaceId, folders, documents, selected, onSelect, ca
   }
 
   return (
-    <div className="space-y-2">
-      <ul role="tree" aria-label="Folders" className="space-y-0.5">
-        <li role="treeitem" aria-selected={selected === null} aria-label="All documents">
-          <button
-            type="button"
-            className={`w-full rounded px-2 py-1 text-left text-sm ${selected === null ? "bg-surface-2 text-cyan-ink" : ""}`}
-            onClick={() => onSelect(null)}
-          >
-            All documents
-          </button>
-        </li>
-        {children(null).map(renderFolder)}
-      </ul>
-      {error && (
-        <p role="alert" className="text-sm text-pink">
-          {error}
-        </p>
-      )}
-      {canWrite &&
-        (creating ? (
-          <form
-            className="space-y-2"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              await run(async () => {
-                await api(`/api/kb/spaces/${spaceId}/folders`, {
-                  method: "POST",
-                  json: { name: name.trim(), parent_id: selected },
+    <>
+      <div className="space-y-2">
+        <ul role="tree" aria-label="Folders" className="space-y-0.5">
+          <li role="treeitem" aria-selected={selected === null} aria-label="All documents">
+            <button
+              type="button"
+              className={`w-full rounded px-2 py-1 text-left text-sm ${selected === null ? "bg-surface-2 text-cyan-ink" : ""}`}
+              onClick={() => onSelect(null)}
+            >
+              All documents
+            </button>
+          </li>
+          {children(null).map(renderFolder)}
+        </ul>
+        {error && (
+          <p role="alert" className="text-sm text-pink">
+            {error}
+          </p>
+        )}
+        {canWrite &&
+          (creating ? (
+            <form
+              className="space-y-2"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                await run(async () => {
+                  await api(`/api/kb/spaces/${spaceId}/folders`, {
+                    method: "POST",
+                    json: { name: name.trim(), parent_id: selected },
+                  });
+                  setCreating(false);
+                  setName("");
                 });
-                setCreating(false);
-                setName("");
-              });
-            }}
-          >
-            <Input label="Folder name" required maxLength={100} pattern="[^/\\\\]+" value={name} onChange={(e) => setName(e.target.value)} />
-            <div className="flex gap-2">
-              <Button type="submit">Create</Button>
-              <Button variant="ghost" onClick={() => setCreating(false)}>
-                Cancel
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <Button variant="ghost" onClick={() => setCreating(true)}>
-            <FolderPlus size={14} aria-hidden /> New folder
-          </Button>
-        ))}
-    </div>
+              }}
+            >
+              <Input label="Folder name" required maxLength={100} pattern="[^/\\\\]+" value={name} onChange={(e) => setName(e.target.value)} />
+              <div className="flex gap-2">
+                <Button type="submit">Create</Button>
+                <Button variant="ghost" onClick={() => setCreating(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <Button variant="ghost" onClick={() => setCreating(true)}>
+              <FolderPlus size={14} aria-hidden /> New folder
+            </Button>
+          ))}
+      </div>
+      {dialog}
+    </>
   );
 }

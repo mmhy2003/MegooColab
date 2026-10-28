@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ColumnEditor } from "@/components/project/ColumnEditor";
 import type { Column } from "@/lib/types";
+import { answer } from "@/test/answer";
 
 const COLS: Column[] = [
   { id: "c1", name: "Backlog", position: 0, category: "before", task_count: 0 },
@@ -37,9 +38,9 @@ describe("ColumnEditor", () => {
 
   it("explains why the last done column can't go", async () => {
     vi.mocked(fetch).mockResolvedValue(json(409, { detail: "last_before_or_done_column" }));
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<ColumnEditor projectKey="PAY" columns={COLS} onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete Done" }));
+    await answer("Delete");
     expect(
       await screen.findByText("A project needs at least one 'before work' column and one 'done' column."),
     ).toBeInTheDocument();

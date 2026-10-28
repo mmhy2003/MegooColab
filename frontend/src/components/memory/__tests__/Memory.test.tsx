@@ -8,6 +8,7 @@ import { ConclusionItem } from "@/components/memory/ConclusionItem";
 import { EntityList } from "@/components/memory/EntityList";
 import { ReasoningChain } from "@/components/memory/ReasoningChain";
 import type { MemChainNode, MemConclusion, MemEntity } from "@/lib/memory";
+import { answer } from "@/test/answer";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
@@ -97,9 +98,6 @@ describe("ConclusionItem", () => {
       init?.method === "DELETE" ? new Response(null, { status: 204 }) : json(conclusion({ id: "c2", kind: "correction" })),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const answers = [false, true];
-    const confirmMock = vi.fn(() => answers.shift()!);
-    vi.stubGlobal("confirm", confirmMock);
     wrap(<ConclusionItem conclusion={conclusion()} />);
     fireEvent.click(screen.getByRole("button", { name: "Correct" }));
     fireEvent.change(screen.getByLabelText("Corrected text"), { target: { value: "Signed with HMAC SHA256" } });
@@ -111,9 +109,11 @@ describe("ConclusionItem", () => {
 
     fetchMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    expect(confirmMock).toHaveBeenCalledWith(expect.stringMatching(/not be learned again/));
+    expect(await screen.findByRole("alertdialog")).toHaveAccessibleDescription(/not be learned again/);
+    await answer("Cancel");
     expect(fetchMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await answer("Delete");
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].method).toBe("DELETE");
   });

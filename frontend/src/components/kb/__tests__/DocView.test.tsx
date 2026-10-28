@@ -12,6 +12,7 @@ import { DocEditor } from "@/components/kb/DocEditor";
 import { DocView } from "@/components/kb/DocView";
 import { Markdown } from "@/components/ui/Markdown";
 import type { DiffOp, KbDocument } from "@/lib/kb";
+import { answer } from "@/test/answer";
 
 const DOC: KbDocument = {
   id: "d1",
@@ -68,9 +69,6 @@ describe("DocEditor", () => {
       return json([]);
     });
     vi.stubGlobal("fetch", fetchMock);
-    const answers = [false, true];
-    const confirmMock = vi.fn(() => answers.shift()!);
-    vi.stubGlobal("confirm", confirmMock);
     wrap(<DocEditor doc={DOC} onSaved={vi.fn()} onCancel={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Body"), { target: { value: "Mine" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -78,9 +76,10 @@ describe("DocEditor", () => {
     expect(screen.getByLabelText("Body")).toHaveValue("Mine");
 
     fireEvent.click(screen.getByRole("button", { name: "Load latest" }));
-    expect(confirmMock).toHaveBeenCalledTimes(1);
+    await answer("Keep mine");
     expect(screen.getByLabelText("Body")).toHaveValue("Mine"); // declined: draft kept
     fireEvent.click(screen.getByRole("button", { name: "Load latest" }));
+    await answer("Load latest");
     await waitFor(() => expect(screen.getByLabelText("Body")).toHaveValue("Theirs"));
     expect(latest).toBe(true);
 
@@ -190,12 +189,12 @@ describe("DocView", () => {
       init?.method === "DELETE" ? new Response(null, { status: 204 }) : json([]),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const answers = [false, true];
-    vi.stubGlobal("confirm", () => answers.shift()!);
     wrap(<DocView doc={DOC} onEdit={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await answer("Cancel");
     expect(fetchMock.mock.calls.some(([, i]) => i?.method === "DELETE")).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await answer("Delete");
     await waitFor(() => expect(push).toHaveBeenCalledWith("/kb/s1"));
     expect(fetchMock.mock.calls.find(([, i]) => i?.method === "DELETE")![0]).toBe("/api/kb/documents/d1");
   });

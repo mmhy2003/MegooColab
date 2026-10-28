@@ -103,7 +103,8 @@ export function CommentBox({ users = [], onSubmit }: { users?: Person[]; onSubmi
           className="w-60 p-1"
           onOpenAutoFocus={(e) => e.preventDefault()} // keep the cursor in the comment
           // Radix closes the list on Escape before the textarea sees the key: stop it there, or the drawer closes too
-          onEscapeKeyDown={(e) => e.stopPropagation()}
+          // (only while open: once closed, the list fades out still listening, and lets Escape through)
+          onEscapeKeyDown={(e) => picking && e.stopPropagation()}
           onInteractOutside={(e) => {
             if (e.target === box.current) e.preventDefault(); // clicking in the comment keeps the list
           }}

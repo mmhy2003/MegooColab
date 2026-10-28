@@ -1,14 +1,16 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/Button";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Markdown } from "@/components/ui/Markdown";
 import { api, ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useUsers } from "@/lib/project";
 import type { MethodologyItem, MethodologyVersion, MethodologyVersionInfo } from "@/lib/types";
+import { DISCARD, useUnsavedGuard } from "@/lib/unsaved";
 
 export const MAX_CHARS = 50_000;
 
@@ -27,7 +29,6 @@ const mqk = {
   version: (key: string, v: number) => ["methodology", key, "version", v] as const,
 };
 
-const DISCARD = "Discard your unsaved changes?";
 
 const when = (iso: string) => new Date(iso).toLocaleString();
 
@@ -82,6 +83,7 @@ function History({
 }
 
 function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, string> }) {
+  const { ask, dialog } = useConfirm();
   const client = useQueryClient();
   // null = no edits yet: the textarea follows the saved text. `base` is the version the draft started from (its
   // first edit, or a restore): a save sends it, so a version saved meanwhile is a conflict, even after a refetch.
@@ -95,31 +97,7 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
   const length = Array.from(text).length;
   const tooLong = length > MAX_CHARS;
 
-  useEffect(() => {
-    if (!dirty) return;
-    // in-app navigation: ask before following any same-origin link
-    const guardLinks = (e: MouseEvent) => {
-      const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
-      if (!a || (a as HTMLAnchorElement).target === "_blank") return;
-      if ((a as HTMLAnchorElement).origin !== window.location.origin) return;
-      if (!window.confirm(DISCARD)) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    };
-    document.addEventListener("click", guardLinks, true);
-    return () => document.removeEventListener("click", guardLinks, true);
-  }, [dirty]);
-
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  useUnsavedGuard(dirty, ask);
 
   const refresh = () => client.invalidateQueries({ queryKey: mqk.list() });
 
@@ -145,65 +123,68 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
   }
 
   return (
-    <section aria-label={item.key} className="rounded border border-line p-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="font-mono text-sm">{item.key}</h3>
-        <p className="text-xs text-muted-foreground">
-          <span className="text-cyan-ink">v{item.version}</span> · updated {when(item.updated_at)}
-          {item.updated_by ? ` by ${names.get(item.updated_by) ?? "an unknown user"}` : ""}
-        </p>
-      </div>
-      <textarea
-        aria-label={`Instructions for ${item.key}`}
-        className="mt-2 min-h-48 w-full rounded border border-line bg-surface-2 px-2 py-1 font-mono text-sm"
-        value={text}
-        onChange={(e) => {
-          const value = e.target.value;
-          setDraft((d) => ({ text: value, base: d?.base ?? item.version }));
-        }}
-      />
-      <div className="mt-2 flex flex-wrap items-center gap-3">
-        <Button type="button" disabled={!dirty || length === 0 || tooLong || saving} onClick={save}>
-          Save
-        </Button>
-        <Button type="button" variant="ghost" onClick={() => setShowHistory((s) => !s)} aria-expanded={showHistory}>
-          History
-        </Button>
-        <span className={`ml-auto text-xs ${tooLong ? "text-pink" : "text-muted-foreground"}`}>
-          {length.toLocaleString("en-US")} / {MAX_CHARS.toLocaleString("en-US")}
-        </span>
-      </div>
-      {msg && (
-        <div role="status" className={`mt-2 flex flex-wrap items-center gap-2 text-sm ${msg.ok ? "text-green-ink" : "text-pink"}`}>
-          <span>{msg.text}</span>
-          {msg.conflict && (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={async () => {
-                if (dirty && !window.confirm(DISCARD)) return;
-                await refresh();
-                setDraft(null);
-                setMsg(null);
-              }}
-            >
-              Load latest
-            </Button>
-          )}
+    <>
+      <section aria-label={item.key} className="rounded border border-line p-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="font-mono text-sm">{item.key}</h3>
+          <p className="text-xs text-muted-foreground">
+            <span className="text-cyan-ink">v{item.version}</span> · updated {when(item.updated_at)}
+            {item.updated_by ? ` by ${names.get(item.updated_by) ?? "an unknown user"}` : ""}
+          </p>
         </div>
-      )}
-      {showHistory && (
-        <History
-          itemKey={item.key}
-          names={names}
-          onRestore={(body) => {
-            if (dirty && !window.confirm(DISCARD)) return;
-            setDraft({ text: body, base: item.version });
-            setMsg(null);
+        <textarea
+          aria-label={`Instructions for ${item.key}`}
+          className="mt-2 min-h-48 w-full rounded border border-line bg-surface-2 px-2 py-1 font-mono text-sm"
+          value={text}
+          onChange={(e) => {
+            const value = e.target.value;
+            setDraft((d) => ({ text: value, base: d?.base ?? item.version }));
           }}
         />
-      )}
-    </section>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <Button type="button" disabled={!dirty || length === 0 || tooLong || saving} onClick={save}>
+            Save
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => setShowHistory((s) => !s)} aria-expanded={showHistory}>
+            History
+          </Button>
+          <span className={`ml-auto text-xs ${tooLong ? "text-pink" : "text-muted-foreground"}`}>
+            {length.toLocaleString("en-US")} / {MAX_CHARS.toLocaleString("en-US")}
+          </span>
+        </div>
+        {msg && (
+          <div role="status" className={`mt-2 flex flex-wrap items-center gap-2 text-sm ${msg.ok ? "text-green-ink" : "text-pink"}`}>
+            <span>{msg.text}</span>
+            {msg.conflict && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={async () => {
+                  if (dirty && !(await ask(DISCARD))) return;
+                  await refresh();
+                  setDraft(null);
+                  setMsg(null);
+                }}
+              >
+                Load latest
+              </Button>
+            )}
+          </div>
+        )}
+        {showHistory && (
+          <History
+            itemKey={item.key}
+            names={names}
+            onRestore={async (body) => {
+              if (dirty && !(await ask(DISCARD))) return;
+              setDraft({ text: body, base: item.version });
+              setMsg(null);
+            }}
+          />
+        )}
+      </section>
+      {dialog}
+    </>
   );
 }
 

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DocList } from "@/components/kb/DocList";
 import { FolderTree } from "@/components/kb/FolderTree";
 import { invalidationsFor } from "@/lib/realtime";
+import { answer } from "@/test/answer";
 
 const FOLDERS = [
   { id: "f1", parent_id: null, name: "Guides" },
@@ -46,26 +47,23 @@ describe("FolderTree", () => {
   });
 
   it("delete non-empty folder asks and sends recursive", async () => {
-    const asked: string[] = [];
-    vi.stubGlobal("confirm", (m: string) => {
-      asked.push(m);
-      return true;
-    });
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
     const onSelect = vi.fn();
     wrap(<FolderTree spaceId="s1" folders={FOLDERS} documents={DOCS} selected="f1" onSelect={onSelect} canWrite />);
     fireEvent.click(screen.getByRole("button", { name: "Delete folder Guides" }));
+    expect(await screen.findByRole("alertdialog")).toHaveAccessibleDescription(/documents inside move up/);
+    await answer("Delete");
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(asked[0]).toMatch(/documents inside move up/);
     expect((fetchMock.mock.calls[0] as unknown[])[0]).toBe("/api/kb/folders/f1?recursive=true");
     expect(onSelect).toHaveBeenCalledWith(null);
 
     fetchMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Delete folder Empty" }));
+    expect(await screen.findByRole("alertdialog")).toHaveAccessibleName("Delete folder Empty?");
+    await answer("Delete");
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect((fetchMock.mock.calls[0] as unknown[])[0]).toBe("/api/kb/folders/f3");
-    expect(asked[1]).toBe("Delete folder Empty?");
   });
 
   it("creates and renames folders", async () => {
@@ -81,8 +79,11 @@ describe("FolderTree", () => {
     expect(JSON.parse(init.body as string)).toEqual({ name: "New", parent_id: "f1" });
 
     fetchMock.mockClear();
-    vi.stubGlobal("prompt", () => "Docs");
     fireEvent.click(screen.getByRole("button", { name: "Rename folder Guides" }));
+    const field = await screen.findByRole("textbox", { name: "Folder name" });
+    expect(field).toHaveValue("Guides");
+    fireEvent.change(field, { target: { value: "Docs" } });
+    await answer("Rename");
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const [rurl, rinit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(rurl).toBe("/api/kb/folders/f1");

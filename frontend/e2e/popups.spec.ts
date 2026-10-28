@@ -53,8 +53,9 @@ test("clicks outside popups", async ({ page }) => {
   await avatar.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("menu")).toBeVisible();
+  await expect(page.getByRole("menuitem").first()).toBeFocused(); // opened by keyboard, it starts on its first item
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("menuitem").first()).toBeFocused();
+  await expect(page.getByRole("menuitem").nth(1)).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(avatar).toBeFocused();

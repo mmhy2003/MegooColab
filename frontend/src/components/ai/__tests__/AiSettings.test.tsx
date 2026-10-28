@@ -7,6 +7,7 @@ import AdminAiPage from "@/app/(app)/admin/ai/page";
 import { JobModels } from "@/components/ai/JobModels";
 import { ProviderList } from "@/components/ai/ProviderList";
 import { UsageTable } from "@/components/ai/UsageTable";
+import { answer } from "@/test/answer";
 
 type Handler = (url: string, init?: RequestInit) => Response | undefined;
 
@@ -65,7 +66,6 @@ describe("ProviderList", () => {
   });
 
   it("shows why a provider in use cannot be deleted", async () => {
-    vi.stubGlobal("confirm", () => true);
     mockFetch((url, init) => {
       if (url === "/api/admin/ai/providers" && !init?.method) {
         return json([{ id: "p1", name: "OpenAI", kind: "openai", api_base: null, has_key: false }]);
@@ -75,6 +75,7 @@ describe("ProviderList", () => {
     });
     wrap(<ProviderList />);
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await answer("Delete");
     expect(await screen.findByRole("alert")).toHaveTextContent("This provider is used by a job");
   });
 });

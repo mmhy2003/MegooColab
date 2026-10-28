@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SearchAdmin } from "@/components/admin/SearchAdmin";
 import { SearchResults } from "@/components/search/SearchResults";
 import { paramsFromUrl, type SearchParams } from "@/lib/search";
+import { answer } from "@/test/answer";
 
 const hit = (n: number, extra: Record<string, unknown> = {}) => ({
   kind: "task", id: `t${n}`, title: `Retry payments ${n}`, key: `PAY-${n}`, url: `/projects/PAY/board?task=PAY-${n}`,
@@ -139,7 +140,6 @@ describe("SearchAdmin", () => {
       }
       return new Response(JSON.stringify({ available: true, documents: 1234, last_rebuild_at: "2026-10-28T09:00:00Z" }), { status: 200 });
     }));
-    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
@@ -150,10 +150,11 @@ describe("SearchAdmin", () => {
     expect(screen.getByText("Available")).toBeInTheDocument();
     const rebuild = screen.getByRole("button", { name: "Rebuild index" });
     fireEvent.click(rebuild);
+    await answer("Cancel");
     expect(posts).toEqual([]);
     fireEvent.click(rebuild);
+    await answer("Rebuild");
     await waitFor(() => expect(posts).toEqual(["/api/admin/search/rebuild"]));
     expect(await screen.findByText("Rebuild queued. It runs in the background.")).toBeInTheDocument();
-    confirm.mockRestore();
   });
 });

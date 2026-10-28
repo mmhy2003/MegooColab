@@ -63,7 +63,8 @@ export function AssigneePicker({
         align="start"
         collisionPadding={8}
         className="w-(--radix-popover-trigger-width) min-w-56 p-0"
-        onEscapeKeyDown={(e) => e.stopPropagation()} // the drawer's own Escape must not see it
+        // the drawer's own Escape must not see it; once closed, the list fades out still listening, and lets it through
+        onEscapeKeyDown={(e) => open && e.stopPropagation()}
       >
         <Command>
           <CommandInput placeholder="Search people and agents" />

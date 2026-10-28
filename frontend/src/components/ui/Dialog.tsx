@@ -13,6 +13,9 @@ export function Dialog({
   children,
   wide = false,
   dismissible = false,
+  role = "dialog",
+  bare = false,
+  describedBy,
 }: {
   open: boolean;
   onClose: () => void;
@@ -22,6 +25,12 @@ export function Dialog({
   /** Close on a click outside the dialog. Off for anything a person types or chooses in, so a stray click loses
    *  nothing; on for dialogs that only show something. */
   dismissible?: boolean;
+  /** "alertdialog" for a question that must be answered (ConfirmDialog). */
+  role?: "dialog" | "alertdialog";
+  /** No title bar and ✕: the content brings its own heading and buttons. */
+  bare?: boolean;
+  /** Id of the element describing the dialog (its question's consequence). */
+  describedBy?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   // popups opened inside render into the dialog, not under it (see PortalContainer)
@@ -55,16 +64,21 @@ export function Dialog({
         ref.current = el;
         setElement(el);
       }}
+      role={role === "alertdialog" ? "alertdialog" : undefined}
       aria-label={title}
+      aria-describedby={describedBy}
       tabIndex={-1}
       onCancel={(e) => {
         e.preventDefault();
         onClose();
       }}
       onKeyDown={(e) => {
-        // a tooltip showing inside claims Escape first and cancels the browser's own close: close anyway, since
-        // Escape is meant for the dialog (pickers that keep Escape for themselves stop it before it gets here)
-        if (e.key === "Escape" && e.defaultPrevented) onClose();
+        // Escape closes it here, once, instead of through the browser's own cancel: that one does not fire after a
+        // tooltip inside has claimed the key, nor in tests. Pickers that keep Escape for themselves stop it earlier.
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onClose();
+        }
       }}
       onMouseDown={(e) => {
         pressedOutside.current = outside(e);
@@ -77,15 +91,17 @@ export function Dialog({
     >
       {/* everything in the dialog, its own ✕ tooltip included, renders popups inside it (see PortalContainer) */}
       <PortalContainerContext.Provider value={element}>
-        <div className="flex items-center justify-between border-b border-line px-4 py-3">
-          <h2 className="text-sm font-bold text-cyan-ink glow-cyan">{title}</h2>
-          <Hint label="Close">
-            <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
-              <X size={16} aria-hidden />
-            </button>
-          </Hint>
-        </div>
-        <div className="p-4">{children}</div>
+        {!bare && (
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+            <h2 className="text-sm font-bold text-cyan-ink glow-cyan">{title}</h2>
+            <Hint label="Close">
+              <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
+                <X size={16} aria-hidden />
+              </button>
+            </Hint>
+          </div>
+        )}
+        <div className={bare ? "p-5" : "p-4"}>{children}</div>
       </PortalContainerContext.Provider>
     </dialog>
   );

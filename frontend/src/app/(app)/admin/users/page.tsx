@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link2, UserPlus, UserRoundPlus } from "lucide-react";
+import { Link2, UserPlus, UserRoundPlus, UserX } from "lucide-react";
 import { useState } from "react";
 
 import { Avatar } from "@/components/ui/Avatar";
@@ -18,6 +18,7 @@ import { useMe } from "@/lib/me";
 import { qk } from "@/lib/queries";
 import type { Role, User } from "@/lib/types";
 import { Hint } from "@/components/ui/Hint";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 const ROLES: Role[] = ["admin", "manager", "member", "viewer"];
 const STATUS_TONE = { active: "green", invited: "amber", deactivated: "muted" } as const;
@@ -86,6 +87,7 @@ function NewUserDialog({ mode, onClose }: { mode: "invite" | "create"; onClose: 
 }
 
 export default function AdminUsersPage() {
+  const { ask, dialog: confirmDialog } = useConfirm();
   const { data: me } = useMe();
   const client = useQueryClient();
   const [dialog, setDialog] = useState<"invite" | "create" | null>(null);
@@ -100,108 +102,111 @@ export default function AdminUsersPage() {
   });
 
   return (
-    <div>
-      <PageHeader
-        title="Users"
-        subtitle="Invite people by email or create accounts directly."
-        actions={
-          <>
-            <Button variant="ghost" onClick={() => setDialog("create")}>
-              <UserRoundPlus size={14} aria-hidden /> Create
-            </Button>
-            <Button onClick={() => setDialog("invite")}>
-              <UserPlus size={14} aria-hidden /> Invite
-            </Button>
-          </>
-        }
-      />
-      {error && <p role="alert" className="mb-3 text-sm text-pink">{error}</p>}
-      <div className="card overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="text-xs tracking-wider text-muted-foreground uppercase">
-            <tr className="border-b border-line">
-              <th className="px-3 py-2 font-normal">Name</th>
-              <th className="px-3 py-2 font-normal">Email</th>
-              <th className="px-3 py-2 font-normal">Role</th>
-              <th className="px-3 py-2 font-normal">Status</th>
-              <th className="px-3 py-2 font-normal"><span className="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.data?.map((u) => (
-              <tr key={u.id} className="border-b border-line last:border-0">
-                <td className="px-3 py-2">
-                  <span className="flex items-center gap-2"><Avatar name={u.name} /> {u.name}</span>
-                </td>
-                <td className="px-3 py-2 text-muted-foreground">{u.email}</td>
-                <td className="px-3 py-2">
-                  <select
-                    aria-label={`Role of ${u.name}`}
-                    className="rounded border border-line bg-surface-2 px-1 py-0.5 text-xs"
-                    value={u.role}
-                    disabled={u.id === me?.id}
-                    onChange={(e) => {
-                      // read the choice now: the request runs later, after React has put the select back to u.role
-                      const role = e.target.value;
-                      act.mutate(() => api(`/api/admin/users/${u.id}`, { method: "PATCH", json: { role } }));
-                    }}
-                  >
-                    {ROLES.map((r) => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-3 py-2">
-                  <Badge tone={STATUS_TONE[u.status]}>{u.status}</Badge>
-                </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <Hint label="Copy a password-reset (or new invite) link">
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={`Reset link for ${u.name}`}
-                      onClick={async () => {
-                        try {
-                          const r = await api<{ reset_url: string }>(`/api/admin/users/${u.id}/reset-link`, { method: "POST" });
-                          setResetLink({ name: u.name, url: r.reset_url });
-                        } catch (err) {
-                          setError(errorMessage(err));
-                        }
+    <>
+      <div>
+        <PageHeader
+          title="Users"
+          subtitle="Invite people by email or create accounts directly."
+          actions={
+            <>
+              <Button variant="ghost" onClick={() => setDialog("create")}>
+                <UserRoundPlus size={14} aria-hidden /> Create
+              </Button>
+              <Button onClick={() => setDialog("invite")}>
+                <UserPlus size={14} aria-hidden /> Invite
+              </Button>
+            </>
+          }
+        />
+        {error && <p role="alert" className="mb-3 text-sm text-pink">{error}</p>}
+        <div className="card overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-xs tracking-wider text-muted-foreground uppercase">
+              <tr className="border-b border-line">
+                <th className="px-3 py-2 font-normal">Name</th>
+                <th className="px-3 py-2 font-normal">Email</th>
+                <th className="px-3 py-2 font-normal">Role</th>
+                <th className="px-3 py-2 font-normal">Status</th>
+                <th className="px-3 py-2 font-normal"><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.data?.map((u) => (
+                <tr key={u.id} className="border-b border-line last:border-0">
+                  <td className="px-3 py-2">
+                    <span className="flex items-center gap-2"><Avatar name={u.name} /> {u.name}</span>
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">{u.email}</td>
+                  <td className="px-3 py-2">
+                    <select
+                      aria-label={`Role of ${u.name}`}
+                      className="rounded border border-line bg-surface-2 px-1 py-0.5 text-xs"
+                      value={u.role}
+                      disabled={u.id === me?.id}
+                      onChange={(e) => {
+                        // read the choice now: the request runs later, after React has put the select back to u.role
+                        const role = e.target.value;
+                        act.mutate(() => api(`/api/admin/users/${u.id}`, { method: "PATCH", json: { role } }));
                       }}
                     >
-                      <Link2 size={14} aria-hidden />
-                    </button>
-                  </Hint>
-                  {u.id !== me?.id &&
-                    (u.status === "deactivated" ? (
-                      <Button variant="ghost" className="ml-2" onClick={() => act.mutate(() => api(`/api/admin/users/${u.id}/reactivate`, { method: "POST" }))}>
-                        Reactivate
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="danger"
-                        className="ml-2"
-                        onClick={() => {
-                          if (confirm(`Deactivate ${u.name}? They are signed out everywhere immediately.`)) {
-                            act.mutate(() => api(`/api/admin/users/${u.id}/deactivate`, { method: "POST" }));
+                      {ROLES.map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3 py-2">
+                    <Badge tone={STATUS_TONE[u.status]}>{u.status}</Badge>
+                  </td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <Hint label="Copy a password-reset (or new invite) link">
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={`Reset link for ${u.name}`}
+                        onClick={async () => {
+                          try {
+                            const r = await api<{ reset_url: string }>(`/api/admin/users/${u.id}/reset-link`, { method: "POST" });
+                            setResetLink({ name: u.name, url: r.reset_url });
+                          } catch (err) {
+                            setError(errorMessage(err));
                           }
                         }}
                       >
-                        Deactivate
-                      </Button>
-                    ))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                        <Link2 size={14} aria-hidden />
+                      </button>
+                    </Hint>
+                    {u.id !== me?.id &&
+                      (u.status === "deactivated" ? (
+                        <Button variant="ghost" className="ml-2" onClick={() => act.mutate(() => api(`/api/admin/users/${u.id}/reactivate`, { method: "POST" }))}>
+                          Reactivate
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="danger"
+                          className="ml-2"
+                          onClick={async () => {
+                            if (await ask({ tone: "danger", icon: UserX, title: `Deactivate ${u.name}?`, text: "They are signed out everywhere immediately.", ok: "Deactivate" })) {
+                              act.mutate(() => api(`/api/admin/users/${u.id}/deactivate`, { method: "POST" }));
+                            }
+                          }}
+                        >
+                          Deactivate
+                        </Button>
+                      ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {dialog && <NewUserDialog mode={dialog} onClose={() => setDialog(null)} />}
+        {resetLink && (
+          <Dialog open dismissible title={`Link for ${resetLink.name}`} onClose={() => setResetLink(null)}>
+            <CopyField label="Single-use link" value={resetLink.url} />
+          </Dialog>
+        )}
       </div>
-      {dialog && <NewUserDialog mode={dialog} onClose={() => setDialog(null)} />}
-      {resetLink && (
-        <Dialog open dismissible title={`Link for ${resetLink.name}`} onClose={() => setResetLink(null)}>
-          <CopyField label="Single-use link" value={resetLink.url} />
-        </Dialog>
-      )}
-    </div>
+      {confirmDialog}
+    </>
   );
 }

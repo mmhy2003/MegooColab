@@ -21,6 +21,7 @@ import { TaskQuestions, WaitingBadge } from "@/components/questions/TaskQuestion
 import { WorkflowPanel } from "@/components/workflow/WorkflowPanel";
 import { useMockups, useRunRecords, useWorkflow } from "@/lib/workflow";
 import { Hint } from "@/components/ui/Hint";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 import { ActivityThread } from "./ActivityThread";
 import { Attachments } from "./Attachments";
@@ -53,6 +54,7 @@ export function TaskView({
   onDeleted: () => void;
   headerExtra?: React.ReactNode;
 }) {
+  const { ask, dialog } = useConfirm();
   const projectKey = taskKey.split("-")[0].toUpperCase();
   const client = useQueryClient();
   const { data: me } = useMe();
@@ -109,162 +111,165 @@ export function TaskView({
   const TypeIcon = TYPE_ICON[t.type];
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-start gap-2 border-b border-line p-4">
-        <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <TypeIcon size={12} aria-hidden /> {t.key}
-            <WaitingBadge projects={t.waiting_on} />
-          </p>
-          <TaskTitle
-            value={t.title}
-            disabled={disabled}
-            onSave={(title) => void run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { title } }))}
-          />
-        </div>
-        {!disabled && (
-          <Hint label="Delete task">
-            <button
-              type="button"
-              className="icon-btn hover:text-pink"
-              aria-label="Delete task"
-              onClick={async () => {
-                if (!confirm(`Delete ${t.key}?${t.type === "epic" ? " Its tasks stay, without an epic." : " Its subtasks are deleted too."}`)) return;
-                try {
-                  await api(`/api/tasks/${t.key}`, { method: "DELETE" });
-                  await client.invalidateQueries({ queryKey: ["tasks", projectKey] });
-                  onDeleted();
-                } catch (err) {
-                  setError(errorMessage(err));
-                }
-              }}
-            >
-              <Trash2 size={16} aria-hidden />
-            </button>
-          </Hint>
-        )}
-        {headerExtra}
-      </header>
-      {error && <p role="alert" className="px-4 pt-2 text-sm text-pink">{error}</p>}
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="min-w-0 space-y-6">
-          <Section title="Description">
-            <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />
-          </Section>
-          {t.type !== "subtask" && t.type !== "epic" && (
-            <Section title={`Subtasks (${t.subtask_done_count}/${t.subtask_count})`}>
-              <Subtasks
-                subtasks={subtasks}
+    <>
+      <div className="flex h-full flex-col">
+        <header className="flex items-start gap-2 border-b border-line p-4">
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <TypeIcon size={12} aria-hidden /> {t.key}
+              <WaitingBadge projects={t.waiting_on} />
+            </p>
+            <TaskTitle
+              value={t.title}
+              disabled={disabled}
+              onSave={(title) => void run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { title } }))}
+            />
+          </div>
+          {!disabled && (
+            <Hint label="Delete task">
+              <button
+                type="button"
+                className="icon-btn hover:text-pink"
+                aria-label="Delete task"
+                onClick={async () => {
+                  if (!(await ask({ tone: "danger", title: `Delete ${t.key}?`, text: t.type === "epic" ? "Its tasks stay, without an epic." : "Its subtasks are deleted too.", ok: "Delete" }))) return;
+                  try {
+                    await api(`/api/tasks/${t.key}`, { method: "DELETE" });
+                    await client.invalidateQueries({ queryKey: ["tasks", projectKey] });
+                    onDeleted();
+                  } catch (err) {
+                    setError(errorMessage(err));
+                  }
+                }}
+              >
+                <Trash2 size={16} aria-hidden />
+              </button>
+            </Hint>
+          )}
+          {headerExtra}
+        </header>
+        {error && <p role="alert" className="px-4 pt-2 text-sm text-pink">{error}</p>}
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="min-w-0 space-y-6">
+            <Section title="Description">
+              <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />
+            </Section>
+            {t.type !== "subtask" && t.type !== "epic" && (
+              <Section title={`Subtasks (${t.subtask_done_count}/${t.subtask_count})`}>
+                <Subtasks
+                  subtasks={subtasks}
+                  disabled={disabled}
+                  onOpen={onOpenTask}
+                  onAdd={(title) => run(() => api(`/api/projects/${projectKey}/tasks`, { method: "POST", json: { title, type: "subtask", parent_id: t.id } }))}
+                />
+              </Section>
+            )}
+            {(mockups.data?.length ?? 0) > 0 && (
+              <Section id="mockups" title="Mockups">
+                <MockupPanel taskKey={t.key} disabled={disabled} />
+              </Section>
+            )}
+            {(["design", "plan"] as const).map(
+              (kind) =>
+                workflow.data?.documents.some((d) => d.kind === kind) && (
+                  <Section key={kind} id={`document-${kind}`} title={kind === "design" ? "Design" : "Plan"}>
+                    <DocumentView taskKey={t.key} kind={kind} disabled={disabled} />
+                  </Section>
+                ),
+            )}
+            {decisionCount > 0 && (
+              <Section id="decisions" title={`Decisions (${decisionCount})`}>
+                <Decisions taskKey={t.key} />
+              </Section>
+            )}
+            <Section title="Linked tasks">
+              <Links
+                task={t}
                 disabled={disabled}
                 onOpen={onOpenTask}
-                onAdd={(title) => run(() => api(`/api/projects/${projectKey}/tasks`, { method: "POST", json: { title, type: "subtask", parent_id: t.id } }))}
+                onAdd={(target_key, kind) => run(() => api(`/api/tasks/${t.key}/links`, { method: "POST", json: { target_key, kind } }))}
+                onRemove={(id) => run(() => api(`/api/tasks/${t.key}/links/${id}`, { method: "DELETE" }))}
               />
             </Section>
-          )}
-          {(mockups.data?.length ?? 0) > 0 && (
-            <Section id="mockups" title="Mockups">
-              <MockupPanel taskKey={t.key} disabled={disabled} />
+            <KbReferences taskKey={t.key} />
+            <TaskQuestions taskKey={t.key} canAsk={!disabled} />
+            <Section title="Attachments">
+              <Attachments
+                items={attachments.data ?? []}
+                disabled={disabled}
+                onUpload={async (file) => {
+                  const form = new FormData();
+                  form.append("file", file);
+                  await run(() => api(`/api/tasks/${t.key}/attachments`, { method: "POST", body: form }));
+                  await client.invalidateQueries({ queryKey: qk.attachments(taskKey) });
+                }}
+                onDelete={async (id) => {
+                  await run(() => api(`/api/attachments/${id}`, { method: "DELETE" }));
+                  await client.invalidateQueries({ queryKey: qk.attachments(taskKey) });
+                }}
+              />
             </Section>
-          )}
-          {(["design", "plan"] as const).map(
-            (kind) =>
-              workflow.data?.documents.some((d) => d.kind === kind) && (
-                <Section key={kind} id={`document-${kind}`} title={kind === "design" ? "Design" : "Plan"}>
-                  <DocumentView taskKey={t.key} kind={kind} disabled={disabled} />
-                </Section>
-              ),
-          )}
-          {decisionCount > 0 && (
-            <Section id="decisions" title={`Decisions (${decisionCount})`}>
-              <Decisions taskKey={t.key} />
+            <Section title="Activity">
+              <ActivityThread
+                items={[...older.items, ...(activity.data ?? [])]}
+                columnNames={columnNames}
+                userNames={userNames}
+                agentNames={agentNames}
+                taskKey={taskKey}
+                canAct={workflow.data?.can_act === true}
+                readOnly={disabled}
+                onAnswered={async () => {
+                  // older pages are local state: reload the same range so an answered question does not stay open
+                  const first = activity.data?.[0];
+                  if (older.items.length === 0 || !first) return;
+                  const params = new URLSearchParams({ limit: String(older.items.length), before: first.at, before_id: first.id });
+                  const page = await api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?${params}`);
+                  setOlder((o) => ({ ...o, items: page }));
+                }}
+                hasMore={older.more && (older.items.length > 0 || (activity.data?.length ?? 0) >= ACTIVITY_PAGE)}
+                onLoadEarlier={async () => {
+                  const first = older.items[0] ?? activity.data?.[0];
+                  if (!first) return;
+                  const params = new URLSearchParams({ limit: String(ACTIVITY_PAGE), before: first.at, before_id: first.id });
+                  const page = await api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?${params}`);
+                  setOlder({ items: [...page, ...older.items], more: page.length >= ACTIVITY_PAGE });
+                }}
+              />
+              {!disabled && <CommentBox users={activeUsers} onSubmit={(body_md) => run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md } }))} />}
             </Section>
-          )}
-          <Section title="Linked tasks">
-            <Links
+          </div>
+          <aside className="space-y-4">
+            <TaskFields
               task={t}
+              columns={columns.data}
+              users={users.data ?? []}
+              agents={agents.data ?? []}
+              labels={labels.data ?? []}
+              parents={parents}
+              sprints={project.data?.sprints_enabled ? sprints.data : undefined}
+              meId={me?.id}
               disabled={disabled}
-              onOpen={onOpenTask}
-              onAdd={(target_key, kind) => run(() => api(`/api/tasks/${t.key}/links`, { method: "POST", json: { target_key, kind } }))}
-              onRemove={(id) => run(() => api(`/api/tasks/${t.key}/links/${id}`, { method: "DELETE" }))}
+              onPatch={(patch) => void run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: patch }))}
+              onMove={(column_id) => void run(() => api(`/api/tasks/${t.key}/move`, { method: "POST", json: { column_id } }))}
+              onSprint={(sprint_id) => void run(() => api(`/api/tasks/${t.key}/sprint`, { method: "PUT", json: { sprint_id } }))}
+              onWatch={(watch) => void run(() => api(`/api/tasks/${t.key}/watch`, { method: watch ? "PUT" : "DELETE" }))}
             />
-          </Section>
-          <KbReferences taskKey={t.key} />
-          <TaskQuestions taskKey={t.key} canAsk={!disabled} />
-          <Section title="Attachments">
-            <Attachments
-              items={attachments.data ?? []}
-              disabled={disabled}
-              onUpload={async (file) => {
-                const form = new FormData();
-                form.append("file", file);
-                await run(() => api(`/api/tasks/${t.key}/attachments`, { method: "POST", body: form }));
-                await client.invalidateQueries({ queryKey: qk.attachments(taskKey) });
-              }}
-              onDelete={async (id) => {
-                await run(() => api(`/api/attachments/${id}`, { method: "DELETE" }));
-                await client.invalidateQueries({ queryKey: qk.attachments(taskKey) });
-              }}
-            />
-          </Section>
-          <Section title="Activity">
-            <ActivityThread
-              items={[...older.items, ...(activity.data ?? [])]}
-              columnNames={columnNames}
-              userNames={userNames}
-              agentNames={agentNames}
-              taskKey={taskKey}
-              canAct={workflow.data?.can_act === true}
-              readOnly={disabled}
-              onAnswered={async () => {
-                // older pages are local state: reload the same range so an answered question does not stay open
-                const first = activity.data?.[0];
-                if (older.items.length === 0 || !first) return;
-                const params = new URLSearchParams({ limit: String(older.items.length), before: first.at, before_id: first.id });
-                const page = await api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?${params}`);
-                setOlder((o) => ({ ...o, items: page }));
-              }}
-              hasMore={older.more && (older.items.length > 0 || (activity.data?.length ?? 0) >= ACTIVITY_PAGE)}
-              onLoadEarlier={async () => {
-                const first = older.items[0] ?? activity.data?.[0];
-                if (!first) return;
-                const params = new URLSearchParams({ limit: String(ACTIVITY_PAGE), before: first.at, before_id: first.id });
-                const page = await api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?${params}`);
-                setOlder({ items: [...page, ...older.items], more: page.length >= ACTIVITY_PAGE });
-              }}
-            />
-            {!disabled && <CommentBox users={activeUsers} onSubmit={(body_md) => run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md } }))} />}
-          </Section>
+            {["story", "task", "bug"].includes(t.type) && (
+              <WorkflowPanel
+                taskKey={t.key}
+                unassigned={t.assignee_agent_id == null}
+                agent={t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined}
+                disabled={disabled}
+              />
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Reported by {t.reporter_id ? userNames.get(t.reporter_id) ?? "someone" : "someone"} ·{" "}
+              {new Date(t.created_at).toLocaleDateString()}
+            </p>
+          </aside>
         </div>
-        <aside className="space-y-4">
-          <TaskFields
-            task={t}
-            columns={columns.data}
-            users={users.data ?? []}
-            agents={agents.data ?? []}
-            labels={labels.data ?? []}
-            parents={parents}
-            sprints={project.data?.sprints_enabled ? sprints.data : undefined}
-            meId={me?.id}
-            disabled={disabled}
-            onPatch={(patch) => void run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: patch }))}
-            onMove={(column_id) => void run(() => api(`/api/tasks/${t.key}/move`, { method: "POST", json: { column_id } }))}
-            onSprint={(sprint_id) => void run(() => api(`/api/tasks/${t.key}/sprint`, { method: "PUT", json: { sprint_id } }))}
-            onWatch={(watch) => void run(() => api(`/api/tasks/${t.key}/watch`, { method: watch ? "PUT" : "DELETE" }))}
-          />
-          {["story", "task", "bug"].includes(t.type) && (
-            <WorkflowPanel
-              taskKey={t.key}
-              unassigned={t.assignee_agent_id == null}
-              agent={t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined}
-              disabled={disabled}
-            />
-          )}
-          <p className="text-[11px] text-muted-foreground">
-            Reported by {t.reporter_id ? userNames.get(t.reporter_id) ?? "someone" : "someone"} ·{" "}
-            {new Date(t.created_at).toLocaleDateString()}
-          </p>
-        </aside>
       </div>
-    </div>
+      {dialog}
+    </>
   );
 }

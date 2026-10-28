@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MethodologyEditor } from "@/components/workflow/MethodologyEditor";
+import { answer } from "@/test/answer";
 
 const KEYS: [string, string][] = [
   ["brainstorm", "brainstorm"],
@@ -109,10 +110,9 @@ describe("MethodologyEditor", () => {
     fireEvent.click(within(planCard()).getByRole("button", { name: "Save" }));
     expect(await screen.findByText(/Someone else saved this text first/)).toBeInTheDocument();
     expect(box).toHaveValue("My edit");
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(within(planCard()).getByRole("button", { name: "Load latest" }));
+    await answer("Discard");
     await waitFor(() => expect(box).toHaveValue("Plan text v3"));
-    vi.restoreAllMocks();
   });
 
   it("shows history", async () => {
@@ -138,22 +138,21 @@ describe("MethodologyEditor", () => {
 
   it("asks before restore or Load latest overwrites unsaved edits", async () => {
     setup({ put: new Response(JSON.stringify({ detail: "methodology_conflict" }), { status: 409 }) });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const box = await planBox();
     fireEvent.click(within(planCard()).getByRole("button", { name: "History" }));
     fireEvent.click(await within(planCard()).findByRole("button", { name: /v2/ }));
     fireEvent.change(box, { target: { value: "My edit" } });
     fireEvent.click(await within(planCard()).findByRole("button", { name: "Restore as new version" }));
-    expect(confirm).toHaveBeenCalledWith("Discard your unsaved changes?");
+    expect(await screen.findByRole("alertdialog", { name: "Discard your changes?" })).toBeInTheDocument();
+    await answer("Keep editing");
     expect(box).toHaveValue("My edit");
     fireEvent.click(within(planCard()).getByRole("button", { name: "Save" }));
     fireEvent.click(await within(planCard()).findByRole("button", { name: "Load latest" }));
-    expect(confirm).toHaveBeenCalledTimes(2);
+    await answer("Keep editing");
     expect(box).toHaveValue("My edit");
-    confirm.mockReturnValue(true);
     fireEvent.click(within(planCard()).getByRole("button", { name: "Load latest" }));
+    await answer("Discard");
     await waitFor(() => expect(box).toHaveValue("Plan text v3"));
-    confirm.mockRestore();
   });
 
   it("guards in-app link clicks while dirty", async () => {
@@ -161,21 +160,24 @@ describe("MethodologyEditor", () => {
     const link = document.createElement("a");
     link.href = "/projects";
     document.body.appendChild(link);
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    const clickLink = () => {
-      const ev = new MouseEvent("click", { bubbles: true, cancelable: true });
-      link.dispatchEvent(ev);
-      return ev.defaultPrevented;
-    };
-    expect(clickLink()).toBe(false);
-    expect(confirm).not.toHaveBeenCalled();
+    const followed: Event[] = []; // clicks that went through, as a link would follow them
+    link.addEventListener("click", (e) => {
+      if (!e.defaultPrevented) followed.push(e);
+      e.preventDefault(); // jsdom: no real navigation
+    });
+    const clickLink = () => link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    clickLink();
+    expect(followed).toHaveLength(1); // nothing unsaved: the link just works
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     fireEvent.change(await planBox(), { target: { value: "dirty" } });
-    expect(clickLink()).toBe(true);
-    expect(confirm).toHaveBeenCalledWith("Discard your unsaved changes?");
-    confirm.mockReturnValue(true);
-    expect(clickLink()).toBe(false);
+    clickLink();
+    expect(followed).toHaveLength(1); // stopped, and asked
+    await answer("Keep editing");
+    expect(followed).toHaveLength(1);
+    clickLink();
+    await answer("Discard");
+    await waitFor(() => expect(followed).toHaveLength(2)); // the same link, followed after all
     link.remove();
-    confirm.mockRestore();
   });
 
   it("keeps text typed while a save is in flight and blocks an empty body", async () => {

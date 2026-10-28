@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import {
   GIT_KINDS,
   type GitConnection,
@@ -99,51 +100,55 @@ function ConnectionForm({ editing, onDone }: { editing: GitConnection | null; on
 }
 
 function ConnectionRow({ c, onEdit }: { c: GitConnection; onEdit: () => void }) {
+  const { ask, dialog } = useConfirm();
   const client = useQueryClient();
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   return (
-    <li className="space-y-2 px-3 py-3 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold">{c.name}</span>
-        <span className="text-xs text-muted-foreground">{KIND_LABEL[c.kind]} · {c.base_url}</span>
-        <span className="flex-1" />
-        <Button
-          variant="ghost"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              const r = await api<GitConnectionTest>(`/api/admin/git-connections/${c.id}/test`, { method: "POST" });
-              setResult(r.ok ? { ok: true, text: `Connected as ${r.login}` } : { ok: false, text: gitTestError(r.error) });
-            } catch (err) {
-              setResult({ ok: false, text: errorMessage(err) });
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Test
-        </Button>
-        <Button variant="ghost" onClick={onEdit}>Edit</Button>
-        <Button
-          variant="danger"
-          onClick={async () => {
-            if (!window.confirm(`Delete the connection ${c.name}? Repositories linked to it stop being tracked.`)) return;
-            await api(`/api/admin/git-connections/${c.id}`, { method: "DELETE" });
-            await client.invalidateQueries({ queryKey: ["git"] });
-          }}
-        >
-          Delete
-        </Button>
-      </div>
-      {result && <p role="status" className={`text-xs ${result.ok ? "text-green-ink" : "text-pink"}`}>{result.text}</p>}
-      {c.webhook_secret_set ? (
-        <CopyField label="Webhook URL" value={webhookUrl(c.id)} />
-      ) : (
-        <p className="text-xs text-muted-foreground">No webhook secret: pull requests are checked every 2 minutes.</p>
-      )}
-    </li>
+    <>
+      <li className="space-y-2 px-3 py-3 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold">{c.name}</span>
+          <span className="text-xs text-muted-foreground">{KIND_LABEL[c.kind]} · {c.base_url}</span>
+          <span className="flex-1" />
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const r = await api<GitConnectionTest>(`/api/admin/git-connections/${c.id}/test`, { method: "POST" });
+                setResult(r.ok ? { ok: true, text: `Connected as ${r.login}` } : { ok: false, text: gitTestError(r.error) });
+              } catch (err) {
+                setResult({ ok: false, text: errorMessage(err) });
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Test
+          </Button>
+          <Button variant="ghost" onClick={onEdit}>Edit</Button>
+          <Button
+            variant="danger"
+            onClick={async () => {
+              if (!(await ask({ tone: "danger", title: `Delete the connection ${c.name}?`, text: "Repositories linked to it stop being tracked.", ok: "Delete" }))) return;
+              await api(`/api/admin/git-connections/${c.id}`, { method: "DELETE" });
+              await client.invalidateQueries({ queryKey: ["git"] });
+            }}
+          >
+            Delete
+          </Button>
+        </div>
+        {result && <p role="status" className={`text-xs ${result.ok ? "text-green-ink" : "text-pink"}`}>{result.text}</p>}
+        {c.webhook_secret_set ? (
+          <CopyField label="Webhook URL" value={webhookUrl(c.id)} />
+        ) : (
+          <p className="text-xs text-muted-foreground">No webhook secret: pull requests are checked every 2 minutes.</p>
+        )}
+      </li>
+      {dialog}
+    </>
   );
 }
 
