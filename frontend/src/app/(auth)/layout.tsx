@@ -9,7 +9,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       </div>
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center text-2xl">
-          <Brand />
+          <Brand logoSize={72} stacked />
         </div>
         <div className="card glow-box p-6">{children}</div>
       </div>

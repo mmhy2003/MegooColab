@@ -49,8 +49,9 @@ function NavLink({ item, onNavigate }: { item: Item; onNavigate?: () => void }) 
 export function Sidebar({ user, onNavigate }: { user: User; onNavigate?: () => void }) {
   return (
     <nav aria-label="Main" className="flex h-full flex-col gap-1 p-3">
-      <Link href="/projects" className="mb-4 px-3 py-2 text-lg no-underline" onClick={onNavigate}>
-        <Brand />
+      {/* text-base and px-2: the logo and the name fit the 14rem sidebar on one line */}
+      <Link href="/projects" className="mb-4 px-2 py-2 text-base no-underline" onClick={onNavigate}>
+        <Brand logoSize={28} />
       </Link>
       {MAIN.map((item) => (
         <NavLink key={item.href} item={item} onNavigate={onNavigate} />
