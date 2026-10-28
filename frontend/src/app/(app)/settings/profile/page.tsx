@@ -2,24 +2,27 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import { NewPasswordForm } from "@/components/auth/NewPasswordForm";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { TabPanel, Tabs, useTabParam } from "@/components/ui/Tabs";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useMe } from "@/lib/me";
 import { qk } from "@/lib/queries";
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="card space-y-3 p-4">
-      <h2 className="text-sm text-cyan-ink">{title}</h2>
-      {children}
-    </section>
-  );
+const TABS = [
+  { id: "name", label: "Name" },
+  { id: "password", label: "Password" },
+  { id: "two-factor", label: "Two-factor sign-in" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
+
+function Section({ children }: { children: React.ReactNode }) {
+  return <section className="card space-y-3 p-4">{children}</section>;
 }
 
 function TwoFactor({ enabled }: { enabled: boolean }) {
@@ -129,33 +132,49 @@ function NameForm({ initial }: { initial: string }) {
 }
 
 export default function ProfilePage() {
+  return (
+    <Suspense>
+      <Profile />
+    </Suspense>
+  );
+}
+
+function Profile() {
   const { data: me } = useMe();
   const [pwDone, setPwDone] = useState(false);
+  const [tab, setTab] = useTabParam<TabId>(TABS.map((t) => t.id));
 
   if (!me) return null;
   return (
-    <div className="max-w-xl space-y-4">
+    <div className="max-w-xl">
       <PageHeader title="Profile" subtitle={me.email} />
-      <Section title="Name">
-        <NameForm key={me.id} initial={me.name} />
-      </Section>
-      <Section title="Password">
-        {pwDone ? (
-          <p className="text-sm text-green-ink">Password changed. Other sessions were signed out.</p>
-        ) : (
-          <NewPasswordForm
-            currentPassword
-            submitLabel="Change password"
-            onSubmit={async (password, current) => {
-              await api("/api/auth/change-password", { method: "POST", json: { current_password: current, new_password: password } });
-              setPwDone(true);
-            }}
-          />
-        )}
-      </Section>
-      <Section title="Two-factor sign-in">
-        <TwoFactor enabled={me.totp_enabled} />
-      </Section>
+      <Tabs label="Profile sections" tabs={TABS} value={tab} onChange={setTab} />
+      <TabPanel id="name" active={tab === "name"}>
+        <Section>
+          <NameForm key={me.id} initial={me.name} />
+        </Section>
+      </TabPanel>
+      <TabPanel id="password" active={tab === "password"}>
+        <Section>
+          {pwDone ? (
+            <p className="text-sm text-green-ink">Password changed. Other sessions were signed out.</p>
+          ) : (
+            <NewPasswordForm
+              currentPassword
+              submitLabel="Change password"
+              onSubmit={async (password, current) => {
+                await api("/api/auth/change-password", { method: "POST", json: { current_password: current, new_password: password } });
+                setPwDone(true);
+              }}
+            />
+          )}
+        </Section>
+      </TabPanel>
+      <TabPanel id="two-factor" active={tab === "two-factor"}>
+        <Section>
+          <TwoFactor enabled={me.totp_enabled} />
+        </Section>
+      </TabPanel>
     </div>
   );
 }
