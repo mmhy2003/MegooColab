@@ -15,6 +15,7 @@ const MESSAGES: Record<string, string> = {
   team_name_taken: "A team with that name already exists.",
   team_has_projects: "Move or delete this team's projects first.",
   project_key_taken: "That project key is already in use.",
+  project_closed: "This project is closed. Reopen it to make changes.",
   team_not_yours: "You can only use teams you belong to.",
   last_before_or_done_column: "A project needs at least one 'before work' column and one 'done' column.",
   move_to_required: "This column has tasks. Choose where to move them.",

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { ColumnEditor } from "@/components/project/ColumnEditor";
 import { LabelEditor } from "@/components/project/LabelEditor";
 import { RepoEditor } from "@/components/project/RepoEditor";
+import { StatusSection } from "@/components/project/StatusSection";
 import { WorkflowSettings } from "@/components/project/WorkflowSettings";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
@@ -103,7 +104,12 @@ export default function ProjectSettingsPage() {
           </button>
         ))}
       </div>
-      {tab === "General" && <General key={project.data.id} project={project.data} />}
+      {tab === "General" && (
+        <>
+          <StatusSection project={project.data} canChange={canManage(me)} />
+          <General key={project.data.id} project={project.data} />
+        </>
+      )}
       {tab === "Columns" && columns.data && (
         <ColumnEditor projectKey={key} columns={columns.data} onChanged={() => client.invalidateQueries({ queryKey: qk.columns(key) })} />
       )}

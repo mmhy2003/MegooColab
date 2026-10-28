@@ -557,6 +557,46 @@ export interface paths {
         patch: operations["update_project_api_projects__ref__patch"];
         trace?: never;
     };
+    "/api/projects/{ref}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Project Status
+         * @description Not through the write check: this is how a closed project is reopened.
+         */
+        put: operations["set_project_status_api_projects__ref__status_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/workflows-in-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Workflows In Progress
+         * @description What closing the project would pause, for the confirmation.
+         */
+        get: operations["workflows_in_progress_api_projects__ref__workflows_in_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{ref}/columns": {
         parameters: {
             query?: never;
@@ -1010,7 +1050,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Sprint
+         * @description Its tasks lose the sprint (ON DELETE SET NULL): open ones are back in the backlog. Its snapshots go with it.
+         */
+        delete: operations["delete_sprint_api_sprints__sprint_id__delete"];
         options?: never;
         head?: never;
         /** Update Sprint */
@@ -2026,7 +2070,7 @@ export interface paths {
         };
         /**
          * Targets
-         * @description Every project can be asked (A2A-1), so every project's key and name is listed for addressing.
+         * @description Every project can be asked (A2A-1) except an archived one, so their keys and names are listed for addressing.
          */
         get: operations["targets_api_questions_targets_get"];
         put?: never;
@@ -4095,6 +4139,7 @@ export interface components {
             commit_docs_to_repo: boolean;
             /** Team Ids */
             team_ids: string[];
+            status: components["schemas"]["ProjectStatus"];
             /**
              * Created At
              * Format: date-time
@@ -4143,6 +4188,16 @@ export interface components {
             done: number;
             /** Late */
             late: number;
+        };
+        /**
+         * ProjectStatus
+         * @description Finished and archived projects are closed: readable, but every write is refused (409 project_closed).
+         * @enum {string}
+         */
+        ProjectStatus: "active" | "finished" | "archived";
+        /** ProjectStatusIn */
+        ProjectStatusIn: {
+            status: components["schemas"]["ProjectStatus"];
         };
         /** ProviderIn */
         ProviderIn: {
@@ -5276,6 +5331,11 @@ export interface components {
         Who: {
             user: components["schemas"]["Ref"] | null;
             agent: components["schemas"]["Ref"] | null;
+        };
+        /** WorkflowCountOut */
+        WorkflowCountOut: {
+            /** Count */
+            count: number;
         };
         /** WorkflowDocumentBrief */
         WorkflowDocumentBrief: {
@@ -6578,6 +6638,72 @@ export interface operations {
             };
         };
     };
+    set_project_status_api_projects__ref__status_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectStatusIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workflows_in_progress_api_projects__ref__workflows_in_progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowCountOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_columns_api_projects__ref__columns_get: {
         parameters: {
             query?: never;
@@ -7856,6 +7982,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SprintOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_sprint_api_sprints__sprint_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sprint_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

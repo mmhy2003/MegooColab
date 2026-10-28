@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 
+import { StatusBanner } from "@/components/project/StatusBanner";
 import { errorMessage } from "@/lib/errors";
+import { canManage, useMe } from "@/lib/me";
 import { useProject } from "@/lib/project";
 import { useQuestions } from "@/lib/questions";
 
@@ -26,6 +28,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const { key } = useParams<{ key: string }>();
   const pathname = usePathname();
   const project = useProject(key);
+  const { data: me } = useMe();
 
   if (project.error) {
     return (
@@ -71,6 +74,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
         </nav>
         <IncomingQuestions projectKey={p.key} />
       </div>
+      <StatusBanner project={p} canChange={canManage(me)} />
       {children}
     </div>
   );
