@@ -2,6 +2,7 @@
 working agent's streamed updates and question events, which would push everything else off the list in seconds."""
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,8 @@ from app.projects.models import BoardColumn, Project
 from app.tasks.models import Task, TaskEvent
 
 ACTIVITY_SHOWN = 8
+# a time bound keeps the newest-first scan short when the viewer's projects are quiet and others are busy
+ACTIVITY_DAYS = 30
 STREAMED = ("agent_message", "agent_plan", "agent_tool", "agent_file_change", "agent_command", "agent_permission")
 # keys in an event's data that hold an id worth a name: where the frontend's describeEvent looks
 _COLUMN_KEYS, _USER_KEYS, _AGENT_KEYS = ("to_column", "from_column"), ("to", "from"), ("to_agent", "from_agent")
@@ -39,7 +42,8 @@ async def activity(db: AsyncSession, scope: Scope, limit: int = ACTIVITY_SHOWN) 
     rows = (await db.execute(
         select(TaskEvent, Project.key, Task.number)
         .join(Task, Task.id == TaskEvent.task_id).join(Project, Project.id == Task.project_id)
-        .where(scope.in_projects(Task.project_id), scope.mine_tasks(), TaskEvent.kind.not_in(STREAMED),
+        .where(TaskEvent.created_at >= datetime.now(UTC) - timedelta(days=ACTIVITY_DAYS),
+               scope.in_projects(Task.project_id), scope.mine_tasks(), TaskEvent.kind.not_in(STREAMED),
                TaskEvent.kind.not_like("question.%"))
         .order_by(TaskEvent.created_at.desc(), TaskEvent.id.desc()).limit(limit)
     )).all()

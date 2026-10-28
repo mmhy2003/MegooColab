@@ -1,14 +1,13 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
 import { Inbox } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Chip, Empty, type Tone, Widget } from "@/components/dashboard/Widget";
-import { api } from "@/lib/api";
-import { dashboardKeys, type NeedItem, shortDuration } from "@/lib/dashboard";
+import { type NeedItem, shortDuration } from "@/lib/dashboard";
+import { useMarkRead } from "@/lib/notifications";
 import { escalationReasonText } from "@/lib/workflow";
 
 const KINDS: Record<NeedItem["kind"], { label: string; tone: Tone; button: string }> = {
@@ -39,28 +38,18 @@ function summary(item: NeedItem): string {
 
 const BUTTON = "shrink-0 rounded-sm border border-cyan px-2 py-0.5 text-[11px] font-semibold tracking-wide text-cyan-ink uppercase no-underline hover:bg-surface-2";
 
-/** Reply marks the mention read first (that sends no live event), so the dashboard and the badge refetch at once. */
+/** Reply marks the mention read first (that refreshes the bell, the dashboard and the badge), then opens the task. */
 function ReplyButton({ item }: { item: NeedItem }) {
-  const client = useQueryClient();
+  const markRead = useMarkRead();
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
   return (
     <button
       type="button"
       className={BUTTON}
       aria-label={`Reply ${item.ref}`}
-      disabled={busy}
-      onClick={async () => {
-        setBusy(true);
-        try {
-          await api(`/api/notifications/${item.notification_id}/read`, { method: "POST" });
-        } catch {
-          // opening the task still helps; the mention stays until it is read
-        }
-        void client.invalidateQueries({ queryKey: dashboardKeys.all });
-        void client.invalidateQueries({ queryKey: dashboardKeys.count() });
-        router.push(item.link);
-      }}
+      disabled={markRead.isPending}
+      // opening the task still helps if marking read fails; the mention then stays until it is read
+      onClick={() => markRead.mutate(item.notification_id!, { onSettled: () => router.push(item.link) })}
     >
       Reply
     </button>

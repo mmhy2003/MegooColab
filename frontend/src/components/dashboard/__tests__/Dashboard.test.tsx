@@ -103,4 +103,21 @@ describe("Dashboard", () => {
     expect(screen.getByRole("region", { name: "Projects" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Recent activity" })).toBeInTheDocument();
   });
+
+  it("says so when the dashboard cannot load", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "boom" }), { status: 500 })));
+    wrap(<Dashboard user={member} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("The dashboard could not load.");
+  });
+
+  it("falls back to My teams when an admin loses the admin role", async () => {
+    const fetchMock = mockFetch();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(<QueryClientProvider client={client}><Dashboard user={admin} /></QueryClientProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: "Everything" }));
+    await waitFor(() => expect(dashboardCalls(fetchMock)).toContain("/api/dashboard?scope=all"));
+    view.rerender(<QueryClientProvider client={client}><Dashboard user={member} /></QueryClientProvider>);
+    expect(screen.getByRole("button", { name: "My teams" })).toHaveAttribute("aria-pressed", "true");
+    expect(dashboardCalls(fetchMock).at(-1)).toBe("/api/dashboard?scope=teams");
+  });
 });

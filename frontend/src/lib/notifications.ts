@@ -4,6 +4,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 
 import { api } from "@/lib/api";
 import type { components } from "@/lib/api-types";
+import { dashboardKeys } from "@/lib/dashboard";
 
 type S = components["schemas"];
 
@@ -55,11 +56,19 @@ export function useNotifications(unread = false, enabled = true) {
   });
 }
 
+/** Marking read sends no live event, so everything that counts unread mentions refreshes here: the bell and the
+ * lists, the dashboard's Mention rows and the sidebar badge. */
+function refreshAfterRead(client: ReturnType<typeof useQueryClient>) {
+  void client.invalidateQueries({ queryKey: notificationKeys.all });
+  void client.invalidateQueries({ queryKey: dashboardKeys.all });
+  void client.invalidateQueries({ queryKey: dashboardKeys.count() });
+}
+
 export function useMarkRead() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api(`/api/notifications/${id}/read`, { method: "POST" }),
-    onSettled: () => client.invalidateQueries({ queryKey: notificationKeys.all }),
+    onSettled: () => refreshAfterRead(client),
   });
 }
 
@@ -67,7 +76,7 @@ export function useMarkAllRead() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: () => api("/api/notifications/read-all", { method: "POST" }),
-    onSettled: () => client.invalidateQueries({ queryKey: notificationKeys.all }),
+    onSettled: () => refreshAfterRead(client),
   });
 }
 

@@ -23,8 +23,10 @@ import type { User } from "@/lib/types";
  * the work in numbers, two columns wide; then System for admins. One column on narrow screens. */
 export function Dashboard({ user }: { user: User }) {
   const isAdmin = user.role === "admin";
-  const [scope, setScope] = useState<DashboardScope>(() => readScope(isAdmin));
-  const { data } = useDashboard(scope, isAdmin);
+  const [chosen, setScope] = useState<DashboardScope>(() => readScope(isAdmin));
+  // Everything is for admins: someone who lost the role mid-session drops back to My teams
+  const scope = chosen === "all" && !isAdmin ? "teams" : chosen;
+  const { data, isError } = useDashboard(scope, isAdmin);
   const choose = (s: DashboardScope) => {
     setScope(s);
     writeScope(s);
@@ -32,6 +34,11 @@ export function Dashboard({ user }: { user: User }) {
   return (
     <div className="space-y-3">
       <PageHeader title="Dashboard" subtitle="Updates live" actions={<ScopeSwitch value={scope} onChange={choose} isAdmin={isAdmin} />} />
+      {isError && !data && (
+        <p role="alert" className="text-sm text-pink">
+          The dashboard could not load. Reload the page to try again.
+        </p>
+      )}
       {data ? <Kpis numbers={data.numbers} /> : <div aria-hidden className="h-20 animate-pulse rounded bg-surface-2" />}
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <div className="grid min-w-0 content-start gap-3">

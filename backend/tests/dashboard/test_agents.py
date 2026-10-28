@@ -81,3 +81,14 @@ def test_connected_count_skips_closed_connections():
     closed.closed.set()
     reg._conns = {uuid.uuid4(): open_, uuid.uuid4(): closed}
     assert reg.connected_count() == 1
+
+
+async def test_runs_today_count_only_runs_in_scope(client, db, world):
+    db.add(AgentBinding(agent_id=world.agent.id, project_id=world.web.id, local_path="/w/web"))
+    await db.commit()
+    now = datetime.now(UTC)
+    await add_run(db, world.agent, task=await add_task(db, world.pay), status="completed", started_at=now)
+    await add_run(db, world.agent, task=await add_task(db, world.web), status="completed", started_at=now)  # WEB
+    await login(client, world.viewer)
+    [row] = [a for a in (await dash(client))["agents"] if a["name"] == "Viewer bot"]
+    assert row["runs_today"] == 1

@@ -69,6 +69,7 @@ describe("NeedsYou", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/notifications/n1/read");
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["dashboard"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["dashboard-count"] });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ["notifications"] })); // the bell too
   });
 
   it("names who each row waits for under My teams", () => {

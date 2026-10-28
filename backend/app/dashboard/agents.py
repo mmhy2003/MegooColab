@@ -44,8 +44,9 @@ async def agents(db: AsyncSession, scope: Scope) -> list[AgentItem]:
     if not found:
         return []
     statuses = await agent_statuses(db, [(agent_id, owner_id) for agent_id, _, owner_id in found])
+    # only runs in scope: an agent bound to several projects shows none of another project's work
     today_runs = dict((await db.execute(
-        select(AgentRun.agent_id, func.count())
+        _runs(scope, AgentRun.agent_id, func.count())
         .where(AgentRun.agent_id.in_([a for a, _, _ in found]), AgentRun.started_at >= day_start(today()))
         .group_by(AgentRun.agent_id)
     )).all())

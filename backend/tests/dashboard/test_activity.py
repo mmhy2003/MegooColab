@@ -1,5 +1,7 @@
 """Recent activity: the latest task events in scope, worded like a task's own activity list."""
 
+from datetime import UTC, datetime, timedelta
+
 from app.projects.models import BoardColumn
 from app.tasks.models import TaskEvent
 from tests.dashboard.conftest import add_task, column_id, dash, task_key
@@ -32,3 +34,11 @@ async def test_activity_stops_at_eight(client, db, world):
     await db.commit()
     await login(client, world.viewer)
     assert len((await dash(client))["activity"]) == 8
+
+
+async def test_activity_looks_back_30_days(client, db, world):
+    task = await add_task(db, world.pay)
+    db.add(TaskEvent(task_id=task.id, kind="created", data={}, created_at=datetime.now(UTC) - timedelta(days=31)))
+    await db.commit()
+    await login(client, world.viewer)
+    assert (await dash(client))["activity"] == []
