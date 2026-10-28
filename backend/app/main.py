@@ -44,6 +44,7 @@ from app.notifications import jobs as _notifications_jobs  # noqa: F401 - regist
 from app.notifications.router import router as notifications_router
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
+from app.ratelimit.middleware import RateLimitMiddleware
 from app.ratelimit.store import RateLimited, rate_limited_response
 from app.realtime.router import router as realtime_router
 from app.runner.router import router as runner_router
@@ -128,6 +129,9 @@ def create_app() -> FastAPI:
     )
     # bearer only, or (git webhooks) signed and cookie-free
     app.add_middleware(CsrfHeaderMiddleware, exempt_paths=frozenset({MCP_PATH}), exempt_prefixes=("/api/git/webhooks/",))
+
+    # added last, so it runs first: a refused request does no other work
+    app.add_middleware(RateLimitMiddleware)
 
     @app.exception_handler(RateLimited)
     async def _rate_limited(_request: Request, exc: RateLimited) -> JSONResponse:

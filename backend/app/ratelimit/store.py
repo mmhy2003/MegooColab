@@ -1,9 +1,11 @@
 """Fixed-window counters in Valkey. Every Valkey failure allows the request (fail open) and logs a warning at most
 once a minute: an outage must not lock everyone out. Admins see it in Admin → Settings."""
 
+import asyncio
 import logging
 import time
 import uuid
+import weakref
 from dataclasses import dataclass
 
 import valkey.asyncio as valkey
@@ -20,7 +22,8 @@ log = logging.getLogger(__name__)
 _FAILURES = (ValkeyError, OSError, TimeoutError)
 _WARN_EVERY = 60.0
 _last_warning = 0.0
-_client: valkey.Valkey | None = None
+# one client per event loop: a connection pool belongs to the loop that opened it (TestClient runs its own loop)
+_clients: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, valkey.Valkey]" = weakref.WeakKeyDictionary()
 
 
 @dataclass(frozen=True)
@@ -37,16 +40,17 @@ class RateLimited(Exception):
 
 
 def _valkey() -> valkey.Valkey:
-    global _client
-    if _client is None:
-        _client = valkey.from_url(get_settings().valkey_url, socket_timeout=1, socket_connect_timeout=1)
-    return _client
+    loop = asyncio.get_running_loop()
+    client = _clients.get(loop)
+    if client is None:
+        client = valkey.from_url(get_settings().valkey_url, socket_timeout=1, socket_connect_timeout=1)
+        _clients[loop] = client
+    return client
 
 
 def reset_client() -> None:
-    """Forget the client (tests switch URL or event loop); its pool is dropped with it."""
-    global _client
-    _client = None
+    """Forget the clients (tests switch the URL); their pools are dropped with them."""
+    _clients.clear()
 
 
 def _warn(e: BaseException) -> None:

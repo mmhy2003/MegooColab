@@ -117,7 +117,11 @@ async def test_run_start_carries_mcp_token_valid_only_while_running(db, tc_facto
         assert (start["role"], start["stage"], start["step"]) == ("implement", "build", 2)
         assert (start["resume_session_id"], start["resume_prompt"]) == ("sess-1", "Carry on")
         assert start["prompt"]  # the full prompt stays as the runner's fallback
-        row = await _row(db, run["id"])
+        # run_start is sent before the commit that stores the token's hash: wait for that commit
+        deadline = time.monotonic() + 5
+        while (row := await _row(db, run["id"])).mcp_token_hash is None:
+            assert time.monotonic() < deadline, "the run token was never stored"
+            await asyncio.sleep(0.02)
         assert row.mcp_token_hash == hash_token(raw) and raw not in (row.mcp_token_hash, row.prompt)
         assert _mcp_status(tc, raw) == 200
         assert _mcp_status(tc, "mgr_" + "x" * 43) == 401
