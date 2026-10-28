@@ -23,6 +23,8 @@ from app.git.schemas import (
     GitConnectionPatch,
     GitConnectionTest,
 )
+from app.ratelimit import guards
+from app.ratelimit.clientip import client_ip
 
 router = APIRouter(prefix="/api/admin/git-connections", tags=["git"])
 names_router = APIRouter(prefix="/api/git/connections", tags=["git"])
@@ -168,13 +170,21 @@ def _about(conn: GitConnection, payload: dict) -> tuple[str | None, int | None, 
 
 @webhook_router.post("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def receive_webhook(connection_id: uuid.UUID, request: Request, db: DbSession) -> Response:
-    """A provider says something changed. Verified, it only queues refreshes of the pull requests it names."""
+    """A provider says something changed. Verified, it only queues refreshes of the pull requests it names.
+
+    Rate limits (Plan 10): a genuine delivery counts against its connection; an unknown connection or a bad
+    signature counts against the sender's address, so a forged flood cannot use up a real connection's budget."""
+    ip = client_ip(request)
+    await guards.check("api_ip", ip, request)
     conn = await db.get(GitConnection, connection_id)
     if conn is None or not conn.webhook_secret_enc:
+        await guards.count("api_ip", ip)
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
     body = await _body(request)
     if not _signed(conn, decrypt(conn.webhook_secret_enc), request, body):
+        await guards.count("api_ip", ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_signature")
+    await guards.hit("webhook_connection", str(conn.id), request)
     try:
         payload = json.loads(body)
     except ValueError:

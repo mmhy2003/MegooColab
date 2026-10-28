@@ -9,6 +9,7 @@ from app.auth.service import SESSION_COOKIE
 from app.core.db import SessionLocal
 from app.core.events import Event, hub
 from app.projects.access import accessible_project_ids
+from app.ratelimit.ws import CLOSE_RATE_LIMITED, connect_allowed
 from app.teams.service import user_team_ids
 
 router = APIRouter()
@@ -47,6 +48,9 @@ def _visible(
 
 @router.websocket("/api/ws")
 async def events_socket(websocket: WebSocket) -> None:
+    if not await connect_allowed(websocket):
+        await websocket.close(code=CLOSE_RATE_LIMITED)
+        return
     # subscribe before authorizing so nothing published after the handshake is missed
     queue = hub.subscribe()
     token = websocket.cookies.get(SESSION_COOKIE)

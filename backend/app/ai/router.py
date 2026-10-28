@@ -1,7 +1,7 @@
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import Date, cast, func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -22,6 +22,7 @@ from app.core.crypto import encrypt
 from app.core.db import DbSession
 from app.core.events import Event, publish
 from app.jobs import queue
+from app.ratelimit.deps import check_ai
 
 router = APIRouter(prefix="/api/admin/ai", tags=["ai"])
 
@@ -157,8 +158,9 @@ async def on_embeddings_model_changed(db) -> None:
 
 
 @router.post("/jobs/{job}/test")
-async def test_job(job: str, db: DbSession, _admin: AdminUser) -> TestResult:
+async def test_job(job: str, request: Request, db: DbSession, _admin: AdminUser) -> TestResult:
     _known(job)
+    await check_ai(request)
     model = await ai.current_model(db, job)
     try:
         if job == "embeddings":

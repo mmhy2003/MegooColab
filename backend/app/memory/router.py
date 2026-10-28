@@ -4,7 +4,7 @@ products, and dreaming (MEM-5, MEM-8). Everything is filtered by the caller's re
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,6 +51,7 @@ from app.memory.schemas import (
 )
 from app.projects.access import get_project_for
 from app.projects.models import Project
+from app.ratelimit.deps import check_ai
 from app.tasks.models import Comment, Task
 from app.teams.models import Team
 from app.workflow.models import StepReview
@@ -345,7 +346,8 @@ async def pin_conclusion(cid: uuid.UUID, body: PinIn, user: AuthedUser, db: DbSe
 
 
 @router.post("/api/memory/ask")
-async def ask(body: AskIn, user: AuthedUser, db: DbSession) -> AskOut:
+async def ask(body: AskIn, request: Request, user: AuthedUser, db: DbSession) -> AskOut:
+    await check_ai(request)
     project_id = None
     if body.project_key:
         project_id = (await get_project_for(db, user, body.project_key)).id

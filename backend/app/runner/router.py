@@ -23,6 +23,7 @@ from app.auth.tokens import resolve_bearer
 from app.core.db import SessionLocal
 from app.core.events import Event, hub
 from app.projects.models import Project
+from app.ratelimit.ws import CLOSE_RATE_LIMITED, connect_allowed
 from app.runner.protocol import (
     CLOSE_IDLE,
     CLOSE_PROTOCOL_ERROR,
@@ -209,6 +210,9 @@ async def _cancel(*tasks: asyncio.Task) -> None:
 
 @router.websocket("/api/runner/ws")
 async def runner_socket(websocket: WebSocket) -> None:
+    if not await connect_allowed(websocket):
+        await websocket.close(code=CLOSE_RATE_LIMITED)
+        return
     # subscribe before authorizing so nothing published after the handshake is missed
     queue = hub.subscribe()
     conn: RunnerConn | None = None

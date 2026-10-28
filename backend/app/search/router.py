@@ -2,13 +2,14 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from app.audit import service as audit
 from app.auth.deps import AdminUser, AuthedUser
 from app.core.db import DbSession
 from app.jobs import queue
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
+from app.ratelimit.deps import check_ai
 from app.search import client, service
 from app.search.schemas import GlobalSearchOut, QuickOut, SearchAdminOut
 
@@ -32,6 +33,7 @@ async def quick_search(user: AuthedUser, db: DbSession, q: Q) -> QuickOut:
 
 @router.get("/api/search")
 async def search(
+    request: Request,
     user: AuthedUser,
     db: DbSession,
     q: Q,
@@ -46,6 +48,8 @@ async def search(
     offset: Annotated[int, Query(ge=0, le=10_000)] = 0,
     meaning: bool = False,
 ) -> GlobalSearchOut:
+    if meaning:  # the meaning block embeds the query
+        await check_ai(request)
     filters = service.parse_filters(kind, project, status_, assignee, type_, label, updated)
     try:
         return await service.full(db, user, q, filters, sort=sort, offset=offset, meaning=meaning)

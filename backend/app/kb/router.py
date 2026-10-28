@@ -1,7 +1,7 @@
 import asyncio
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
 
 from app.auth.deps import AuthedUser
@@ -27,6 +27,7 @@ from app.kb.schemas import (
     TreeDoc,
     TreeOut,
 )
+from app.ratelimit.deps import check_ai
 from app.tasks.service import get_task_for
 
 router = APIRouter(tags=["kb"])
@@ -245,10 +246,12 @@ async def resolve(body: ResolveIn, user: AuthedUser, db: DbSession) -> dict[str,
 
 @router.get("/api/kb/search")
 async def search_kb(
+    request: Request,
     user: AuthedUser,
     db: DbSession,
     q: str = Query(min_length=1, max_length=500),
     space: uuid.UUID | None = None,
     limit: int = Query(20, ge=1, le=50),
 ) -> SearchOut:
+    await check_ai(request)  # semantic search embeds the query
     return SearchOut(**await search.search(db, user, q, space_ids={space} if space else None, limit=limit))
