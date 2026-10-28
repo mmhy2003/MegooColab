@@ -46,7 +46,8 @@ all six platforms), `make up`, `make stop`, `make logs` and `make runner`; they 
 
 ```bash
 # 1. Database (PostgreSQL 17 + pgvector on localhost:5433; also creates megoo_test),
-#    Meilisearch on localhost:7700 (key megoo-dev-master-key; the tests use it too)
+#    Meilisearch on localhost:7700 (key megoo-dev-master-key; the tests use it too),
+#    Valkey on localhost:6379 (password megoo-dev-valkey; rate-limit counters, the tests use it too)
 #    and Caddy on http://localhost:8080 (/api -> :8000, everything else -> :3000)
 docker compose -f deploy/docker-compose.dev.yml up -d
 

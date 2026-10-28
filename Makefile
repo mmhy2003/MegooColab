@@ -75,6 +75,7 @@ runner:
 # environment wins over the .env file).
 dev dev-migrate _dev-api _dev-worker: export SECRET_KEY := megoo-dev-secret-key-not-for-production
 dev dev-migrate _dev-api _dev-worker: export MEILI_MASTER_KEY := megoo-dev-master-key
+dev dev-migrate _dev-api _dev-worker: export VALKEY_URL := valkey://:megoo-dev-valkey@localhost:6379/0
 
 dev-build: dev-runner
 	uv --directory backend sync

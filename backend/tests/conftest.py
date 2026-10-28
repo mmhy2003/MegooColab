@@ -22,6 +22,7 @@ os.environ["DB_NULL_POOL"] = "true"
 os.environ["AI_FAKE"] = "true"
 os.environ.setdefault("MEILI_URL", "http://localhost:7700")
 os.environ.setdefault("MEILI_MASTER_KEY", "megoo-dev-master-key")
+os.environ.setdefault("VALKEY_URL", "valkey://:megoo-dev-valkey@localhost:6379/0")
 os.environ["UPLOAD_DIR"] = tempfile.mkdtemp(prefix="megoo-uploads-")
 
 import httpx
@@ -76,6 +77,23 @@ async def run_autogenerate_diff() -> list:
                 Base.metadata,
             )
         )
+
+
+@pytest.fixture(autouse=True)
+def _rate_limit_namespace():
+    """Each test counts in its own Valkey namespace, so counters never carry over between tests."""
+    import uuid
+
+    from app.core.config import get_settings
+    from app.ratelimit import store
+
+    settings = get_settings()
+    before = settings.valkey_prefix
+    settings.valkey_prefix = f"test:{uuid.uuid4()}:"
+    store.reset_client()
+    yield
+    settings.valkey_prefix = before
+    store.reset_client()
 
 
 @pytest.fixture

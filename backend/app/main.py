@@ -6,7 +6,8 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.routing import Route
 
 from app.a2a.context import register as register_a2a_context
@@ -41,11 +42,12 @@ from app.memory.entities import ensure_core_entities
 from app.memory.router import router as memory_router
 from app.notifications import jobs as _notifications_jobs  # noqa: F401 - registers the email job
 from app.notifications.router import router as notifications_router
-from app.search.router import router as search_router
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
+from app.ratelimit.store import RateLimited, rate_limited_response
 from app.realtime.router import router as realtime_router
 from app.runner.router import router as runner_router
+from app.search.router import router as search_router
 from app.setup.router import router as setup_router
 from app.sprints.router import router as sprints_router
 from app.tasks.activity import router as activity_router
@@ -126,6 +128,10 @@ def create_app() -> FastAPI:
     )
     # bearer only, or (git webhooks) signed and cookie-free
     app.add_middleware(CsrfHeaderMiddleware, exempt_paths=frozenset({MCP_PATH}), exempt_prefixes=("/api/git/webhooks/",))
+
+    @app.exception_handler(RateLimited)
+    async def _rate_limited(_request: Request, exc: RateLimited) -> JSONResponse:
+        return rate_limited_response(exc.retry_after)
 
     @app.get("/api/health")
     async def health() -> dict[str, str]:
