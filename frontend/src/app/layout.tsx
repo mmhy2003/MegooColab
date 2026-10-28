@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Orbitron, Share_Tech_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Orbitron } from "next/font/google";
 
 import { Providers } from "@/components/Providers";
 import { ServiceWorker } from "@/components/ServiceWorker";
@@ -7,17 +7,12 @@ import { themeBootstrapScript } from "@/lib/theme";
 
 import "./globals.css";
 
-const orbitron = Orbitron({
-  variable: "--font-orbitron",
-  subsets: ["latin"],
-  weight: ["500", "700"],
-});
-
-const shareTech = Share_Tech_Mono({
-  variable: "--font-share-tech",
-  subsets: ["latin"],
-  weight: "400",
-});
+// headings and text
+const geist = Geist({ variable: "--font-geist", subsets: ["latin"] });
+// code, task keys and shortcuts
+const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
+// the MEGOOCOLAB wordmark only: the brand mark
+const orbitron = Orbitron({ variable: "--font-orbitron", subsets: ["latin"], weight: ["700"] });
 
 export const metadata: Metadata = {
   title: "MegooColab",
@@ -38,7 +33,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${orbitron.variable} ${shareTech.variable} h-full antialiased`}
+      className={`${geist.variable} ${geistMono.variable} ${orbitron.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

@@ -111,3 +111,28 @@ test("the sidebar collapses to icons, opens over the page on hover, and stays co
   await page.getByRole("button", { name: "Expand sidebar" }).click();
   await expect(page.locator("aside[data-collapsed]")).toHaveAttribute("data-collapsed", "false");
 });
+
+test("text is set in Geist, code and keys in Geist Mono, the wordmark in Orbitron", async ({ page }) => {
+  await setupOrSignIn(page);
+  await page.goto("/admin/settings");
+  const family = (selector: string) => page.locator(selector).first().evaluate((el) => getComputedStyle(el).fontFamily);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  expect(await family("body")).toMatch(/^"?Geist"?,/);
+  expect(await family("h1")).toMatch(/^"?Geist"?,/);
+  const mono = await page.evaluate(() => {
+    const probe = document.createElement("code"); // code and task keys use the font-mono utility
+    probe.className = "font-mono";
+    document.body.append(probe);
+    const f = getComputedStyle(probe).fontFamily;
+    probe.remove();
+    return f;
+  });
+  expect(mono).toMatch(/^"?Geist Mono"?,/);
+  // the brand mark keeps its own face
+  const wordmark = page.getByRole("navigation", { name: "Main" }).getByText("MEGOO").locator("..");
+  expect(await wordmark.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/Orbitron/);
+  // and the fonts are served by MegooColab itself, not fetched from Google
+  const fonts = await page.evaluate(() => performance.getEntriesByType("resource").map((r) => r.name).filter((n) => /font|woff/.test(n)));
+  expect(fonts.length).toBeGreaterThan(0);
+  expect(fonts.every((n) => !n.includes("fonts.g"))).toBe(true);
+});

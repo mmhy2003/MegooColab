@@ -15,7 +15,7 @@ export function Brand({
   return (
     <span className={`inline-flex items-center gap-2 ${stacked ? "flex-col" : ""} ${className}`}>
       <Image src="/logo.png" alt="" width={logoSize} height={logoSize} priority className="shrink-0" />
-      <span className={`font-display font-bold tracking-widest whitespace-nowrap ${nameClassName}`}>
+      <span className={`font-brand font-bold tracking-widest whitespace-nowrap ${nameClassName}`}>
         <span className="text-cyan-ink glow-cyan">MEGOO</span>
         <span className="text-pink glow-pink">COLAB</span>
       </span>

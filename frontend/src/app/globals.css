@@ -72,9 +72,10 @@
   --color-green-ink: var(--green-ink);
   --color-amber: var(--amber);
   --color-on-accent: var(--on-accent);
-  --font-display: var(--font-orbitron), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-share-tech), ui-monospace, monospace;
-  --font-sans: var(--font-share-tech), ui-monospace, monospace;
+  --font-display: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-brand: var(--font-orbitron), ui-sans-serif, system-ui, sans-serif;
 }
 
 /* ---- base ---------------------------------------------------------------- */
@@ -85,7 +86,7 @@ body {
 }
 
 body {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   background-image:
     linear-gradient(var(--grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid) 1px, transparent 1px);
@@ -98,7 +99,7 @@ h2,
 h3,
 .font-display {
   font-family: var(--font-display);
-  letter-spacing: 0.04em;
+  letter-spacing: -0.01em;
 }
 
 /* Scrollbars stay hidden until the pointer is over the scrolling area, then show as a thin cyan bar. The
@@ -246,10 +247,7 @@ a {
   }
 }
 
-/* Long-form Knowledge Base text reads better in a sans-serif; code and IDs stay monospace (brd §9). */
-.kb-prose {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-}
+/* Knowledge Base text is the body font; code and IDs stay monospace (brd §9). */
 .kb-prose code,
 .kb-prose pre {
   font-family: var(--font-mono);
