@@ -82,7 +82,7 @@ function JobRow({ job, providers }: { job: AiJobModel; providers: AiProvider[] }
     >
       <p className="font-semibold">{text.label}</p>
       {text.help && <p className="text-xs text-muted">{text.help}</p>}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
         <Select label="Provider" value={providerId} onChange={(e) => setProviderId(e.target.value)}>
           <option value="">Not configured</option>
           {providers.map((p) => (

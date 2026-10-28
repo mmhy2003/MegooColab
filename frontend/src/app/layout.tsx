@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Orbitron, Share_Tech_Mono } from "next/font/google";
 
 import { Providers } from "@/components/Providers";
+import { ServiceWorker } from "@/components/ServiceWorker";
 import { themeBootstrapScript } from "@/lib/theme";
 
 import "./globals.css";
@@ -21,6 +22,15 @@ const shareTech = Share_Tech_Mono({
 export const metadata: Metadata = {
   title: "MegooColab",
   description: "Project management for humans and coding agents",
+  appleWebApp: { capable: true, title: "MegooColab", statusBarStyle: "black-translucent" },
+};
+
+// the phone's status bar follows the theme's background
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f6f3ff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0d0221" },
+  ],
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -36,6 +46,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body className="min-h-full">
         <Providers>{children}</Providers>
+        <ServiceWorker />
       </body>
     </html>
   );

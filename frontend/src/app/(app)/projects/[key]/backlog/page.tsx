@@ -99,7 +99,7 @@ function BacklogPage() {
     ));
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[12rem_1fr]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[12rem_minmax(0,1fr)]">
       <aside aria-label="Epics" className="space-y-1">
         <h2 className="mb-1 text-[11px] tracking-widest text-muted uppercase">Epics</h2>
         <button type="button" aria-pressed={epic === null} onClick={() => setEpic(null)} className={`block w-full rounded px-2 py-1 text-left text-sm ${epic === null ? "bg-surface-2 text-cyan-ink" : "text-muted"}`}>

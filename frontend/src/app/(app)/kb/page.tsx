@@ -45,11 +45,11 @@ export default function KnowledgeBasePage() {
         return (
           <section key={kind} className="mb-6">
             <h2 className="mb-2 text-xs tracking-widest text-muted uppercase">{label}</h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {group.map((s) => (
                 <Link key={s.id} href={`/kb/${s.id}`} className="card flex items-center gap-2 p-4 text-fg no-underline hover:glow-box">
                   <Icon size={16} aria-hidden className="shrink-0 text-cyan-ink" />
-                  <span className="truncate text-sm">{s.name}</span>
+                  <span className="min-w-0 truncate text-sm">{s.name}</span>
                   {!s.can_write && <span className="ml-auto text-xs text-muted">read only</span>}
                 </Link>
               ))}

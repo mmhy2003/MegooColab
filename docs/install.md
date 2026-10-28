@@ -134,6 +134,13 @@ set `PUBLIC_URL` to the public `https://` address and `COOKIE_SECURE=true`.
 
 Certificates live in the `caddy_data` volume; keep it to avoid asking Let's Encrypt for new ones.
 
+### Install as an app
+
+On a phone or desktop, MegooColab can be installed like an app (a PWA): Chrome and Edge offer **Install app**,
+Safari on iPhone **Share → Add to Home Screen**. It opens in its own window with the MegooColab icon, and shows a
+"You're offline" page when there is no connection. Browsers allow this only over **HTTPS** (or on `localhost`), so
+serve MegooColab on a domain with HTTPS (above) for people to install it.
+
 ## 7. Email (SMTP)
 
 Under **Admin → Settings → Email (SMTP)** enter the host, port (587 with STARTTLS is the common choice), user,

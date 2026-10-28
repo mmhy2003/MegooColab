@@ -25,7 +25,7 @@ export default function ProjectsPage() {
           )
         }
       />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {projects.data?.map((p) => (
           <Link key={p.id} href={`/projects/${p.key}/board`} className="card block p-4 text-fg no-underline hover:glow-box">
             <p className="text-xs text-muted">{p.key}</p>

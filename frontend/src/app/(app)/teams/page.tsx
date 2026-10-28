@@ -63,7 +63,7 @@ export default function TeamsPage() {
           )
         }
       />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {teams.data?.map((t) => (
           <Link key={t.id} href={`/teams/${t.id}`} className="card block p-4 text-fg no-underline hover:glow-box">
             <h2 className="text-sm text-cyan-ink">{t.name}</h2>

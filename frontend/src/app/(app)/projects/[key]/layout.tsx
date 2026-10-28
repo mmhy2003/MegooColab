@@ -53,7 +53,8 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
         <h1 className="pb-2 text-base font-bold">
           <span className="text-muted">{p.key}</span> <span className="text-cyan-ink glow-cyan">{p.name}</span>
         </h1>
-        <nav aria-label="Project" className="flex gap-1">
+        {/* on a narrow phone the tabs scroll sideways instead of widening the page */}
+        <nav aria-label="Project" className="flex max-w-full min-w-0 gap-1 overflow-x-auto">
           {tabs.map((t) => {
             const active = pathname.startsWith(t.href);
             return (
@@ -61,7 +62,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
                 key={t.href}
                 href={t.href}
                 aria-current={active ? "page" : undefined}
-                className={`border-b-2 px-3 pb-2 text-sm no-underline ${active ? "border-cyan text-cyan-ink" : "border-transparent text-muted hover:text-fg"}`}
+                className={`shrink-0 border-b-2 px-3 pb-2 text-sm whitespace-nowrap no-underline ${active ? "border-cyan text-cyan-ink" : "border-transparent text-muted hover:text-fg"}`}
               >
                 {t.label}
               </Link>

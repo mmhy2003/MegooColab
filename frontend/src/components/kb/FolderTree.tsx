@@ -88,7 +88,7 @@ export function FolderTree({ spaceId, folders, documents, selected, onSelect, ca
           )}
           <button type="button" className="flex min-w-0 flex-1 items-center gap-1 py-1 text-left text-sm" onClick={() => onSelect(f.id)}>
             <Folder size={14} aria-hidden className="shrink-0 text-muted" />
-            <span className="truncate">{f.name}</span>
+            <span className="min-w-0 truncate">{f.name}</span>
           </button>
           {canWrite && (
             <span className="flex opacity-70 group-hover:opacity-100">

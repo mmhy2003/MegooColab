@@ -13,7 +13,7 @@ export function DocList({ documents, folderId }: { documents: KbTreeDoc[]; folde
         <li key={d.id} className="flex flex-wrap items-center gap-3 py-2">
           <Link href={`/kb/doc/${d.id}`} className="flex min-w-0 flex-1 items-center gap-2 text-sm">
             <FileText size={14} aria-hidden className="shrink-0 text-muted" />
-            <span className="truncate">{d.title}</span>
+            <span className="min-w-0 truncate">{d.title}</span>
           </Link>
           <span className="font-mono text-xs text-muted">rev {d.latest_revision}</span>
           <span className="text-xs text-muted">{new Date(d.updated_at).toLocaleDateString()}</span>

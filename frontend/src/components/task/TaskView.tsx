@@ -28,6 +28,7 @@ import { Description } from "./Description";
 import { Links } from "./Links";
 import { Subtasks } from "./Subtasks";
 import { TaskFields } from "./TaskFields";
+import { TaskTitle } from "./TaskTitle";
 
 const ACTIVITY_PAGE = 50;
 
@@ -114,16 +115,10 @@ export function TaskView({
             <TypeIcon size={12} aria-hidden /> {t.key}
             <WaitingBadge projects={t.waiting_on} />
           </p>
-          <input
-            aria-label="Title"
-            key={t.title}
-            defaultValue={t.title}
+          <TaskTitle
+            value={t.title}
             disabled={disabled}
-            className="mt-1 w-full rounded border border-transparent bg-transparent px-1 font-display text-base text-fg hover:border-line focus:border-cyan focus:outline-none"
-            onBlur={(e) => {
-              const title = e.target.value.trim();
-              if (title && title !== t.title) void run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { title } }));
-            }}
+            onSave={(title) => void run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { title } }))}
           />
         </div>
         {!disabled && (
@@ -148,7 +143,7 @@ export function TaskView({
         {headerExtra}
       </header>
       {error && <p role="alert" className="px-4 pt-2 text-sm text-pink">{error}</p>}
-      <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-6">
           <Section title="Description">
             <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />

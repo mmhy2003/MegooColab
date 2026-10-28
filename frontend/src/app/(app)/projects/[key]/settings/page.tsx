@@ -89,7 +89,7 @@ export default function ProjectSettingsPage() {
   if (!project.data) return null;
   return (
     <div className="space-y-4">
-      <div role="tablist" aria-label="Settings sections" className="flex gap-2">
+      <div role="tablist" aria-label="Settings sections" className="flex flex-wrap gap-2">
         {TABS.map((t) => (
           <button
             key={t}

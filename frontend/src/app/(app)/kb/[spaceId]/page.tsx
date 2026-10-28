@@ -53,7 +53,7 @@ export default function KbSpacePage() {
       <p className="mb-4 text-sm">
         <Link href="/kb">Knowledge Base</Link>
       </p>
-      <div className="grid gap-4 md:grid-cols-[16rem_1fr]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-[16rem_minmax(0,1fr)]">
         <aside className="card p-3">
           {tree.data && (
             <FolderTree

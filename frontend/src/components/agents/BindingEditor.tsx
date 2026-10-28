@@ -60,7 +60,7 @@ export function BindingEditor({
     <div className="space-y-3">
       {rows.length === 0 && <p className="text-sm text-muted">Not working on any project yet.</p>}
       {rows.map((r, i) => (
-        <div key={i} className="grid gap-2 sm:grid-cols-[12rem_1fr_auto] sm:items-end">
+        <div key={i} className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-[12rem_1fr_auto] sm:items-end">
           <Select label="Project" value={r.project_ref} onChange={(e) => update(i, { project_ref: e.target.value })}>
             <option value="">Choose a project</option>
             {projects.map((p) => (

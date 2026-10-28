@@ -164,6 +164,14 @@ cd frontend && npx playwright test e2e/popups.spec.ts
 # optional: E2E_SCREENSHOT_DIR=<dir> saves a screenshot of each popup
 ```
 
+### App and phone end-to-end tests
+
+`frontend/e2e/pwa.spec.ts` checks the installable app (PWA) on any stack: the manifest, its icons and the service worker load before anyone signs in, the service worker takes over the page, and with the network off a page shows "You're offline". `frontend/e2e/mobile.spec.ts` opens every page in a 280-pixel-wide window (a Galaxy Fold's cover screen) and checks that nothing makes the page scroll sideways, and that long task titles wrap; it creates the "Mobile Team" team and the MOB project, so it needs a fresh stack. To run them:
+
+```bash
+cd frontend && npx playwright test e2e/pwa.spec.ts e2e/mobile.spec.ts
+```
+
 ### Rate limits end-to-end test
 
 `frontend/e2e/ratelimits.spec.ts` checks the sign-in limit on the same stack. The env file needs `VALKEY_PASSWORD` and `CLIENT_IP_HEADER=X-Real-IP`: the test sends its requests as its own visitor (`X-Real-IP` with a random address in 203.0.113.0/24, new each run), so the other specs on the stack are never limited and it can run again at once. Thirty wrong passwords get 401; the next attempt gets 429, and the sign-in page then says "Too many attempts. Try again in 15 minutes". A visitor from another address still signs in. It creates nothing, so it runs on any stack. To run it:

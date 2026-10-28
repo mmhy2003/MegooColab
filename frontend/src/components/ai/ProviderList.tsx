@@ -85,7 +85,7 @@ export function ProviderList() {
             <li key={p.id} className="flex flex-wrap items-center gap-3 py-3 text-sm">
               <span className="font-semibold">{p.name}</span>
               <span className="font-mono text-xs text-muted">{p.kind}</span>
-              {p.api_base && <span className="truncate font-mono text-xs text-muted">{p.api_base}</span>}
+              {p.api_base && <span className="min-w-0 truncate font-mono text-xs text-muted">{p.api_base}</span>}
               {p.has_key ? (
                 <span className="inline-flex items-center gap-1 text-xs text-green-ink">
                   <KeyRound size={12} aria-hidden /> Key saved
@@ -139,7 +139,7 @@ function ProviderForm({
         }
       }}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
         <Input label="Name" required maxLength={100} value={d.name} onChange={(e) => set({ name: e.target.value })} />
         <Input
           label="Kind"

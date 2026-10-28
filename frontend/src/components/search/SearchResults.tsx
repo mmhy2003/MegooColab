@@ -150,7 +150,7 @@ export function SearchResults({ params, onChange }: { params: SearchParams; onCh
       >
         <input aria-label="Search" className={`${FIELD} w-full`} value={draft} onChange={(e) => setDraft(e.target.value)} />
       </form>
-      <div className="grid gap-6 md:grid-cols-[14rem_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-[14rem_minmax(0,1fr)]">
         <aside aria-label="Filters" className="space-y-4">
           <FilterGroup
             title="Kind"

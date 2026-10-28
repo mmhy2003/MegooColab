@@ -104,7 +104,7 @@ export function DocEditor({
       }}
     >
       <Input label="Title" required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} />
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
         <div className="flex flex-col gap-1">
           <label htmlFor="kb-body" className="text-xs tracking-wider text-muted uppercase">
             Body

@@ -28,7 +28,7 @@ export function TaskRow({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.5 : 1 }}
-      className="flex items-center gap-2 border-b border-line bg-surface px-2 py-1.5 text-sm last:border-0"
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-surface px-2 py-1.5 text-sm last:border-0"
     >
       {!disabled && (
         <button type="button" className="cursor-grab text-muted" aria-label={`Drag ${task.key}`} {...attributes} {...listeners}>
@@ -37,7 +37,8 @@ export function TaskRow({
       )}
       <Icon size={12} className="text-muted" aria-hidden />
       <span className="w-16 shrink-0 text-xs text-muted">{task.key}</span>
-      <button type="button" className="min-w-0 flex-1 truncate text-left hover:text-cyan-ink" onClick={() => onOpen(task.key)}>
+      {/* at least 10rem: on a phone the title moves to its own line and wraps; wider, it stays on one line */}
+      <button type="button" className="min-w-40 flex-1 text-left break-words hover:text-cyan-ink sm:truncate" onClick={() => onOpen(task.key)}>
         {task.title}
       </button>
       <span className={`text-[11px] ${task.column_category === "done" ? "text-green-ink" : "text-muted"}`}>

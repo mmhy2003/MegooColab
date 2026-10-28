@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline · MegooColab</title>
+<!-- Shown by the service worker (sw.js) when a page cannot load: plain HTML, so it needs nothing from the network -->
+<style>
+  :root { --bg: #f6f3ff; --fg: #1a0b3d; --muted: #6b5f99; --line: #d6ccf5; --cyan: #007a8f; --pink: #d4004f; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d0221; --fg: #e9e4ff; --muted: #8f84c0; --line: #2e1a66; --cyan: #05d9e8; --pink: #ff2a6d; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+         background: var(--bg); color: var(--fg); font-family: ui-monospace, "Share Tech Mono", monospace; text-align: center; }
+  main { max-width: 22rem; }
+  img { width: 64px; height: 64px; }
+  .name { font-weight: 700; letter-spacing: .15em; margin: 8px 0 20px; }
+  .name b { color: var(--cyan); } .name i { color: var(--pink); font-style: normal; }
+  h1 { font-size: 1.1rem; color: var(--cyan); margin: 0 0 8px; }
+  p { color: var(--muted); font-size: .875rem; line-height: 1.5; margin: 0 0 20px; }
+  a { display: inline-block; padding: 8px 16px; border: 1px solid var(--line); border-radius: 4px; color: var(--fg); text-decoration: none; }
+  a:hover { border-color: var(--cyan); }
+</style>
+</head>
+<body>
+<main>
+  <img src="/icons/icon-192.png" alt="">
+  <div class="name"><b>MEGOO</b><i>COLAB</i></div>
+  <h1>You're offline</h1>
+  <p>MegooColab needs a connection. It will load again once you're back online.</p>
+  <a href="/projects">Try again</a>
+</main>
+</body>
+</html>

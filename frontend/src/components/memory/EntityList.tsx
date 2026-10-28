@@ -25,14 +25,14 @@ export function EntityList({ entities }: { entities: MemEntity[] }) {
         return (
           <div key={kind}>
             <h3 className="mb-2 text-xs tracking-widest text-muted uppercase">{label}</h3>
-            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <ul className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {group.map((e) => (
                 <li key={e.id}>
                   <Link
                     href={`/memory/entity/${e.id}`}
                     className="card flex items-baseline justify-between gap-2 p-3 text-fg no-underline hover:glow-box"
                   >
-                    <span className="truncate text-sm">{e.name}</span>
+                    <span className="min-w-0 truncate text-sm">{e.name}</span>
                     <span className="shrink-0 text-xs text-muted">
                       {e.conclusion_count === 1 ? "1 conclusion" : `${e.conclusion_count} conclusions`}
                     </span>
