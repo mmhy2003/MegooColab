@@ -64,4 +64,14 @@ describe("StatusSection", () => {
     expect(screen.getByText("Finished")).toBeInTheDocument();
     expect(screen.queryByRole("button")).toBeNull();
   });
+
+  it("says what closing does", () => {
+    mockFetch(0);
+    wrap(<StatusSection project={project()} canChange />);
+    const help = screen.getByText(/read-only/);
+    expect(help).toHaveTextContent(
+      "Finished and archived projects are read-only, agents can't start work in them, and the dashboard no longer counts them.",
+    );
+    expect(help).toHaveTextContent("Archived projects also leave the Projects list and the projects you can ask, and their tasks leave search.");
+  });
 });

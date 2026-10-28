@@ -22,7 +22,9 @@ export default function ReportsPage() {
   const candidates = (sprints.data ?? []).filter((s) => s.state !== "planned");
   const active = candidates.find((s) => s.state === "active");
   const [picked, setPicked] = useState<string | null>(null);
-  const sprintId = picked ?? active?.id ?? candidates.at(-1)?.id ?? null;
+  // a picked sprint that was since deleted falls back like no pick at all
+  const kept = candidates.some((s) => s.id === picked) ? picked : null;
+  const sprintId = kept ?? active?.id ?? candidates.at(-1)?.id ?? null;
   const sprint = candidates.find((s) => s.id === sprintId);
 
   const burndown = useQuery({
@@ -53,7 +55,7 @@ export default function ReportsPage() {
           </select>
           {/* a completed sprint is only listed here, so this is where it is deleted */}
           {sprint?.state === "completed" && canManage(me) && (
-            <DeleteSprintButton sprint={sprint} taskCount={(tasks.data ?? []).filter((t) => t.sprint_id === sprint.id).length} />
+            <DeleteSprintButton project={project.data} sprint={sprint} taskCount={(tasks.data ?? []).filter((t) => t.sprint_id === sprint.id).length} />
           )}
         </div>
       )}

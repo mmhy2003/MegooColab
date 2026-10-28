@@ -60,8 +60,9 @@ export function StatusSection({ project, canChange }: { project: Project; canCha
         <p className="text-sm">{STATUS_LABEL[project.status]}</p>
       )}
       <p className="text-xs text-muted-foreground">
-        Finished and archived projects are read-only and agents can&apos;t start work in them. Archived projects are
-        also hidden from lists, the dashboard and search. Their Knowledge Base and Memory are kept.
+        Finished and archived projects are read-only, agents can&apos;t start work in them, and the dashboard no
+        longer counts them. Archived projects also leave the Projects list and the projects you can ask, and their
+        tasks leave search. Their Knowledge Base and Memory are kept.
       </p>
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}
       {dialog}

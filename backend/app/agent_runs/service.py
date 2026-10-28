@@ -5,10 +5,11 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, func, select, true, update
+from sqlalchemy import and_, func, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.a2a.models import Question
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agent_runs.schemas import RunAgentOut, RunOut
 from app.agent_runs.tokens import issue_run_token
@@ -498,10 +499,11 @@ async def fail_unclaimed_runs(db: AsyncSession, conn: RunnerConn) -> None:
             )
 
 
-async def stop_runs_before_delete(db: AsyncSession, task_ids) -> None:
-    """These tasks are about to be deleted, and their runs with them in the cascade. Queued runs simply go;
-    running ones get run_cancel on the owner's runner so no agent keeps working unobserved (its later
-    run_finished, for a run that no longer exists, is ignored). `task_ids` is a list or a select of ids.
+async def stop_runs_before_delete(db: AsyncSession, task_ids, question_ids=()) -> None:
+    """These tasks (and these questions) are about to be deleted, and their runs with them in the cascade. Queued
+    runs simply go; running ones get run_cancel on the owner's runner so no agent keeps working unobserved (its
+    later run_finished, for a run that no longer exists, is ignored). `task_ids` and `question_ids` are lists or
+    selects of ids; answering runs belong to a question, not a task.
 
     The run rows are locked: a dispatch in flight finishes its send first (and the cancel follows it), and
     a queued run cannot be claimed and started before the delete commits."""
@@ -521,10 +523,12 @@ async def stop_runs_before_delete(db: AsyncSession, task_ids) -> None:
     )
     rows = (
         await db.execute(
-            select(AgentRun, Agent.owner_id, Task.project_id)
+            select(AgentRun, Agent.owner_id, func.coalesce(Task.project_id, Question.target_project_id))
             .join(Agent, Agent.id == AgentRun.agent_id)
-            .join(Task, Task.id == AgentRun.task_id)
-            .where(AgentRun.task_id.in_(task_ids), AgentRun.status.in_(ACTIVE_STATUSES))
+            .outerjoin(Task, Task.id == AgentRun.task_id)
+            .outerjoin(Question, Question.id == AgentRun.question_id)
+            .where(or_(AgentRun.task_id.in_(task_ids), AgentRun.question_id.in_(question_ids)),
+                   AgentRun.status.in_(ACTIVE_STATUSES))
             .with_for_update(of=AgentRun)
             .execution_options(populate_existing=True)
         )

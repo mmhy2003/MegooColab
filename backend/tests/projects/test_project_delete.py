@@ -72,3 +72,36 @@ async def test_upload_folders_survive_a_rolled_back_delete(upload_root):
         remove_after_commit(s, [task_id])
         await s.commit()
     assert not folder.exists()
+
+
+async def test_deleting_a_project_stops_agents_answering_its_questions(client, db, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.a2a.models import Question
+    from app.agent_runs.models import AgentRun
+    from app.agents.models import Agent
+    from app.runner.registry import registry
+
+    _p, manager, _t = await make_project(client, db, "PAY")
+    project_id = uuid.UUID(_p["id"])
+    agent = Agent(owner_id=manager.id, name="Answerer", program="claude_code")
+    db.add(agent)
+    await db.flush()
+    q = Question(target_project_id=project_id, number=1, title="Q", body="?", status="routed")
+    db.add(q)
+    await db.flush()
+    run = AgentRun(question_id=q.id, agent_id=agent.id, requested_by=manager.id, policy="read_only", prompt="p",
+                   status="running")
+    db.add(run)
+    await db.commit()
+    sent = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    conn = SimpleNamespace(run_ids={run.id}, send=send)
+    monkeypatch.setattr(registry, "conn_for_user", lambda user_id: conn if user_id == manager.id else None)
+    await close(db, "PAY", "archived")  # archive first, delete later: answering carried on meanwhile
+    await login(client, await make_user(db, role=Role.admin))
+    assert (await client.delete("/api/projects/PAY")).status_code == 204
+    assert [m.run_id for m in sent] == [run.id]  # the runner is told to stop, so no agent keeps working unobserved

@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeleteSprintButton } from "@/components/sprint/DeleteSprintButton";
 import type { Sprint } from "@/lib/types";
 
+import { project } from "../../project/__tests__/fixture";
+
 const sprint = (state: Sprint["state"]) =>
   ({ id: "s1", name: "S1", state, start_date: "2026-11-02", end_date: "2026-11-13", goal: "" }) as Sprint;
 
@@ -26,7 +28,7 @@ describe("DeleteSprintButton", () => {
   it("deletes a sprint after saying where its tasks go", async () => {
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
-    const invalidate = wrap(<DeleteSprintButton sprint={sprint("planned")} taskCount={3} />);
+    const invalidate = wrap(<DeleteSprintButton project={project()} sprint={sprint("planned")} taskCount={3} />);
     await userEvent.click(screen.getByRole("button", { name: "Delete sprint S1" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(dialog).toHaveAccessibleName("Delete S1?");
@@ -40,10 +42,15 @@ describe("DeleteSprintButton", () => {
 
   it("warns that an active sprint's history is lost", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
-    wrap(<DeleteSprintButton sprint={sprint("active")} taskCount={1} />);
+    wrap(<DeleteSprintButton project={project()} sprint={sprint("active")} taskCount={1} />);
     await userEvent.click(screen.getByRole("button", { name: "Delete sprint S1" }));
     expect(await screen.findByRole("alertdialog")).toHaveTextContent(
       "1 task goes back to the backlog. Its burndown and velocity history is lost.",
     );
+  });
+
+  it("is not offered in a closed project", () => {
+    wrap(<DeleteSprintButton project={project({ status: "finished" })} sprint={sprint("planned")} taskCount={1} />);
+    expect(screen.queryByRole("button", { name: "Delete sprint S1" })).toBeNull();
   });
 });

@@ -134,7 +134,7 @@ function BacklogPage() {
                           Start
                         </Button>
                       )}
-                      <DeleteSprintButton sprint={s} taskCount={all.filter((t) => t.sprint_id === s.id).length} />
+                      <DeleteSprintButton project={project.data} sprint={s} taskCount={all.filter((t) => t.sprint_id === s.id).length} />
                     </>
                   )
                 }

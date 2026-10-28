@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.a2a.models import Question
 from app.agent_runs.service import stop_runs_before_delete
 from app.audit import service as audit
 from app.auth.deps import AuthedUser
@@ -151,7 +152,9 @@ async def delete_project(ref: str, user: AuthedUser, db: DbSession) -> None:
     if user.role != Role.admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
     task_ids = select(Task.id).where(Task.project_id == project.id)
-    await stop_runs_before_delete(db, task_ids)
+    # answering runs too: questions to an archived project carry on until it is deleted
+    question_ids = select(Question.id).where(Question.target_project_id == project.id)
+    await stop_runs_before_delete(db, task_ids, question_ids)
     uploads.remove_after_commit(db, (await db.execute(task_ids)).scalars().all())
     await _project_changed(db, project)
     await db.delete(project)

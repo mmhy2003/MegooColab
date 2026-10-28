@@ -8,13 +8,15 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Hint } from "@/components/ui/Hint";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-import type { Sprint } from "@/lib/types";
+import type { Project, Sprint } from "@/lib/types";
 
-/** Deletes a sprint after saying where its tasks go (back to the backlog) and, once it has started, what is lost. */
-export function DeleteSprintButton({ sprint, taskCount }: { sprint: Sprint; taskCount: number }) {
+/** Deletes a sprint after saying where its tasks go (back to the backlog) and, once it has started, what is lost.
+ * Not offered in a closed project, where it could only be refused. */
+export function DeleteSprintButton({ project, sprint, taskCount }: { project: Project; sprint: Sprint; taskCount: number }) {
   const client = useQueryClient();
   const { ask, dialog } = useConfirm();
   const [error, setError] = useState<string | null>(null);
+  if (project.status !== "active") return null;
   const tasks = `${taskCount} ${taskCount === 1 ? "task goes" : "tasks go"} back to the backlog.`;
   return (
     <>
