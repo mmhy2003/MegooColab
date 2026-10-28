@@ -11,7 +11,11 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/projects", useRouter: (
 const user = { id: "u1", name: "Ahmed", email: "a@x.io", role: "member" } as User;
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ count: 0 }), { status: 200 })));
+  // the unread count, and an empty list of notifications
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => new Response(JSON.stringify(url.includes("unread-count") ? { count: 0 } : []), { status: 200 })),
+  );
 });
 
 afterEach(() => {
@@ -58,15 +62,29 @@ describe("Header", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("closes the notification panel on a click outside it and on Escape", () => {
+  it("closes the notification panel on a click outside it and on Escape", async () => {
     renderHeader();
     const bell = screen.getByRole("button", { name: "Notifications" });
-    fireEvent.click(bell);
+    await userEvent.click(bell);
     expect(screen.getByRole("dialog", { name: "Notifications" })).toBeInTheDocument();
-    fireEvent.click(document.querySelector("[data-backdrop]")!);
+    await userEvent.click(document.querySelector("[data-backdrop]")!);
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
-    fireEvent.click(bell);
-    fireEvent.keyDown(window, { key: "Escape" });
+    await userEvent.click(bell);
+    await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+  });
+
+  it("opens the notification panel from the keyboard and gives focus back on Escape", async () => {
+    renderHeader();
+    const bell = screen.getByRole("button", { name: "Notifications" });
+    bell.focus();
+    await userEvent.keyboard("{Enter}");
+    const panel = screen.getByRole("dialog", { name: "Notifications" });
+    expect(panel).toBeInTheDocument();
+    await userEvent.tab();
+    expect(panel).toContainElement(document.activeElement as HTMLElement);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+    expect(bell).toHaveFocus();
   });
 });
