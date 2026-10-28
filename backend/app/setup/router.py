@@ -10,6 +10,8 @@ from app.auth.schemas import LowerEmail, Password, UserEnvelope, UserOut
 from app.core.db import DbSession
 from app.core.security import hash_password
 from app.org.models import OrgSettings
+from app.ratelimit import guards
+from app.ratelimit.clientip import client_ip
 
 router = APIRouter(prefix="/api/setup", tags=["setup"])
 
@@ -36,9 +38,12 @@ async def setup_status(db: DbSession) -> dict[str, bool]:
 async def run_setup(
     body: SetupIn, request: Request, response: Response, db: DbSession
 ) -> UserEnvelope:
+    ip = client_ip(request)
+    await guards.check("setup_ip", ip, request)
     # serialize concurrent setup attempts; only the first may create the admin
     await db.execute(text(f"SELECT pg_advisory_xact_lock({SETUP_LOCK_ID})"))
     if await _user_count(db) > 0:
+        await guards.count("setup_ip", ip)
         raise HTTPException(status.HTTP_409_CONFLICT, "already_set_up")
     user = User(
         email=body.email,
