@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 import { ColumnEditor } from "@/components/project/ColumnEditor";
 import { DeleteProjectSection } from "@/components/project/DeleteProjectSection";
@@ -12,6 +12,7 @@ import { StatusSection } from "@/components/project/StatusSection";
 import { WorkflowSettings } from "@/components/project/WorkflowSettings";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
+import { TabPanel, Tabs, useTabParam } from "@/components/ui/Tabs";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { canManage, useMe } from "@/lib/me";
@@ -19,7 +20,14 @@ import { useColumns, useLabels, useProject, useRepos, useTeams } from "@/lib/pro
 import { qk } from "@/lib/queries";
 import type { Project } from "@/lib/types";
 
-const TABS = ["General", "Columns", "Repositories", "Labels", "Workflow"] as const;
+const TABS = [
+  { id: "general", label: "General" },
+  { id: "columns", label: "Columns" },
+  { id: "repositories", label: "Repositories" },
+  { id: "labels", label: "Labels" },
+  { id: "workflow", label: "Workflow" },
+] as const;
+type TabId = (typeof TABS)[number]["id"];
 
 function General({ project }: { project: Project }) {
   const client = useQueryClient();
@@ -79,6 +87,14 @@ function General({ project }: { project: Project }) {
 }
 
 export default function ProjectSettingsPage() {
+  return (
+    <Suspense>
+      <ProjectSettings />
+    </Suspense>
+  );
+}
+
+function ProjectSettings() {
   const { key } = useParams<{ key: string }>();
   const client = useQueryClient();
   const project = useProject(key);
@@ -86,42 +102,37 @@ export default function ProjectSettingsPage() {
   const columns = useColumns(key);
   const repos = useRepos(key);
   const labels = useLabels(key);
-  const [tab, setTab] = useState<(typeof TABS)[number]>("General");
+  const [tab, setTab] = useTabParam<TabId>(TABS.map((t) => t.id));
 
   if (!project.data) return null;
   return (
     <div className="space-y-4">
-      <div role="tablist" aria-label="Settings sections" className="flex flex-wrap gap-2">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            role="tab"
-            type="button"
-            aria-selected={tab === t}
-            onClick={() => setTab(t)}
-            className={`rounded border px-3 py-1 text-xs uppercase ${tab === t ? "border-cyan text-cyan-ink" : "border-line text-muted-foreground"}`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-      {tab === "General" && (
-        <>
+      <Tabs label="Settings sections" tabs={TABS} value={tab} onChange={setTab} />
+      <TabPanel id="general" active={tab === "general"}>
+        <div className="space-y-4">
           <StatusSection project={project.data} canChange={canManage(me)} />
           <General key={project.data.id} project={project.data} />
           {me && <DeleteProjectSection project={project.data} user={me} />}
-        </>
-      )}
-      {tab === "Columns" && columns.data && (
-        <ColumnEditor projectKey={key} columns={columns.data} onChanged={() => client.invalidateQueries({ queryKey: qk.columns(key) })} />
-      )}
-      {tab === "Repositories" && repos.data && (
-        <RepoEditor projectKey={key} repos={repos.data} onChanged={() => client.invalidateQueries({ queryKey: qk.repositories(key) })} />
-      )}
-      {tab === "Labels" && labels.data && (
-        <LabelEditor projectKey={key} labels={labels.data} onChanged={() => client.invalidateQueries({ queryKey: qk.labels(key) })} />
-      )}
-      {tab === "Workflow" && <WorkflowSettings key={project.data.id} project={project.data} canEdit={canManage(me)} />}
+        </div>
+      </TabPanel>
+      <TabPanel id="columns" active={tab === "columns"}>
+        {columns.data && (
+          <ColumnEditor projectKey={key} columns={columns.data} onChanged={() => client.invalidateQueries({ queryKey: qk.columns(key) })} />
+        )}
+      </TabPanel>
+      <TabPanel id="repositories" active={tab === "repositories"}>
+        {repos.data && (
+          <RepoEditor projectKey={key} repos={repos.data} onChanged={() => client.invalidateQueries({ queryKey: qk.repositories(key) })} />
+        )}
+      </TabPanel>
+      <TabPanel id="labels" active={tab === "labels"}>
+        {labels.data && (
+          <LabelEditor projectKey={key} labels={labels.data} onChanged={() => client.invalidateQueries({ queryKey: qk.labels(key) })} />
+        )}
+      </TabPanel>
+      <TabPanel id="workflow" active={tab === "workflow"}>
+        <WorkflowSettings key={project.data.id} project={project.data} canEdit={canManage(me)} />
+      </TabPanel>
     </div>
   );
 }

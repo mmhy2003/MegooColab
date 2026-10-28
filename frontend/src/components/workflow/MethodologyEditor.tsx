@@ -1,11 +1,12 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Markdown } from "@/components/ui/Markdown";
+import { TabPanel, Tabs } from "@/components/ui/Tabs";
 import { api, ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useUsers } from "@/lib/project";
@@ -14,7 +15,10 @@ import { DISCARD, useUnsavedGuard } from "@/lib/unsaved";
 
 export const MAX_CHARS = 50_000;
 
-const STAGE_CARDS: { id: string; label: string; keys: string[] }[] = [
+export const METHODOLOGY_STAGES = ["brainstorm", "design", "plan", "build", "review", "done"] as const;
+export type MethodologyStage = (typeof METHODOLOGY_STAGES)[number];
+
+const STAGE_CARDS: { id: MethodologyStage; label: string; keys: string[] }[] = [
   { id: "brainstorm", label: "Brainstorm", keys: ["brainstorm"] },
   { id: "design", label: "Design", keys: ["design_revision"] },
   { id: "plan", label: "Plan", keys: ["plan"] },
@@ -82,7 +86,16 @@ function History({
   );
 }
 
-function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, string> }) {
+function KeyEditor({
+  item,
+  names,
+  onDirty,
+}: {
+  item: MethodologyItem;
+  names: Map<string, string>;
+  /** tells the stage tabs which keys have unsaved edits */
+  onDirty: (key: string, dirty: boolean) => void;
+}) {
   const { ask, dialog } = useConfirm();
   const client = useQueryClient();
   // null = no edits yet: the textarea follows the saved text. `base` is the version the draft started from (its
@@ -98,6 +111,7 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
   const tooLong = length > MAX_CHARS;
 
   useUnsavedGuard(dirty, ask);
+  useEffect(() => onDirty(item.key, dirty), [onDirty, item.key, dirty]);
 
   const refresh = () => client.invalidateQueries({ queryKey: mqk.list() });
 
@@ -188,24 +202,43 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
   );
 }
 
-export function MethodologyEditor() {
+/** One tab per workflow stage; the page keeps the open one in the address. Hidden tabs stay mounted, so a draft
+ * survives switching tabs, and a tab with unsaved edits is marked. */
+export function MethodologyEditor({ stage, onStage }: { stage: MethodologyStage; onStage: (s: MethodologyStage) => void }) {
   const list = useQuery({ queryKey: mqk.list(), queryFn: () => api<MethodologyItem[]>("/api/methodology") });
   const users = useUsers();
   const names = new Map(users.data?.map((u) => [u.id, u.name]));
   const byKey = new Map(list.data?.map((m) => [m.key, m]));
+  const [dirtyKeys, setDirtyKeys] = useState<ReadonlySet<string>>(new Set());
+  const onDirty = useCallback((key: string, dirty: boolean) => {
+    setDirtyKeys((keys) => {
+      if (keys.has(key) === dirty) return keys;
+      const next = new Set(keys);
+      if (dirty) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
 
   if (list.error) return <p className="text-sm text-pink">{errorMessage(list.error)}</p>;
   if (!list.data) return null;
   return (
     <div className="space-y-4">
-      {STAGE_CARDS.map((stage) => (
-        <div key={stage.id} className="card space-y-3 p-4">
-          <h2 className="text-sm font-bold text-cyan-ink">{stage.label}</h2>
-          {stage.keys.map((k) => {
-            const item = byKey.get(k);
-            return item ? <KeyEditor key={k} item={item} names={names} /> : null;
-          })}
-        </div>
+      <Tabs
+        label="Workflow stages"
+        tabs={STAGE_CARDS.map((s) => ({ id: s.id, label: s.label, mark: s.keys.some((k) => dirtyKeys.has(k)) }))}
+        value={stage}
+        onChange={onStage}
+      />
+      {STAGE_CARDS.map((s) => (
+        <TabPanel key={s.id} id={s.id} active={s.id === stage}>
+          <div className="card space-y-3 p-4">
+            {s.keys.map((k) => {
+              const item = byKey.get(k);
+              return item ? <KeyEditor key={k} item={item} names={names} onDirty={onDirty} /> : null;
+            })}
+          </div>
+        </TabPanel>
       ))}
       <p className="text-xs text-muted-foreground">
         Adapted from{" "}

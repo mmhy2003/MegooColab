@@ -67,7 +67,7 @@ test("memory: learn, forget, dream, ask, scope and MCP", async ({ page, browser 
 
   // 1. one provider for every AI job; each job's Test works in fake mode
   const provider = await post<{ id: string }>(request, "/api/admin/ai/providers", { name: "Memory provider", kind: "openai", api_key: "sk-e2e" });
-  await page.goto("/admin/ai");
+  await page.goto("/admin/ai?tab=models");
   const jobs = page.locator("section", { hasText: "Models per job" });
   for (const label of ["Embeddings", "Extraction", "Dreaming", "Answering"]) {
     const row = jobs.locator("form", { hasText: label });
@@ -121,7 +121,7 @@ test("memory: learn, forget, dream, ask, scope and MCP", async ({ page, browser 
   await expect
     .poll(() => texts(request, org.id), { timeout: 60_000 })
     .toEqual(expect.arrayContaining(["Billing invoices go out monthly", "Billing disputes are handled within five days"]));
-  await page.goto("/admin/ai");
+  await page.goto("/admin/ai?tab=dreaming");
   await page.getByRole("button", { name: "Dream now" }).click();
   await expect
     .poll(async () => (await get<{ status: string }[]>(request, "/api/admin/memory/dreams"))[0]?.status, { timeout: 60_000 })

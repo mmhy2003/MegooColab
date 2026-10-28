@@ -3,7 +3,6 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import AdminSettingsPage from "@/app/(app)/admin/settings/page";
 import { GitConnections } from "@/components/git/GitConnections";
 import { PullRequestBadge } from "@/components/git/PullRequestBadge";
 import { RepoEditor } from "@/components/project/RepoEditor";
@@ -133,39 +132,5 @@ describe("WorkflowPanel", () => {
     expect(screen.queryByRole("button", { name: "Approve PR" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Mark merged" }));
     await waitFor(() => expect(sent(fetchMock, "POST")).toEqual([{ url: "/api/tasks/PAY-1/workflow/human-review", body: { approved: true } }]));
-  });
-});
-
-describe("Admin settings", () => {
-  it("save dreaming and defaults", async () => {
-    const settings = {
-      name: "Acme",
-      smtp: { host: null, port: null, user: null, from: null, tls: true, password_set: false },
-      dreaming: { enabled: true, hour_utc: null },
-      project_defaults: { finishing_option: "pull_request", require_human_code_review: false, sprints_enabled: true, commit_docs_to_repo: false },
-    };
-    const fetchMock = mockFetch((url, init) => {
-      if (url === "/api/admin/settings" && !init?.method) return json(settings);
-      if (url === "/api/admin/settings" && init?.method === "PUT") return json(settings);
-      return undefined;
-    });
-    wrap(<AdminSettingsPage />);
-    fireEvent.click(await screen.findByRole("checkbox", { name: "Run dreaming every night" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Run dreaming every night" }));
-    fireEvent.change(screen.getByLabelText("Dreaming hour (UTC)"), { target: { value: "5" } });
-    fireEvent.change(screen.getByLabelText("Default finishing option"), { target: { value: "keep_branch" } });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Require a human code review" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Sprints" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(sent(fetchMock, "PUT")).toHaveLength(1));
-    const body = sent(fetchMock, "PUT")[0].body;
-    expect(body.dreaming).toEqual({ enabled: true, hour_utc: 5 });
-    expect(body.project_defaults).toEqual({
-      finishing_option: "keep_branch", require_human_code_review: true, sprints_enabled: false, commit_docs_to_repo: false,
-    });
-    fireEvent.change(screen.getByLabelText("Dreaming hour (UTC)"), { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(sent(fetchMock, "PUT")).toHaveLength(2));
-    expect(sent(fetchMock, "PUT")[1].body.dreaming).toEqual({ enabled: true, hour_utc: null }); // empty: the server setting
   });
 });

@@ -5,12 +5,12 @@ import { setupOrSignIn } from "./helpers/auth";
 /** The sidebar and the header bar stay in view while a long page scrolls. Works on any stack (fresh or not). */
 
 test("the sidebar and the header stay put while the page scrolls", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 500 }); // short, so the settings page scrolls
+  await page.setViewportSize({ width: 1280, height: 500 }); // short, so the page scrolls
   await setupOrSignIn(page);
-  await page.goto("/admin/settings");
+  await page.goto("/admin/methodology?tab=build"); // three instruction editors: a long page
   const sidebar = page.getByRole("navigation", { name: "Main" });
   await expect(sidebar).toBeVisible();
-  // poll: the settings load after the page does, and only then is there something to scroll
+  // poll: the instructions load after the page does, and only then is there something to scroll
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -52,7 +52,7 @@ test("scrollbars stay hidden until the pointer is over the area, then show in cy
 
 test("checkboxes are on/off switches that light up cyan", async ({ page }) => {
   await setupOrSignIn(page);
-  await page.goto("/admin/settings");
+  await page.goto("/admin/settings?tab=new-projects");
   const box = page.getByRole("checkbox", { name: "Require a human code review" });
   await expect(box).toBeVisible();
   const look = () =>

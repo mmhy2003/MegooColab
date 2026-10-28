@@ -62,6 +62,7 @@ test("knowledge base: edit, link, search, permissions, MCP and filing", async ({
   await expect(providers.getByText("Key saved")).toBeVisible();
   await expect(page.getByText("sk-e2e-not-real")).toHaveCount(0);
   // the embeddings job's row (the extraction, dreaming and answering jobs have their own)
+  await page.getByRole("tab", { name: "Models per job" }).click();
   const jobs = page.locator("section", { hasText: "Models per job" }).locator("form", { hasText: "Embeddings" });
   await jobs.getByLabel("Provider").selectOption({ label: "Local test provider" });
   await jobs.getByLabel("Model").fill("text-embedding-3-small");

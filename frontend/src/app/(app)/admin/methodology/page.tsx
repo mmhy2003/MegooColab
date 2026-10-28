@@ -1,7 +1,10 @@
 "use client";
 
-import { MethodologyEditor } from "@/components/workflow/MethodologyEditor";
+import { Suspense } from "react";
+
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useTabParam } from "@/components/ui/Tabs";
+import { METHODOLOGY_STAGES, MethodologyEditor } from "@/components/workflow/MethodologyEditor";
 import { useMe } from "@/lib/me";
 
 export default function AdminMethodologyPage() {
@@ -20,7 +23,14 @@ export default function AdminMethodologyPage() {
         title="Methodology"
         subtitle="The instructions agents follow at each workflow stage. Every save creates a new version; runs record the version they used."
       />
-      <MethodologyEditor />
+      <Suspense>
+        <StageTabs />
+      </Suspense>
     </div>
   );
+}
+
+function StageTabs() {
+  const [stage, setStage] = useTabParam(METHODOLOGY_STAGES);
+  return <MethodologyEditor stage={stage} onStage={setStage} />;
 }

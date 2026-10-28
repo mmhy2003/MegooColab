@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MethodologyEditor } from "@/components/workflow/MethodologyEditor";
+import { MethodologyEditor, type MethodologyStage } from "@/components/workflow/MethodologyEditor";
 import { answer } from "@/test/answer";
 
 const KEYS: [string, string][] = [
@@ -16,6 +17,12 @@ const KEYS: [string, string][] = [
   ["review_fix", "review"],
   ["finish", "done"],
 ];
+
+/** The page keeps the open stage in the address; here it is plain state, starting on Plan. */
+function Harness({ initial = "plan" }: { initial?: MethodologyStage }) {
+  const [stage, setStage] = useState<MethodologyStage>(initial);
+  return <MethodologyEditor stage={stage} onStage={setStage} />;
+}
 
 function setup(opts: { put?: Response } = {}) {
   let plan = { version: 3, body_md: "Plan text v3" };
@@ -58,7 +65,7 @@ function setup(opts: { put?: Response } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MethodologyEditor />
+      <Harness />
     </QueryClientProvider>,
   );
   return fetchMock;
@@ -73,13 +80,29 @@ afterEach(() => {
 });
 
 describe("MethodologyEditor", () => {
-  it("shows the six stages in order with their keys and versions", async () => {
+  it("shows one tab per stage, each with its keys and versions", async () => {
     setup();
     await screen.findByRole("region", { name: "plan" });
-    const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(["Brainstorm", "Design", "Plan", "Build", "Review", "Done"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Brainstorm", "Design", "Plan", "Build", "Review", "Done"]);
+    expect(screen.getByRole("tab", { name: "Plan" })).toHaveAttribute("aria-selected", "true");
     expect(within(planCard()).getByText("v3")).toBeInTheDocument();
-    expect(screen.getAllByRole("region")).toHaveLength(9);
+    expect(screen.getAllByRole("region")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("tab", { name: "Build" }));
+    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual([
+      "build_implement", "build_step_review", "build_step_fix",
+    ]);
+  });
+
+  it("marks a stage with unsaved edits and keeps them when switching tabs", async () => {
+    setup();
+    fireEvent.change(await planBox(), { target: { value: "Plan draft" } });
+    expect(screen.getByRole("tab", { name: "Plan (unsaved changes)" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Brainstorm" }));
+    expect(screen.queryByRole("region", { name: "plan" })).toBeNull();
+    fireEvent.click(screen.getByRole("tab", { name: "Plan (unsaved changes)" }));
+    expect(await planBox()).toHaveValue("Plan draft");
+    fireEvent.change(await planBox(), { target: { value: "Plan text v3" } }); // back to the saved text
+    expect(screen.getByRole("tab", { name: "Plan" })).toBeInTheDocument();
   });
 
   it("save posts body and shows new version", async () => {
@@ -238,16 +261,18 @@ describe("MethodologyEditor", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <MethodologyEditor />
+        <Harness />
       </QueryClientProvider>,
     );
     const plan = await planBox();
     fireEvent.change(plan, { target: { value: "My plan edit" } }); // the draft of key A starts at v3
     versions.plan = 4; // meanwhile another admin saves plan
+    fireEvent.click(screen.getByRole("tab", { name: "Brainstorm" }));
     const brainstorm = within(screen.getByRole("region", { name: "brainstorm" }));
     fireEvent.change(brainstorm.getByRole("textbox"), { target: { value: "Brainstorm edit" } });
     fireEvent.click(brainstorm.getByRole("button", { name: "Save" })); // key B: the list is refetched
     expect(await brainstorm.findByText("Saved as v2")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Plan (unsaved changes)" }));
     await waitFor(() => expect(within(planCard()).getByText("v4")).toBeInTheDocument());
 
     fireEvent.click(within(planCard()).getByRole("button", { name: "Save" }));
