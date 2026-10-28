@@ -49,3 +49,34 @@ test("scrollbars stay hidden until the pointer is over the area, then show in cy
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior)).toBe("smooth");
   expect(await page.locator("html").getAttribute("data-scroll-behavior")).toBe("smooth");
 });
+
+test("checkboxes are on/off switches that light up cyan", async ({ page }) => {
+  await setupOrSignIn(page);
+  await page.goto("/admin/settings");
+  const box = page.getByRole("checkbox", { name: "Require a human code review" });
+  await expect(box).toBeVisible();
+  const look = () =>
+    box.evaluate((el) => {
+      const s = getComputedStyle(el);
+      const knob = getComputedStyle(el, "::after");
+      return { appearance: s.appearance, width: s.width, radius: s.borderRadius, bg: s.backgroundColor, knob: knob.transform };
+    });
+  const cyan = await page.evaluate(() => {
+    const probe = document.createElement("i");
+    probe.style.color = "var(--cyan)";
+    document.body.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
+  if (await box.isChecked()) await box.uncheck();
+  const off = await look();
+  expect(off.appearance).toBe("none");
+  expect(off.width).toBe("38px");
+  expect(off.radius).toBe("999px");
+  expect(off.bg).not.toBe(cyan);
+  await box.check(); // still a real checkbox: role, label and keyboard all work
+  await expect(box).toBeChecked();
+  await expect.poll(async () => (await look()).bg).toBe(cyan); // it lights up over 0.2s
+  await expect.poll(async () => (await look()).knob).not.toBe(off.knob); // the knob slides across
+});
