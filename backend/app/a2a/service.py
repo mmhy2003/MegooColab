@@ -38,7 +38,7 @@ from app.kb import search as kb_search
 from app.memory.search import search_conclusions
 from app.notifications import service as notifications
 from app.notifications.models import Kind
-from app.projects.models import Project, ProjectTeam
+from app.projects.models import Project, ProjectStatus, ProjectTeam
 from app.tasks.models import Task
 from app.tasks.service import get_task_for
 from app.teams.models import TeamMember
@@ -164,6 +164,9 @@ async def ask(
     if task_key:
         task, _ = await get_task_for(db, user, task_key, write=True)
     project = await project_by_key(db, project_key)
+    if project.status == ProjectStatus.archived:
+        # questions already sent carry on; an archived project takes no new ones
+        raise HTTPException(status.HTTP_409_CONFLICT, "project_closed")
     # before any lock: the search can be slow, and the question's number locks the project row until commit
     suggestions = await suggest(db, user, project.id, f"{title}\n{body}")
     # one ask at a time per user, so concurrent asks cannot all pass the cap

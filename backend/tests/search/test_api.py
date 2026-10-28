@@ -252,3 +252,27 @@ async def test_admin_search_status_and_rebuild(client, db, meili_index):
     out = (await client.get("/api/admin/search")).json()
     assert out["available"] is True and out["documents"] > 0
 
+
+
+def test_archived_projects_tasks_are_filtered_out():
+    from app.search.service import archived_filter
+
+    assert archived_filter([]) is None
+    assert archived_filter(["p1"]) == 'NOT (kind = "task" AND project_id IN ["p1"])'
+
+
+async def test_an_archived_projects_tasks_leave_search_but_its_documents_stay(client, db, meili_index):
+    from tests.projects.test_project_status import close
+
+    pid, _, _ = await _project(client, db, "PAY")
+    await _task(db, pid, 1, "Retry failed card payments")
+    space = await kb_access.space_for_project(db, pid)
+    r = await client.post(f"/api/kb/spaces/{space.id}/documents",
+                          json={"title": "Payment retry policy", "body_md": "Every payment is retried."})
+    assert r.status_code == 201
+    await drain()
+    assert {h["kind"] for h in (await _full(client, q="retry"))["hits"]} >= {"task", "document"}
+    await close(db, "PAY", "archived")
+    kinds = {h["kind"] for h in (await _full(client, q="retry"))["hits"]}
+    assert "task" not in kinds and "document" in kinds
+    assert all(g["kind"] != "task" for g in (await _quick(client, "retry"))["groups"])

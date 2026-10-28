@@ -20,7 +20,7 @@ from app.a2a.schemas import (
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
 from app.projects.access import accessible_project_ids, get_project_for
-from app.projects.models import Project
+from app.projects.models import Project, ProjectStatus
 from app.ratelimit.deps import check_ai
 from app.tasks.service import get_task_for
 from app.workflow import engine
@@ -32,8 +32,10 @@ LIST_LIMIT = 100
 
 @router.get("/api/questions/targets")
 async def targets(_user: AuthedUser, db: DbSession) -> list[Target]:
-    """Every project can be asked (A2A-1), so every project's key and name is listed for addressing."""
-    rows = await db.execute(select(Project.key, Project.name).order_by(Project.key))
+    """Every project can be asked (A2A-1) except an archived one, so their keys and names are listed for addressing."""
+    rows = await db.execute(
+        select(Project.key, Project.name).where(Project.status != ProjectStatus.archived).order_by(Project.key)
+    )
     return [Target(key=k, name=n) for k, n in rows]
 
 

@@ -12,7 +12,7 @@ from app.agents.models import Agent
 from app.auth.models import Role, User
 from app.dashboard.schemas import ScopeName
 from app.projects.access import accessible_project_ids
-from app.projects.models import ProjectTeam
+from app.projects.models import Project, ProjectStatus, ProjectTeam
 from app.tasks.models import Task, TaskType
 from app.teams.models import TeamMember
 
@@ -51,6 +51,9 @@ async def resolve_scope(db: AsyncSession, user: User, name: ScopeName) -> Scope:
     else:
         allowed = await accessible_project_ids(db, user)
         project_ids = None if allowed is None else frozenset(allowed)
+    # closed (finished, archived) projects are not counted, in any scope
+    active = frozenset((await db.execute(select(Project.id).where(Project.status == ProjectStatus.active))).scalars())
+    project_ids = active if project_ids is None else project_ids & active
     agent_ids = frozenset((await db.execute(select(Agent.id).where(Agent.owner_id == user.id))).scalars())
     return Scope(user=user, name=name, project_ids=project_ids, agent_ids=agent_ids)
 

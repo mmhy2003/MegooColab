@@ -11,7 +11,7 @@ from app.auth.models import User
 from app.dashboard.schemas import DayFinished, MyTask, ProjectRow
 from app.dashboard.scope import COUNTED_TYPES, Scope, day_start, task_link, today, week_end
 from app.projects.access import accessible_project_ids
-from app.projects.models import BoardColumn, ColumnCategory, Project
+from app.projects.models import BoardColumn, ColumnCategory, Project, ProjectStatus
 from app.tasks.models import Task
 
 MY_TASKS = 8
@@ -54,7 +54,8 @@ async def my_tasks(db: AsyncSession, user: User) -> list[MyTask]:
     stmt = (
         select(Project.key, Task.number, Task.title, Task.due_date)
         .join(Project, Project.id == Task.project_id).join(BoardColumn, BoardColumn.id == Task.column_id)
-        .where(Task.assignee_user_id == user.id, Task.type.in_(COUNTED_TYPES), _open, Task.due_date <= week_end(t))
+        .where(Task.assignee_user_id == user.id, Task.type.in_(COUNTED_TYPES), _open, Task.due_date <= week_end(t),
+               Project.status == ProjectStatus.active)
         .order_by(Task.due_date, Project.key, Task.number).limit(MY_TASKS)
     )
     if allowed is not None:

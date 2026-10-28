@@ -20,7 +20,7 @@ from app.auth.models import Role, User
 from app.kb import access as kb_access
 from app.kb import search as kb_search
 from app.projects.access import accessible_project_ids
-from app.projects.models import Project
+from app.projects.models import Project, ProjectStatus
 from app.search import client
 from app.search.documents import KINDS
 from app.search.schemas import (
@@ -123,11 +123,26 @@ def _any_of(attr: str, values: list[str]) -> str:
     return f"{attr} IN [{', '.join(_quoted(v) for v in values)}]"
 
 
-def build_filter(tokens: list[str] | None, f: Filters | None = None, *, now: datetime | None = None) -> list[str]:
+def archived_filter(project_ids: list[str]) -> str | None:
+    """An archived project's tasks leave search; its Knowledge Base documents stay."""
+    if not project_ids:
+        return None
+    return f'NOT (kind = "task" AND {_any_of("project_id", project_ids)})'
+
+
+async def archived_project_ids(db: AsyncSession) -> list[str]:
+    rows = await db.execute(select(Project.id).where(Project.status == ProjectStatus.archived).order_by(Project.id))
+    return [str(p) for p in rows.scalars()]
+
+
+def build_filter(tokens: list[str] | None, f: Filters | None = None, *, now: datetime | None = None,
+                 archived: list[str] | None = None) -> list[str]:
     """A Meilisearch filter array (every element must hold)."""
     out: list[str] = []
     if tokens is not None:
         out.append(_any_of("readers", tokens))
+    if hidden := archived_filter(archived or []):
+        out.append(hidden)
     if f is None:
         return out
     if f.kinds:
@@ -171,7 +186,7 @@ def _hit(raw: dict, readable: set[str] | None) -> Hit:
 
 async def quick(db: AsyncSession, user: User, q: str) -> QuickOut:
     tokens = await reader_tokens(db, user)
-    base = build_filter(tokens)
+    base = build_filter(tokens, archived=await archived_project_ids(db))
     index = client.index().uid
     queries = [
         {"indexUid": index, "q": q, **SEARCH_PARAMS, "filter": [*base, _any_of("kind", [k])], "limit": QUICK_PER_KIND}
@@ -225,9 +240,11 @@ async def full(
     db: AsyncSession, user: User, q: str, f: Filters, sort: str = "relevance", offset: int = 0, meaning: bool = False,
 ) -> GlobalSearchOut:
     tokens = await reader_tokens(db, user)
+    archived = await archived_project_ids(db)
     index = client.index().uid
     main: dict[str, Any] = {
-        "indexUid": index, "q": q, **SEARCH_PARAMS, "filter": build_filter(tokens, f), "limit": PAGE,
+        "indexUid": index, "q": q, **SEARCH_PARAMS, "filter": build_filter(tokens, f, archived=archived),
+        "limit": PAGE,
         "offset": offset, "facets": FACETS,
     }
     if sort == "newest":
@@ -237,7 +254,7 @@ async def full(
     chosen = [(attr, name) for attr, name in FACET_FILTERS if getattr(f, name)]
     queries = [main] + [
         {"indexUid": index, "q": q, "matchingStrategy": "all", "limit": 0, "facets": [attr],
-         "filter": build_filter(tokens, replace(f, **{name: []}))}
+         "filter": build_filter(tokens, replace(f, **{name: []}), archived=archived)}
         for attr, name in chosen
     ]
     results = (await client.call(lambda: client.client().multi_search(queries)))["results"]
