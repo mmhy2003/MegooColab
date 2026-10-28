@@ -26,6 +26,7 @@ from app.core.config import get_settings
 from app.core.csrf import CsrfHeaderMiddleware
 from app.core.db import SessionLocal
 from app.core.events import hub
+from app.dashboard.router import router as dashboard_router
 from app.git.router import names_router as git_names_router
 from app.git.router import router as git_router
 from app.git.router import webhook_router as git_webhook_router
@@ -172,6 +173,7 @@ def create_app() -> FastAPI:
         git_names_router,
         git_webhook_router,
         notifications_router,
+        dashboard_router,
         search_router,
         rate_limits_router,
     ):
