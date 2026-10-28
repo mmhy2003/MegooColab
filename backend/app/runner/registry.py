@@ -103,6 +103,10 @@ class RunnerRegistry:
         conn = self.conn_for_user(user_id)
         return conn is not None and capability in conn.capabilities
 
+    def connected_count(self) -> int:
+        """Live connections to this backend (closed ones not yet unregistered do not count)."""
+        return sum(1 for conn in self._conns.values() if not conn.closed.is_set())
+
     def available_agents(self, user_id: uuid.UUID) -> set[uuid.UUID]:
         conn = self.conn_for_user(user_id)
         return set(conn.available) if conn is not None else set()
