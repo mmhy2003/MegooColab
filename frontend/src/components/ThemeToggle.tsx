@@ -4,6 +4,7 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { applyTheme, getThemePref, setThemePref, type ThemePref } from "@/lib/theme";
+import { Hint } from "@/components/ui/Hint";
 
 const NEXT: Record<ThemePref, ThemePref> = { system: "dark", dark: "light", light: "system" };
 const ICON = { system: Monitor, dark: Moon, light: Sun };
@@ -24,18 +25,19 @@ export function ThemeToggle() {
 
   const Icon = ICON[pref];
   return (
-    <button
-      type="button"
-      className="icon-btn"
-      aria-label={`Theme: ${pref}`}
-      title={`Theme: ${pref} (click to change)`}
-      onClick={() => {
-        const next = NEXT[pref];
-        setThemePref(next);
-        setPref(next);
-      }}
-    >
-      <Icon size={18} aria-hidden />
-    </button>
+    <Hint label={`Theme: ${pref} (click to change)`}>
+      <button
+        type="button"
+        className="icon-btn"
+        aria-label={`Theme: ${pref}`}
+        onClick={() => {
+          const next = NEXT[pref];
+          setThemePref(next);
+          setPref(next);
+        }}
+      >
+        <Icon size={18} aria-hidden />
+      </button>
+    </Hint>
   );
 }

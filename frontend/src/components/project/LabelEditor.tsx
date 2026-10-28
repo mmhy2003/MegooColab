@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { Label } from "@/lib/types";
+import { Hint } from "@/components/ui/Hint";
 
 export function LabelChip({ label }: { label: Label }) {
   return (
@@ -42,9 +43,11 @@ export function LabelEditor({ projectKey, labels, onChanged }: { projectKey: str
         {labels.map((l) => (
           <li key={l.id} className="flex items-center gap-1">
             <LabelChip label={l} />
-            <button type="button" className="icon-btn h-6 w-6 hover:text-pink" aria-label={`Delete label ${l.name}`} onClick={() => run(() => api(`${base}/${l.id}`, { method: "DELETE" }))}>
-              <Trash2 size={12} aria-hidden />
-            </button>
+            <Hint label={`Delete label ${l.name}`}>
+              <button type="button" className="icon-btn h-6 w-6 hover:text-pink" aria-label={`Delete label ${l.name}`} onClick={() => run(() => api(`${base}/${l.id}`, { method: "DELETE" }))}>
+                <Trash2 size={12} aria-hidden />
+              </button>
+            </Hint>
           </li>
         ))}
         {labels.length === 0 && <li className="text-sm text-muted-foreground">No labels yet.</li>}

@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useState } from "react";
 
 import type { Task } from "@/lib/types";
+import { Hint } from "@/components/ui/Hint";
 
 const KIND_LABEL = { blocks: "blocks", blocked_by: "is blocked by", relates: "relates to" } as const;
 
@@ -33,9 +34,11 @@ export function Links({
               <span className="text-xs text-muted-foreground">{l.task.key}</span> {l.task.title}
             </button>
             {!disabled && (
-              <button type="button" className="icon-btn h-6 w-6" aria-label={`Remove link to ${l.task.key}`} onClick={() => onRemove(l.id)}>
-                <X size={12} aria-hidden />
-              </button>
+              <Hint label={`Remove link to ${l.task.key}`}>
+                <button type="button" className="icon-btn h-6 w-6" aria-label={`Remove link to ${l.task.key}`} onClick={() => onRemove(l.id)}>
+                  <X size={12} aria-hidden />
+                </button>
+              </Hint>
             )}
           </li>
         ))}

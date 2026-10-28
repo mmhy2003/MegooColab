@@ -4,6 +4,7 @@ import { Paperclip, Trash2 } from "lucide-react";
 import { useRef } from "react";
 
 import type { Attachment } from "@/lib/types";
+import { Hint } from "@/components/ui/Hint";
 
 function size(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -32,9 +33,11 @@ export function Attachments({
             <a href={`/api/attachments/${a.id}`} className="min-w-0 flex-1 truncate">{a.filename}</a>
             <span className="text-xs text-muted-foreground">{size(a.size)}</span>
             {!disabled && (
-              <button type="button" className="icon-btn h-6 w-6 hover:text-pink" aria-label={`Delete ${a.filename}`} onClick={() => onDelete(a.id)}>
-                <Trash2 size={12} aria-hidden />
-              </button>
+              <Hint label={`Delete ${a.filename}`}>
+                <button type="button" className="icon-btn h-6 w-6 hover:text-pink" aria-label={`Delete ${a.filename}`} onClick={() => onDelete(a.id)}>
+                  <Trash2 size={12} aria-hidden />
+                </button>
+              </Hint>
             )}
           </li>
         ))}

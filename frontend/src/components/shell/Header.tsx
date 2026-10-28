@@ -12,6 +12,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Backdrop } from "@/components/ui/Backdrop";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
+import { Hint } from "@/components/ui/Hint";
 
 function crumbs(pathname: string): { href: string; label: string }[] {
   const parts = pathname.split("/").filter(Boolean);
@@ -23,9 +24,11 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-line bg-surface-2/80 px-3 backdrop-blur">
-      <button type="button" className="icon-btn md:hidden" aria-label="Open menu" onClick={onMenu}>
-        <Menu size={18} aria-hidden />
-      </button>
+      <Hint label="Open menu">
+        <button type="button" className="icon-btn md:hidden" aria-label="Open menu" onClick={onMenu}>
+          <Menu size={18} aria-hidden />
+        </button>
+      </Hint>
       <nav aria-label="Breadcrumb" className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
         {crumbs(pathname).map((c, i, all) => (
           <span key={c.href}>

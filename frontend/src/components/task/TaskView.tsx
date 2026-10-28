@@ -20,6 +20,7 @@ import { KbReferences } from "@/components/kb/KbReferences";
 import { TaskQuestions, WaitingBadge } from "@/components/questions/TaskQuestions";
 import { WorkflowPanel } from "@/components/workflow/WorkflowPanel";
 import { useMockups, useRunRecords, useWorkflow } from "@/lib/workflow";
+import { Hint } from "@/components/ui/Hint";
 
 import { ActivityThread } from "./ActivityThread";
 import { Attachments } from "./Attachments";
@@ -122,23 +123,25 @@ export function TaskView({
           />
         </div>
         {!disabled && (
-          <button
-            type="button"
-            className="icon-btn hover:text-pink"
-            aria-label="Delete task"
-            onClick={async () => {
-              if (!confirm(`Delete ${t.key}?${t.type === "epic" ? " Its tasks stay, without an epic." : " Its subtasks are deleted too."}`)) return;
-              try {
-                await api(`/api/tasks/${t.key}`, { method: "DELETE" });
-                await client.invalidateQueries({ queryKey: ["tasks", projectKey] });
-                onDeleted();
-              } catch (err) {
-                setError(errorMessage(err));
-              }
-            }}
-          >
-            <Trash2 size={16} aria-hidden />
-          </button>
+          <Hint label="Delete task">
+            <button
+              type="button"
+              className="icon-btn hover:text-pink"
+              aria-label="Delete task"
+              onClick={async () => {
+                if (!confirm(`Delete ${t.key}?${t.type === "epic" ? " Its tasks stay, without an epic." : " Its subtasks are deleted too."}`)) return;
+                try {
+                  await api(`/api/tasks/${t.key}`, { method: "DELETE" });
+                  await client.invalidateQueries({ queryKey: ["tasks", projectKey] });
+                  onDeleted();
+                } catch (err) {
+                  setError(errorMessage(err));
+                }
+              }}
+            >
+              <Trash2 size={16} aria-hidden />
+            </button>
+          </Hint>
         )}
         {headerExtra}
       </header>

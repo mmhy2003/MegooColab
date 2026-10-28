@@ -17,6 +17,7 @@ import { errorMessage } from "@/lib/errors";
 import { useMe } from "@/lib/me";
 import { qk } from "@/lib/queries";
 import type { Role, User } from "@/lib/types";
+import { Hint } from "@/components/ui/Hint";
 
 const ROLES: Role[] = ["admin", "manager", "member", "viewer"];
 const STATUS_TONE = { active: "green", invited: "amber", deactivated: "muted" } as const;
@@ -154,22 +155,23 @@ export default function AdminUsersPage() {
                   <Badge tone={STATUS_TONE[u.status]}>{u.status}</Badge>
                 </td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    title="Copy a password-reset (or new invite) link"
-                    aria-label={`Reset link for ${u.name}`}
-                    onClick={async () => {
-                      try {
-                        const r = await api<{ reset_url: string }>(`/api/admin/users/${u.id}/reset-link`, { method: "POST" });
-                        setResetLink({ name: u.name, url: r.reset_url });
-                      } catch (err) {
-                        setError(errorMessage(err));
-                      }
-                    }}
-                  >
-                    <Link2 size={14} aria-hidden />
-                  </button>
+                  <Hint label="Copy a password-reset (or new invite) link">
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label={`Reset link for ${u.name}`}
+                      onClick={async () => {
+                        try {
+                          const r = await api<{ reset_url: string }>(`/api/admin/users/${u.id}/reset-link`, { method: "POST" });
+                          setResetLink({ name: u.name, url: r.reset_url });
+                        } catch (err) {
+                          setError(errorMessage(err));
+                        }
+                      }}
+                    >
+                      <Link2 size={14} aria-hidden />
+                    </button>
+                  </Hint>
                   {u.id !== me?.id &&
                     (u.status === "deactivated" ? (
                       <Button variant="ghost" className="ml-2" onClick={() => act.mutate(() => api(`/api/admin/users/${u.id}/reactivate`, { method: "POST" }))}>

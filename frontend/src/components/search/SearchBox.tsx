@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Dialog } from "@/components/ui/Dialog";
+import { Hint } from "@/components/ui/Hint";
 import { ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { KIND_LABELS, plain, useQuickSearch, type Hit, type SearchKind } from "@/lib/search";
@@ -156,19 +157,20 @@ export function SearchLauncher() {
   }, []);
   return (
     <>
-      <button
-        type="button"
-        className="flex h-8 items-center gap-2 rounded px-2 text-muted-foreground hover:bg-surface-2 hover:text-cyan"
-        aria-label={mac ? "Search (⌘K)" : "Search (Ctrl+K)"}
-        title={mac ? "Search (⌘K)" : "Search (Ctrl+K)"}
-        onClick={() => setOpen(true)}
-      >
-        <Search size={16} aria-hidden />
-        {/* the shortcut, so people learn it; too wide for a phone, where the button alone shows */}
-        <kbd className="hidden rounded border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] leading-none sm:inline">
-          {shortcut}
-        </kbd>
-      </button>
+      <Hint label={mac ? "Search (⌘K)" : "Search (Ctrl+K)"}>
+        <button
+          type="button"
+          className="flex h-8 items-center gap-2 rounded px-2 text-muted-foreground hover:bg-surface-2 hover:text-cyan"
+          aria-label={mac ? "Search (⌘K)" : "Search (Ctrl+K)"}
+          onClick={() => setOpen(true)}
+        >
+          <Search size={16} aria-hidden />
+          {/* the shortcut, so people learn it; too wide for a phone, where the button alone shows */}
+          <kbd className="hidden rounded border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] leading-none sm:inline">
+            {shortcut}
+          </kbd>
+        </button>
+      </Hint>
       {open && <SearchBox open onClose={() => setOpen(false)} />}
     </>
   );

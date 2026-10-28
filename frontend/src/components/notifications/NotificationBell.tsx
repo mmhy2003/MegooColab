@@ -7,6 +7,7 @@ import { useState } from "react";
 import { NotificationItem } from "@/components/notifications/NotificationList";
 import { Backdrop } from "@/components/ui/Backdrop";
 import { useMarkAllRead, useNotifications, useUnreadCount } from "@/lib/notifications";
+import { Hint } from "@/components/ui/Hint";
 
 const SHOWN = 10;
 
@@ -19,21 +20,23 @@ export function NotificationBell() {
   const items = list.data?.pages[0]?.slice(0, SHOWN) ?? [];
   return (
     <div className="relative">
-      <button
-        type="button"
-        className="icon-btn relative"
-        aria-label="Notifications"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <Bell size={18} aria-hidden />
-        {count > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-4 rounded-full bg-pink px-1 text-center text-[10px] leading-4 text-on-accent">
-            {count > 99 ? "99+" : count}
-          </span>
-        )}
-      </button>
+      <Hint label="Notifications">
+        <button
+          type="button"
+          className="icon-btn relative"
+          aria-label="Notifications"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <Bell size={18} aria-hidden />
+          {count > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-4 rounded-full bg-pink px-1 text-center text-[10px] leading-4 text-on-accent">
+              {count > 99 ? "99+" : count}
+            </span>
+          )}
+        </button>
+      </Hint>
       {open && <Backdrop onClose={() => setOpen(false)} />}
       {open && (
         <div role="dialog" aria-label="Notifications" className="card absolute right-0 z-20 mt-1 w-80 p-1">

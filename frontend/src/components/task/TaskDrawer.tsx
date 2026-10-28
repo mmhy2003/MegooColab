@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 
 import { TaskView } from "./TaskView";
+import { Hint } from "@/components/ui/Hint";
 
 export function TaskDrawer({
   taskKey,
@@ -33,12 +34,16 @@ export function TaskDrawer({
           onDeleted={onClose}
           headerExtra={
             <>
-              <Link href={`/projects/${projectKey}/tasks/${number}`} className="icon-btn" aria-label="Open full page">
-                <Maximize2 size={16} aria-hidden />
-              </Link>
-              <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
-                <X size={16} aria-hidden />
-              </button>
+              <Hint label="Open full page">
+                <Link href={`/projects/${projectKey}/tasks/${number}`} className="icon-btn" aria-label="Open full page">
+                  <Maximize2 size={16} aria-hidden />
+                </Link>
+              </Hint>
+              <Hint label="Close">
+                <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
+                  <X size={16} aria-hidden />
+                </button>
+              </Hint>
             </>
           }
         />

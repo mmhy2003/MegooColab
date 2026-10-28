@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/Input";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { kbKeys, type KbFolder, type KbTreeDoc } from "@/lib/kb";
+import { Hint } from "@/components/ui/Hint";
 
 type Props = {
   spaceId: string;
@@ -70,19 +71,21 @@ export function FolderTree({ spaceId, folders, documents, selected, onSelect, ca
       <li key={f.id} role="treeitem" aria-selected={selected === f.id} aria-expanded={kids.length ? open : undefined} aria-label={f.name}>
         <div className={`group flex items-center gap-1 rounded px-1 ${selected === f.id ? "bg-surface-2 text-cyan-ink" : ""}`}>
           {kids.length ? (
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label={`${open ? "Collapse" : "Expand"} ${f.name}`}
-              onClick={() => {
-                const next = new Set(collapsed);
-                if (open) next.add(f.id);
-                else next.delete(f.id);
-                setCollapsed(next);
-              }}
-            >
-              {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
-            </button>
+            <Hint label={`${open ? "Collapse" : "Expand"} ${f.name}`}>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={`${open ? "Collapse" : "Expand"} ${f.name}`}
+                onClick={() => {
+                  const next = new Set(collapsed);
+                  if (open) next.add(f.id);
+                  else next.delete(f.id);
+                  setCollapsed(next);
+                }}
+              >
+                {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+              </button>
+            </Hint>
           ) : (
             <span className="inline-block w-[22px]" aria-hidden />
           )}
@@ -92,12 +95,16 @@ export function FolderTree({ spaceId, folders, documents, selected, onSelect, ca
           </button>
           {canWrite && (
             <span className="flex opacity-70 group-hover:opacity-100">
-              <button type="button" className="icon-btn" aria-label={`Rename folder ${f.name}`} onClick={() => rename(f)}>
-                <Pencil size={12} aria-hidden />
-              </button>
-              <button type="button" className="icon-btn" aria-label={`Delete folder ${f.name}`} onClick={() => remove(f)}>
-                <Trash2 size={12} aria-hidden />
-              </button>
+              <Hint label={`Rename folder ${f.name}`}>
+                <button type="button" className="icon-btn" aria-label={`Rename folder ${f.name}`} onClick={() => rename(f)}>
+                  <Pencil size={12} aria-hidden />
+                </button>
+              </Hint>
+              <Hint label={`Delete folder ${f.name}`}>
+                <button type="button" className="icon-btn" aria-label={`Delete folder ${f.name}`} onClick={() => remove(f)}>
+                  <Trash2 size={12} aria-hidden />
+                </button>
+              </Hint>
             </span>
           )}
         </div>

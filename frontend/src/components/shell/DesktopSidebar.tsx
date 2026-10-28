@@ -4,6 +4,7 @@ import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import { useState } from "react";
 
 import { LABEL_HIDDEN, Sidebar } from "@/components/shell/Sidebar";
+import { Hint } from "@/components/ui/Hint";
 import type { User } from "@/lib/types";
 
 export const SIDEBAR_KEY = "megoo.sidebar";
@@ -53,16 +54,17 @@ export function DesktopSidebar({ user }: { user: User }) {
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
           <Sidebar user={user} collapsed={collapsed} />
         </div>
-        <button
-          type="button"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={toggle}
-          className="m-2 flex items-center gap-2 rounded px-3 py-2 text-sm whitespace-nowrap text-muted-foreground hover:bg-surface hover:text-cyan"
-        >
-          <Icon size={16} aria-hidden className="shrink-0" />
-          <span className={collapsed ? LABEL_HIDDEN : ""}>{collapsed ? "Expand" : "Collapse"}</span>
-        </button>
+        <Hint label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+          <button
+            type="button"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={toggle}
+            className="m-2 flex items-center gap-2 rounded px-3 py-2 text-sm whitespace-nowrap text-muted-foreground hover:bg-surface hover:text-cyan"
+          >
+            <Icon size={16} aria-hidden className="shrink-0" />
+            <span className={collapsed ? LABEL_HIDDEN : ""}>{collapsed ? "Expand" : "Collapse"}</span>
+          </button>
+        </Hint>
       </div>
     </aside>
   );

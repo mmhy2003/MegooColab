@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useConnectionNames } from "@/lib/git";
 import type { Repo } from "@/lib/types";
+import { Hint } from "@/components/ui/Hint";
 
 const PROVIDERS: Repo["provider"][] = ["github", "gitlab", "gitea", "plain"];
 const FIELD = "rounded border border-line bg-surface-2 px-2 py-1.5 text-sm";
@@ -51,9 +52,11 @@ export function RepoEditor({ projectKey, repos, onChanged }: { projectKey: strin
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-            <button type="button" className="icon-btn hover:text-pink" aria-label={`Remove ${r.name}`} onClick={() => run(() => api(`${base}/${r.id}`, { method: "DELETE" }))}>
-              <Trash2 size={14} aria-hidden />
-            </button>
+            <Hint label={`Remove ${r.name}`}>
+              <button type="button" className="icon-btn hover:text-pink" aria-label={`Remove ${r.name}`} onClick={() => run(() => api(`${base}/${r.id}`, { method: "DELETE" }))}>
+                <Trash2 size={14} aria-hidden />
+              </button>
+            </Hint>
           </li>
         ))}
         {repos.length === 0 && <li className="px-3 py-3 text-sm text-muted-foreground">No repositories linked yet.</li>}

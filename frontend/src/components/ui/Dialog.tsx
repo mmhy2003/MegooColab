@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { PortalContainerContext } from "@/components/ui/PortalContainer";
+import { Hint } from "@/components/ui/Hint";
 
 export function Dialog({
   open,
@@ -69,9 +70,11 @@ export function Dialog({
     >
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <h2 className="text-sm font-bold text-cyan-ink glow-cyan">{title}</h2>
-        <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
-          <X size={16} aria-hidden />
-        </button>
+        <Hint label="Close">
+          <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
+            <X size={16} aria-hidden />
+          </button>
+        </Hint>
       </div>
       <div className="p-4">
         <PortalContainerContext.Provider value={element}>{children}</PortalContainerContext.Provider>

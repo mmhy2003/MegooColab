@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { Column, ColumnCategory } from "@/lib/types";
+import { Hint } from "@/components/ui/Hint";
 
 export const CATEGORY_LABEL: Record<ColumnCategory, string> = {
   before: "Before work",
@@ -90,15 +91,21 @@ export function ColumnEditor({
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{col.task_count} tasks</span>
               <span className="flex">
-                <button type="button" className="icon-btn" aria-label={`Move ${col.name} left`} disabled={i === 0} onClick={() => move(i, -1)}>
-                  <ChevronLeft size={14} aria-hidden />
-                </button>
-                <button type="button" className="icon-btn" aria-label={`Move ${col.name} right`} disabled={i === columns.length - 1} onClick={() => move(i, 1)}>
-                  <ChevronRight size={14} aria-hidden />
-                </button>
-                <button type="button" className="icon-btn hover:text-pink" aria-label={`Delete ${col.name}`} onClick={() => startDelete(col)}>
-                  <Trash2 size={14} aria-hidden />
-                </button>
+                <Hint label={`Move ${col.name} left`}>
+                  <button type="button" className="icon-btn" aria-label={`Move ${col.name} left`} disabled={i === 0} onClick={() => move(i, -1)}>
+                    <ChevronLeft size={14} aria-hidden />
+                  </button>
+                </Hint>
+                <Hint label={`Move ${col.name} right`}>
+                  <button type="button" className="icon-btn" aria-label={`Move ${col.name} right`} disabled={i === columns.length - 1} onClick={() => move(i, 1)}>
+                    <ChevronRight size={14} aria-hidden />
+                  </button>
+                </Hint>
+                <Hint label={`Delete ${col.name}`}>
+                  <button type="button" className="icon-btn hover:text-pink" aria-label={`Delete ${col.name}`} onClick={() => startDelete(col)}>
+                    <Trash2 size={14} aria-hidden />
+                  </button>
+                </Hint>
               </span>
             </div>
           </li>
