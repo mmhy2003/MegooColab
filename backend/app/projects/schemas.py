@@ -43,6 +43,14 @@ class ProjectOut(BaseModel):
     created_at: datetime
 
 
+class ProjectStatusIn(BaseModel):
+    status: ProjectStatus
+
+
+class WorkflowCountOut(BaseModel):
+    count: int
+
+
 class ColumnIn(BaseModel):
     name: NoNulStr = Field(min_length=1, max_length=100)
     category: ColumnCategory

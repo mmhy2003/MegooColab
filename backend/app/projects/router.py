@@ -15,7 +15,7 @@ from app.kb import access as kb_access
 from app.memory import entities as mem_entities
 from app.memory.models import EntityKind
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
-from app.projects import service
+from app.projects import lifecycle, service
 from app.projects.access import accessible_project_ids, get_project_for, require_manage
 from app.projects.models import BoardColumn, Label, Project, ProjectRepository
 from app.projects.schemas import (
@@ -29,10 +29,12 @@ from app.projects.schemas import (
     ProjectIn,
     ProjectOut,
     ProjectPatch,
+    ProjectStatusIn,
     RepoConnection,
     RepoIn,
     RepoOut,
     RepoPatch,
+    WorkflowCountOut,
 )
 from app.tasks.models import Task
 
@@ -123,9 +125,28 @@ async def update_project(ref: str, body: ProjectPatch, user: AuthedUser, db: DbS
     return await service.project_out(db, project)
 
 
+@router.put("/{ref}/status")
+async def set_project_status(ref: str, body: ProjectStatusIn, user: AuthedUser, db: DbSession) -> ProjectOut:
+    """Not through the write check: this is how a closed project is reopened."""
+    project = await get_project_for(db, user, ref)
+    await require_manage(db, user, project)
+    if await lifecycle.set_status(db, user, project, body.status):
+        await db.flush()
+        await _project_changed(db, project)
+    return await service.project_out(db, project)
+
+
+@router.get("/{ref}/workflows-in-progress")
+async def workflows_in_progress(ref: str, user: AuthedUser, db: DbSession) -> WorkflowCountOut:
+    """What closing the project would pause, for the confirmation."""
+    project = await get_project_for(db, user, ref)
+    return WorkflowCountOut(count=len(await lifecycle.active_workflow_tasks(db, project.id)))
+
+
 @router.delete("/{ref}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(ref: str, user: AuthedUser, db: DbSession) -> None:
-    project = await get_project_for(db, user, ref, write=True)
+    # any status: archiving a test project first and deleting it later is the usual path
+    project = await get_project_for(db, user, ref)
     if user.role != Role.admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
     await stop_runs_before_delete(db, select(Task.id).where(Task.project_id == project.id))
