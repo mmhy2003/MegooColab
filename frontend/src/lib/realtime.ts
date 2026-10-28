@@ -50,6 +50,46 @@ export function invalidationsFor(event: LiveEvent, keyById: Map<string, string>)
   }
 }
 
+/** The dashboard's queries: refetched at most once every THROTTLE_MS, whatever the event rate (an agent at work sends
+ * many). The first event starts the window; the refetch runs at its end and takes in every event inside it. */
+export const THROTTLE_MS = 2_000;
+
+export function throttledFor(event: LiveEvent): QueryKey[] {
+  switch (event.type.split(".")[0]) {
+    case "task":
+    case "question":
+    case "notification":
+      return [["dashboard"], ["dashboard-count"]];
+    case "agents":
+    case "sprint":
+    case "project":
+      return [["dashboard"]];
+    default:
+      return [];
+  }
+}
+
+export function createThrottle(client: QueryClient, ms = THROTTLE_MS): { add(key: QueryKey): void; stop(): void } {
+  const pending = new Map<string, QueryKey>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    add(key) {
+      pending.set(JSON.stringify(key), key);
+      timer ??= setTimeout(() => {
+        timer = undefined;
+        const keys = [...pending.values()];
+        pending.clear();
+        for (const queryKey of keys) void client.invalidateQueries({ queryKey });
+      }, ms);
+    },
+    stop() {
+      clearTimeout(timer);
+      timer = undefined;
+      pending.clear();
+    },
+  };
+}
+
 function projectKeys(client: QueryClient): Map<string, string> {
   const projects = client.getQueryData<{ id: string; key: string }[]>(qk.projects()) ?? [];
   return new Map(projects.map((p) => [p.id, p.key]));
@@ -62,6 +102,7 @@ export function connectRealtime(client: QueryClient): () => void {
   let backoff = MIN_BACKOFF_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let connectedBefore = false;
+  const throttle = createThrottle(client);
 
   const open = () => {
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
@@ -83,6 +124,7 @@ export function connectRealtime(client: QueryClient): () => void {
       const keys = invalidationsFor(event, projectKeys(client));
       if (keys === "all") void client.invalidateQueries();
       else for (const queryKey of keys) void client.invalidateQueries({ queryKey });
+      for (const key of throttledFor(event)) throttle.add(key);
     };
     socket.onclose = (e) => {
       if (stopped) return;
@@ -100,6 +142,7 @@ export function connectRealtime(client: QueryClient): () => void {
   return () => {
     stopped = true;
     clearTimeout(timer);
+    throttle.stop();
     socket?.close();
   };
 }

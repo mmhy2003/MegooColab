@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { connectRealtime, invalidationsFor } from "@/lib/realtime";
+import { connectRealtime, invalidationsFor, THROTTLE_MS, throttledFor } from "@/lib/realtime";
 import { qk } from "@/lib/queries";
 
 class MockSocket {
@@ -139,5 +139,62 @@ describe("connectRealtime", () => {
     expect(MockSocket.instances).toHaveLength(2);
     vi.advanceTimersByTime(1);
     expect(MockSocket.instances).toHaveLength(3);
+  });
+});
+
+describe("dashboard throttle", () => {
+  let client: QueryClient;
+
+  beforeEach(() => {
+    MockSocket.instances = [];
+    vi.stubGlobal("WebSocket", MockSocket);
+    vi.useFakeTimers();
+    client = new QueryClient();
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, protocol: "http:", host: "localhost:8080", assign: vi.fn() },
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  const calls = (spy: { mock: { calls: unknown[][] } }, key: string) =>
+    spy.mock.calls.filter(([f]) => JSON.stringify((f as { queryKey?: unknown } | undefined)?.queryKey) === key).length;
+
+  it("maps events to the dashboard and the badge", () => {
+    expect(throttledFor({ type: "task.updated" })).toEqual([["dashboard"], ["dashboard-count"]]);
+    expect(throttledFor({ type: "notification.created" })).toEqual([["dashboard"], ["dashboard-count"]]);
+    expect(throttledFor({ type: "question.updated" })).toEqual([["dashboard"], ["dashboard-count"]]);
+    expect(throttledFor({ type: "agents.changed" })).toEqual([["dashboard"]]);
+    expect(throttledFor({ type: "sprint.updated" })).toEqual([["dashboard"]]);
+    expect(throttledFor({ type: "project.updated" })).toEqual([["dashboard"]]);
+    expect(throttledFor({ type: "kb.changed" })).toEqual([]);
+  });
+
+  it("refetches once at the end of the window however many events arrive", () => {
+    const spy = vi.spyOn(client, "invalidateQueries");
+    connectRealtime(client);
+    const socket = MockSocket.instances[0];
+    for (let i = 0; i < 50; i++) socket.emit({ type: "task.updated", project_id: "p1" });
+    expect(calls(spy, '["dashboard"]')).toBe(0);
+    vi.advanceTimersByTime(THROTTLE_MS);
+    expect(calls(spy, '["dashboard"]')).toBe(1);
+    expect(calls(spy, '["dashboard-count"]')).toBe(1);
+    socket.emit({ type: "agents.changed" });
+    vi.advanceTimersByTime(THROTTLE_MS);
+    expect(calls(spy, '["dashboard"]')).toBe(2);
+    expect(calls(spy, '["dashboard-count"]')).toBe(1);
+  });
+
+  it("stops the pending refetch when closed", () => {
+    const spy = vi.spyOn(client, "invalidateQueries");
+    const close = connectRealtime(client);
+    MockSocket.instances[0].emit({ type: "task.updated" });
+    close();
+    vi.advanceTimersByTime(THROTTLE_MS * 2);
+    expect(calls(spy, '["dashboard"]')).toBe(0);
   });
 });

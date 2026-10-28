@@ -1,16 +1,19 @@
 "use client";
 
-import { BookOpen, BookOpenText, Bot, Brain, BrainCircuit, FolderKanban, GitPullRequest, MessagesSquare, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
+import { BookOpen, BookOpenText, Bot, Brain, BrainCircuit, FolderKanban, GitPullRequest, LayoutDashboard, MessagesSquare, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Brand } from "@/components/Brand";
+import { useDashboardCount } from "@/lib/dashboard";
 import type { User } from "@/lib/types";
 
 type Item = { href: string; label: string; icon: typeof FolderKanban };
 
 /** Hidden while the collapsed rail is closed, shown as it slides open (hover, or tabbing in with the keyboard). Still read out. */
 export const LABEL_HIDDEN = "opacity-0 transition-opacity group-hover/side:opacity-100 group-has-[:focus-visible]/side:opacity-100";
+
+const DASHBOARD: Item = { href: "/", label: "Dashboard", icon: LayoutDashboard };
 
 const MAIN: Item[] = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
@@ -30,7 +33,17 @@ const ADMIN: Item[] = [
   { href: "/admin/audit", label: "Audit log", icon: ScrollText },
 ];
 
-function NavLink({ item, onNavigate, collapsed }: { item: Item; onNavigate?: () => void; collapsed?: boolean }) {
+function NavLink({
+  item,
+  onNavigate,
+  collapsed,
+  badge = 0,
+}: {
+  item: Item;
+  onNavigate?: () => void;
+  collapsed?: boolean;
+  badge?: number;
+}) {
   const pathname = usePathname();
   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
   const Icon = item.icon;
@@ -43,10 +56,29 @@ function NavLink({ item, onNavigate, collapsed }: { item: Item; onNavigate?: () 
         active ? "bg-surface-2 text-cyan-ink glow-cyan" : "text-muted-foreground hover:bg-surface-2 hover:text-fg"
       }`}
     >
-      <Icon size={16} aria-hidden className="shrink-0" />
+      <span className="relative shrink-0">
+        <Icon size={16} aria-hidden />
+        {/* on the collapsed rail the count sits on the icon's corner, like the bell's */}
+        {badge > 0 && collapsed && <CountBadge n={badge} className="absolute -top-2 -right-2" />}
+      </span>
       <span className={collapsed ? LABEL_HIDDEN : ""}>{item.label}</span>
+      {badge > 0 && !collapsed && <CountBadge n={badge} className="ml-auto" />}
     </Link>
   );
+}
+
+function CountBadge({ n, className }: { n: number; className: string }) {
+  return (
+    <span aria-label={`${n} need you`} className={`min-w-4 rounded-full bg-pink px-1 text-center text-[10px] leading-4 text-on-accent ${className}`}>
+      {n > 99 ? "99+" : n}
+    </span>
+  );
+}
+
+/** The Dashboard entry, with the "Need you" count (hidden at zero). */
+function DashboardLink({ onNavigate, collapsed }: { onNavigate?: () => void; collapsed?: boolean }) {
+  const count = useDashboardCount().data?.needs_you ?? 0;
+  return <NavLink item={DASHBOARD} onNavigate={onNavigate} collapsed={collapsed} badge={count} />;
 }
 
 export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigate?: () => void; collapsed?: boolean }) {
@@ -57,6 +89,7 @@ export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigat
       <Link href="/projects" className="mb-4 px-2 py-2 text-base no-underline" onClick={onNavigate}>
         <Brand logoSize={28} nameClassName={collapsed ? LABEL_HIDDEN : ""} />
       </Link>
+      <DashboardLink onNavigate={onNavigate} collapsed={collapsed} />
       {MAIN.map((item) => (
         <NavLink key={item.href} item={item} onNavigate={onNavigate} collapsed={collapsed} />
       ))}

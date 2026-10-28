@@ -2362,6 +2362,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard */
+        get: operations["dashboard_api_dashboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dashboard/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Needs Count
+         * @description What the sidebar badge shows: the Mine scope's need-you count.
+         */
+        get: operations["needs_count_api_dashboard_count_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search/quick": {
         parameters: {
             query?: never;
@@ -2484,6 +2521,33 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** ActivityRow */
+        ActivityRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Kind */
+            kind: string;
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /** Actor Name */
+            actor_name: string | null;
+            /** Task Key */
+            task_key: string;
+            /** Names */
+            names: {
+                [key: string]: string;
+            };
+        };
         /** AdminAgentOut */
         AdminAgentOut: {
             /**
@@ -2540,6 +2604,23 @@ export interface components {
              * @default 1
              */
             max_concurrent_runs: number;
+        };
+        /** AgentItem */
+        AgentItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "busy" | "online" | "offline";
+            /** Runs Today */
+            runs_today: number;
         };
         /** AgentOut */
         AgentOut: {
@@ -2919,6 +3000,77 @@ export interface components {
             token: components["schemas"]["TokenOut"];
             /** Secret */
             secret: string;
+        };
+        /** DashboardOut */
+        DashboardOut: {
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "mine" | "teams" | "all";
+            numbers: components["schemas"]["Numbers"];
+            /**
+             * Needs
+             * @default []
+             */
+            needs: components["schemas"]["NeedItem"][];
+            /**
+             * My Tasks
+             * @default []
+             */
+            my_tasks: components["schemas"]["MyTask"][];
+            /**
+             * Running
+             * @default []
+             */
+            running: components["schemas"]["RunningItem"][];
+            /**
+             * @default {
+             *       "total": 0,
+             *       "items": []
+             *     }
+             */
+            queued: components["schemas"]["Queued"];
+            /**
+             * Agents
+             * @default []
+             */
+            agents: components["schemas"]["AgentItem"][];
+            /**
+             * @default {
+             *       "rows": [],
+             *       "done_30d": 0
+             *     }
+             */
+            stages: components["schemas"]["Stages"];
+            /**
+             * Finished Daily
+             * @default []
+             */
+            finished_daily: components["schemas"]["DayFinished"][];
+            /**
+             * Projects
+             * @default []
+             */
+            projects: components["schemas"]["ProjectRow"][];
+            /**
+             * Activity
+             * @default []
+             */
+            activity: components["schemas"]["ActivityRow"][];
+            system?: components["schemas"]["SystemOut"] | null;
+        };
+        /** DayFinished */
+        DayFinished: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Agents */
+            agents: number;
+            /** People */
+            people: number;
         };
         /** DecisionOut */
         DecisionOut: {
@@ -3632,6 +3784,25 @@ export interface components {
             /** After Key */
             after_key?: string | null;
         };
+        /** MyTask */
+        MyTask: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /**
+             * Due
+             * @enum {string}
+             */
+            due: "overdue" | "today" | "week";
+            /** Link */
+            link: string;
+        };
         /** Named */
         Named: {
             /**
@@ -3642,11 +3813,44 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** NeedItem */
+        NeedItem: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "design_approval" | "plan_approval" | "question" | "escalation" | "human_code_review" | "draft_answer" | "needs_human" | "mention";
+            /** Ref */
+            ref: string;
+            /** Title */
+            title: string;
+            /** Detail */
+            detail?: string | null;
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /** Link */
+            link: string;
+            /**
+             * Waiting For
+             * @default []
+             */
+            waiting_for: string[];
+            /** Notification Id */
+            notification_id?: string | null;
+        };
         /**
          * Needs
          * @enum {string}
          */
         Needs: "question" | "design_approval" | "plan_approval" | "escalation" | "human_code_review";
+        /** NeedsCount */
+        NeedsCount: {
+            /** Needs You */
+            needs_you: number;
+        };
         /** NotificationOut */
         NotificationOut: {
             /**
@@ -3680,6 +3884,81 @@ export interface components {
             in_app: boolean;
             /** Email */
             email: boolean;
+        };
+        /** Numbers */
+        Numbers: {
+            /**
+             * Need You
+             * @default 0
+             */
+            need_you: number;
+            /**
+             * Need You Over Day
+             * @default 0
+             */
+            need_you_over_day: number;
+            /**
+             * Agents Working
+             * @default 0
+             */
+            agents_working: number;
+            /**
+             * Agents Online
+             * @default 0
+             */
+            agents_online: number;
+            /**
+             * Runs Queued
+             * @default 0
+             */
+            runs_queued: number;
+            /**
+             * Workflows In Progress
+             * @default 0
+             */
+            workflows_in_progress: number;
+            /**
+             * Workflow Projects
+             * @default 0
+             */
+            workflow_projects: number;
+            /**
+             * Open Tasks
+             * @default 0
+             */
+            open_tasks: number;
+            /**
+             * Open In Progress
+             * @default 0
+             */
+            open_in_progress: number;
+            /**
+             * Done 7D
+             * @default 0
+             */
+            done_7d: number;
+            /**
+             * Done Prev 7D
+             * @default 0
+             */
+            done_prev_7d: number;
+            /**
+             * Overdue
+             * @default 0
+             */
+            overdue: number;
+            /**
+             * Overdue Mine
+             * @default 0
+             */
+            overdue_mine: number;
+            /**
+             * Failed 24H
+             * @default 0
+             */
+            failed_24h: number;
+            /** Success Rate 24H */
+            success_rate_24h?: number | null;
         };
         /** OrgOut */
         OrgOut: {
@@ -3850,6 +4129,21 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** ProjectRow */
+        ProjectRow: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Open */
+            open: number;
+            /** In Progress */
+            in_progress: number;
+            /** Done */
+            done: number;
+            /** Late */
+            late: number;
+        };
         /** ProviderIn */
         ProviderIn: {
             /** Name */
@@ -3962,6 +4256,25 @@ export interface components {
          * @enum {string}
          */
         QuestionStatus: "queued" | "routed" | "draft" | "needs_human" | "answered" | "withdrawn";
+        /** Queued */
+        Queued: {
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["QueuedItem"][];
+        };
+        /** QueuedItem */
+        QueuedItem: {
+            /** Task Key */
+            task_key: string | null;
+            stage: components["schemas"]["Stage"] | null;
+        };
         /** QuickGroup */
         QuickGroup: {
             /** Kind */
@@ -4187,6 +4500,31 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "queued" | "running" | "completed" | "failed" | "cancelled";
+        /** RunningItem */
+        RunningItem: {
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Agent Name */
+            agent_name: string;
+            /** Started At */
+            started_at: string | null;
+            /** Task Key */
+            task_key: string | null;
+            stage: components["schemas"]["Stage"] | null;
+            /** Step */
+            step: number | null;
+            /** Steps Total */
+            steps_total: number | null;
+            /** Review Round */
+            review_round: number | null;
+            /** Question From */
+            question_from: string | null;
+            /** Link */
+            link: string;
+        };
         /** SearchAdminOut */
         SearchAdminOut: {
             /** Available */
@@ -4381,6 +4719,29 @@ export interface components {
          * @enum {string}
          */
         Stage: "brainstorm" | "design" | "plan" | "build" | "review" | "done";
+        /** StageRow */
+        StageRow: {
+            stage: components["schemas"]["Stage"];
+            /** Running */
+            running: number;
+            /** Waiting */
+            waiting: number;
+            /** Paused */
+            paused: number;
+        };
+        /** Stages */
+        Stages: {
+            /**
+             * Rows
+             * @default []
+             */
+            rows: components["schemas"]["StageRow"][];
+            /**
+             * Done 30D
+             * @default 0
+             */
+            done_30d: number;
+        };
         /** SuggestIn */
         SuggestIn: {
             /** Project Key */
@@ -4403,6 +4764,33 @@ export interface components {
             snippet: string;
             /** Link */
             link: string;
+        };
+        /** SystemOut */
+        SystemOut: {
+            /** Runners */
+            runners: number;
+            /** Agents Exist */
+            agents_exist: boolean;
+            /** Jobs Waiting */
+            jobs_waiting: number;
+            /** Oldest Job Seconds */
+            oldest_job_seconds: number | null;
+            /** Search Available */
+            search_available: boolean;
+            /** Search Documents */
+            search_documents: number | null;
+            /** Ai Configured */
+            ai_configured: boolean;
+            /** Ai Jobs Today */
+            ai_jobs_today: number;
+            /** Ai Failed Today */
+            ai_failed_today: number;
+            /** Memory Last At */
+            memory_last_at: string | null;
+            /** Memory Last Failed */
+            memory_last_failed: boolean;
+            /** Rate Limits 24H */
+            rate_limits_24h: number;
         };
         /** Target */
         Target: {
@@ -10255,6 +10643,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dashboard_api_dashboard_get: {
+        parameters: {
+            query?: {
+                scope?: "mine" | "teams" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    needs_count_api_dashboard_count_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NeedsCount"];
                 };
             };
         };
