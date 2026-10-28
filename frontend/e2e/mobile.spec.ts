@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { setupOrSignIn } from "./helpers/auth";
+import { tool } from "./helpers/mcp";
 
 /**
  * Every page fits a 280-pixel-wide screen (a Galaxy Fold's cover screen): nothing makes the page itself scroll
@@ -51,7 +52,16 @@ test("every page fits a 280-pixel screen", async ({ page }) => {
     headers: WEB,
   });
 
+  // a design waiting on the dashboard, its title long enough to have to shrink on a phone
+  const waiting = await (await page.request.post("/api/projects/MOB/tasks", {
+    data: { title: `Design ${"a very long title for a narrow screen ".repeat(3)}`.slice(0, 120), type: "task", assignee_user_id: me },
+    headers: WEB,
+  })).json();
+  const token = await (await page.request.post("/api/tokens", { data: { name: "Mobile e2e", scopes: ["mcp"] }, headers: WEB })).json();
+  await tool(page.request, token.secret, "submit_design", { key: waiting.key, markdown: "# Narrow\n\nFits." });
+
   const pages = [
+    "/",
     "/projects", "/projects/MOB/board", "/projects/MOB/backlog", "/projects/MOB/tasks/1", "/projects/MOB/reports",
     "/projects/MOB/settings", "/teams", `/teams/${team.id}`, "/kb", "/memory", "/questions", "/search?q=task",
     "/notifications", "/settings/profile", "/settings/tokens", "/settings/agents", "/settings/notifications",
