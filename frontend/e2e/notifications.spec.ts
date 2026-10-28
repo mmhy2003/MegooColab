@@ -115,7 +115,8 @@ test("notifications reach the right people", async ({ browser }) => {
   // 2. the admin mentions Bea with the picker; Otto, mentioned by hand, cannot read NOT-1 and hears nothing
   const box = drawer.getByLabel("Add a comment");
   await box.fill("Please check the wording @Be");
-  await drawer.getByRole("listbox", { name: "Mention someone" }).getByRole("option", { name: BEA.name }).click();
+  // the list opens over the page, outside the drawer's own box
+  await page.getByRole("listbox", { name: "Mention someone" }).getByRole("option", { name: BEA.name }).click();
   await expect(box).toHaveValue(`Please check the wording @[${BEA.name}](user:${bea.id}) `);
   await drawer.getByRole("button", { name: "Comment" }).click();
   await expect(drawer.getByText(`@${BEA.name}`)).toBeVisible();

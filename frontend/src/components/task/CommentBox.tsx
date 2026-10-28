@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react";
 
+import { Command, CommandItem, CommandList } from "@/components/shadcn/command";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/shadcn/popover";
 import { Button } from "@/components/ui/Button";
 import { mentionToken } from "@/lib/notifications";
 
@@ -58,57 +60,68 @@ export function CommentBox({ users = [], onSubmit }: { users?: Person[]; onSubmi
         }
       }}
     >
-      <div className="relative">
-        <textarea
-          ref={box}
-          aria-label="Add a comment"
-          placeholder="Add a comment (Markdown supported, @ to mention someone)"
-          className="min-h-20 w-full rounded border border-line bg-surface-2 p-2 text-sm"
-          value={body}
-          aria-autocomplete="list"
-          onChange={(e) => {
-            setBody(e.target.value);
-            track(e.target.value, e.target.selectionStart ?? e.target.value.length);
+      {/* the list opens under the comment like a dropdown: no blur, the cursor stays in the comment */}
+      <Popover open={picking} onOpenChange={(open) => !open && setMention(null)}>
+        <PopoverAnchor asChild>
+          <textarea
+            ref={box}
+            aria-label="Add a comment"
+            placeholder="Add a comment (Markdown supported, @ to mention someone)"
+            className="min-h-20 w-full rounded border border-line bg-surface-2 p-2 text-sm"
+            value={body}
+            aria-autocomplete="list"
+            onChange={(e) => {
+              setBody(e.target.value);
+              track(e.target.value, e.target.selectionStart ?? e.target.value.length);
+            }}
+            onKeyDown={(e) => {
+              if (picking) {
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const step = e.key === "ArrowDown" ? 1 : -1;
+                  setActive((i) => (i + step + options.length) % options.length);
+                  return;
+                }
+                if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
+                  e.preventDefault();
+                  pick(options[Math.min(active, options.length - 1)]);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation(); // closes the list only, not the task drawer around it
+                  setMention(null);
+                  return;
+                }
+              }
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
+            }}
+          />
+        </PopoverAnchor>
+        <PopoverContent
+          align="start"
+          className="w-60 p-1"
+          onOpenAutoFocus={(e) => e.preventDefault()} // keep the cursor in the comment
+          onInteractOutside={(e) => {
+            if (e.target === box.current) e.preventDefault(); // clicking in the comment keeps the list
           }}
-          onKeyDown={(e) => {
-            if (picking) {
-              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                e.preventDefault();
-                const step = e.key === "ArrowDown" ? 1 : -1;
-                setActive((i) => (i + step + options.length) % options.length);
-                return;
-              }
-              if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
-                e.preventDefault();
-                pick(options[Math.min(active, options.length - 1)]);
-                return;
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setMention(null);
-                return;
-              }
-            }
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
-          }}
-        />
-        {picking && (
-          <ul role="listbox" aria-label="Mention someone" className="card absolute left-0 z-20 mt-1 w-60 p-1">
-            {options.map((u, i) => (
-              <li
-                key={u.id}
-                role="option"
-                aria-selected={i === active}
-                className={`cursor-pointer rounded px-2 py-1 text-sm ${i === active ? "bg-surface-2" : ""}`}
-                onMouseDown={(e) => e.preventDefault()} // keep the textarea's focus and caret
-                onClick={() => pick(u)}
-              >
-                {u.name}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+        >
+          <Command shouldFilter={false} value={options[Math.min(active, options.length - 1)]?.id ?? ""}>
+            <CommandList label="Mention someone">
+              {options.map((u) => (
+                <CommandItem
+                  key={u.id}
+                  value={u.id}
+                  onMouseDown={(e) => e.preventDefault()} // keep the textarea's focus and caret
+                  onSelect={() => pick(u)}
+                >
+                  {u.name}
+                </CommandItem>
+              ))}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
       <Button type="submit" disabled={busy || !body.trim()}>Comment</Button>
     </form>
   );

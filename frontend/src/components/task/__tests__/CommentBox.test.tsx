@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CommentBox } from "@/components/task/CommentBox";
@@ -41,5 +42,35 @@ describe("CommentBox", () => {
     render(<CommentBox users={users} onSubmit={vi.fn()} />);
     type(screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement, "mail sara@sa");
     expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("closes on a click outside, without blurring the page", async () => {
+    render(<CommentBox users={users} onSubmit={vi.fn()} />);
+    const box = screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement;
+    box.focus();
+    type(box, "Thanks @sa");
+    expect(screen.getByRole("listbox", { name: "Mention someone" })).toBeInTheDocument();
+    expect(box).toHaveFocus(); // the cursor stays in the comment
+    expect(document.querySelector("[data-backdrop]")).toBeNull();
+    await userEvent.click(document.body);
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("Escape closes the list, not the task drawer around it", () => {
+    const drawerEscape = vi.fn();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && drawerEscape();
+    window.addEventListener("keydown", onKey); // what TaskDrawer listens to
+    try {
+      render(<CommentBox users={users} onSubmit={vi.fn()} />);
+      const box = screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement;
+      type(box, "Thanks @sa");
+      fireEvent.keyDown(box, { key: "Escape" });
+      expect(screen.queryByRole("listbox")).toBeNull();
+      expect(drawerEscape).not.toHaveBeenCalled();
+      fireEvent.keyDown(box, { key: "Escape" }); // with no list open, Escape is the drawer's again
+      expect(drawerEscape).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
   });
 });
