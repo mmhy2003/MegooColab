@@ -139,9 +139,11 @@ export default function AdminUsersPage() {
                     className="rounded border border-line bg-surface-2 px-1 py-0.5 text-xs"
                     value={u.role}
                     disabled={u.id === me?.id}
-                    onChange={(e) =>
-                      act.mutate(() => api(`/api/admin/users/${u.id}`, { method: "PATCH", json: { role: e.target.value } }))
-                    }
+                    onChange={(e) => {
+                      // read the choice now: the request runs later, after React has put the select back to u.role
+                      const role = e.target.value;
+                      act.mutate(() => api(`/api/admin/users/${u.id}`, { method: "PATCH", json: { role } }));
+                    }}
                   >
                     {ROLES.map((r) => (
                       <option key={r} value={r}>{r}</option>
