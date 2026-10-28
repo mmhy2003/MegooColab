@@ -32,20 +32,20 @@ export function Decisions({ taskKey }: { taskKey: string }) {
             {rows.map((d) => (
               <li key={d.id} className="card space-y-1 p-2">
                 <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5">
-                  <dt className="text-xs text-muted">Decision</dt>
+                  <dt className="text-xs text-muted-foreground">Decision</dt>
                   <dd>{d.decision}</dd>
                   {d.plan_said && (
                     <>
-                      <dt className="text-xs text-muted">Plan said</dt>
+                      <dt className="text-xs text-muted-foreground">Plan said</dt>
                       <dd>{d.plan_said}</dd>
                     </>
                   )}
-                  <dt className="text-xs text-muted">Why</dt>
+                  <dt className="text-xs text-muted-foreground">Why</dt>
                   <dd>{d.reason}</dd>
-                  <dt className="text-xs text-muted">Cost if wrong</dt>
+                  <dt className="text-xs text-muted-foreground">Cost if wrong</dt>
                   <dd>{d.cost_if_wrong}</dd>
                 </dl>
-                <p className="text-xs text-muted">
+                <p className="text-xs text-muted-foreground">
                   {d.author} · {when(d.created_at)}
                 </p>
               </li>

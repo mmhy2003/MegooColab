@@ -40,7 +40,7 @@ function NavLink({ item, onNavigate, collapsed }: { item: Item; onNavigate?: () 
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
       className={`flex items-center gap-2 rounded px-3 py-2 text-sm whitespace-nowrap no-underline ${
-        active ? "bg-surface-2 text-cyan-ink glow-cyan" : "text-muted hover:bg-surface-2 hover:text-fg"
+        active ? "bg-surface-2 text-cyan-ink glow-cyan" : "text-muted-foreground hover:bg-surface-2 hover:text-fg"
       }`}
     >
       <Icon size={16} aria-hidden className="shrink-0" />
@@ -62,7 +62,7 @@ export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigat
       ))}
       {user.role === "admin" && (
         <>
-          <p className={`mt-6 mb-1 px-3 text-[11px] tracking-widest whitespace-nowrap text-muted uppercase ${collapsed ? LABEL_HIDDEN : ""}`}>Admin</p>
+          <p className={`mt-6 mb-1 px-3 text-[11px] tracking-widest whitespace-nowrap text-muted-foreground uppercase ${collapsed ? LABEL_HIDDEN : ""}`}>Admin</p>
           {ADMIN.map((item) => (
             <NavLink key={item.href} item={item} onNavigate={onNavigate} collapsed={collapsed} />
           ))}

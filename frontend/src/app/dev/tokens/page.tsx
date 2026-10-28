@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 
-const SWATCHES = ["bg", "surface", "surface-2", "line", "fg", "muted", "cyan", "cyan-ink", "pink", "green", "green-ink", "amber"];
+const SWATCHES = ["bg", "surface", "surface-2", "line", "fg", "muted-foreground", "cyan", "cyan-ink", "pink", "green", "green-ink", "amber"];
 
 // Development aid: every theme token side by side. Toggle the theme to compare.
 export default function TokensPage() {
@@ -17,7 +17,7 @@ export default function TokensPage() {
         {SWATCHES.map((name) => (
           <div key={name} className="card p-2">
             <div className="h-12 rounded border border-line" style={{ background: `var(--${name})` }} />
-            <p className="mt-1 text-xs text-muted">--{name}</p>
+            <p className="mt-1 text-xs text-muted-foreground">--{name}</p>
           </div>
         ))}
       </div>

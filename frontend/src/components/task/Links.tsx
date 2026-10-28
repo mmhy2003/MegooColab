@@ -28,9 +28,9 @@ export function Links({
       <ul className="space-y-1">
         {links.map((l) => (
           <li key={l.id} className="flex items-center gap-2 text-sm">
-            <span className="w-28 shrink-0 text-xs text-muted">{KIND_LABEL[l.kind]}</span>
+            <span className="w-28 shrink-0 text-xs text-muted-foreground">{KIND_LABEL[l.kind]}</span>
             <button type="button" className="min-w-0 flex-1 truncate text-left hover:text-cyan-ink" onClick={() => onOpen(l.task.key)}>
-              <span className="text-xs text-muted">{l.task.key}</span> {l.task.title}
+              <span className="text-xs text-muted-foreground">{l.task.key}</span> {l.task.title}
             </button>
             {!disabled && (
               <button type="button" className="icon-btn h-6 w-6" aria-label={`Remove link to ${l.task.key}`} onClick={() => onRemove(l.id)}>
@@ -39,7 +39,7 @@ export function Links({
             )}
           </li>
         ))}
-        {links.length === 0 && <li className="text-xs text-muted">No linked tasks.</li>}
+        {links.length === 0 && <li className="text-xs text-muted-foreground">No linked tasks.</li>}
       </ul>
       {!disabled && (
         <form

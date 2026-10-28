@@ -249,7 +249,7 @@ export function ActivityThread({
             <li key={item.id} className="flex gap-2">
               <Avatar name={actor} size={24} />
               <div className="card min-w-0 flex-1 px-3 py-2">
-                <p className="text-xs text-muted">
+                <p className="text-xs text-muted-foreground">
                   <span className="text-fg">{actor}</span> · {when(item.at)}
                   {item.edited_at && <span className="ml-1">(edited)</span>}
                 </p>
@@ -309,7 +309,7 @@ function EventRow({
   children?: React.ReactNode;
 }) {
   return (
-    <li className={`flex items-start gap-2 pl-1 text-xs ${violation ? "text-pink" : "text-muted"}`}>
+    <li className={`flex items-start gap-2 pl-1 text-xs ${violation ? "text-pink" : "text-muted-foreground"}`}>
       {violation ? (
         <AlertTriangle size={12} aria-hidden className="mt-0.5 shrink-0" />
       ) : (

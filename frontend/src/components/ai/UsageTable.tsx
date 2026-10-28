@@ -31,13 +31,13 @@ export function UsageTable() {
   return (
     <section className="card p-4">
       <h2 className="mb-1 font-display text-sm font-semibold tracking-wider uppercase">Usage, last {DAYS} days</h2>
-      <p className="mb-3 text-xs text-muted">Cost is LiteLLM&apos;s estimate; “—” means the model has no known price.</p>
+      <p className="mb-3 text-xs text-muted-foreground">Cost is LiteLLM&apos;s estimate; “—” means the model has no known price.</p>
       {rows.length === 0 ? (
-        <p className="text-sm text-muted">No AI calls yet.</p>
+        <p className="text-sm text-muted-foreground">No AI calls yet.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="text-left text-xs tracking-wider text-muted uppercase">
+            <thead className="text-left text-xs tracking-wider text-muted-foreground uppercase">
               <tr>
                 <th className="py-1 pr-3">Day</th>
                 <th className="py-1 pr-3">Job</th>

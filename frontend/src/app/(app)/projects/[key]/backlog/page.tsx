@@ -101,12 +101,12 @@ function BacklogPage() {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[12rem_minmax(0,1fr)]">
       <aside aria-label="Epics" className="space-y-1">
-        <h2 className="mb-1 text-[11px] tracking-widest text-muted uppercase">Epics</h2>
-        <button type="button" aria-pressed={epic === null} onClick={() => setEpic(null)} className={`block w-full rounded px-2 py-1 text-left text-sm ${epic === null ? "bg-surface-2 text-cyan-ink" : "text-muted"}`}>
+        <h2 className="mb-1 text-[11px] tracking-widest text-muted-foreground uppercase">Epics</h2>
+        <button type="button" aria-pressed={epic === null} onClick={() => setEpic(null)} className={`block w-full rounded px-2 py-1 text-left text-sm ${epic === null ? "bg-surface-2 text-cyan-ink" : "text-muted-foreground"}`}>
           All issues
         </button>
         {epics.map((e) => (
-          <button key={e.id} type="button" aria-pressed={epic === e.id} onClick={() => setEpic(e.id)} className={`block w-full truncate rounded px-2 py-1 text-left text-sm ${epic === e.id ? "bg-surface-2 text-cyan-ink" : "text-muted"}`}>
+          <button key={e.id} type="button" aria-pressed={epic === e.id} onClick={() => setEpic(e.id)} className={`block w-full truncate rounded px-2 py-1 text-left text-sm ${epic === e.id ? "bg-surface-2 text-cyan-ink" : "text-muted-foreground"}`}>
             {e.title}
           </button>
         ))}
@@ -122,7 +122,7 @@ function BacklogPage() {
                 id={s.id}
                 title={sprintLabel(s)}
                 tasks={list}
-                meta={<span className="text-xs text-muted">{s.start_date} → {s.end_date}{s.goal ? ` · ${s.goal}` : ""}</span>}
+                meta={<span className="text-xs text-muted-foreground">{s.start_date} → {s.end_date}{s.goal ? ` · ${s.goal}` : ""}</span>}
                 actions={
                   canPlan &&
                   (s.state === "active" ? (

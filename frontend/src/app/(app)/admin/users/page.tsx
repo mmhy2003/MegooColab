@@ -117,7 +117,7 @@ export default function AdminUsersPage() {
       {error && <p role="alert" className="mb-3 text-sm text-pink">{error}</p>}
       <div className="card overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="text-xs tracking-wider text-muted uppercase">
+          <thead className="text-xs tracking-wider text-muted-foreground uppercase">
             <tr className="border-b border-line">
               <th className="px-3 py-2 font-normal">Name</th>
               <th className="px-3 py-2 font-normal">Email</th>
@@ -132,7 +132,7 @@ export default function AdminUsersPage() {
                 <td className="px-3 py-2">
                   <span className="flex items-center gap-2"><Avatar name={u.name} /> {u.name}</span>
                 </td>
-                <td className="px-3 py-2 text-muted">{u.email}</td>
+                <td className="px-3 py-2 text-muted-foreground">{u.email}</td>
                 <td className="px-3 py-2">
                   <select
                     aria-label={`Role of ${u.name}`}

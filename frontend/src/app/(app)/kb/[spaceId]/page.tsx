@@ -67,7 +67,7 @@ export default function KbSpacePage() {
           )}
         </aside>
         <section className="card min-w-0 p-4">
-          <h2 className="mb-2 text-xs tracking-widest text-muted uppercase">{folderName ?? "Top level"}</h2>
+          <h2 className="mb-2 text-xs tracking-widest text-muted-foreground uppercase">{folderName ?? "Top level"}</h2>
           {creating && (
             <form
               className="mb-4 space-y-2 rounded border border-line p-3"

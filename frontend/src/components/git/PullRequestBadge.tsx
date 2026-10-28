@@ -13,7 +13,7 @@ const TONE: Record<string, string> = {
 /** The pull request's state in words (never colour alone), linking to it on the git host. */
 export function PullRequestBadge({ pr }: { pr: PullRequest }) {
   const Icon = pr.state === "merged" ? GitMerge : pr.state === "closed" ? GitPullRequestClosed : GitPullRequest;
-  const tone = (pr.tracked && (TONE[pr.state] ?? TONE[pr.checks])) || "border-line text-muted";
+  const tone = (pr.tracked && (TONE[pr.state] ?? TONE[pr.checks])) || "border-line text-muted-foreground";
   return (
     <a
       href={pr.url}

@@ -28,7 +28,7 @@ export function BurndownChart({ points, sprintName }: { points: BurndownPoint[];
       }}
     >
       {points.length === 0 ? (
-        <p className="py-10 text-center text-sm text-muted">The burndown starts once the sprint is active.</p>
+        <p className="py-10 text-center text-sm text-muted-foreground">The burndown starts once the sprint is active.</p>
       ) : (
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">

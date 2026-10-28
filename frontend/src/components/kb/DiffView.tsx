@@ -5,7 +5,7 @@ type Line = { kind: "equal" | "insert" | "delete"; text: string; n: number };
 const MARK = { equal: " ", insert: "+", delete: "−" } as const;
 const LABEL = { equal: "Unchanged line", insert: "Added line", delete: "Removed line" } as const;
 const STYLE = {
-  equal: "text-muted",
+  equal: "text-muted-foreground",
   insert: "bg-green/10 text-green-ink",
   delete: "bg-pink/10 text-pink line-through decoration-pink/40",
 } as const;
@@ -23,7 +23,7 @@ export function DiffView({ ops }: { ops: DiffOp[] }) {
     <div className="overflow-x-auto rounded border border-line font-mono text-xs" role="list" aria-label="Changes">
       {ops.map((op, i) =>
         op.op === "collapsed" ? (
-          <div key={i} role="listitem" className="bg-surface-2 px-3 py-1 text-center text-muted">
+          <div key={i} role="listitem" className="bg-surface-2 px-3 py-1 text-center text-muted-foreground">
             {op.count} unchanged lines
           </div>
         ) : (
@@ -35,7 +35,7 @@ export function DiffView({ ops }: { ops: DiffOp[] }) {
               aria-label={`${LABEL[l.kind]} ${l.n}`}
               className={`flex gap-2 px-2 whitespace-pre-wrap ${STYLE[l.kind]}`}
             >
-              <span aria-hidden className="w-10 shrink-0 text-right text-muted select-none">
+              <span aria-hidden className="w-10 shrink-0 text-right text-muted-foreground select-none">
                 {l.n}
               </span>
               <span aria-hidden className="w-3 shrink-0 select-none">

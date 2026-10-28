@@ -28,14 +28,14 @@ export default function ProjectsPage() {
       <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {projects.data?.map((p) => (
           <Link key={p.id} href={`/projects/${p.key}/board`} className="card block p-4 text-fg no-underline hover:glow-box">
-            <p className="text-xs text-muted">{p.key}</p>
+            <p className="text-xs text-muted-foreground">{p.key}</p>
             <h2 className="text-sm text-cyan-ink">{p.name}</h2>
-            {p.description && <p className="mt-1 line-clamp-2 text-sm text-muted">{p.description}</p>}
+            {p.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{p.description}</p>}
           </Link>
         ))}
       </div>
       {projects.data?.length === 0 && (
-        <p className="text-sm text-muted">
+        <p className="text-sm text-muted-foreground">
           No projects yet.{canManage(me) ? " Create one to get started." : " Ask a manager to add your team to a project."}
         </p>
       )}

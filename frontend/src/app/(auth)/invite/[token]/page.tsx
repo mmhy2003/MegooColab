@@ -16,7 +16,7 @@ export default function InvitePage() {
         router.push("/projects");
       }}
     >
-      <h1 className="text-center text-sm text-muted">You&apos;re invited. Choose a password to join.</h1>
+      <h1 className="text-center text-sm text-muted-foreground">You&apos;re invited. Choose a password to join.</h1>
     </NewPasswordForm>
   );
 }

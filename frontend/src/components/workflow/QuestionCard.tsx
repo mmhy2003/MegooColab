@@ -85,7 +85,7 @@ export function QuestionCard({
 
   return (
     <div className={`card min-w-0 flex-1 space-y-2 px-3 py-2 ${q.status === "withdrawn" ? "opacity-60" : ""}`}>
-      <p className="text-xs text-muted">
+      <p className="text-xs text-muted-foreground">
         <span className="text-fg">Agent question</span>
         {q.status === "withdrawn" && <> · withdrawn</>}
         {q.status === "answered" && <> · answered</>}
@@ -110,7 +110,7 @@ export function QuestionCard({
                 >
                   <span className="font-semibold">{c.label}</span>
                   {c.recommended && <span className="text-cyan-ink"> (Recommended)</span>}
-                  {c.description && <span className="block text-xs text-muted">{c.description}</span>}
+                  {c.description && <span className="block text-xs text-muted-foreground">{c.description}</span>}
                 </button>
               </li>
             ))}
@@ -127,7 +127,7 @@ export function QuestionCard({
             </li>
           </ul>
           {selected !== null && !other && !q.choices.some((c) => c.id === selected) && (
-            <p className="text-xs text-muted">Selected in the mockup: {selected}</p>
+            <p className="text-xs text-muted-foreground">Selected in the mockup: {selected}</p>
           )}
           {other && (
             <div className="space-y-1">
@@ -139,7 +139,7 @@ export function QuestionCard({
                 value={text}
                 onChange={(e) => setText(e.target.value)}
               />
-              <p className="text-right text-xs text-muted">
+              <p className="text-right text-xs text-muted-foreground">
                 {text.length}/{MAX_ANSWER}
               </p>
             </div>
@@ -151,7 +151,7 @@ export function QuestionCard({
       ) : (
         <>
           {q.choices.length > 0 && (
-            <ul className="space-y-0.5 text-xs text-muted">
+            <ul className="space-y-0.5 text-xs text-muted-foreground">
               {choices.map((c) => (
                 <li key={c.id}>
                   <span className="text-fg">{c.label}</span>
@@ -162,7 +162,7 @@ export function QuestionCard({
             </ul>
           )}
           {open && (
-            <p className="text-xs text-muted">
+            <p className="text-xs text-muted-foreground">
               {canAct ? "This is a read-only view." : "Waiting on the agent's owner, a project manager or an admin to answer."}
             </p>
           )}
@@ -171,7 +171,7 @@ export function QuestionCard({
 
       {q.status === "answered" && (
         <p className="text-sm">
-          <span className="text-muted">{q.answered_by?.name ?? "Someone"} answered: </span>
+          <span className="text-muted-foreground">{q.answered_by?.name ?? "Someone"} answered: </span>
           {q.answer_choice ? label(q.answer_choice) : null}
           {q.answer_choice && q.answer_text ? " — " : null}
           {q.answer_text}

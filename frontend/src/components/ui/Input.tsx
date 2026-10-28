@@ -1,7 +1,7 @@
 import { forwardRef, useId, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
 
 const FIELD =
-  "w-full rounded border border-line bg-surface-2 px-3 py-2 text-sm text-fg placeholder:text-muted focus:border-cyan focus:outline-none";
+  "w-full rounded border border-line bg-surface-2 px-3 py-2 text-sm text-fg placeholder:text-muted-foreground focus:border-cyan focus:outline-none";
 
 export const Input = forwardRef<
   HTMLInputElement,
@@ -12,7 +12,7 @@ export const Input = forwardRef<
   return (
     <div className="flex flex-col gap-1">
       {label && (
-        <label htmlFor={inputId} className="text-xs tracking-wider text-muted uppercase">
+        <label htmlFor={inputId} className="text-xs tracking-wider text-muted-foreground uppercase">
           {label}
         </label>
       )}
@@ -39,7 +39,7 @@ export function Textarea({
   return (
     <div className="flex flex-col gap-1">
       {label && (
-        <label htmlFor={inputId} className="text-xs tracking-wider text-muted uppercase">
+        <label htmlFor={inputId} className="text-xs tracking-wider text-muted-foreground uppercase">
           {label}
         </label>
       )}

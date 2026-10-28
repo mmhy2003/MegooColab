@@ -84,7 +84,7 @@ function Questions() {
             type="button"
             role="tab"
             aria-selected={tab === t.value}
-            className={`px-3 py-1 text-sm ${tab === t.value ? "border-b-2 border-cyan text-cyan-ink" : "text-muted"}`}
+            className={`px-3 py-1 text-sm ${tab === t.value ? "border-b-2 border-cyan text-cyan-ink" : "text-muted-foreground"}`}
             onClick={() => setTab(t.value)}
           >
             {t.label}

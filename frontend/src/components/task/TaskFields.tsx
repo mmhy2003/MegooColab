@@ -12,7 +12,7 @@ const FIELD = "w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2">
-      <span className="text-[11px] tracking-wider text-muted uppercase">{label}</span>
+      <span className="text-[11px] tracking-wider text-muted-foreground uppercase">{label}</span>
       {children}
     </div>
   );
@@ -167,7 +167,7 @@ export function TaskFields({
               {l.name}
             </label>
           ))}
-          {labels.length === 0 && <span className="text-xs text-muted">No labels in this project.</span>}
+          {labels.length === 0 && <span className="text-xs text-muted-foreground">No labels in this project.</span>}
         </div>
       </Row>
       <button type="button" className="flex items-center gap-1.5 text-xs text-cyan-ink" onClick={() => onWatch(!watching)}>

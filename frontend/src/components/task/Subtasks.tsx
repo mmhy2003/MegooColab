@@ -26,9 +26,9 @@ export function Subtasks({
               {s.column_category === "done" ? (
                 <CheckCircle2 size={14} className="text-green-ink" aria-label="done" />
               ) : (
-                <Circle size={14} className="text-muted" aria-label="open" />
+                <Circle size={14} className="text-muted-foreground" aria-label="open" />
               )}
-              <span className="text-xs text-muted">{s.key}</span>
+              <span className="text-xs text-muted-foreground">{s.key}</span>
               <span className={s.column_category === "done" ? "line-through opacity-70" : ""}>{s.title}</span>
             </button>
           </li>

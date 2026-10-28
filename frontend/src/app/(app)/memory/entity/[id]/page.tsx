@@ -28,7 +28,7 @@ export default function MemoryEntityPage() {
       </div>
     );
   }
-  if (!detail.data) return <p className="text-sm text-muted">Loading…</p>;
+  if (!detail.data) return <p className="text-sm text-muted-foreground">Loading…</p>;
   const { entity, cards } = detail.data;
   const kind = ENTITY_GROUPS.find((g) => g.kind === entity.kind)?.label ?? entity.kind;
 
@@ -59,11 +59,11 @@ export default function MemoryEntityPage() {
       />
       <section aria-label="Summary cards" className="space-y-3">
         {cards.length === 0 && (
-          <p className="text-sm text-muted">No summary yet. Summaries are written when the memory dreams (nightly).</p>
+          <p className="text-sm text-muted-foreground">No summary yet. Summaries are written when the memory dreams (nightly).</p>
         )}
         {cards.map((c) => (
           <div key={`${c.scope.kind}-${c.scope.id}`} className="card p-4">
-            <p className="mb-2 text-xs text-muted">
+            <p className="mb-2 text-xs text-muted-foreground">
               {c.scope.name} · updated {new Date(c.refreshed_at).toLocaleDateString()}
             </p>
             <div className="kb-prose">

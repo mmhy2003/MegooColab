@@ -110,7 +110,7 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
               setPicked(v.version);
               setError(null);
             }}
-            className={`rounded border px-2 py-0.5 text-xs ${v.version === selected.version ? "border-cyan font-semibold text-cyan-ink" : "border-line text-muted hover:border-cyan"}`}
+            className={`rounded border px-2 py-0.5 text-xs ${v.version === selected.version ? "border-cyan font-semibold text-cyan-ink" : "border-line text-muted-foreground hover:border-cyan"}`}
           >
             v{v.version} · {STATUS_TEXT[v.status]}
             {v.version === selected.version ? " (selected)" : ""}
@@ -148,12 +148,12 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
                 return (
                   <li key={i}>
                     <span className="font-semibold">{s.title}</span>
-                    {state && <span className="text-xs text-muted"> · {STEP_STATE_TEXT[state]}</span>}
-                    {s.detail && <p className="text-xs text-muted">{s.detail}</p>}
-                    {latest && <p className={`text-xs ${latest.passed ? "text-muted" : "text-pink"}`}>{testRunText(latest)}</p>}
+                    {state && <span className="text-xs text-muted-foreground"> · {STEP_STATE_TEXT[state]}</span>}
+                    {s.detail && <p className="text-xs text-muted-foreground">{s.detail}</p>}
+                    {latest && <p className={`text-xs ${latest.passed ? "text-muted-foreground" : "text-pink"}`}>{testRunText(latest)}</p>}
                     {unverified.has(i + 1) && <p className="text-xs text-pink">No test run recorded</p>}
                     {earlier.length > 0 && (
-                      <details className="text-xs text-muted">
+                      <details className="text-xs text-muted-foreground">
                         <summary>Earlier runs ({earlier.length})</summary>
                         <ul className="ml-3">
                           {earlier.map((r) => (
@@ -167,15 +167,15 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
               })}
             </ol>
           )}
-          {finishRun && <p className={`text-xs ${finishRun.passed ? "text-muted" : "text-pink"}`}>Finish verification: {testRunText(finishRun)}</p>}
+          {finishRun && <p className={`text-xs ${finishRun.passed ? "text-muted-foreground" : "text-pink"}`}>Finish verification: {testRunText(finishRun)}</p>}
           {detail.data.decision_comment && selected.status === "rejected" && (
-            <p className="text-xs text-muted">Rejected: {detail.data.decision_comment}</p>
+            <p className="text-xs text-muted-foreground">Rejected: {detail.data.decision_comment}</p>
           )}
         </>
       )}
       {canDecide && (
         <div className="space-y-2">
-          <label className="block space-y-1 text-xs text-muted">
+          <label className="block space-y-1 text-xs text-muted-foreground">
             Comment
             <textarea aria-label="Comment" rows={3} maxLength={4000} className={FIELD} value={comment} onChange={(e) => setComment(e.target.value)} />
           </label>
@@ -183,7 +183,7 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
             <Button disabled={busy} onClick={() => void decide(true)}>Approve</Button>
             <Button variant="danger" disabled={busy} onClick={() => void decide(false)}>Reject</Button>
           </div>
-          <p className="text-xs text-muted">A comment is required to reject.</p>
+          <p className="text-xs text-muted-foreground">A comment is required to reject.</p>
         </div>
       )}
       {error && <p role="alert" className="text-xs text-pink">{error}</p>}

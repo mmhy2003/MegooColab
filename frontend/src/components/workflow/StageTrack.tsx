@@ -52,7 +52,7 @@ export function StageTrack({
         })}
       </div>
       {!compact && (
-        <div className="flex gap-1 text-[11px] text-muted">
+        <div className="flex gap-1 text-[11px] text-muted-foreground">
           {STAGES.map((s) => (
             <span key={s.id} className={`flex-1 truncate ${s.id === stage ? "font-semibold text-fg" : ""}`}>
               {s.label}
@@ -61,7 +61,7 @@ export function StageTrack({
         </div>
       )}
       {!(hideStatus && !compact) && (
-      <p className="text-[11px] text-muted">
+      <p className="text-[11px] text-muted-foreground">
         {compact ? (
           <>
             {stageLabel(stage)}

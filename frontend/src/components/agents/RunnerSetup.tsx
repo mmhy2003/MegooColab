@@ -21,7 +21,7 @@ export function RunnerSetup() {
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">
+      <p className="text-sm text-muted-foreground">
         The runner is a small program on your computer that starts your agents when a task is assigned to them. Your code never leaves your machine.
       </p>
       <div className="flex gap-2" role="group" aria-label="Platform">
@@ -31,18 +31,18 @@ export function RunnerSetup() {
             type="button"
             aria-pressed={platform === p}
             onClick={() => setPlatform(p)}
-            className={`rounded border px-3 py-1 text-xs ${platform === p ? "border-cyan text-cyan-ink" : "border-line text-muted"}`}
+            className={`rounded border px-3 py-1 text-xs ${platform === p ? "border-cyan text-cyan-ink" : "border-line text-muted-foreground"}`}
           >
             {p === "windows" ? "Windows" : "Linux / macOS"}
           </button>
         ))}
       </div>
       <Snippet label="1. Install" value={INSTALL[platform]} />
-      <p className="text-xs text-muted">
+      <p className="text-xs text-muted-foreground">
         Or <a href={RELEASES} target="_blank" rel="noreferrer">download it from GitHub</a>.
       </p>
       <Snippet label="2. Sign in" value={`megoocolab-runner login --url ${origin} --token <paste a runner token>`} />
-      <p className="text-xs text-muted">Create the runner token under Access tokens, with the Runner scope.</p>
+      <p className="text-xs text-muted-foreground">Create the runner token under Access tokens, with the Runner scope.</p>
       <Snippet label="3. Start" value="megoocolab-runner run" />
       <Snippet label="4. Keep it running in the background (optional)" value="megoocolab-runner service install" />
     </div>

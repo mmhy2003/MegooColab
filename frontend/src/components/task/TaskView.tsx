@@ -35,7 +35,7 @@ const ACTIVITY_PAGE = 50;
 function Section({ title, id, children }: { title: string; id?: string; children: React.ReactNode }) {
   return (
     <section id={id} className="space-y-2">
-      <h3 className="text-[11px] tracking-widest text-muted uppercase">{title}</h3>
+      <h3 className="text-[11px] tracking-widest text-muted-foreground uppercase">{title}</h3>
       {children}
     </section>
   );
@@ -82,7 +82,7 @@ export function TaskView({
 
   if (task.error) return <p className="p-4 text-sm text-pink">{errorMessage(task.error)}</p>;
   const t = task.data;
-  if (!t || !columns.data) return <p className="p-4 text-sm text-muted">Loading…</p>;
+  if (!t || !columns.data) return <p className="p-4 text-sm text-muted-foreground">Loading…</p>;
 
   const disabled = me?.role === "viewer";
   const refresh = async () => {
@@ -111,7 +111,7 @@ export function TaskView({
     <div className="flex h-full flex-col">
       <header className="flex items-start gap-2 border-b border-line p-4">
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 text-xs text-muted">
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <TypeIcon size={12} aria-hidden /> {t.key}
             <WaitingBadge projects={t.waiting_on} />
           </p>
@@ -256,7 +256,7 @@ export function TaskView({
               disabled={disabled}
             />
           )}
-          <p className="text-[11px] text-muted">
+          <p className="text-[11px] text-muted-foreground">
             Reported by {t.reporter_id ? userNames.get(t.reporter_id) ?? "someone" : "someone"} ·{" "}
             {new Date(t.created_at).toLocaleDateString()}
           </p>

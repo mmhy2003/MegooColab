@@ -19,7 +19,7 @@ export default function ChangePasswordPage() {
         router.push("/projects");
       }}
     >
-      <h1 className="text-center text-sm text-muted">Choose your own password to continue.</h1>
+      <h1 className="text-center text-sm text-muted-foreground">Choose your own password to continue.</h1>
     </NewPasswordForm>
   );
 }

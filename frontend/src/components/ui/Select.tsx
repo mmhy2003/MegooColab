@@ -12,7 +12,7 @@ export function Select({
   return (
     <div className="flex flex-col gap-1">
       {label && (
-        <label htmlFor={selectId} className="text-xs tracking-wider text-muted uppercase">
+        <label htmlFor={selectId} className="text-xs tracking-wider text-muted-foreground uppercase">
           {label}
         </label>
       )}

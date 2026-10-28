@@ -19,7 +19,7 @@ export default function QuestionPage() {
       </div>
     );
   }
-  if (!question.data) return <p className="text-sm text-muted">Loading…</p>;
+  if (!question.data) return <p className="text-sm text-muted-foreground">Loading…</p>;
   return (
     <div className="space-y-4">
       <p className="text-sm">

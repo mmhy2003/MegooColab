@@ -18,7 +18,7 @@ const SEVERITIES = [
 export function ReviewFindings({ scope, step, round, verdict, findings }: ReviewDetail) {
   return (
     <div className="space-y-2 rounded border border-line p-2 text-xs">
-      <p className="text-muted">
+      <p className="text-muted-foreground">
         {scope === "final" ? "Final review" : `Review of step ${step ?? "?"}`} · round {round} ·{" "}
         {verdict === "approved" ? "approved" : "changes requested"}
       </p>

@@ -19,7 +19,7 @@ export function ChartFrame({
     <section className="card space-y-3 p-4" aria-label={title}>
       <header className="flex flex-wrap items-center gap-4">
         <h2 className="text-sm text-fg">{title}</h2>
-        <ul className="flex gap-3 text-xs text-muted" aria-label="Legend">
+        <ul className="flex gap-3 text-xs text-muted-foreground" aria-label="Legend">
           {legend.map((l) => (
             <li key={l.label} className="flex items-center gap-1.5">
               <svg width="18" height="8" aria-hidden>
@@ -36,7 +36,7 @@ export function ChartFrame({
       </header>
       {showTable ? (
         <table className="w-full text-left text-sm">
-          <thead className="text-xs text-muted">
+          <thead className="text-xs text-muted-foreground">
             <tr>{table.headers.map((h) => <th key={h} className="py-1 font-normal">{h}</th>)}</tr>
           </thead>
           <tbody>

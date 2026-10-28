@@ -93,7 +93,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
             <div id="quick-search-results" role="listbox" aria-label="Results" className="max-h-[60vh] space-y-3 overflow-auto">
               {groups.map((g, gi) => (
                 <div key={g.kind} role="presentation" className="space-y-1">
-                  <h3 className="text-[11px] tracking-widest text-muted uppercase">{KIND_LABELS[g.kind as SearchKind] ?? g.kind}</h3>
+                  <h3 className="text-[11px] tracking-widest text-muted-foreground uppercase">{KIND_LABELS[g.kind as SearchKind] ?? g.kind}</h3>
                   {g.hits.map((hit, hi) => {
                     const mine = starts[gi] + hi;
                     return (
@@ -108,13 +108,13 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
                         className={`cursor-pointer rounded px-2 py-1 text-sm ${mine === active ? "bg-surface-2" : ""}`}
                       >
                         {hit.key && (
-                          <span className="mr-2 font-mono text-xs text-muted">
+                          <span className="mr-2 font-mono text-xs text-muted-foreground">
                             <Highlighted text={hit.key} />
                           </span>
                         )}
                         <Highlighted text={hit.title} />
                         {hit.snippet && (
-                          <p className="truncate text-xs text-muted">
+                          <p className="truncate text-xs text-muted-foreground">
                             <Highlighted text={hit.snippet} />
                           </p>
                         )}
@@ -158,7 +158,7 @@ export function SearchLauncher() {
     <>
       <button
         type="button"
-        className="flex h-8 items-center gap-2 rounded px-2 text-muted hover:bg-surface-2 hover:text-cyan"
+        className="flex h-8 items-center gap-2 rounded px-2 text-muted-foreground hover:bg-surface-2 hover:text-cyan"
         aria-label={mac ? "Search (⌘K)" : "Search (Ctrl+K)"}
         title={mac ? "Search (⌘K)" : "Search (Ctrl+K)"}
         onClick={() => setOpen(true)}

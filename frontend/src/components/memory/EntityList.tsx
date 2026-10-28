@@ -24,7 +24,7 @@ export function EntityList({ entities }: { entities: MemEntity[] }) {
         if (group.length === 0) return null;
         return (
           <div key={kind}>
-            <h3 className="mb-2 text-xs tracking-widest text-muted uppercase">{label}</h3>
+            <h3 className="mb-2 text-xs tracking-widest text-muted-foreground uppercase">{label}</h3>
             <ul className="grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {group.map((e) => (
                 <li key={e.id}>
@@ -33,7 +33,7 @@ export function EntityList({ entities }: { entities: MemEntity[] }) {
                     className="card flex items-baseline justify-between gap-2 p-3 text-fg no-underline hover:glow-box"
                   >
                     <span className="min-w-0 truncate text-sm">{e.name}</span>
-                    <span className="shrink-0 text-xs text-muted">
+                    <span className="shrink-0 text-xs text-muted-foreground">
                       {e.conclusion_count === 1 ? "1 conclusion" : `${e.conclusion_count} conclusions`}
                     </span>
                   </Link>
@@ -43,7 +43,7 @@ export function EntityList({ entities }: { entities: MemEntity[] }) {
           </div>
         );
       })}
-      {shown.length === 0 && <p className="text-sm text-muted">Nothing matches.</p>}
+      {shown.length === 0 && <p className="text-sm text-muted-foreground">Nothing matches.</p>}
     </section>
   );
 }

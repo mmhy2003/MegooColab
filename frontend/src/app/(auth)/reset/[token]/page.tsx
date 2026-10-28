@@ -27,7 +27,7 @@ export default function ResetPage() {
         setDone(true);
       }}
     >
-      <h1 className="text-center text-sm text-muted">Choose a new password</h1>
+      <h1 className="text-center text-sm text-muted-foreground">Choose a new password</h1>
     </NewPasswordForm>
   );
 }

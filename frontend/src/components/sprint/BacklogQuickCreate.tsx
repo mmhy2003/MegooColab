@@ -27,7 +27,7 @@ export function BacklogQuickCreate({ onCreate }: { onCreate: (title: string, typ
         }
       }}
     >
-      <Plus size={14} className="text-muted" aria-hidden />
+      <Plus size={14} className="text-muted-foreground" aria-hidden />
       <select
         aria-label="New item type"
         value={type}
@@ -44,7 +44,7 @@ export function BacklogQuickCreate({ onCreate }: { onCreate: (title: string, typ
         disabled={busy}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-1 text-sm placeholder:text-muted focus:border-cyan focus:outline-none"
+        className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-1 text-sm placeholder:text-muted-foreground focus:border-cyan focus:outline-none"
       />
     </form>
   );

@@ -77,7 +77,7 @@ export function DraftReview({ question }: { question: Question }) {
             void act("reject", { reason: reason.trim() });
           }}
         >
-          <label htmlFor="q-reject" className="text-xs tracking-wider text-muted uppercase">
+          <label htmlFor="q-reject" className="text-xs tracking-wider text-muted-foreground uppercase">
             Why is it wrong? Another agent will try.
           </label>
           <input

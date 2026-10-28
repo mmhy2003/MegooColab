@@ -51,7 +51,7 @@ function General({ project }: { project: Project }) {
         Use sprints (backlog, sprint board, burndown and velocity)
       </label>
       <fieldset>
-        <legend className="mb-1 text-xs tracking-wider text-muted uppercase">Teams</legend>
+        <legend className="mb-1 text-xs tracking-wider text-muted-foreground uppercase">Teams</legend>
         <div className="flex flex-wrap gap-3">
           {teams.data?.map((t) => (
             <label key={t.id} className="flex items-center gap-1.5 text-sm">
@@ -97,7 +97,7 @@ export default function ProjectSettingsPage() {
             type="button"
             aria-selected={tab === t}
             onClick={() => setTab(t)}
-            className={`rounded border px-3 py-1 text-xs uppercase ${tab === t ? "border-cyan text-cyan-ink" : "border-line text-muted"}`}
+            className={`rounded border px-3 py-1 text-xs uppercase ${tab === t ? "border-cyan text-cyan-ink" : "border-line text-muted-foreground"}`}
           >
             {t}
           </button>

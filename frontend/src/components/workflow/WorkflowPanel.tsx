@@ -61,7 +61,7 @@ export function WorkflowPanel({
   const wf = workflow.data;
   const decisionCount = records.data?.decisions?.length ?? 0;
   if (workflow.error) return <p className="text-sm text-pink">{errorMessage(workflow.error)}</p>;
-  if (!wf) return <p className="text-sm text-muted">Loading…</p>;
+  if (!wf) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   // after any action (also a failed one: a 409 means the state moved on) show what the server now says
   const refresh = () =>
@@ -109,7 +109,7 @@ export function WorkflowPanel({
         </p>
       )}
       {agent?.status === "offline" && (
-        <p className="text-xs text-muted">Agent offline — the run starts when {agent.owner.name}&apos;s runner connects.</p>
+        <p className="text-xs text-muted-foreground">Agent offline — the run starts when {agent.owner.name}&apos;s runner connects.</p>
       )}
       <StageTrack stage={wf.stage} status={status} canAct={wf.can_act && !disabled} hideStatus />
       <p className="font-semibold">{statusLine(wf)}</p>
@@ -118,7 +118,7 @@ export function WorkflowPanel({
           {decisionCount} {decisionCount === 1 ? "decision" : "decisions"}
         </a>
       )}
-      {!(status === "idle" && !agent) && <p className="text-xs text-muted">{ENFORCEMENT_TEXT[wf.enforcement]}</p>}
+      {!(status === "idle" && !agent) && <p className="text-xs text-muted-foreground">{ENFORCEMENT_TEXT[wf.enforcement]}</p>}
 
       {escalating && (
         <div className="space-y-2 rounded border border-pink/60 p-2">
@@ -132,7 +132,7 @@ export function WorkflowPanel({
               <Button variant="danger" disabled={busy} onClick={() => void post("escalation", { action: "pause" })}>Pause</Button>
             </div>
           ) : (
-            <p className="text-xs text-muted">
+            <p className="text-xs text-muted-foreground">
               {wf.can_act ? "This is a read-only view." : "Waiting on the agent’s owner or a project manager."}
             </p>
           )}
@@ -162,7 +162,7 @@ export function WorkflowPanel({
       {agentDriven && (
         <div className="space-y-1">
           {showFinishing && !wf.finishing_forced && canDecide ? (
-            <label className="block space-y-1 text-xs text-muted">
+            <label className="block space-y-1 text-xs text-muted-foreground">
               Finishing option
               <select
                 aria-label="Finishing option"
@@ -181,7 +181,7 @@ export function WorkflowPanel({
               </select>
             </label>
           ) : (
-            <p className="text-xs text-muted">
+            <p className="text-xs text-muted-foreground">
               {status === "finished" ? "Finished with" : "Finishes with"}:{" "}
               <span className="text-fg">{FINISHING_LABEL[wf.finishing_option]}</span>
               {wf.finishing_forced && status !== "finished" && (
@@ -228,7 +228,7 @@ export function WorkflowPanel({
                   disabled={busy}
                   aria-pressed={s.id === wf.stage}
                   onClick={() => void run(() => api(`/api/tasks/${taskKey}/workflow`, { method: "PATCH", json: { driver: "manual", stage: s.id } }))}
-                  className={`rounded border px-2 py-0.5 text-xs ${s.id === wf.stage ? "border-cyan font-semibold text-cyan-ink" : "border-line text-muted hover:border-cyan"}`}
+                  className={`rounded border px-2 py-0.5 text-xs ${s.id === wf.stage ? "border-cyan font-semibold text-cyan-ink" : "border-line text-muted-foreground hover:border-cyan"}`}
                 >
                   {s.label}
                   {s.id === wf.stage ? " (current)" : ""}
@@ -240,7 +240,7 @@ export function WorkflowPanel({
       )}
 
       {latest && (
-        <div className="space-y-1 text-xs text-muted">
+        <div className="space-y-1 text-xs text-muted-foreground">
           <p>
             Latest run: <span className="text-fg">{runLine(latest)}</span>
           </p>

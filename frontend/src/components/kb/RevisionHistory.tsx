@@ -28,7 +28,7 @@ export function RevisionHistory({ docId }: { docId: string }) {
 
   return (
     <section aria-label="History" className="space-y-3">
-      <p className="text-sm text-muted">Pick two revisions to compare.</p>
+      <p className="text-sm text-muted-foreground">Pick two revisions to compare.</p>
       <ul className="divide-y divide-line">
         {(revisions.data ?? []).map((r) => (
           <li key={r.revision} className="flex flex-wrap items-center gap-3 py-2 text-sm">
@@ -37,14 +37,14 @@ export function RevisionHistory({ docId }: { docId: string }) {
               <span className="font-mono">rev {r.revision}</span>
             </label>
             <span>{who(r.author)}</span>
-            {r.summary && <span className="text-muted">— {r.summary}</span>}
-            <span className="ml-auto text-xs text-muted">{new Date(r.created_at).toLocaleString()}</span>
+            {r.summary && <span className="text-muted-foreground">— {r.summary}</span>}
+            <span className="ml-auto text-xs text-muted-foreground">{new Date(r.created_at).toLocaleString()}</span>
           </li>
         ))}
       </ul>
       {picked.length === 2 && diff.data && (
         <div>
-          <p className="mb-1 text-xs text-muted">
+          <p className="mb-1 text-xs text-muted-foreground">
             Changes from rev {a} to rev {b}
           </p>
           <DiffView ops={diff.data} />

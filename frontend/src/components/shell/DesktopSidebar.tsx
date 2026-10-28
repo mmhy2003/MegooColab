@@ -58,7 +58,7 @@ export function DesktopSidebar({ user }: { user: User }) {
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           onClick={toggle}
-          className="m-2 flex items-center gap-2 rounded px-3 py-2 text-sm whitespace-nowrap text-muted hover:bg-surface hover:text-cyan"
+          className="m-2 flex items-center gap-2 rounded px-3 py-2 text-sm whitespace-nowrap text-muted-foreground hover:bg-surface hover:text-cyan"
         >
           <Icon size={16} aria-hidden className="shrink-0" />
           <span className={collapsed ? LABEL_HIDDEN : ""}>{collapsed ? "Expand" : "Collapse"}</span>

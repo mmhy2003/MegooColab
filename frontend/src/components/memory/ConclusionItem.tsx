@@ -17,7 +17,7 @@ const TEXT_MAX = 500;
 function Why({ id }: { id: string }) {
   const detail = useMemConclusion(id);
   if (detail.error) return <p className="text-xs text-pink">{errorMessage(detail.error)}</p>;
-  if (!detail.data) return <p className="text-xs text-muted">Loading…</p>;
+  if (!detail.data) return <p className="text-xs text-muted-foreground">Loading…</p>;
   return <ReasoningChain nodes={detail.data.premises} />;
 }
 
@@ -44,7 +44,7 @@ export function ConclusionItem({ conclusion: c }: { conclusion: MemConclusion })
       <div className="kb-prose">
         <Markdown>{c.text}</Markdown>
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span className="rounded border border-line px-1.5 font-mono">{kindLabel(c)}</span>
         {c.pinned && (
           <span className="inline-flex items-center gap-1 text-cyan-ink">
@@ -103,7 +103,7 @@ export function ConclusionItem({ conclusion: c }: { conclusion: MemConclusion })
             });
           }}
         >
-          <label htmlFor={`correct-${c.id}`} className="text-xs tracking-wider text-muted uppercase">
+          <label htmlFor={`correct-${c.id}`} className="text-xs tracking-wider text-muted-foreground uppercase">
             Corrected text
           </label>
           <textarea

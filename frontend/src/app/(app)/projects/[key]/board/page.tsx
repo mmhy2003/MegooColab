@@ -64,7 +64,7 @@ function BoardPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <BoardFilters value={filters} onChange={setFilters} users={users.data ?? []} labels={labels.data ?? []} epics={epics.data ?? []} />
         {activeSprint && (
-          <p className="text-xs text-muted">
+          <p className="text-xs text-muted-foreground">
             <span className="text-cyan-ink">{activeSprint.name}</span> · ends {activeSprint.end_date}
           </p>
         )}

@@ -47,7 +47,7 @@ export function LabelEditor({ projectKey, labels, onChanged }: { projectKey: str
             </button>
           </li>
         ))}
-        {labels.length === 0 && <li className="text-sm text-muted">No labels yet.</li>}
+        {labels.length === 0 && <li className="text-sm text-muted-foreground">No labels yet.</li>}
       </ul>
       <form
         className="flex items-end gap-2"

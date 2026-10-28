@@ -39,7 +39,7 @@ export function DreamPanel() {
           Dream now
         </Button>
       </div>
-      <p className="mb-3 text-xs text-muted">
+      <p className="mb-3 text-xs text-muted-foreground">
         The memory consolidates every night: it replaces outdated conclusions, deduces and induces new ones, and
         refreshes the summary cards.
       </p>
@@ -48,7 +48,7 @@ export function DreamPanel() {
           {error}
         </p>
       )}
-      {runs.data?.length === 0 && <p className="text-sm text-muted">No dream runs yet.</p>}
+      {runs.data?.length === 0 && <p className="text-sm text-muted-foreground">No dream runs yet.</p>}
       <ul className="divide-y divide-line text-sm">
         {(runs.data ?? []).map((r) => (
           <li key={r.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2">
@@ -56,7 +56,7 @@ export function DreamPanel() {
             <span className={r.status === "failed" ? "text-pink" : r.status === "running" ? "text-cyan-ink" : ""}>
               {r.status}
             </span>
-            <span className="text-xs text-muted">
+            <span className="text-xs text-muted-foreground">
               {new Date(r.started_at).toLocaleString()}
               {r.finished_at ? ` → ${new Date(r.finished_at).toLocaleTimeString()}` : ""}
             </span>

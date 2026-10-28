@@ -17,7 +17,7 @@ export default function ForgotPage() {
     return (
       <div className="space-y-4 text-sm">
         <p>If that email has an account, a reset link is on its way. It works for 1 hour.</p>
-        <p className="text-muted">No email? Your admin can give you a reset link directly.</p>
+        <p className="text-muted-foreground">No email? Your admin can give you a reset link directly.</p>
         <Link href="/login">Back to sign in</Link>
       </div>
     );
@@ -35,7 +35,7 @@ export default function ForgotPage() {
         }
       }}
     >
-      <h1 className="text-center text-sm text-muted">Reset your password</h1>
+      <h1 className="text-center text-sm text-muted-foreground">Reset your password</h1>
       <Input label="Email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}
       <Button type="submit" className="w-full">Send reset link</Button>

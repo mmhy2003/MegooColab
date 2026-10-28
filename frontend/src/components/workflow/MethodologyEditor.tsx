@@ -60,7 +60,7 @@ function History({
               type="button"
               aria-pressed={selected === v.version}
               onClick={() => setSelected(v.version)}
-              className={`text-left text-sm ${selected === v.version ? "text-cyan-ink" : "text-muted hover:text-fg"}`}
+              className={`text-left text-sm ${selected === v.version ? "text-cyan-ink" : "text-muted-foreground hover:text-fg"}`}
             >
               v{v.version} · {when(v.created_at)} · {v.created_by ? (names.get(v.created_by) ?? "Unknown user") : "System"}
             </button>
@@ -70,7 +70,7 @@ function History({
       {detail.error && <p className="text-sm text-pink">{errorMessage(detail.error)}</p>}
       {detail.data && selected !== null && (
         <div className="space-y-2 rounded border border-line p-3">
-          <p className="text-xs tracking-wider text-muted uppercase">Version {detail.data.version} (read-only)</p>
+          <p className="text-xs tracking-wider text-muted-foreground uppercase">Version {detail.data.version} (read-only)</p>
           <Markdown>{detail.data.body_md}</Markdown>
           <Button variant="ghost" type="button" onClick={() => onRestore(detail.data.body_md)}>
             Restore as new version
@@ -148,7 +148,7 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
     <section aria-label={item.key} className="rounded border border-line p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="font-mono text-sm">{item.key}</h3>
-        <p className="text-xs text-muted">
+        <p className="text-xs text-muted-foreground">
           <span className="text-cyan-ink">v{item.version}</span> · updated {when(item.updated_at)}
           {item.updated_by ? ` by ${names.get(item.updated_by) ?? "an unknown user"}` : ""}
         </p>
@@ -169,7 +169,7 @@ function KeyEditor({ item, names }: { item: MethodologyItem; names: Map<string, 
         <Button type="button" variant="ghost" onClick={() => setShowHistory((s) => !s)} aria-expanded={showHistory}>
           History
         </Button>
-        <span className={`ml-auto text-xs ${tooLong ? "text-pink" : "text-muted"}`}>
+        <span className={`ml-auto text-xs ${tooLong ? "text-pink" : "text-muted-foreground"}`}>
           {length.toLocaleString("en-US")} / {MAX_CHARS.toLocaleString("en-US")}
         </span>
       </div>
@@ -226,7 +226,7 @@ export function MethodologyEditor() {
           })}
         </div>
       ))}
-      <p className="text-xs text-muted">
+      <p className="text-xs text-muted-foreground">
         Adapted from{" "}
         <a href="https://github.com/obra/superpowers" target="_blank" rel="noopener noreferrer">
           obra/superpowers

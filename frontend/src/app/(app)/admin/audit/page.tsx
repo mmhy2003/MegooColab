@@ -31,7 +31,7 @@ export default function AuditPage() {
       </div>
       <div className="card overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="text-xs tracking-wider text-muted uppercase">
+          <thead className="text-xs tracking-wider text-muted-foreground uppercase">
             <tr className="border-b border-line">
               <th className="px-3 py-2 font-normal">When</th>
               <th className="px-3 py-2 font-normal">Who</th>
@@ -42,17 +42,17 @@ export default function AuditPage() {
           <tbody>
             {entries.data?.map((e) => (
               <tr key={e.id} className="border-b border-line last:border-0 align-top">
-                <td className="px-3 py-2 whitespace-nowrap text-muted">{new Date(e.created_at).toLocaleString()}</td>
+                <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{new Date(e.created_at).toLocaleString()}</td>
                 <td className="px-3 py-2">{e.actor_user_id ? names.get(e.actor_user_id) ?? "unknown" : "—"}</td>
                 <td className="px-3 py-2 text-cyan-ink">{e.action}</td>
-                <td className="px-3 py-2 text-xs text-muted">
+                <td className="px-3 py-2 text-xs text-muted-foreground">
                   {e.target_type && `${e.target_type} ${e.target_type === "user" && e.target_id ? names.get(e.target_id) ?? "" : ""}`}
                   {Object.keys(e.data ?? {}).length > 0 && <code className="ml-1">{JSON.stringify(e.data)}</code>}
                 </td>
               </tr>
             ))}
             {entries.data?.length === 0 && (
-              <tr><td colSpan={4} className="px-3 py-6 text-center text-muted">No entries.</td></tr>
+              <tr><td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">No entries.</td></tr>
             )}
           </tbody>
         </table>

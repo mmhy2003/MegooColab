@@ -51,7 +51,7 @@ export function ProductEditor() {
       <Input label="Product name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
       <Input label="Description" maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} />
       <fieldset className="space-y-1">
-        <legend className="text-xs tracking-wider text-muted uppercase">Projects</legend>
+        <legend className="text-xs tracking-wider text-muted-foreground uppercase">Projects</legend>
         {(projects.data ?? []).map((p) => (
           <label key={p.id} className="flex items-center gap-2 text-sm">
             <input

@@ -18,7 +18,7 @@ export default function AdminAgentsPage() {
       {agents.error && <p role="alert" className="mb-2 text-sm text-pink">{errorMessage(agents.error)}</p>}
       <div className="card overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="text-xs tracking-wider text-muted uppercase">
+          <thead className="text-xs tracking-wider text-muted-foreground uppercase">
             <tr className="border-b border-line">
               <th className="px-3 py-2 font-normal">Owner</th>
               <th className="px-3 py-2 font-normal">Agent</th>
@@ -32,13 +32,13 @@ export default function AdminAgentsPage() {
               <tr key={a.id} className="border-b border-line last:border-0">
                 <td className="px-3 py-2">{a.owner.name}</td>
                 <td className="px-3 py-2">{a.name}</td>
-                <td className="px-3 py-2 text-muted">{PROGRAM_LABEL[a.program]}</td>
+                <td className="px-3 py-2 text-muted-foreground">{PROGRAM_LABEL[a.program]}</td>
                 <td className="px-3 py-2"><AgentStatusDot status={a.status} /></td>
-                <td className="px-3 py-2 text-muted">{runLabel(a.current_run)}</td>
+                <td className="px-3 py-2 text-muted-foreground">{runLabel(a.current_run)}</td>
               </tr>
             ))}
             {agents.data?.length === 0 && (
-              <tr><td colSpan={5} className="px-3 py-6 text-center text-muted">No agents yet.</td></tr>
+              <tr><td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">No agents yet.</td></tr>
             )}
           </tbody>
         </table>

@@ -28,9 +28,9 @@ export function Attachments({
       <ul className="space-y-1">
         {items.map((a) => (
           <li key={a.id} className="flex items-center gap-2 text-sm">
-            <Paperclip size={12} className="text-muted" aria-hidden />
+            <Paperclip size={12} className="text-muted-foreground" aria-hidden />
             <a href={`/api/attachments/${a.id}`} className="min-w-0 flex-1 truncate">{a.filename}</a>
-            <span className="text-xs text-muted">{size(a.size)}</span>
+            <span className="text-xs text-muted-foreground">{size(a.size)}</span>
             {!disabled && (
               <button type="button" className="icon-btn h-6 w-6 hover:text-pink" aria-label={`Delete ${a.filename}`} onClick={() => onDelete(a.id)}>
                 <Trash2 size={12} aria-hidden />
@@ -38,7 +38,7 @@ export function Attachments({
             )}
           </li>
         ))}
-        {items.length === 0 && <li className="text-xs text-muted">No attachments.</li>}
+        {items.length === 0 && <li className="text-xs text-muted-foreground">No attachments.</li>}
       </ul>
       {!disabled && (
         <>

@@ -25,9 +25,9 @@ export function SearchAdmin() {
         <>
           <p>
             <span className={s.available ? "text-cyan-ink" : "text-pink"}>{s.available ? "Available" : "Unavailable"}</span>
-            {s.documents != null && <span className="text-muted"> · {s.documents.toLocaleString("en-US")} items indexed</span>}
+            {s.documents != null && <span className="text-muted-foreground"> · {s.documents.toLocaleString("en-US")} items indexed</span>}
           </p>
-          <p className="text-xs text-muted">
+          <p className="text-xs text-muted-foreground">
             Last rebuilt: {s.last_rebuild_at ? new Date(s.last_rebuild_at).toLocaleString() : "never"}
           </p>
         </>
@@ -46,7 +46,7 @@ export function SearchAdmin() {
       >
         Rebuild index
       </Button>
-      {note && <p className="text-xs text-muted">{note}</p>}
+      {note && <p className="text-xs text-muted-foreground">{note}</p>}
     </section>
   );
 }

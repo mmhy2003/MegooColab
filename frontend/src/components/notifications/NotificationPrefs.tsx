@@ -25,7 +25,7 @@ export function NotificationPrefs() {
       return rest;
     }),
   );
-  if (prefs.isLoading) return <p className="text-sm text-muted">Loading…</p>;
+  if (prefs.isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
   const toggle = (p: NotificationPref, field: "in_app" | "email") => {
     const next = { ...p, [field]: !p[field] };
     setUnsaved((u) => ({ ...u, [p.kind]: next }));
@@ -35,7 +35,7 @@ export function NotificationPrefs() {
     <div className="space-y-2">
       <table className="card w-full max-w-xl text-sm">
         <thead>
-          <tr className="text-left text-xs text-muted">
+          <tr className="text-left text-xs text-muted-foreground">
             <th className="px-3 py-2 font-normal">When</th>
             <th className="px-3 py-2 font-normal">In app</th>
             <th className="px-3 py-2 font-normal">Email</th>

@@ -13,7 +13,7 @@ export function ResultCard({ hit, onNavigate }: { hit: Hit; onNavigate?: () => v
     return (
       <section aria-label={name} className="space-y-2 text-sm">
         <h3 className="font-semibold">{name}</h3>
-        <p className="text-muted">{card.email}</p>
+        <p className="text-muted-foreground">{card.email}</p>
         {card.teams.length > 0 ? (
           <p>
             Teams:{" "}
@@ -27,7 +27,7 @@ export function ResultCard({ hit, onNavigate }: { hit: Hit; onNavigate?: () => v
             ))}
           </p>
         ) : (
-          <p className="text-muted">In no team</p>
+          <p className="text-muted-foreground">In no team</p>
         )}
       </section>
     );
@@ -36,7 +36,7 @@ export function ResultCard({ hit, onNavigate }: { hit: Hit; onNavigate?: () => v
   return (
     <section aria-label={name} className="space-y-2 text-sm">
       <h3 className="font-semibold">{name}</h3>
-      <p className="text-muted">Owner: {card.owner_name}</p>
+      <p className="text-muted-foreground">Owner: {card.owner_name}</p>
       {card.projects.length > 0 && (
         <p>
           Projects:{" "}

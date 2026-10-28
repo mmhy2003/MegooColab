@@ -31,7 +31,7 @@ export function VelocityChart({ points }: { points: VelocityPoint[] }) {
       }}
     >
       {points.length === 0 ? (
-        <p className="py-10 text-center text-sm text-muted">Velocity appears after the first completed sprint.</p>
+        <p className="py-10 text-center text-sm text-muted-foreground">Velocity appears after the first completed sprint.</p>
       ) : (
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">

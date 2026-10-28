@@ -106,7 +106,7 @@ export function DocEditor({
       <Input label="Title" required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} />
       <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
         <div className="flex flex-col gap-1">
-          <label htmlFor="kb-body" className="text-xs tracking-wider text-muted uppercase">
+          <label htmlFor="kb-body" className="text-xs tracking-wider text-muted-foreground uppercase">
             Body
           </label>
           <textarea
@@ -116,13 +116,13 @@ export function DocEditor({
             onChange={(e) => setBody(e.target.value)}
             aria-invalid={tooLong || undefined}
           />
-          <p className={`text-xs ${tooLong ? "text-pink" : "text-muted"}`}>
+          <p className={`text-xs ${tooLong ? "text-pink" : "text-muted-foreground"}`}>
             {body.length.toLocaleString("en-US")} / {BODY_MAX.toLocaleString("en-US")} characters. Link with [[PAY-12]] or
             [[doc:&lt;id&gt;|Title]].
           </p>
         </div>
         <section aria-label="Preview" className="min-w-0 rounded border border-line p-3">
-          <p className="mb-2 text-xs tracking-wider text-muted uppercase">Preview</p>
+          <p className="mb-2 text-xs tracking-wider text-muted-foreground uppercase">Preview</p>
           <div className="kb-prose">
             <KbMarkdown>{body}</KbMarkdown>
           </div>

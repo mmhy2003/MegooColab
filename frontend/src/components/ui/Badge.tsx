@@ -5,7 +5,7 @@ const TONES: Record<Tone, string> = {
   pink: "border-pink text-pink",
   green: "border-green text-green-ink",
   amber: "border-amber text-amber",
-  muted: "border-line text-muted",
+  muted: "border-line text-muted-foreground",
 };
 
 export function Badge({

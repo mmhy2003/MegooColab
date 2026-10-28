@@ -50,7 +50,7 @@ export function TaskCardView({
     <div
       className={`card space-y-2 p-2.5 text-sm transition-shadow hover:border-cyan ${dragging ? "glow-box border-cyan" : ""}`}
     >
-      <div className="flex items-center gap-1.5 text-[11px] text-muted">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <TypeIcon size={12} aria-label={task.type} />
         <span>{task.key}</span>
         <span className="flex-1" />
@@ -70,13 +70,13 @@ export function TaskCardView({
               </span>
             )}
             {wf.stage === "build" && wf.current_step != null && wf.steps_total != null && (
-              <span className="text-muted">
+              <span className="text-muted-foreground">
                 {wf.current_step} of {wf.steps_total} steps
               </span>
             )}
             {wf.enforcement !== "enforced" && (
               <span
-                className="rounded-full border border-line px-1.5 text-muted"
+                className="rounded-full border border-line px-1.5 text-muted-foreground"
                 title={ENFORCEMENT_HELP[wf.enforcement]}
               >
                 {wf.enforcement === "unenforced" ? "unenforced" : "partially enforced"}
@@ -97,7 +97,7 @@ export function TaskCardView({
           ))}
         </div>
       )}
-      <div className="flex items-center gap-2 text-[11px] text-muted">
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
         {task.story_points != null && (
           <span aria-label={`${task.story_points} story points`} className="rounded-full border border-line px-1.5">
             {task.story_points}

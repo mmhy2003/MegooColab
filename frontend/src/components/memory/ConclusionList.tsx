@@ -26,7 +26,7 @@ export function ConclusionList({ entityId }: { entityId: string }) {
             type="button"
             role="tab"
             aria-selected={status === f.id}
-            className={`px-3 py-1 text-sm ${status === f.id ? "border-b-2 border-cyan text-cyan-ink" : "text-muted"}`}
+            className={`px-3 py-1 text-sm ${status === f.id ? "border-b-2 border-cyan text-cyan-ink" : "text-muted-foreground"}`}
             onClick={() => setStatus(f.id)}
           >
             {f.label}
@@ -34,7 +34,7 @@ export function ConclusionList({ entityId }: { entityId: string }) {
         ))}
       </div>
       {pages.error && <p className="text-sm text-pink">{errorMessage(pages.error)}</p>}
-      {pages.data && items.length === 0 && <p className="text-sm text-muted">No conclusions here yet.</p>}
+      {pages.data && items.length === 0 && <p className="text-sm text-muted-foreground">No conclusions here yet.</p>}
       <ul className="divide-y divide-line">
         {items.map((c) => (
           <ConclusionItem key={c.id} conclusion={c} />

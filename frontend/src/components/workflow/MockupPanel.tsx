@@ -100,13 +100,13 @@ export function MockupPanel({ taskKey, disabled = false }: { taskKey: string; di
               type="button"
               aria-pressed={m.version === shown.version}
               onClick={() => pick(m.version)}
-              className={`rounded border px-2 py-0.5 text-xs ${m.version === shown.version ? "border-cyan font-semibold text-cyan-ink" : "border-line text-muted hover:border-cyan"}`}
+              className={`rounded border px-2 py-0.5 text-xs ${m.version === shown.version ? "border-cyan font-semibold text-cyan-ink" : "border-line text-muted-foreground hover:border-cyan"}`}
             >
               v{m.version}
             </button>
           ))}
         </div>
-        <span className="text-xs text-muted">
+        <span className="text-xs text-muted-foreground">
           v{shown.version} of {newest.version}
         </span>
         {ready && (
@@ -115,7 +115,7 @@ export function MockupPanel({ taskKey, disabled = false }: { taskKey: string; di
           </button>
         )}
         {list.length > 1 && (
-          <label className="ml-auto flex items-center gap-1 text-xs text-muted">
+          <label className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
             Compare with
             <select
               aria-label="Compare with"
@@ -146,11 +146,11 @@ export function MockupPanel({ taskKey, disabled = false }: { taskKey: string; di
           Approve this version
         </Button>
       )}
-      {linked && awaitingDesign && shown.version < linked.version && <p className="text-xs text-muted">Older version</p>}
+      {linked && awaitingDesign && shown.version < linked.version && <p className="text-xs text-muted-foreground">Older version</p>}
 
       {canAct && (
         <div className="space-y-2">
-          <label className="block space-y-1 text-xs text-muted">
+          <label className="block space-y-1 text-xs text-muted-foreground">
             Feedback
             <textarea
               aria-label="Feedback"
@@ -171,7 +171,7 @@ export function MockupPanel({ taskKey, disabled = false }: { taskKey: string; di
               Request changes
             </Button>
           ) : (
-            <p className="text-xs text-muted">The agent is working. You can reply when it asks a question or submits the design.</p>
+            <p className="text-xs text-muted-foreground">The agent is working. You can reply when it asks a question or submits the design.</p>
           )}
         </div>
       )}

@@ -27,7 +27,7 @@ export default function SetupPage() {
         router.push("/projects");
       }}
     >
-      <h1 className="text-center text-sm text-muted">Welcome. Set up your organization and admin account.</h1>
+      <h1 className="text-center text-sm text-muted-foreground">Welcome. Set up your organization and admin account.</h1>
       <Input label="Organization name" required value={org} onChange={(e) => setOrg(e.target.value)} />
       <Input label="Your name" required autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
       <Input label="Email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />

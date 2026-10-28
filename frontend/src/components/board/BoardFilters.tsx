@@ -25,7 +25,7 @@ export function BoardFilters({
     <div className="flex flex-wrap items-center gap-2">
       <label className="relative">
         <span className="sr-only">Search tasks</span>
-        <Search size={14} className="absolute top-2.5 left-2 text-muted" aria-hidden />
+        <Search size={14} className="absolute top-2.5 left-2 text-muted-foreground" aria-hidden />
         <input
           className={`${FIELD} pl-7`}
           placeholder="Search"

@@ -49,9 +49,9 @@ export function NotificationBell() {
             </button>
           </div>
           {list.isLoading ? (
-            <p className="px-3 py-2 text-sm text-muted">Loading…</p>
+            <p className="px-3 py-2 text-sm text-muted-foreground">Loading…</p>
           ) : items.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-muted">Nothing new.</p>
+            <p className="px-3 py-2 text-sm text-muted-foreground">Nothing new.</p>
           ) : (
             <ul className="max-h-96 divide-y divide-line overflow-y-auto">
               {items.map((n) => (

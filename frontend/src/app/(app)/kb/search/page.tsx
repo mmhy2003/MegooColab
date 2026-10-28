@@ -13,7 +13,7 @@ import { useKbSearch, useKbSpaces } from "@/lib/kb";
 
 export default function KbSearchPage() {
   return (
-    <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+    <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
       <KbSearch />
     </Suspense>
   );
@@ -71,7 +71,7 @@ function KbSearch() {
         </Button>
       </form>
       {results.error && <p className="text-sm text-pink">{errorMessage(results.error)}</p>}
-      {results.isFetching && !results.data && <p className="text-sm text-muted">Searching…</p>}
+      {results.isFetching && !results.data && <p className="text-sm text-muted-foreground">Searching…</p>}
       {results.data && <SearchResults query={q} results={results.data} />}
     </div>
   );

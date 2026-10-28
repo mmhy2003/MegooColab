@@ -35,20 +35,20 @@ export function WorkflowSettings({ project, canEdit }: { project: Project; canEd
     return (
       <section aria-label="Workflow" className="card max-w-xl space-y-3 p-4 text-sm">
         <div>
-          <div className="text-xs tracking-wider text-muted uppercase">Default finishing option</div>
+          <div className="text-xs tracking-wider text-muted-foreground uppercase">Default finishing option</div>
           <div>{FINISHING.find((f) => f.value === project.finishing_option)?.label}</div>
         </div>
         <div>
-          <div className="text-xs tracking-wider text-muted uppercase">{REVIEW_LABEL}</div>
+          <div className="text-xs tracking-wider text-muted-foreground uppercase">{REVIEW_LABEL}</div>
           <div>{yesNo(project.require_human_code_review)}</div>
-          <p className="text-xs text-muted">{REVIEW_HELP}</p>
+          <p className="text-xs text-muted-foreground">{REVIEW_HELP}</p>
         </div>
         <div>
-          <div className="text-xs tracking-wider text-muted uppercase">{DOCS_LABEL}</div>
+          <div className="text-xs tracking-wider text-muted-foreground uppercase">{DOCS_LABEL}</div>
           <div>{yesNo(project.commit_docs_to_repo)}</div>
-          <p className="text-xs text-muted">{DOCS_HELP}</p>
+          <p className="text-xs text-muted-foreground">{DOCS_HELP}</p>
         </div>
-        <p className="text-xs text-muted">Only managers can change these.</p>
+        <p className="text-xs text-muted-foreground">Only managers can change these.</p>
       </section>
     );
   }
@@ -87,7 +87,7 @@ export function WorkflowSettings({ project, canEdit }: { project: Project; canEd
           />
           {REVIEW_LABEL}
         </label>
-        <p className="ml-6 text-xs text-muted">{REVIEW_HELP}</p>
+        <p className="ml-6 text-xs text-muted-foreground">{REVIEW_HELP}</p>
       </div>
       <div>
         <label className="flex items-center gap-2 text-sm">
@@ -98,7 +98,7 @@ export function WorkflowSettings({ project, canEdit }: { project: Project; canEd
           />
           {DOCS_LABEL}
         </label>
-        <p className="ml-6 text-xs text-muted">{DOCS_HELP}</p>
+        <p className="ml-6 text-xs text-muted-foreground">{DOCS_HELP}</p>
       </div>
       {msg && (
         <p role="status" className={`text-sm ${msg.ok ? "text-green-ink" : "text-pink"}`}>

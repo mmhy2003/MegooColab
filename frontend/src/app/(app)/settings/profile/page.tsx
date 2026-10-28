@@ -56,7 +56,7 @@ function TwoFactor({ enabled }: { enabled: boolean }) {
   if (!setup) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-muted">Add a code from an authenticator app to every sign-in.</p>
+        <p className="text-sm text-muted-foreground">Add a code from an authenticator app to every sign-in.</p>
         <Button
           variant="ghost"
           onClick={async () => {
@@ -93,7 +93,7 @@ function TwoFactor({ enabled }: { enabled: boolean }) {
       <p className="text-sm">Scan this with your authenticator app, then enter the 6-digit code it shows.</p>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={setup.qr} alt="QR code for your authenticator app" width={180} height={180} className="rounded bg-white p-1" />
-      <p className="text-xs text-muted break-all">Or enter this key manually: {setup.secret}</p>
+      <p className="text-xs text-muted-foreground break-all">Or enter this key manually: {setup.secret}</p>
       <Input label="Authenticator code" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={(e) => setCode(e.target.value)} />
       {msg && <p className={`text-sm ${msg.ok ? "text-green-ink" : "text-pink"}`}>{msg.text}</p>}
       <Button type="submit">Turn on</Button>
@@ -123,7 +123,7 @@ function NameForm({ initial }: { initial: string }) {
           <div className="flex-1"><Input label="Display name" required value={name} onChange={(e) => setName(e.target.value)} /></div>
           <Button type="submit" variant="ghost">Save</Button>
         </form>
-        {saved && <p className="text-sm text-muted">{saved}</p>}
+        {saved && <p className="text-sm text-muted-foreground">{saved}</p>}
     </>
   );
 }

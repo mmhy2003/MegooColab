@@ -43,7 +43,7 @@ function FilterGroup({
   if (shown.length === 0) return null;
   return (
     <fieldset className="space-y-1">
-      <legend className="text-[11px] tracking-widest text-muted uppercase">{title}</legend>
+      <legend className="text-[11px] tracking-widest text-muted-foreground uppercase">{title}</legend>
       {shown.map((o) => (
         <label key={o.value} className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={selected.includes(o.value)} onChange={() => onToggle(o.value)} />
@@ -59,7 +59,7 @@ function ResultItem({ hit }: { hit: Hit }) {
   const label = KIND_LABELS[hit.kind as SearchKind] ?? hit.kind;
   return (
     <article className="space-y-0.5 border-b border-line py-2 text-sm">
-      <p className="text-xs text-muted">
+      <p className="text-xs text-muted-foreground">
         {label}
         {hit.project_key && hit.kind !== "project" ? ` · ${hit.project_key}` : ""}
         {hit.status && hit.kind === "task" ? ` · ${STATUS_LABELS[hit.status] ?? hit.status}` : ""}
@@ -81,7 +81,7 @@ function ResultItem({ hit }: { hit: Hit }) {
         </button>
       )}
       {hit.snippet && (
-        <p className="text-xs text-muted">
+        <p className="text-xs text-muted-foreground">
           <Highlighted text={hit.snippet} />
         </p>
       )}
@@ -190,7 +190,7 @@ export function SearchResults({ params, onChange }: { params: SearchParams; onCh
             selected={params.label}
             onToggle={(v) => toggle("label", v)}
           />
-          <label className="block space-y-1 text-xs text-muted">
+          <label className="block space-y-1 text-xs text-muted-foreground">
             Updated
             <select aria-label="Updated" className={`${FIELD} w-full`} value={params.updated ?? ""} onChange={(e) => change({ updated: e.target.value || null })}>
               <option value="">Any time</option>
@@ -209,7 +209,7 @@ export function SearchResults({ params, onChange }: { params: SearchParams; onCh
           )}
         </aside>
         <main className="min-w-0 space-y-3">
-          <div className="flex items-center justify-between gap-2 text-xs text-muted">
+          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>{data ? `${data.total} results` : ""}</span>
             <label className="flex items-center gap-1">
               Sort
@@ -220,7 +220,7 @@ export function SearchResults({ params, onChange }: { params: SearchParams; onCh
             </label>
           </div>
           {taskOnly.length > 0 && (
-            <p className="text-xs text-muted">
+            <p className="text-xs text-muted-foreground">
               Showing tasks only ({taskOnly.join(" and ")} {taskOnly.length === 1 ? "applies" : "apply"} to tasks)
             </p>
           )}
@@ -231,14 +231,14 @@ export function SearchResults({ params, onChange }: { params: SearchParams; onCh
           )}
           {data?.meaning && data.meaning.length > 0 && (
             <section aria-label="Similar in meaning" className="card space-y-1 p-3">
-              <h2 className="text-[11px] tracking-widest text-muted uppercase">Similar in meaning</h2>
+              <h2 className="text-[11px] tracking-widest text-muted-foreground uppercase">Similar in meaning</h2>
               {data.meaning.map((h) => (
                 <ResultItem key={`m-${h.id}`} hit={h} />
               ))}
             </section>
           )}
           {data && <HitList key={paramsToUrl(params)} params={params} first={data} />}
-          {data && data.total === 0 && !data.meaning?.length && <p className="text-sm text-muted">Nothing matches.</p>}
+          {data && data.total === 0 && !data.meaning?.length && <p className="text-sm text-muted-foreground">Nothing matches.</p>}
         </main>
       </div>
     </div>

@@ -34,7 +34,7 @@ export function JobModels() {
   return (
     <section className="card p-4">
       <h2 className="mb-1 font-display text-sm font-semibold tracking-wider uppercase">Models per job</h2>
-      <p className="mb-3 text-xs text-muted">
+      <p className="mb-3 text-xs text-muted-foreground">
         Model names use LiteLLM&apos;s format, for example <code className="font-mono">openai/text-embedding-3-small</code>{" "}
         (the provider&apos;s prefix may be left out).
       </p>
@@ -81,7 +81,7 @@ function JobRow({ job, providers }: { job: AiJobModel; providers: AiProvider[] }
       }}
     >
       <p className="font-semibold">{text.label}</p>
-      {text.help && <p className="text-xs text-muted">{text.help}</p>}
+      {text.help && <p className="text-xs text-muted-foreground">{text.help}</p>}
       <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
         <Select label="Provider" value={providerId} onChange={(e) => setProviderId(e.target.value)}>
           <option value="">Not configured</option>

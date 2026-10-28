@@ -34,11 +34,11 @@ export function DocView({ doc, onEdit }: { doc: KbDocument; onEdit: () => void }
   return (
     <article className="space-y-4">
       <header className="space-y-1">
-        <p className="font-mono text-xs text-muted">
+        <p className="font-mono text-xs text-muted-foreground">
           <span>{doc.space.name}</span> · <span>{kbPath(doc)}</span>
         </p>
         <h1 className="text-lg font-bold text-cyan-ink glow-cyan">{doc.title}</h1>
-        <p className="text-xs text-muted">
+        <p className="text-xs text-muted-foreground">
           <span className="font-mono">rev {doc.latest_revision}</span> · updated by {revisionAuthor(doc.updated_by)} on{" "}
           {new Date(doc.updated_at).toLocaleString()}
         </p>
@@ -65,7 +65,7 @@ export function DocView({ doc, onEdit }: { doc: KbDocument; onEdit: () => void }
       </header>
       {moving && <MoveForm doc={doc} onDone={() => setMoving(false)} />}
       <div className="card kb-prose p-4">
-        {doc.body_md.trim() ? <KbMarkdown>{doc.body_md}</KbMarkdown> : <p className="text-sm text-muted">This document is empty.</p>}
+        {doc.body_md.trim() ? <KbMarkdown>{doc.body_md}</KbMarkdown> : <p className="text-sm text-muted-foreground">This document is empty.</p>}
       </div>
       <div className="card p-4">
         <Backlinks docId={doc.id} />
@@ -118,7 +118,7 @@ function MoveForm({ doc, onDone }: { doc: KbDocument; onDone: () => void }) {
           {error}
         </p>
       )}
-      <p className="w-full text-xs text-muted">Only people who can read the target space will see the document there.</p>
+      <p className="w-full text-xs text-muted-foreground">Only people who can read the target space will see the document there.</p>
     </form>
   );
 }

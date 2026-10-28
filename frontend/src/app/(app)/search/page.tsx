@@ -33,7 +33,7 @@ export default function SearchPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="Search" subtitle="Everything you can open: tasks, documents, projects, teams, people, agents and questions." />
-      <Suspense fallback={<p className="text-sm text-muted">Loading…</p>}>
+      <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
         <SearchPageKeyed />
       </Suspense>
     </div>

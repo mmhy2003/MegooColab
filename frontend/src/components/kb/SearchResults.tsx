@@ -27,12 +27,12 @@ export function SearchResults({ query, results }: { query: string; results: KbSe
   return (
     <div className="space-y-3">
       {!results.semantic && (
-        <p className="rounded border border-line bg-surface-2 px-3 py-2 text-xs text-muted">
+        <p className="rounded border border-line bg-surface-2 px-3 py-2 text-xs text-muted-foreground">
           Semantic search is off — an admin can configure an embeddings model. Results match words exactly.
         </p>
       )}
       {results.results.length === 0 ? (
-        <p className="text-sm text-muted">No documents match.</p>
+        <p className="text-sm text-muted-foreground">No documents match.</p>
       ) : (
         <ol className="space-y-3">
           {results.results.map((r) => (
@@ -41,13 +41,13 @@ export function SearchResults({ query, results }: { query: string; results: KbSe
                 <Link href={`/kb/doc/${r.document_id}`} className="text-sm font-semibold">
                   {r.title}
                 </Link>
-                <span className="rounded border border-line px-1.5 text-[11px] text-muted">{r.space.name}</span>
-                {r.path && <span className="font-mono text-xs text-muted">{r.path}</span>}
-                <span className="ml-auto font-mono text-[11px] text-muted" title="Relevance score">
+                <span className="rounded border border-line px-1.5 text-[11px] text-muted-foreground">{r.space.name}</span>
+                {r.path && <span className="font-mono text-xs text-muted-foreground">{r.path}</span>}
+                <span className="ml-auto font-mono text-[11px] text-muted-foreground" title="Relevance score">
                   {r.score.toFixed(4)}
                 </span>
               </div>
-              {r.snippet && <p className="kb-prose mt-1 text-sm break-words text-muted">{highlight(r.snippet, query)}</p>}
+              {r.snippet && <p className="kb-prose mt-1 text-sm break-words text-muted-foreground">{highlight(r.snippet, query)}</p>}
             </li>
           ))}
         </ol>

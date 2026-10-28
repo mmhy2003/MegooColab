@@ -10,7 +10,7 @@
   --surface-2: #ece6ff;
   --line: #d6ccf5;
   --fg: #1a0b3d;
-  --muted: #6b5f99;
+  --muted-foreground: #6b5f99;
   --cyan: #0090a8;
   --pink: #d4004f;
   --green: #1f8f2c;
@@ -38,7 +38,7 @@
   --surface-2: #120530;
   --line: #2e1a66;
   --fg: #e9e4ff;
-  --muted: #8f84c0;
+  --muted-foreground: #8f84c0;
   --cyan: #05d9e8;
   --pink: #ff2a6d;
   --green: #7cff6b;
@@ -64,7 +64,9 @@
   --color-surface-2: var(--surface-2);
   --color-line: var(--line);
   --color-fg: var(--fg);
-  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  /* shadcn's meaning: a quiet background (grey text is muted-foreground) */
+  --color-muted: var(--surface-2);
   --color-cyan: var(--cyan);
   --color-pink: var(--pink);
   --color-green: var(--green);
@@ -144,7 +146,7 @@ h3,
     width: 14px;
     height: 14px;
     border-radius: 50%;
-    background-color: var(--muted);
+    background-color: var(--muted-foreground);
     transition:
       transform 0.2s ease,
       background-color 0.2s;
@@ -229,7 +231,7 @@ a {
   width: 2rem;
   height: 2rem;
   border-radius: 4px;
-  color: var(--muted);
+  color: var(--muted-foreground);
   &:hover {
     color: var(--cyan);
     background-color: var(--surface-2);

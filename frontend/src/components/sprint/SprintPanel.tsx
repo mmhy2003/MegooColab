@@ -31,20 +31,20 @@ export function TaskRow({
       className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-surface px-2 py-1.5 text-sm last:border-0"
     >
       {!disabled && (
-        <button type="button" className="cursor-grab text-muted" aria-label={`Drag ${task.key}`} {...attributes} {...listeners}>
+        <button type="button" className="cursor-grab text-muted-foreground" aria-label={`Drag ${task.key}`} {...attributes} {...listeners}>
           <GripVertical size={14} aria-hidden />
         </button>
       )}
-      <Icon size={12} className="text-muted" aria-hidden />
-      <span className="w-16 shrink-0 text-xs text-muted">{task.key}</span>
+      <Icon size={12} className="text-muted-foreground" aria-hidden />
+      <span className="w-16 shrink-0 text-xs text-muted-foreground">{task.key}</span>
       {/* at least 10rem: on a phone the title moves to its own line and wraps; wider, it stays on one line */}
       <button type="button" className="min-w-40 flex-1 text-left break-words hover:text-cyan-ink sm:truncate" onClick={() => onOpen(task.key)}>
         {task.title}
       </button>
-      <span className={`text-[11px] ${task.column_category === "done" ? "text-green-ink" : "text-muted"}`}>
+      <span className={`text-[11px] ${task.column_category === "done" ? "text-green-ink" : "text-muted-foreground"}`}>
         {task.column_category === "done" ? "done" : ""}
       </span>
-      <span className="w-8 text-right text-xs text-muted" aria-label={`${task.story_points ?? 0} points`}>{task.story_points ?? "–"}</span>
+      <span className="w-8 text-right text-xs text-muted-foreground" aria-label={`${task.story_points ?? 0} points`}>{task.story_points ?? "–"}</span>
       {!disabled && (
         <select
           aria-label={`Move ${task.key} to`}
@@ -85,14 +85,14 @@ export function DropZone({
     <section ref={setNodeRef} className={`card overflow-hidden ${isOver ? "border-cyan glow-box" : ""}`} aria-label={typeof title === "string" ? title : undefined}>
       <header className="flex flex-wrap items-center gap-3 border-b border-line bg-surface-2 px-3 py-2">
         <h2 className="text-sm text-cyan-ink">{title}</h2>
-        <span className="text-xs text-muted">{tasks.length} tasks · {points} points</span>
+        <span className="text-xs text-muted-foreground">{tasks.length} tasks · {points} points</span>
         {meta}
         <span className="flex-1" />
         {actions}
       </header>
       {top}
       <ul className="min-h-10">{children}</ul>
-      {tasks.length === 0 && <p className="px-3 py-3 text-xs text-muted">Drag tasks here.</p>}
+      {tasks.length === 0 && <p className="px-3 py-3 text-xs text-muted-foreground">Drag tasks here.</p>}
     </section>
   );
 }

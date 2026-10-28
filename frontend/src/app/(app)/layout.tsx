@@ -14,7 +14,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useRealtime();
 
   if (!user) {
-    return <div className="grid min-h-screen place-items-center text-sm text-muted">Loading…</div>;
+    return <div className="grid min-h-screen place-items-center text-sm text-muted-foreground">Loading…</div>;
   }
   return (
     <div className="flex min-h-screen">

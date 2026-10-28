@@ -67,13 +67,13 @@ export default function TeamsPage() {
         {teams.data?.map((t) => (
           <Link key={t.id} href={`/teams/${t.id}`} className="card block p-4 text-fg no-underline hover:glow-box">
             <h2 className="text-sm text-cyan-ink">{t.name}</h2>
-            {t.description && <p className="mt-1 line-clamp-2 text-sm text-muted">{t.description}</p>}
-            <p className="mt-3 text-xs text-muted">
+            {t.description && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{t.description}</p>}
+            <p className="mt-3 text-xs text-muted-foreground">
               {t.member_count} members · {t.project_count} projects
             </p>
           </Link>
         ))}
-        {teams.data?.length === 0 && <p className="text-sm text-muted">No teams yet.</p>}
+        {teams.data?.length === 0 && <p className="text-sm text-muted-foreground">No teams yet.</p>}
       </div>
       {creating && <NewTeamDialog onClose={() => setCreating(false)} />}
     </div>

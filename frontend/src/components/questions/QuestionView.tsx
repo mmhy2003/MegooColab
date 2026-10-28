@@ -21,7 +21,7 @@ export function QuestionView({ question: q }: { question: Question }) {
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="font-mono">{q.ref}</span>
           <span>to {q.target.name}</span>
           {q.from_task && (
@@ -39,7 +39,7 @@ export function QuestionView({ question: q }: { question: Question }) {
           <Badge tone={STATUS_TONE[q.status as QuestionStatus] ?? "muted"}>{statusLine(q)}</Badge>
         </p>
         {q.status === "queued" && q.reject_reason && (
-          <p className="text-xs text-muted">A draft was rejected: {q.reject_reason}</p>
+          <p className="text-xs text-muted-foreground">A draft was rejected: {q.reject_reason}</p>
         )}
       </header>
 
@@ -47,7 +47,7 @@ export function QuestionView({ question: q }: { question: Question }) {
         <p className="text-sm break-words whitespace-pre-wrap">{q.body}</p>
         {q.context && (
           <details>
-            <summary className="cursor-pointer text-xs text-muted">Context</summary>
+            <summary className="cursor-pointer text-xs text-muted-foreground">Context</summary>
             <p className="mt-1 text-sm break-words whitespace-pre-wrap">{q.context}</p>
           </details>
         )}

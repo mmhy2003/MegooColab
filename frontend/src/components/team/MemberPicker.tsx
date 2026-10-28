@@ -53,7 +53,7 @@ export function MemberPicker({
               <input type="checkbox" aria-label={u.name} checked={chosen.has(u.id)} onChange={() => toggle(u.id)} />
               <Avatar name={u.name} />
               <span className="flex-1">{u.name}</span>
-              <span className="text-xs text-muted">{u.email}</span>
+              <span className="text-xs text-muted-foreground">{u.email}</span>
             </label>
           </li>
         ))}

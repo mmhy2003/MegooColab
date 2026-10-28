@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 
-const TOKENS = ["chart-1", "chart-2", "muted", "line", "fg", "surface"] as const;
-export type ThemeColors = Record<(typeof TOKENS)[number], string>;
+// chart colour name -> the CSS variable it reads (grey text is --muted-foreground, shadcn's name)
+const TOKENS = { "chart-1": "chart-1", "chart-2": "chart-2", muted: "muted-foreground", line: "line", fg: "fg", surface: "surface" } as const;
+export type ThemeColors = Record<keyof typeof TOKENS, string>;
 
 function read(): ThemeColors {
   const style = getComputedStyle(document.documentElement);
-  return Object.fromEntries(TOKENS.map((t) => [t, style.getPropertyValue(`--${t}`).trim()])) as ThemeColors;
+  return Object.fromEntries(
+    Object.entries(TOKENS).map(([name, variable]) => [name, style.getPropertyValue(`--${variable}`).trim()]),
+  ) as ThemeColors;
 }
 
 /** Resolved token colors for SVG chart libraries (which need literal colors), updated on theme change. */

@@ -39,7 +39,7 @@ function toForm(settings: AdminSettings): Form {
 
 export default function AdminSettingsPage() {
   const settings = useQuery({ queryKey: qk.adminSettings(), queryFn: () => api<AdminSettings>("/api/admin/settings") });
-  if (!settings.data) return <p className="text-sm text-muted">Loading…</p>;
+  if (!settings.data) return <p className="text-sm text-muted-foreground">Loading…</p>;
   return (
     <div className="max-w-xl space-y-4">
       <SettingsForm settings={settings.data} />
@@ -92,7 +92,7 @@ function SettingsForm({ settings }: { settings: AdminSettings }) {
       >
         <Input label="Organization name" required value={form.name} onChange={(e) => set({ name: e.target.value })} />
         <fieldset className="space-y-3 border-t border-line pt-4">
-          <legend className="pr-2 text-xs tracking-wider text-muted uppercase">Email (SMTP)</legend>
+          <legend className="pr-2 text-xs tracking-wider text-muted-foreground uppercase">Email (SMTP)</legend>
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2"><Input label="Host" value={form.host} onChange={(e) => set({ host: e.target.value })} /></div>
             <Input label="Port" inputMode="numeric" value={form.port} onChange={(e) => set({ port: e.target.value })} />
@@ -111,7 +111,7 @@ function SettingsForm({ settings }: { settings: AdminSettings }) {
           </label>
         </fieldset>
         <fieldset className="space-y-3 border-t border-line pt-4">
-          <legend className="pr-2 text-xs tracking-wider text-muted uppercase">Dreaming</legend>
+          <legend className="pr-2 text-xs tracking-wider text-muted-foreground uppercase">Dreaming</legend>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.dreamEnabled} onChange={(e) => set({ dreamEnabled: e.target.checked })} /> Run dreaming every night
           </label>
@@ -126,7 +126,7 @@ function SettingsForm({ settings }: { settings: AdminSettings }) {
           />
         </fieldset>
         <fieldset className="space-y-3 border-t border-line pt-4">
-          <legend className="pr-2 text-xs tracking-wider text-muted uppercase">New projects</legend>
+          <legend className="pr-2 text-xs tracking-wider text-muted-foreground uppercase">New projects</legend>
           <Select
             label="Default finishing option"
             value={form.defaults.finishing_option}
@@ -145,7 +145,7 @@ function SettingsForm({ settings }: { settings: AdminSettings }) {
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.defaults.commit_docs_to_repo} onChange={(e) => setDefault({ commit_docs_to_repo: e.target.checked })} /> Commit design and plan documents to the repository
           </label>
-          <p className="text-xs text-muted">Existing projects keep their own settings.</p>
+          <p className="text-xs text-muted-foreground">Existing projects keep their own settings.</p>
         </fieldset>
         {status && <p role="status" className={`text-sm ${status.ok ? "text-green-ink" : "text-pink"}`}>{status.text}</p>}
         <Button type="submit">Save</Button>

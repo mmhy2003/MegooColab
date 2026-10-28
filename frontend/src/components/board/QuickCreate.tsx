@@ -21,14 +21,14 @@ export function QuickCreate({ columnName, onCreate }: { columnName: string; onCr
         }
       }}
     >
-      <Plus size={14} className="text-muted" aria-hidden />
+      <Plus size={14} className="text-muted-foreground" aria-hidden />
       <input
         aria-label={`New task in ${columnName}`}
         placeholder="Add a task"
         disabled={busy}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-1 text-sm placeholder:text-muted focus:border-cyan focus:bg-surface focus:outline-none"
+        className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-1 text-sm placeholder:text-muted-foreground focus:border-cyan focus:bg-surface focus:outline-none"
       />
     </form>
   );

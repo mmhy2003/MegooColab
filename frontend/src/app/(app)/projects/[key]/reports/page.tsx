@@ -50,7 +50,7 @@ export default function ReportsPage() {
       {sprint ? (
         <BurndownChart points={burndown.data ?? []} sprintName={sprint.name} />
       ) : (
-        <p className="card p-6 text-sm text-muted">No sprint has started yet.</p>
+        <p className="card p-6 text-sm text-muted-foreground">No sprint has started yet.</p>
       )}
       <VelocityChart points={velocity.data ?? []} />
     </div>

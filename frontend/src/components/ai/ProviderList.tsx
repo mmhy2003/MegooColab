@@ -84,14 +84,14 @@ export function ProviderList() {
           ) : (
             <li key={p.id} className="flex flex-wrap items-center gap-3 py-3 text-sm">
               <span className="font-semibold">{p.name}</span>
-              <span className="font-mono text-xs text-muted">{p.kind}</span>
-              {p.api_base && <span className="min-w-0 truncate font-mono text-xs text-muted">{p.api_base}</span>}
+              <span className="font-mono text-xs text-muted-foreground">{p.kind}</span>
+              {p.api_base && <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{p.api_base}</span>}
               {p.has_key ? (
                 <span className="inline-flex items-center gap-1 text-xs text-green-ink">
                   <KeyRound size={12} aria-hidden /> Key saved
                 </span>
               ) : (
-                <span className="text-xs text-muted">No key</span>
+                <span className="text-xs text-muted-foreground">No key</span>
               )}
               <span className="ml-auto flex gap-2">
                 <Button variant="ghost" onClick={() => setEditing(p.id)}>
@@ -105,7 +105,7 @@ export function ProviderList() {
           ),
         )}
         {providers.data?.length === 0 && editing !== "new" && (
-          <li className="py-3 text-sm text-muted">No providers yet. Semantic search stays off until one is set up.</li>
+          <li className="py-3 text-sm text-muted-foreground">No providers yet. Semantic search stays off until one is set up.</li>
         )}
       </ul>
     </section>
@@ -173,7 +173,7 @@ function ProviderForm({
           </Button>
         </p>
       )}
-      {hasKey && d.replaceKey && <p className="text-xs text-muted">Leave empty to keep the saved key.</p>}
+      {hasKey && d.replaceKey && <p className="text-xs text-muted-foreground">Leave empty to keep the saved key.</p>}
       {error && (
         <p role="alert" className="text-sm text-pink">
           {error}

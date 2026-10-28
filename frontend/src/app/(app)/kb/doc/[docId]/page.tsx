@@ -28,7 +28,7 @@ export default function KbDocumentPage() {
       </div>
     );
   }
-  if (!doc.data) return <p className="text-sm text-muted">Loading…</p>;
+  if (!doc.data) return <p className="text-sm text-muted-foreground">Loading…</p>;
   const d = doc.data;
 
   return (
@@ -52,7 +52,7 @@ export default function KbDocumentPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab === t}
-                className={`px-3 py-1 text-sm capitalize ${tab === t ? "border-b-2 border-cyan text-cyan-ink" : "text-muted"}`}
+                className={`px-3 py-1 text-sm capitalize ${tab === t ? "border-b-2 border-cyan text-cyan-ink" : "text-muted-foreground"}`}
                 onClick={() => setTab(t)}
               >
                 {t}

@@ -65,7 +65,7 @@ export default function TeamPage() {
       />
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}
       <section>
-        <h2 className="mb-2 text-xs tracking-widest text-muted uppercase">Members ({t.members.length})</h2>
+        <h2 className="mb-2 text-xs tracking-widest text-muted-foreground uppercase">Members ({t.members.length})</h2>
         <ul className="card divide-y divide-line">
           {t.members.map((m) => (
             <li key={m.id} className="flex items-center gap-2 px-3 py-2 text-sm">
@@ -73,34 +73,34 @@ export default function TeamPage() {
               <Badge>{m.role}</Badge>
             </li>
           ))}
-          {t.members.length === 0 && <li className="px-3 py-4 text-sm text-muted">No members yet.</li>}
+          {t.members.length === 0 && <li className="px-3 py-4 text-sm text-muted-foreground">No members yet.</li>}
         </ul>
       </section>
       <section>
-        <h2 className="mb-2 text-xs tracking-widest text-muted uppercase">Projects ({t.projects.length})</h2>
+        <h2 className="mb-2 text-xs tracking-widest text-muted-foreground uppercase">Projects ({t.projects.length})</h2>
         <ul className="flex flex-wrap gap-2">
           {t.projects.map((p) => (
             <li key={p.id}>
               <Link href={`/projects/${p.key}/board`} className="card inline-block px-3 py-2 text-sm no-underline hover:glow-box">
-                <span className="text-muted">{p.key}</span> {p.name}
+                <span className="text-muted-foreground">{p.key}</span> {p.name}
               </Link>
             </li>
           ))}
-          {t.projects.length === 0 && <li className="text-sm text-muted">No projects yet.</li>}
+          {t.projects.length === 0 && <li className="text-sm text-muted-foreground">No projects yet.</li>}
         </ul>
       </section>
       <section>
-        <h2 className="mb-2 text-xs tracking-widest text-muted uppercase">Agents ({t.agents.length})</h2>
+        <h2 className="mb-2 text-xs tracking-widest text-muted-foreground uppercase">Agents ({t.agents.length})</h2>
         <ul className="card divide-y divide-line">
           {t.agents.map((a) => (
             <li key={a.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
               <span className="flex-1">{a.name}</span>
-              <span className="text-muted">{a.owner.name}</span>
+              <span className="text-muted-foreground">{a.owner.name}</span>
               <Badge>{PROGRAM_LABEL[a.program]}</Badge>
               <AgentStatusDot status={a.status} />
             </li>
           ))}
-          {t.agents.length === 0 && <li className="px-3 py-4 text-sm text-muted">No agents yet.</li>}
+          {t.agents.length === 0 && <li className="px-3 py-4 text-sm text-muted-foreground">No agents yet.</li>}
         </ul>
       </section>
       {editing && users.data && (

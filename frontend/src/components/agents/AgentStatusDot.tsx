@@ -3,7 +3,7 @@ import { asAgentStatus, type AgentStatus } from "@/lib/agents";
 const STYLE: Record<AgentStatus, { dot: string; text: string; label: string }> = {
   online: { dot: "bg-green", text: "text-green-ink", label: "Online" },
   busy: { dot: "bg-cyan animate-pulse", text: "text-cyan-ink", label: "Busy" },
-  offline: { dot: "bg-muted", text: "text-muted", label: "Offline" },
+  offline: { dot: "bg-muted-foreground", text: "text-muted-foreground", label: "Offline" },
 };
 
 /** Status is always shown as text next to the dot, never by color alone. */

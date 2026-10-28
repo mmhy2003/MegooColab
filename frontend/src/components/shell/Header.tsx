@@ -26,14 +26,14 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
       <button type="button" className="icon-btn md:hidden" aria-label="Open menu" onClick={onMenu}>
         <Menu size={18} aria-hidden />
       </button>
-      <nav aria-label="Breadcrumb" className="min-w-0 flex-1 truncate text-xs text-muted">
+      <nav aria-label="Breadcrumb" className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
         {crumbs(pathname).map((c, i, all) => (
           <span key={c.href}>
             {i > 0 && <span className="mx-1">/</span>}
             {i === all.length - 1 ? (
               <span className="text-fg">{c.label}</span>
             ) : (
-              <Link href={c.href} className="text-muted no-underline hover:text-cyan-ink">
+              <Link href={c.href} className="text-muted-foreground no-underline hover:text-cyan-ink">
                 {c.label}
               </Link>
             )}

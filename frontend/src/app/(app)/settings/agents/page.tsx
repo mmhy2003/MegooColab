@@ -56,7 +56,7 @@ function AddAgentDialog({ onClose, onCreated }: { onClose: () => void; onCreated
             <option value="manual">Manual</option>
             <option value="auto">Auto</option>
           </Select>
-          <p className="mt-1 text-xs text-muted">{ANSWER_MODE_HELP[answerMode]}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{ANSWER_MODE_HELP[answerMode]}</p>
         </div>
         {error && <p role="alert" className="text-sm text-pink">{error}</p>}
         <div className="flex justify-end gap-2">
@@ -124,7 +124,7 @@ export default function AgentsPage() {
               onChanged={refresh}
             />
           ))}
-          {agents.data?.length === 0 && <li className="card px-3 py-6 text-center text-sm text-muted">No agents yet.</li>}
+          {agents.data?.length === 0 && <li className="card px-3 py-6 text-center text-sm text-muted-foreground">No agents yet.</li>}
         </ul>
       </div>
       <section className="card space-y-3 p-4">

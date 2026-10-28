@@ -28,7 +28,7 @@ export default function KnowledgeBasePage() {
       >
         <input
           aria-label="Search the Knowledge Base"
-          className="w-full rounded border border-line bg-surface-2 px-3 py-2 text-sm text-fg placeholder:text-muted focus:border-cyan focus:outline-none"
+          className="w-full rounded border border-line bg-surface-2 px-3 py-2 text-sm text-fg placeholder:text-muted-foreground focus:border-cyan focus:outline-none"
           placeholder="Search the Knowledge Base…"
           maxLength={500}
           value={q}
@@ -44,13 +44,13 @@ export default function KnowledgeBasePage() {
         const Icon = ICONS[kind];
         return (
           <section key={kind} className="mb-6">
-            <h2 className="mb-2 text-xs tracking-widest text-muted uppercase">{label}</h2>
+            <h2 className="mb-2 text-xs tracking-widest text-muted-foreground uppercase">{label}</h2>
             <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {group.map((s) => (
                 <Link key={s.id} href={`/kb/${s.id}`} className="card flex items-center gap-2 p-4 text-fg no-underline hover:glow-box">
                   <Icon size={16} aria-hidden className="shrink-0 text-cyan-ink" />
                   <span className="min-w-0 truncate text-sm">{s.name}</span>
-                  {!s.can_write && <span className="ml-auto text-xs text-muted">read only</span>}
+                  {!s.can_write && <span className="ml-auto text-xs text-muted-foreground">read only</span>}
                 </Link>
               ))}
             </div>

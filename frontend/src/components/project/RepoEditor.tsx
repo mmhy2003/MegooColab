@@ -37,8 +37,8 @@ export function RepoEditor({ projectKey, repos, onChanged }: { projectKey: strin
         {repos.map((r) => (
           <li key={r.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
             <span className="font-semibold">{r.name}</span>
-            <span className="min-w-0 flex-1 truncate text-muted">{r.url}</span>
-            <span className="text-xs text-muted">{r.provider} · {r.default_branch}</span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">{r.url}</span>
+            <span className="text-xs text-muted-foreground">{r.provider} · {r.default_branch}</span>
             <select
               aria-label={`Connection for ${r.name}`}
               title="The git connection that follows this repository's pull requests"
@@ -56,7 +56,7 @@ export function RepoEditor({ projectKey, repos, onChanged }: { projectKey: strin
             </button>
           </li>
         ))}
-        {repos.length === 0 && <li className="px-3 py-3 text-sm text-muted">No repositories linked yet.</li>}
+        {repos.length === 0 && <li className="px-3 py-3 text-sm text-muted-foreground">No repositories linked yet.</li>}
       </ul>
       <form
         className="flex flex-wrap items-end gap-2"

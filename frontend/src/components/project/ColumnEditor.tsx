@@ -87,7 +87,7 @@ export function ColumnEditor({
                 <option key={c} value={c}>{CATEGORY_LABEL[c]}</option>
               ))}
             </select>
-            <div className="flex items-center justify-between text-xs text-muted">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{col.task_count} tasks</span>
               <span className="flex">
                 <button type="button" className="icon-btn" aria-label={`Move ${col.name} left`} disabled={i === 0} onClick={() => move(i, -1)}>

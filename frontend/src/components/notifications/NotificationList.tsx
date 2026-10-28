@@ -25,8 +25,8 @@ export function NotificationItem({ n, onOpen }: { n: Notification; onOpen?: () =
         {!n.read_at && <span className="sr-only">Unread: </span>}
         {n.title}
       </Link>
-      {n.body && <p className="mt-0.5 truncate text-xs text-muted">{n.body}</p>}
-      <p className="mt-0.5 text-xs text-muted">{when(n.created_at)}</p>
+      {n.body && <p className="mt-0.5 truncate text-xs text-muted-foreground">{n.body}</p>}
+      <p className="mt-0.5 text-xs text-muted-foreground">{when(n.created_at)}</p>
     </li>
   );
 }
@@ -48,9 +48,9 @@ export function NotificationList() {
         </Button>
       </div>
       {list.isLoading ? (
-        <p className="text-sm text-muted">Loading…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-muted">No notifications yet.</p>
+        <p className="text-sm text-muted-foreground">No notifications yet.</p>
       ) : (
         <ul className="card divide-y divide-line p-1">
           {items.map((n) => (

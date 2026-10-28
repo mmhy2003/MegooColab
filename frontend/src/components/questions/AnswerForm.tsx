@@ -37,7 +37,7 @@ export function AnswerForm({ question }: { question: Question }) {
         }
       }}
     >
-      <label htmlFor="q-answer" className="text-xs tracking-wider text-muted uppercase">
+      <label htmlFor="q-answer" className="text-xs tracking-wider text-muted-foreground uppercase">
         Answer it yourself
       </label>
       <textarea
@@ -50,7 +50,7 @@ export function AnswerForm({ question }: { question: Question }) {
         onChange={(e) => setText(e.target.value)}
       />
       {question.status === "routed" && (
-        <p className="text-xs text-muted">Answering now stops the agent that is working on it.</p>
+        <p className="text-xs text-muted-foreground">Answering now stops the agent that is working on it.</p>
       )}
       <Button type="submit" disabled={busy || !text.trim()}>
         Post answer

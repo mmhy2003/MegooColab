@@ -18,12 +18,12 @@ export function TaskQuestions({ taskKey, canAsk = true }: { taskKey: string; can
   const [asking, setAsking] = useState(false);
   return (
     <section className="space-y-2">
-      <h3 className="text-[11px] tracking-widest text-muted uppercase">Questions to other projects</h3>
+      <h3 className="text-[11px] tracking-widest text-muted-foreground uppercase">Questions to other projects</h3>
       {!!questions.data?.length && (
         <ul aria-label="Questions to other projects" className="space-y-1">
           {questions.data.map((q) => (
             <li key={q.id} className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="font-mono text-xs text-muted">{q.ref}</span>
+              <span className="font-mono text-xs text-muted-foreground">{q.ref}</span>
               <Link href={`/questions/${q.id}`} className="min-w-0 flex-1 truncate">
                 {q.title}
               </Link>

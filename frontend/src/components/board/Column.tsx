@@ -31,7 +31,7 @@ export function BoardColumn({
       className={`flex w-72 shrink-0 flex-col rounded border bg-surface-2/50 ${isOver ? "border-cyan" : "border-line"}`}
     >
       <header className="flex items-center gap-2 px-3 pt-3 pb-2">
-        <h2 className="font-display text-[11px] tracking-widest text-muted uppercase">{column.name}</h2>
+        <h2 className="font-display text-[11px] tracking-widest text-muted-foreground uppercase">{column.name}</h2>
         <span className="text-xs text-pink">{tasks.length}</span>
         <span className="sr-only">({CATEGORY_LABEL[column.category]})</span>
       </header>

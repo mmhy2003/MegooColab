@@ -71,7 +71,7 @@ function CreateTokenDialog({ onClose }: { onClose: () => void }) {
         >
           <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Laptop runner" required maxLength={100} />
           <fieldset className="space-y-1">
-            <legend className="text-xs tracking-wider text-muted uppercase">Scopes</legend>
+            <legend className="text-xs tracking-wider text-muted-foreground uppercase">Scopes</legend>
             {(["mcp", "runner"] as const).map((s) => (
               <label key={s} className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={scopes.includes(s)} onChange={() => toggle(s)} />
@@ -113,7 +113,7 @@ export default function TokensPage() {
         {error && <p role="alert" className="mb-2 text-sm text-pink">{error}</p>}
         <div className="card overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="text-xs tracking-wider text-muted uppercase">
+            <thead className="text-xs tracking-wider text-muted-foreground uppercase">
               <tr className="border-b border-line">
                 <th className="px-3 py-2 font-normal">Name</th>
                 <th className="px-3 py-2 font-normal">Token</th>
@@ -127,7 +127,7 @@ export default function TokensPage() {
               {active.map((t) => (
                 <tr key={t.id} className="border-b border-line last:border-0">
                   <td className="px-3 py-2">{t.name}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-muted">{t.prefix}…</td>
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{t.prefix}…</td>
                   <td className="px-3 py-2">
                     <span className="flex gap-1">
                       {t.scopes.map((s) => (
@@ -135,8 +135,8 @@ export default function TokensPage() {
                       ))}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-muted">{when(t.last_used_at, "Never")}</td>
-                  <td className="px-3 py-2 text-muted">{when(t.expires_at, "Never")}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{when(t.last_used_at, "Never")}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{when(t.expires_at, "Never")}</td>
                   <td className="px-3 py-2 text-right">
                     <Button
                       variant="danger"
@@ -157,7 +157,7 @@ export default function TokensPage() {
                 </tr>
               ))}
               {tokens.data && active.length === 0 && (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-muted">No tokens yet.</td></tr>
+                <tr><td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">No tokens yet.</td></tr>
               )}
             </tbody>
           </table>

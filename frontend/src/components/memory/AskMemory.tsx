@@ -45,7 +45,7 @@ export function AskMemory() {
         }}
       >
         <div className="flex flex-col gap-1">
-          <label htmlFor="mem-question" className="text-xs tracking-wider text-muted uppercase">
+          <label htmlFor="mem-question" className="text-xs tracking-wider text-muted-foreground uppercase">
             Question
           </label>
           <textarea
@@ -61,7 +61,7 @@ export function AskMemory() {
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex flex-col gap-1">
-            <label htmlFor="mem-project" className="text-xs tracking-wider text-muted uppercase">
+            <label htmlFor="mem-project" className="text-xs tracking-wider text-muted-foreground uppercase">
               Project (optional)
             </label>
             <select
@@ -97,7 +97,7 @@ export function AskMemory() {
             <ol aria-label="Sources" className="space-y-1 text-sm">
               {answer.cited.map((c, i) => (
                 <li key={c.id} className="flex gap-2">
-                  <span className="font-mono text-xs text-muted">[{i + 1}]</span>
+                  <span className="font-mono text-xs text-muted-foreground">[{i + 1}]</span>
                   <span>
                     {c.text} —{" "}
                     <Link href={`/memory/entity/${c.entity_id}`} className="text-xs">

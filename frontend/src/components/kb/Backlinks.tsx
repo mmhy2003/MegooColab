@@ -14,13 +14,13 @@ export function Backlinks({ docId }: { docId: string }) {
   });
   return (
     <section aria-label="Backlinks">
-      <h2 className="mb-2 text-xs tracking-widest text-muted uppercase">Linked from</h2>
-      {refs.data?.length === 0 && <p className="text-sm text-muted">No other documents link here.</p>}
+      <h2 className="mb-2 text-xs tracking-widest text-muted-foreground uppercase">Linked from</h2>
+      {refs.data?.length === 0 && <p className="text-sm text-muted-foreground">No other documents link here.</p>}
       <ul className="space-y-1">
         {(refs.data ?? []).map((r) => (
           <li key={r.id} className="flex flex-wrap items-baseline gap-2 text-sm">
             <Link href={`/kb/doc/${r.id}`}>{r.title}</Link>
-            <span className="text-xs text-muted">{r.space.name}</span>
+            <span className="text-xs text-muted-foreground">{r.space.name}</span>
           </li>
         ))}
       </ul>

@@ -94,7 +94,7 @@ export function AskQuestion({ taskKey, onAsked }: { taskKey?: string; onAsked?: 
           ))}
         </Select>
         <div className="flex flex-col gap-1">
-          <label htmlFor="q-body" className="text-xs tracking-wider text-muted uppercase">
+          <label htmlFor="q-body" className="text-xs tracking-wider text-muted-foreground uppercase">
             Question
           </label>
           <textarea
@@ -112,7 +112,7 @@ export function AskQuestion({ taskKey, onAsked }: { taskKey?: string; onAsked?: 
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label htmlFor="q-context" className="text-xs tracking-wider text-muted uppercase">
+          <label htmlFor="q-context" className="text-xs tracking-wider text-muted-foreground uppercase">
             Context (optional)
           </label>
           <textarea
@@ -134,16 +134,16 @@ export function AskQuestion({ taskKey, onAsked }: { taskKey?: string; onAsked?: 
       {suggestions !== null && (
         <div className="space-y-2">
           {suggestions.length === 0 ? (
-            <p className="text-sm text-muted">No existing answers found.</p>
+            <p className="text-sm text-muted-foreground">No existing answers found.</p>
           ) : (
             <>
-              <p className="text-sm text-muted">These may already answer it:</p>
+              <p className="text-sm text-muted-foreground">These may already answer it:</p>
               <ul aria-label="Existing answers" className="space-y-2">
                 {suggestions.map((s) => (
                   <li key={`${s.kind}-${s.id}`} className="text-sm">
                     <Link href={s.link}>{s.title}</Link>
-                    <span className="ml-2 text-[11px] text-muted uppercase">{SUGGESTION_KIND[s.kind] ?? s.kind}</span>
-                    {s.snippet && <p className="text-xs text-muted">{s.snippet}</p>}
+                    <span className="ml-2 text-[11px] text-muted-foreground uppercase">{SUGGESTION_KIND[s.kind] ?? s.kind}</span>
+                    {s.snippet && <p className="text-xs text-muted-foreground">{s.snippet}</p>}
                   </li>
                 ))}
               </ul>

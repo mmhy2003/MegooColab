@@ -106,7 +106,7 @@ function ConnectionRow({ c, onEdit }: { c: GitConnection; onEdit: () => void }) 
     <li className="space-y-2 px-3 py-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">{c.name}</span>
-        <span className="text-xs text-muted">{KIND_LABEL[c.kind]} · {c.base_url}</span>
+        <span className="text-xs text-muted-foreground">{KIND_LABEL[c.kind]} · {c.base_url}</span>
         <span className="flex-1" />
         <Button
           variant="ghost"
@@ -141,7 +141,7 @@ function ConnectionRow({ c, onEdit }: { c: GitConnection; onEdit: () => void }) 
       {c.webhook_secret_set ? (
         <CopyField label="Webhook URL" value={webhookUrl(c.id)} />
       ) : (
-        <p className="text-xs text-muted">No webhook secret: pull requests are checked every 2 minutes.</p>
+        <p className="text-xs text-muted-foreground">No webhook secret: pull requests are checked every 2 minutes.</p>
       )}
     </li>
   );
@@ -152,14 +152,14 @@ export function GitConnections() {
   const connections = useGitConnections();
   const [editing, setEditing] = useState<GitConnection | "new" | null>(null);
   if (connections.error) return <p className="text-sm text-pink">{errorMessage(connections.error)}</p>;
-  if (!connections.data) return <p className="text-sm text-muted">Loading…</p>;
+  if (!connections.data) return <p className="text-sm text-muted-foreground">Loading…</p>;
   return (
     <div className="space-y-4">
       <ul className="card divide-y divide-line">
         {connections.data.map((c) => (
           <ConnectionRow key={c.id} c={c} onEdit={() => setEditing(c)} />
         ))}
-        {connections.data.length === 0 && <li className="px-3 py-3 text-sm text-muted">No git connections yet.</li>}
+        {connections.data.length === 0 && <li className="px-3 py-3 text-sm text-muted-foreground">No git connections yet.</li>}
       </ul>
       {editing ? (
         <ConnectionForm key={editing === "new" ? "new" : editing.id} editing={editing === "new" ? null : editing} onDone={() => setEditing(null)} />

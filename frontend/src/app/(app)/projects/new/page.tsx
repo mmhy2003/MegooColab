@@ -50,7 +50,7 @@ export default function NewProjectPage() {
         />
         <Textarea label="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
         <fieldset>
-          <legend className="mb-1 text-xs tracking-wider text-muted uppercase">Teams</legend>
+          <legend className="mb-1 text-xs tracking-wider text-muted-foreground uppercase">Teams</legend>
           <div className="flex flex-wrap gap-3">
             {teams.data?.map((t) => (
               <label key={t.id} className="flex items-center gap-1.5 text-sm">
@@ -62,7 +62,7 @@ export default function NewProjectPage() {
                 {t.name}
               </label>
             ))}
-            {teams.data?.length === 0 && <p className="text-sm text-muted">Create a team first.</p>}
+            {teams.data?.length === 0 && <p className="text-sm text-muted-foreground">Create a team first.</p>}
           </div>
         </fieldset>
         {error && <p role="alert" className="text-sm text-pink">{error}</p>}
