@@ -24,7 +24,7 @@ export default function SetupPage() {
       submitLabel="Create organization"
       onSubmit={async (password) => {
         await api("/api/setup", { method: "POST", json: { org_name: org, name, email, password } });
-        router.push("/projects");
+        router.push("/");
       }}
     >
       <h1 className="text-center text-sm text-muted-foreground">Welcome. Set up your organization and admin account.</h1>

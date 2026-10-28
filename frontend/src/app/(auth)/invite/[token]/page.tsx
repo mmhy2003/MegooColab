@@ -13,7 +13,7 @@ export default function InvitePage() {
       submitLabel="Join"
       onSubmit={async (password) => {
         await api("/api/auth/accept-invite", { method: "POST", json: { token, password } });
-        router.push("/projects");
+        router.push("/");
       }}
     >
       <h1 className="text-center text-sm text-muted-foreground">You&apos;re invited. Choose a password to join.</h1>

@@ -17,7 +17,7 @@ export async function setupOrSignIn(page: Page) {
     await page.getByLabel("New password", { exact: true }).fill(ADMIN.password);
     await page.getByLabel("Confirm new password").fill(ADMIN.password);
     await page.getByRole("button", { name: "Create organization" }).click();
-    await expect(page).toHaveURL(/\/projects$/);
+    await expect(page).toHaveURL(/^https?:\/\/[^/]+\/$/); // the dashboard
     return;
   }
   const res = await page.request.post("/api/auth/login", {

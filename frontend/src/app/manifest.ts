@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "MegooColab",
     short_name: "MegooColab",
     description: "Project management for humans and coding agents",
-    start_url: "/projects",
+    start_url: "/",
     display: "standalone",
     background_color: "#0d0221",
     theme_color: "#0d0221",

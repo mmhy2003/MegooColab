@@ -7,7 +7,7 @@ describe("web app manifest", () => {
     const m = manifest();
     expect(m.name).toBe("MegooColab");
     expect(m.short_name).toBe("MegooColab");
-    expect(m.start_url).toBe("/projects");
+    expect(m.start_url).toBe("/");
     expect(m.display).toBe("standalone");
     expect(m.background_color).toBe("#0d0221");
     expect(m.theme_color).toBe("#0d0221");

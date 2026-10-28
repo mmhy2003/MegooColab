@@ -86,7 +86,7 @@ export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigat
     // p-2 and the links' px-3 put the icons in the middle of the collapsed rail (w-14), so they stay put as it opens
     <nav aria-label="Main" className="flex h-full flex-col gap-1 p-2">
       {/* text-base and px-2: the logo and the name fit the 14rem sidebar on one line */}
-      <Link href="/projects" className="mb-4 px-2 py-2 text-base no-underline" onClick={onNavigate}>
+      <Link href="/" className="mb-4 px-2 py-2 text-base no-underline" onClick={onNavigate}>
         <Brand logoSize={28} nameClassName={collapsed ? LABEL_HIDDEN : ""} />
       </Link>
       <DashboardLink onNavigate={onNavigate} collapsed={collapsed} />

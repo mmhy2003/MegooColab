@@ -20,6 +20,7 @@
   --cyan-ink: #007a8f;
   --green-ink: #1a7a27;
   --amber: #a16207;
+  --violet: #6d28d9;
   --on-accent: #ffffff;
   /* chart series, validated (dataviz validate_palette) against #FFFFFF / #170838 */
   --chart-1: #0090a8;
@@ -47,6 +48,7 @@
   --cyan-ink: #05d9e8;
   --green-ink: #7cff6b;
   --amber: #ffd166;
+  --violet: #b18cff;
   --on-accent: #0d0221;
   --chart-1: #0aa5c0;
   --chart-2: #ff2a6d;
@@ -116,6 +118,7 @@
   --color-cyan-ink: var(--cyan-ink);
   --color-green-ink: var(--green-ink);
   --color-amber: var(--amber);
+  --color-violet: var(--violet);
   --color-on-accent: var(--on-accent);
   --font-display: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;

@@ -76,7 +76,7 @@ test("foundation smoke", async ({ browser }) => {
   await member.getByLabel("New password", { exact: true }).fill(MEMBER.password);
   await member.getByLabel("Confirm new password").fill(MEMBER.password);
   await member.getByRole("button", { name: "Join" }).click();
-  await expect(member).toHaveURL(/\/projects$/);
+  await expect(member).toHaveURL(/^https?:\/\/[^/]+\/$/); // the dashboard
   await member.goto("/projects/PAY/board");
   await expect(column(member, "To Do").getByText("Sync orders")).toBeVisible();
 

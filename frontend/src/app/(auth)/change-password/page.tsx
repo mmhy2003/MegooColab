@@ -16,7 +16,7 @@ export default function ChangePasswordPage() {
           method: "POST",
           json: { current_password: current, new_password: password },
         });
-        router.push("/projects");
+        router.push("/");
       }}
     >
       <h1 className="text-center text-sm text-muted-foreground">Choose your own password to continue.</h1>

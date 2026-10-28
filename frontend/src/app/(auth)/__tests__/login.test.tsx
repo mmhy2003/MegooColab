@@ -54,7 +54,7 @@ describe("LoginForm", () => {
     const code = await screen.findByLabelText(/authenticator code/i);
     fireEvent.change(code, { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/projects"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
     const loginCalls = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/api/auth/login"));
     const body = JSON.parse(String(loginCalls.at(-1)![1]!.body));
     expect(body.totp_code).toBe("123456");
@@ -93,7 +93,7 @@ describe("LoginForm", () => {
     routeFetch([json(200, { user: { id: "1" } })]);
     render(<LoginForm />);
     await submit();
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/projects"));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
   });
 
   it("sends first-run installs to setup", async () => {
@@ -106,7 +106,7 @@ describe("LoginForm", () => {
 describe("safeNext", () => {
   it.each(["https://evil.example", "//evil.example", "/\\evil.example", "/\\/evil.example", "javascript:alert(1)"])(
     "rejects %s",
-    (next) => expect(safeNext(next)).toBe("/projects"),
+    (next) => expect(safeNext(next)).toBe("/"),
   );
   it("keeps same-site paths", () => expect(safeNext("/projects/PAY/board?task=PAY-1")).toBe("/projects/PAY/board?task=PAY-1"));
 });
