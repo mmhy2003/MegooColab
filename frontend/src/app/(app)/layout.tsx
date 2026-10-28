@@ -21,8 +21,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <Sidebar user={user} />
       </aside>
       {menuOpen && (
-        <div className="fixed inset-0 z-30 md:hidden" role="dialog" aria-label="Menu">
-          <button type="button" aria-label="Close menu" className="absolute inset-0 bg-black/50" onClick={() => setMenuOpen(false)} />
+        <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-label="Menu">
+          <button type="button" aria-label="Close menu" className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMenuOpen(false)} />
           <aside className="relative h-full w-64 border-r border-line bg-surface">
             <Sidebar user={user} onNavigate={() => setMenuOpen(false)} />
           </aside>

@@ -58,7 +58,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
   // each group's first option index, for keyboard selection across groups
   const starts = groups.map((_, gi) => groups.slice(0, gi).reduce((n, g) => n + g.hits.length, 0));
   return (
-    <Dialog open={open} onClose={onClose} title="Search" wide>
+    <Dialog open={open} onClose={onClose} title="Search" wide dismissible>
       <div className="space-y-3">
         <input
           autoFocus

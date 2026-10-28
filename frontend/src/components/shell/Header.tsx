@@ -9,6 +9,7 @@ import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { SearchLauncher } from "@/components/search/SearchBox";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar } from "@/components/ui/Avatar";
+import { Backdrop } from "@/components/ui/Backdrop";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
 
@@ -21,7 +22,7 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   return (
-    <header className="flex h-12 items-center gap-2 border-b border-line bg-surface-2/80 px-3 backdrop-blur">
+    <header className="relative z-30 flex h-12 items-center gap-2 border-b border-line bg-surface-2/80 px-3 backdrop-blur">
       <button type="button" className="icon-btn md:hidden" aria-label="Open menu" onClick={onMenu}>
         <Menu size={18} aria-hidden />
       </button>
@@ -53,6 +54,7 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
           <Avatar name={user.name} size={22} />
           <span className="hidden sm:inline">{user.name}</span>
         </button>
+        {open && <Backdrop onClose={() => setOpen(false)} />}
         {open && (
           <div role="menu" className="card absolute right-0 z-20 mt-1 w-44 p-1" onMouseLeave={() => setOpen(false)}>
             <Link role="menuitem" href="/settings/profile" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded px-3 py-2 text-sm text-fg no-underline hover:bg-surface-2">

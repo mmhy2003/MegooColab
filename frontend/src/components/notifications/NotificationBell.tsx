@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { NotificationItem } from "@/components/notifications/NotificationList";
+import { Backdrop } from "@/components/ui/Backdrop";
 import { useMarkAllRead, useNotifications, useUnreadCount } from "@/lib/notifications";
 
 const SHOWN = 10;
@@ -33,6 +34,7 @@ export function NotificationBell() {
           </span>
         )}
       </button>
+      {open && <Backdrop onClose={() => setOpen(false)} />}
       {open && (
         <div role="dialog" aria-label="Notifications" className="card absolute right-0 z-20 mt-1 w-80 p-1">
           <div className="flex items-center justify-between px-3 py-2">

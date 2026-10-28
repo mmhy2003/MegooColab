@@ -24,7 +24,8 @@ export function TaskDrawer({
   const [projectKey, number] = taskKey.split("-");
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={taskKey}>
-      <button type="button" aria-label="Close task" className="absolute inset-0 bg-black/50" onClick={onClose} />
+      {/* No close on an outside click: the drawer holds a comment box and editors, so ✕ or Escape closes it */}
+      <div data-backdrop aria-hidden className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div className="card absolute inset-y-0 right-0 w-full max-w-4xl rounded-none border-y-0 border-r-0">
         <TaskView
           taskKey={taskKey}

@@ -194,7 +194,7 @@ export default function AdminUsersPage() {
       </div>
       {dialog && <NewUserDialog mode={dialog} onClose={() => setDialog(null)} />}
       {resetLink && (
-        <Dialog open title={`Link for ${resetLink.name}`} onClose={() => setResetLink(null)}>
+        <Dialog open dismissible title={`Link for ${resetLink.name}`} onClose={() => setResetLink(null)}>
           <CopyField label="Single-use link" value={resetLink.url} />
         </Dialog>
       )}

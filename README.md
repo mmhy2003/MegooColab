@@ -153,3 +153,12 @@ cd frontend && npx playwright test e2e/mockups.spec.ts
 ```bash
 cd frontend && npx playwright test e2e/search.spec.ts
 ```
+
+### Popups end-to-end test
+
+`frontend/e2e/popups.spec.ts` checks clicks outside popups on the same stack. The user menu and the notification panel close on a click outside them (the panel on Escape too), and so does search (Ctrl+K). The "New team" dialog stays open with what was typed, and so does the task drawer; Escape closes both. The page behind each popup is blurred. It creates the "Popup Team" team and the POP project, so it needs a fresh stack. To run it:
+
+```bash
+cd frontend && npx playwright test e2e/popups.spec.ts
+# optional: E2E_SCREENSHOT_DIR=<dir> saves a screenshot of each popup
+```
