@@ -58,7 +58,7 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
         <DropdownMenuTrigger asChild>
           <button type="button" className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-surface">
             <Avatar name={user.name} size={22} />
-            <span className="hidden sm:inline">{user.name}</span>
+            <span className="sr-only sm:not-sr-only">{user.name}</span>
           </button>
         </DropdownMenuTrigger>
         {/* the page behind is blurred while the menu is open; a click on it closes the menu */}

@@ -42,8 +42,9 @@ export function Dialog({
     if (!el || el.open) return;
     if (el.showModal) el.showModal();
     else el.setAttribute("open", "");
-    // showModal() focuses the first button (the close ✕); a field marked data-autofocus takes the focus instead
-    el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    // showModal() focuses the first button, the close ✕, whose tooltip would then open and take the first Escape: a
+    // field marked data-autofocus takes the focus instead, else the dialog itself (Tab then reaches the ✕)
+    (el.querySelector<HTMLElement>("[data-autofocus]") ?? el).focus();
     return () => el.close?.();
   }, []);
 
@@ -55,6 +56,7 @@ export function Dialog({
         setElement(el);
       }}
       aria-label={title}
+      tabIndex={-1}
       onCancel={(e) => {
         e.preventDefault();
         onClose();
@@ -66,7 +68,7 @@ export function Dialog({
         if (dismissible && pressedOutside.current && outside(e)) onClose();
         pressedOutside.current = false;
       }}
-      className={`card fixed inset-0 m-auto max-h-[90vh] w-[calc(100%-2rem)] overflow-auto p-0 text-fg backdrop:bg-black/40 backdrop:backdrop-blur-sm ${wide ? "max-w-3xl" : "max-w-md"}`}
+      className={`card fixed inset-0 m-auto focus:outline-none max-h-[90vh] w-[calc(100%-2rem)] overflow-auto p-0 text-fg backdrop:bg-black/40 backdrop:backdrop-blur-sm ${wide ? "max-w-3xl" : "max-w-md"}`}
     >
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <h2 className="text-sm font-bold text-cyan-ink glow-cyan">{title}</h2>

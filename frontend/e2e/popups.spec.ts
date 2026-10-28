@@ -38,6 +38,21 @@ test("clicks outside popups", async ({ page }) => {
   await page.mouse.click(400, 500);
   await expect(page.getByRole("menu")).toHaveCount(0);
 
+  // 1b. and from the keyboard: Enter opens it, arrows move, Escape closes it and gives focus back
+  const avatar = page.getByRole("button", { name: /Root Admin/ });
+  await avatar.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(avatar).toBeFocused();
+
+  // 1c. icon-only buttons name themselves in a tooltip, on keyboard focus too
+  await page.getByRole("button", { name: "Notifications" }).focus();
+  await expect(page.getByRole("tooltip", { name: "Notifications" })).toBeVisible();
+
   // 2. the notification panel closes on a click outside it, and on Escape
   const bell = page.getByRole("button", { name: "Notifications" });
   const panel = page.getByRole("dialog", { name: "Notifications" });

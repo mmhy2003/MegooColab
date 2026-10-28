@@ -74,6 +74,23 @@ describe("Dialog", () => {
     }
   });
 
+  it("with no field marked, focuses the dialog itself, not its close button (whose tooltip would open)", () => {
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute("open", "");
+      this.querySelector<HTMLElement>("button")?.focus();
+    };
+    try {
+      render(
+        <Dialog open title="Members" onClose={() => {}}>
+          <p>Nothing to type in</p>
+        </Dialog>,
+      );
+      expect(document.activeElement).toBe(screen.getByRole("dialog", { name: "Members" }));
+    } finally {
+      delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
+    }
+  });
+
   it("blurs the page behind it", () => {
     const { dialog } = open();
     expect(dialog.className).toMatch(/backdrop:backdrop-blur/);

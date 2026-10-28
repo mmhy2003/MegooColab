@@ -67,6 +67,24 @@ test("every page fits a 280-pixel screen", async ({ page }) => {
   }
   expect(problems).toEqual({});
 
+  // the user menu, the notification panel and the assignee list stay on the screen
+  const onScreen = async (locator: ReturnType<Page["locator"]>) => {
+    const box = (await locator.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(280 + 1);
+  };
+  await page.goto("/projects");
+  await page.getByRole("button", { name: /Root Admin/ }).click();
+  await onScreen(page.getByRole("menu"));
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await onScreen(page.getByRole("dialog", { name: "Notifications" }));
+  await page.keyboard.press("Escape");
+  await page.goto("/projects/MOB/tasks/1");
+  await page.getByRole("combobox", { name: "Assignee" }).click();
+  await onScreen(page.getByRole("listbox"));
+  await page.keyboard.press("Escape");
+
   // long titles wrap rather than being cut or squeezed out
   await page.goto("/projects/MOB/backlog");
   const row = page.getByRole("button", { name: /A task with a rather long title/ });
