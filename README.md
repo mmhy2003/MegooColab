@@ -165,7 +165,7 @@ cd frontend && npx playwright test e2e/popups.spec.ts
 
 ### Layout end-to-end test
 
-`frontend/e2e/layout.spec.ts` checks that the sidebar and the header bar stay in view while a long page scrolls (Admin → Settings in a 500-pixel-tall window). It creates nothing, so it runs on any stack:
+`frontend/e2e/layout.spec.ts` checks that the sidebar and the header bar stay in view while a long page scrolls (Admin → Settings in a 500-pixel-tall window), and that scrollbars stay hidden until the pointer is over the scrolling area, then fade in as a thin cyan bar. It creates nothing, so it runs on any stack:
 
 ```bash
 cd frontend && npx playwright test e2e/layout.spec.ts

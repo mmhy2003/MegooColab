@@ -99,6 +99,32 @@ h3,
   letter-spacing: 0.04em;
 }
 
+/* Scrollbars stay hidden until the pointer is over the scrolling area, then show as a thin cyan bar. The
+   standard properties (not ::-webkit-scrollbar): Chrome repaints a scrollbar on hover only through these, and
+   Firefox understands them too. In @layer base so a component's own `transition` utility still wins. */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.2s;
+  }
+
+  *:hover {
+    scrollbar-color: var(--cyan) transparent;
+  }
+}
+
+/* Jumps within a page glide; data-scroll-behavior on <html> keeps page-to-page navigation instant. */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 :focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;

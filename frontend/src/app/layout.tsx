@@ -27,6 +27,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html
       lang="en"
+      data-scroll-behavior="smooth"
       className={`${orbitron.variable} ${shareTech.variable} h-full antialiased`}
       suppressHydrationWarning
     >
