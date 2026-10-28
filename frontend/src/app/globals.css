@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* the open and close animations of shadcn/ui popups */
+@import "tw-animate-css";
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
@@ -58,6 +60,31 @@
   color-scheme: dark;
 }
 
+/* shadcn/ui's colour names point at the Neon Grid palette. Defined once: each reads the current theme's token, so
+   both themes follow. Primary is the readable cyan (cyan-ink): white on the bright cyan fails AA in the light theme. */
+:root {
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface);
+  --popover-foreground: var(--fg);
+  --primary: var(--cyan-ink);
+  --primary-foreground: var(--on-accent);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--fg);
+  /* shadcn's meaning: a quiet background (grey text is muted-foreground) */
+  --muted: var(--surface-2);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--cyan-ink);
+  --destructive: var(--pink);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--cyan);
+  /* Neon Grid's 4px corners (components use rounded / rounded-sm; Tailwind's radius scale is left as is) */
+  --radius: 0.25rem;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
@@ -65,8 +92,24 @@
   --color-line: var(--line);
   --color-fg: var(--fg);
   --color-muted-foreground: var(--muted-foreground);
-  /* shadcn's meaning: a quiet background (grey text is muted-foreground) */
-  --color-muted: var(--surface-2);
+  /* shadcn/ui's colour names, mapped onto Neon Grid below (:root) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
   --color-cyan: var(--cyan);
   --color-pink: var(--pink);
   --color-green: var(--green);

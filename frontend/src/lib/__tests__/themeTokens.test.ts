@@ -22,4 +22,22 @@ describe("theme tokens", () => {
     const stale = tsxFiles(SRC).filter((f) => /\btext-muted\b(?!-)/.test(readFileSync(f, "utf8")));
     expect(stale).toEqual([]);
   });
+
+  it("maps shadcn's colours onto Neon Grid, with the readable cyan as primary", () => {
+    for (const line of [
+      "--background: var(--bg);",
+      "--foreground: var(--fg);",
+      "--popover: var(--surface);",
+      "--border: var(--line);",
+      "--primary: var(--cyan-ink);",
+      "--primary-foreground: var(--on-accent);",
+      "--ring: var(--cyan);",
+      "--destructive: var(--pink);",
+      "--muted: var(--surface-2);",
+      "--radius: 0.25rem;",
+    ]) {
+      expect(css).toContain(line);
+    }
+    expect(css).not.toMatch(/^\s*\.dark\s*\{/m); // dark mode is data-theme, never a .dark class
+  });
 });

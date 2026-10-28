@@ -1,7 +1,9 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+
+import { PortalContainerContext } from "@/components/ui/PortalContainer";
 
 export function Dialog({
   open,
@@ -21,6 +23,8 @@ export function Dialog({
   dismissible?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // popups opened inside render into the dialog, not under it (see PortalContainer)
+  const [element, setElement] = useState<HTMLDialogElement | null>(null);
   // A click on the backdrop lands on the <dialog> itself, outside its box. Count it only when the press started
   // there too: a text selection dragged out of the dialog also ends with a click on the <dialog>.
   const pressedOutside = useRef(false);
@@ -45,7 +49,10 @@ export function Dialog({
   if (!open) return null;
   return (
     <dialog
-      ref={ref}
+      ref={(el) => {
+        ref.current = el;
+        setElement(el);
+      }}
       aria-label={title}
       onCancel={(e) => {
         e.preventDefault();
@@ -66,7 +73,9 @@ export function Dialog({
           <X size={16} aria-hidden />
         </button>
       </div>
-      <div className="p-4">{children}</div>
+      <div className="p-4">
+        <PortalContainerContext.Provider value={element}>{children}</PortalContainerContext.Provider>
+      </div>
     </dialog>
   );
 }
