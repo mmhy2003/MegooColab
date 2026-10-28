@@ -17,6 +17,7 @@ export function TaskDrawer({
   onOpenTask: (key: string) => void;
 }) {
   useEffect(() => {
+    // pickers inside (the @mention and assignee lists) stop their own Escape, so it never gets here
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

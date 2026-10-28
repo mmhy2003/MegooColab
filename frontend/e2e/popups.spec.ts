@@ -34,6 +34,16 @@ test("clicks outside popups", async ({ page }) => {
   await page.getByRole("button", { name: /Root Admin/ }).click();
   await expect(page.getByRole("menu")).toBeVisible();
   blurred(await backdropFilter(page));
+  // popups are outlined in the palette's line colour, not the text colour
+  const line = await page.evaluate(() => {
+    const probe = document.createElement("i");
+    probe.style.color = "var(--line)";
+    document.body.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
+  expect(await page.getByRole("menu").evaluate((el) => getComputedStyle(el).borderTopColor)).toBe(line);
   await shot(page, "user-menu");
   await page.mouse.click(400, 500);
   await expect(page.getByRole("menu")).toHaveCount(0);
@@ -99,6 +109,14 @@ test("clicks outside popups", async ({ page }) => {
   await shot(page, "task-drawer");
   await page.mouse.click(10, 300);
   await expect(drawer).toBeVisible();
+  // Escape in the @mention list closes the list, not the drawer, and the comment stays
+  const comment = drawer.getByRole("textbox", { name: "Add a comment" });
+  await comment.fill("Thanks @ro");
+  await expect(page.getByRole("listbox", { name: "Mention someone" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("listbox", { name: "Mention someone" })).toHaveCount(0);
+  await expect(drawer).toBeVisible();
+  await expect(comment).toHaveValue("Thanks @ro");
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);
 });

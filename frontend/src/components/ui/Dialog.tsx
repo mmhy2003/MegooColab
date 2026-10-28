@@ -61,6 +61,11 @@ export function Dialog({
         e.preventDefault();
         onClose();
       }}
+      onKeyDown={(e) => {
+        // a tooltip showing inside claims Escape first and cancels the browser's own close: close anyway, since
+        // Escape is meant for the dialog (pickers that keep Escape for themselves stop it before it gets here)
+        if (e.key === "Escape" && e.defaultPrevented) onClose();
+      }}
       onMouseDown={(e) => {
         pressedOutside.current = outside(e);
       }}
@@ -70,17 +75,18 @@ export function Dialog({
       }}
       className={`card fixed inset-0 m-auto focus:outline-none max-h-[90vh] w-[calc(100%-2rem)] overflow-auto p-0 text-fg backdrop:bg-black/40 backdrop:backdrop-blur-sm ${wide ? "max-w-3xl" : "max-w-md"}`}
     >
-      <div className="flex items-center justify-between border-b border-line px-4 py-3">
-        <h2 className="text-sm font-bold text-cyan-ink glow-cyan">{title}</h2>
-        <Hint label="Close">
-          <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
-            <X size={16} aria-hidden />
-          </button>
-        </Hint>
-      </div>
-      <div className="p-4">
-        <PortalContainerContext.Provider value={element}>{children}</PortalContainerContext.Provider>
-      </div>
+      {/* everything in the dialog, its own ✕ tooltip included, renders popups inside it (see PortalContainer) */}
+      <PortalContainerContext.Provider value={element}>
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <h2 className="text-sm font-bold text-cyan-ink glow-cyan">{title}</h2>
+          <Hint label="Close">
+            <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
+              <X size={16} aria-hidden />
+            </button>
+          </Hint>
+        </div>
+        <div className="p-4">{children}</div>
+      </PortalContainerContext.Provider>
     </dialog>
   );
 }
