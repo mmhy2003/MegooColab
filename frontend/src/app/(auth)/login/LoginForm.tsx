@@ -55,7 +55,7 @@ export function LoginForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <h1 className="text-center text-sm text-muted-foreground">Sign in</h1>
-      <Input label="Email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+      <Input label="Email" type="email" autoComplete="email" autoFocus required value={email} onChange={(e) => setEmail(e.target.value)} />
       <Input label="Password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
       {needCode && (
         <Input

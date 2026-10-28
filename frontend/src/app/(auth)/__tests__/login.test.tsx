@@ -60,6 +60,12 @@ describe("LoginForm", () => {
     expect(body.totp_code).toBe("123456");
   });
 
+  it("starts with the cursor in the email field", () => {
+    routeFetch([]);
+    render(<LoginForm />);
+    expect(screen.getByLabelText(/email/i)).toHaveFocus();
+  });
+
   it("explains wrong credentials", async () => {
     routeFetch([json(401, { detail: "invalid_credentials" })]);
     render(<LoginForm />);
