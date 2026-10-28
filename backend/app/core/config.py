@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     rate_limit_forgot_per_ip: int = 10
     rate_limit_token_pages_per_ip: int = 10
     rate_limit_change_password_per_user: int = 5
-    rate_limit_api_per_user: int = 600
+    rate_limit_api_per_user: int = 3000
     rate_limit_api_per_ip: int = 120
     rate_limit_ai_per_user: int = 30
     rate_limit_webhook_per_connection: int = 120

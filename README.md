@@ -72,7 +72,7 @@ npm run dev                        # then open http://localhost:8080
 Runs against a fresh production-style stack on http://localhost:8080:
 
 ```bash
-cp deploy/.env.example .superpowers/e2e.env   # set SECRET_KEY, MEILI_MASTER_KEY, HTTP_PORT=8080, PUBLIC_URL=http://localhost:8080, AI_FAKE=true, MEMORY_EXTRACT_DELAY_SECONDS=2
+cp deploy/.env.example .superpowers/e2e.env   # set SECRET_KEY, MEILI_MASTER_KEY, VALKEY_PASSWORD, CLIENT_IP_HEADER=X-Real-IP, HTTP_PORT=8080, PUBLIC_URL=http://localhost:8080, AI_FAKE=true, MEMORY_EXTRACT_DELAY_SECONDS=2
 docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env up -d --build --wait
 cd frontend && npx playwright install chromium && npx playwright test
 docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env down -v
@@ -162,6 +162,14 @@ cd frontend && npx playwright test e2e/search.spec.ts
 ```bash
 cd frontend && npx playwright test e2e/popups.spec.ts
 # optional: E2E_SCREENSHOT_DIR=<dir> saves a screenshot of each popup
+```
+
+### Rate limits end-to-end test
+
+`frontend/e2e/ratelimits.spec.ts` checks the sign-in limit on the same stack. The env file needs `VALKEY_PASSWORD` and `CLIENT_IP_HEADER=X-Real-IP`: the test sends its requests as its own visitor (`X-Real-IP` with a random address in 203.0.113.0/24, new each run), so the other specs on the stack are never limited and it can run again at once. Thirty wrong passwords get 401; the next attempt gets 429, and the sign-in page then says "Too many attempts. Try again in 15 minutes". A visitor from another address still signs in. It creates nothing, so it runs on any stack. To run it:
+
+```bash
+cd frontend && npx playwright test e2e/ratelimits.spec.ts
 ```
 
 ### Layout end-to-end test
