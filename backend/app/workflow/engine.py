@@ -278,6 +278,7 @@ async def wait_for(db: AsyncSession, wf: TaskWorkflow, needs: Needs, *, actor_id
     """The workflow waits on a person: the agent's owner and the task's human assignee are told (NOT-1)."""
     wf.status = WorkflowStatus.waiting_human
     wf.needs = Needs(needs)
+    wf.waiting_since = datetime.now(UTC)
     task = await db.get(Task, wf.task_id)
     project = await db.get(Project, task.project_id)
     agent_id = wf.agent_id or task.assignee_agent_id

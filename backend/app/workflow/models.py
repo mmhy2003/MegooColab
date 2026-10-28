@@ -14,7 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.mutable import MutableDict, MutableList
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core.db import Base, IdMixin
 
@@ -130,9 +130,17 @@ class TaskWorkflow(Base):
     sessions: Mapped[dict] = mapped_column(MutableDict.as_mutable(JSONB), default=dict)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # when the current wait for a person began (set by engine.wait_for); None while not waiting
+    waiting_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    @validates("status")
+    def _leaving_a_wait_clears_waiting_since(self, _key: str, value: WorkflowStatus) -> WorkflowStatus:
+        if value != WorkflowStatus.waiting_human:
+            self.waiting_since = None
+        return value
 
 
 class WorkflowDocument(IdMixin, Base):
