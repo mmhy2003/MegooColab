@@ -42,7 +42,7 @@ Then edit `.env`. Every variable:
 | `SECRET_KEY` | Signs sessions and encrypts stored secrets (SMTP password, AI keys, git tokens). Generate it once with `openssl rand -hex 32`; the backend refuses to start with the example value. **Keep it: changing it makes the stored secrets unreadable.** | 64 hex characters |
 | `POSTGRES_PASSWORD` | The database password, used only between the containers. | a long random string |
 | `MEILI_MASTER_KEY` | The key the backend and worker use for Meilisearch, the search service. Used only between the containers; at least 16 characters. | 64 hex characters |
-| `VALKEY_PASSWORD` | The password of Valkey, which keeps the rate-limit counters. Used only between the containers. | 64 hex characters |
+| `VALKEY_PASSWORD` | The password of Valkey, which keeps the rate-limit counters. Used only between the containers; any characters work. | 64 hex characters |
 | `CLIENT_IP_HEADER` | Only behind a proxy that hides visitors' addresses (a Cloudflare tunnel, ...): the header it sets with the real address, e.g. `CF-Connecting-IP` or `X-Real-IP`. Without it, every visitor would share one per-address limit. **Set it only when every request reaches MegooColab through that proxy:** anyone who can reach Caddy directly can forge the header. | *(unset)* |
 | `RATE_LIMIT_*` | The rate limits, each with a default (see "Rate limits" below). | *(unset)* |
 | `MEMORY_DREAM_HOUR_UTC` | The hour (0–23, UTC) the memory "dreams" each night, unless an admin sets another one under Admin → Settings. | `3` |
@@ -63,7 +63,8 @@ sed -i "s/^VALKEY_PASSWORD=.*/VALKEY_PASSWORD=$(openssl rand -hex 32)/" .env
 MegooColab limits how often anyone can call it, counted in Valkey so the limits hold however many backends run.
 Someone over a limit gets "Too many attempts. Try again in N minutes"; each block is written once to the audit
 log (`rate_limit.blocked`). Only failures count where a success should never be held back: an office of people
-signing in from one address never hits the sign-in limit. The defaults, each changeable in `.env`:
+signing in from one address never hits the sign-in limit, and nobody's anonymous traffic at a shared address
+blocks the people signed in there. The defaults, each changeable in `.env`:
 
 | Variable | Limit | Default |
 |---|---|---|

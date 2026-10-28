@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Request, status
 from sqlalchemy import select
 
 from app.a2a import service
@@ -21,6 +21,7 @@ from app.auth.deps import AuthedUser
 from app.core.db import DbSession
 from app.projects.access import accessible_project_ids, get_project_for
 from app.projects.models import Project
+from app.ratelimit.deps import check_ai
 from app.tasks.service import get_task_for
 from app.workflow import engine
 
@@ -37,13 +38,15 @@ async def targets(_user: AuthedUser, db: DbSession) -> list[Target]:
 
 
 @router.post("/api/questions/suggest")
-async def suggest(body: SuggestIn, user: AuthedUser, db: DbSession) -> list[Suggestion]:
+async def suggest(body: SuggestIn, request: Request, user: AuthedUser, db: DbSession) -> list[Suggestion]:
+    await check_ai(request)  # suggestions embed the question
     project = await service.project_by_key(db, body.project_key)
     return await service.suggest(db, user, project.id, body.body)
 
 
 @router.post("/api/questions", status_code=status.HTTP_201_CREATED)
-async def ask(body: AskIn, user: AuthedUser, db: DbSession) -> AskQuestionOut:
+async def ask(body: AskIn, request: Request, user: AuthedUser, db: DbSession) -> AskQuestionOut:
+    await check_ai(request)  # asking looks for existing answers first, which embeds the question
     q, suggestions = await service.ask(
         db, user, project_key=body.project_key, body=body.body, title=body.title, context=body.context,
         task_key=body.task_key,

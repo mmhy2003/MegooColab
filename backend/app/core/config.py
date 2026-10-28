@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     meili_master_key: str = ""
     meili_index: str = "megoo"
     # rate limits (Plan 10): counters live in Valkey, shared by every backend; unreachable means limits are off
-    valkey_url: str = "valkey://:megoo-dev-valkey@localhost:6379/0"
+    valkey_url: str = "valkey://localhost:6379/0"
+    # passed apart from the URL, so any characters work (a `/`, `?` or `#` would break a URL)
+    valkey_password: str = "megoo-dev-valkey"
     valkey_prefix: str = "megoo:"
     # a header a fronting proxy sets with the visitor's address (e.g. CF-Connecting-IP); empty: the resolved address
     client_ip_header: str = ""

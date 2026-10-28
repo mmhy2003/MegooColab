@@ -28,6 +28,7 @@ _LIMITS: dict[str, tuple[str, int]] = {
     "change_password_user": ("rate_limit_change_password_per_user", QUARTER_HOUR),
     "api_user": ("rate_limit_api_per_user", MINUTE),
     "api_ip": ("rate_limit_api_per_ip", MINUTE),
+    "api_badcred": ("rate_limit_api_per_ip", MINUTE),
     "ai_user": ("rate_limit_ai_per_user", MINUTE),
     "webhook_connection": ("rate_limit_webhook_per_connection", MINUTE),
     "ws_connect": ("rate_limit_ws_connect", MINUTE),

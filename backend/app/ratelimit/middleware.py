@@ -1,9 +1,11 @@
 """The general limits on every `/api` HTTP request (Plan 10).
 
-- With a credential (a bearer token, or the session cookie): the address must not be blocked, then the credential
-  counts against `api_user`. A 401 answer counts against the address, so rotating made-up tokens or cookies gets
-  the address blocked.
-- Without one: the address counts against `api_ip`.
+- With a credential (a bearer token, or the session cookie): the address must not have sent too many rejected
+  credentials (`api_badcred`, fed by 401 answers, so rotating made-up tokens or cookies gets the address blocked),
+  then the credential counts against `api_user`. Anonymous traffic at a shared address never blocks the people
+  signed in there.
+- Without one: the address counts against `api_ip`, except on the sign-in pages: they have their own
+  failures-only limits, so an office signing in together never uses up its address.
 
 The credential is counted by its hash, before any database lookup: one budget per signed-in browser and one per
 token (personal or agent run). `/api/health` is exempt, and so are anonymous git webhooks, which their route counts
@@ -26,6 +28,11 @@ from app.ratelimit.clientip import client_ip
 current_subject: ContextVar[str | None] = ContextVar("current_subject", default=None)
 
 _EXEMPT = frozenset({"/api/health"})
+# what a browser calls before and while signing in: limited by their own named limits, not by `api_ip`
+_SIGN_IN = frozenset({
+    "/api/setup/status", "/api/setup", "/api/auth/me", "/api/auth/login", "/api/auth/forgot", "/api/auth/reset",
+    "/api/auth/accept-invite",
+})
 _WEBHOOKS = "/api/git/webhooks/"
 
 
@@ -55,15 +62,16 @@ class RateLimitMiddleware:
         ip = client_ip(scope)
         api_ip = limits.get("api_ip")
         if subject is None:
-            if not path.startswith(_WEBHOOKS):
+            if not path.startswith(_WEBHOOKS) and path not in _SIGN_IN:
                 decision = await store.hit(api_ip, ip)
                 if not decision.allowed:
                     await self._refuse(decision, api_ip, ip, ip, scope, receive, send)
                     return
         else:
-            decision = await store.peek(api_ip, ip)
+            badcred = limits.get("api_badcred")
+            decision = await store.peek(badcred, ip)
             if not decision.allowed:
-                await self._refuse(decision, api_ip, ip, ip, scope, receive, send)
+                await self._refuse(decision, badcred, ip, ip, scope, receive, send)
                 return
             api_user = limits.get("api_user")
             decision = await store.hit(api_user, subject)
@@ -84,7 +92,7 @@ class RateLimitMiddleware:
         finally:
             current_subject.reset(token)
         if subject is not None and status and status[0] == 401:
-            await store.hit(api_ip, ip)
+            await store.hit(limits.get("api_badcred"), ip)
 
     @staticmethod
     async def _refuse(

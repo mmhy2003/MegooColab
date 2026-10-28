@@ -15,6 +15,7 @@ from app.a2a import service
 from app.a2a.models import Question
 from app.mcp_server.auth import current_run, tool_session
 from app.projects.models import Project
+from app.ratelimit.deps import ai_or_tool_error
 from app.tasks.models import Task
 from app.workflow import engine
 
@@ -65,6 +66,7 @@ def register_a2a_tools(mcp: MCPServer) -> None:
         """Before asking another project, look for an existing answer in its Knowledge Base and the memory.
         Returns up to 5 suggestions {kind, id, title, snippet, link}; read them with kb_read or search_memory."""
         _refuse_answer_runs()
+        await ai_or_tool_error()
         async with tool_session() as (db, user):
             project = await service.project_by_key(db, project_key)
             found = await service.suggest(db, user, project.id, question)
@@ -78,6 +80,7 @@ def register_a2a_tools(mcp: MCPServer) -> None:
         answers, citing files). Include in `context` errors and what you tried. You may move on to other work:
         the answer arrives in your task's thread and prompt, or read it later with get_question."""
         _refuse_answer_runs()
+        await ai_or_tool_error()
         async with tool_session() as (db, user):
             own = await _run_task_key(db)
             if own is not None:

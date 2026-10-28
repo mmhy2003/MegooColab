@@ -10,7 +10,6 @@ from dataclasses import dataclass
 
 import valkey.asyncio as valkey
 from fastapi.responses import JSONResponse
-from valkey.exceptions import ValkeyError
 
 from app.audit import service as audit
 from app.core.config import get_settings
@@ -19,7 +18,9 @@ from app.ratelimit.limits import Limit
 
 log = logging.getLogger(__name__)
 
-_FAILURES = (ValkeyError, OSError, TimeoutError)
+# anything Valkey or its client raises (a refused connection, a bad URL, a rejected command) lets the request
+# through; cancellation is not an Exception, so it still propagates
+_FAILURES = (Exception,)
 _WARN_EVERY = 60.0
 _last_warning = 0.0
 # one client per event loop: a connection pool belongs to the loop that opened it (TestClient runs its own loop)
@@ -43,7 +44,9 @@ def _valkey() -> valkey.Valkey:
     loop = asyncio.get_running_loop()
     client = _clients.get(loop)
     if client is None:
-        client = valkey.from_url(get_settings().valkey_url, socket_timeout=1, socket_connect_timeout=1)
+        settings = get_settings()
+        client = valkey.from_url(settings.valkey_url, password=settings.valkey_password or None, socket_timeout=1,
+                                 socket_connect_timeout=1)
         _clients[loop] = client
     return client
 

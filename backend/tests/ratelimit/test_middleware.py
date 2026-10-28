@@ -57,9 +57,9 @@ async def test_each_token_has_its_own_budget(client, client_factory, db, limits)
 
 async def test_anonymous_calls_are_limited_per_ip(client, limits):
     limits(api_per_ip=5)
-    for _ in range(5):
-        assert (await client.get("/api/setup/status")).status_code == 200
-    _429(await client.get("/api/setup/status"))
+    for _ in range(5):  # not the sign-in pages: they have their own limits (see test_review_fixes)
+        assert (await client.get("/api/questions/targets")).status_code == 401
+    _429(await client.get("/api/questions/targets"))
 
 
 async def test_fake_credentials_get_the_ip_blocked(client, limits):

@@ -69,7 +69,9 @@ services:
       MEMORY_DREAM_HOUR_UTC: ${MEMORY_DREAM_HOUR_UTC:-3}
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in .env}
-      VALKEY_URL: valkey://:${VALKEY_PASSWORD:?set VALKEY_PASSWORD in .env}@valkey:6379/0
+      VALKEY_URL: valkey://valkey:6379/0
+      # apart from the URL, so any characters work
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?set VALKEY_PASSWORD in .env}
       # a header a proxy in front sets with the visitor's address (e.g. CF-Connecting-IP); see docs/install.md
       CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
       RATE_LIMIT_LOGIN_PER_IP: ${RATE_LIMIT_LOGIN_PER_IP:-30}
