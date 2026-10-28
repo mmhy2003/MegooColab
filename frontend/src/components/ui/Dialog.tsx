@@ -37,6 +37,8 @@ export function Dialog({
     if (!el || el.open) return;
     if (el.showModal) el.showModal();
     else el.setAttribute("open", "");
+    // showModal() focuses the first button (the close ✕); a field marked data-autofocus takes the focus instead
+    el.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     return () => el.close?.();
   }, []);
 

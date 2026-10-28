@@ -58,6 +58,34 @@ describe("SearchLauncher", () => {
     expect(screen.getByRole("combobox", { name: "Search" })).toBeInTheDocument();
   });
 
+  it("shows its shortcut next to the header button", () => {
+    setup();
+    const button = screen.getByRole("button", { name: "Search (Ctrl+K)" });
+    expect(within(button).getByText("Ctrl K")).toBeInTheDocument();
+  });
+
+  it("shows the Mac shortcut on a Mac", () => {
+    vi.stubGlobal("navigator", { ...navigator, userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5)" });
+    setup();
+    const button = screen.getByRole("button", { name: "Search (⌘K)" });
+    expect(within(button).getByText("⌘K")).toBeInTheDocument();
+  });
+
+  it("puts the cursor in the search field when it opens", () => {
+    // what a browser's showModal() does: it focuses the dialog's first button (the close ✕)
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute("open", "");
+      this.querySelector<HTMLElement>("button")?.focus();
+    };
+    try {
+      setup();
+      fireEvent.click(screen.getByRole("button", { name: "Search (Ctrl+K)" }));
+      expect(screen.getByRole("combobox", { name: "Search" })).toHaveFocus();
+    } finally {
+      delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
+    }
+  });
+
   it("shows nothing before typing", async () => {
     const fetchMock = setup();
     open();

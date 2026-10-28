@@ -50,10 +50,15 @@ test("clicks outside popups", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
 
-  // 3. search closes on a click outside it
+  // 3. the header button shows its shortcut; search opens with the cursor in the field, and closes on a click
+  // outside it
+  await expect(page.getByRole("button", { name: "Search (Ctrl+K)" }).getByText("Ctrl K")).toBeVisible();
   await page.keyboard.press("Control+K");
   const search = page.getByRole("dialog", { name: "Search" });
   await expect(search).toBeVisible();
+  await expect(search.getByRole("combobox", { name: "Search" })).toBeFocused();
+  await page.keyboard.type("pop");
+  await expect(search.getByRole("combobox", { name: "Search" })).toHaveValue("pop");
   blurred(await search.evaluate((el) => getComputedStyle(el, "::backdrop").backdropFilter));
   await shot(page, "search");
   await page.mouse.click(10, 10);

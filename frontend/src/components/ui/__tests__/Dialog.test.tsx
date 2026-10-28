@@ -12,7 +12,7 @@ function open(props: { dismissible?: boolean } = {}) {
   const onClose = vi.fn();
   render(
     <Dialog open title="New team" onClose={onClose} {...props}>
-      <input aria-label="Name" />
+      <input aria-label="Name" data-autofocus />
     </Dialog>,
   );
   return { onClose, dialog: screen.getByRole("dialog", { name: "New team" }) };
@@ -55,6 +55,20 @@ describe("Dialog", () => {
     try {
       open();
       expect(showModal).toHaveBeenCalledOnce();
+    } finally {
+      delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
+    }
+  });
+
+  it("focuses the field marked data-autofocus, though the browser focuses the first button on open", () => {
+    // what a browser's showModal() does: open, and focus the first focusable element (here the close button)
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+      this.setAttribute("open", "");
+      this.querySelector<HTMLElement>("button, input")?.focus();
+    };
+    try {
+      open();
+      expect(document.activeElement).toBe(screen.getByLabelText("Name"));
     } finally {
       delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
     }

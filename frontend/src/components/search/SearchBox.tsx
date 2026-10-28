@@ -61,7 +61,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
     <Dialog open={open} onClose={onClose} title="Search" wide dismissible>
       <div className="space-y-3">
         <input
-          autoFocus
+          data-autofocus
           role="combobox"
           aria-label="Search"
           aria-expanded={flat.length > 0}
@@ -141,6 +141,9 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
 /** The header's search button, plus the Ctrl+K / Cmd+K shortcut anywhere in the app. */
 export function SearchLauncher() {
   const [open, setOpen] = useState(false);
+  // the header renders only in the browser (after the user loads), so reading navigator here is safe
+  const [mac] = useState(() => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent));
+  const shortcut = mac ? "⌘K" : "Ctrl K";
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -153,8 +156,18 @@ export function SearchLauncher() {
   }, []);
   return (
     <>
-      <button type="button" className="icon-btn" aria-label="Search (Ctrl+K)" title="Search (Ctrl+K)" onClick={() => setOpen(true)}>
+      <button
+        type="button"
+        className="flex h-8 items-center gap-2 rounded px-2 text-muted hover:bg-surface-2 hover:text-cyan"
+        aria-label={mac ? "Search (⌘K)" : "Search (Ctrl+K)"}
+        title={mac ? "Search (⌘K)" : "Search (Ctrl+K)"}
+        onClick={() => setOpen(true)}
+      >
         <Search size={16} aria-hidden />
+        {/* the shortcut, so people learn it; too wide for a phone, where the button alone shows */}
+        <kbd className="hidden rounded border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] leading-none sm:inline">
+          {shortcut}
+        </kbd>
       </button>
       {open && <SearchBox open onClose={() => setOpen(false)} />}
     </>
