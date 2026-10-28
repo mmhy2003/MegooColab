@@ -22,7 +22,7 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   return (
-    <header className="relative z-30 flex h-12 items-center gap-2 border-b border-line bg-surface-2/80 px-3 backdrop-blur">
+    <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-line bg-surface-2/80 px-3 backdrop-blur">
       <button type="button" className="icon-btn md:hidden" aria-label="Open menu" onClick={onMenu}>
         <Menu size={18} aria-hidden />
       </button>

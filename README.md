@@ -162,3 +162,11 @@ cd frontend && npx playwright test e2e/search.spec.ts
 cd frontend && npx playwright test e2e/popups.spec.ts
 # optional: E2E_SCREENSHOT_DIR=<dir> saves a screenshot of each popup
 ```
+
+### Layout end-to-end test
+
+`frontend/e2e/layout.spec.ts` checks that the sidebar and the header bar stay in view while a long page scrolls (Admin → Settings in a 500-pixel-tall window). It creates nothing, so it runs on any stack:
+
+```bash
+cd frontend && npx playwright test e2e/layout.spec.ts
+```

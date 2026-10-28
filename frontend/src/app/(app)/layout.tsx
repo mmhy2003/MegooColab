@@ -17,7 +17,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden w-56 shrink-0 border-r border-line bg-surface-2/60 md:block">
+      {/* Sticky and one screen tall: it stays in view while a long page scrolls, and scrolls on its own if it outgrows a short screen */}
+      <aside className="sticky top-0 hidden h-screen w-56 shrink-0 overflow-y-auto border-r border-line bg-surface-2/60 md:block">
         <Sidebar user={user} />
       </aside>
       {menuOpen && (
