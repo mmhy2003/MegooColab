@@ -36,6 +36,7 @@ from app.projects.schemas import (
     RepoPatch,
     WorkflowCountOut,
 )
+from app.tasks import uploads
 from app.tasks.models import Task
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -149,9 +150,15 @@ async def delete_project(ref: str, user: AuthedUser, db: DbSession) -> None:
     project = await get_project_for(db, user, ref)
     if user.role != Role.admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
-    await stop_runs_before_delete(db, select(Task.id).where(Task.project_id == project.id))
+    task_ids = select(Task.id).where(Task.project_id == project.id)
+    await stop_runs_before_delete(db, task_ids)
+    uploads.remove_after_commit(db, (await db.execute(task_ids)).scalars().all())
     await _project_changed(db, project)
     await db.delete(project)
+    # local: memory imports the task modules
+    from app.memory.sources import queue_forget
+
+    await queue_forget(db)  # what was learned only from this project's tasks and answers
     await audit.record(db, "project.deleted", actor_id=user.id, target_type="project", target_id=project.id,
                        data={"key": project.key})
 

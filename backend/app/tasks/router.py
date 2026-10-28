@@ -8,7 +8,7 @@ from app.auth.deps import AuthedUser
 from app.core.db import DbSession
 from app.projects.access import can_manage_project, get_project_for, project_team_ids
 from app.sprints.service import snapshot_if_active
-from app.tasks import service
+from app.tasks import service, uploads
 from app.tasks.models import Task, TaskLink, TaskType
 from app.tasks.schemas import LinkIn, MoveIn, TaskCreate, TaskOut, TaskUpdate
 from app.teams.service import user_team_ids
@@ -77,6 +77,7 @@ async def delete_task(key: str, user: AuthedUser, db: DbSession) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
     sprint_id = task.sprint_id
     await stop_runs_before_delete(db, service.deleted_with(task))
+    uploads.remove_after_commit(db, (await db.execute(service.deleted_with(task))).scalars().all())
     await _changed(db, task, "task.deleted")
     await service.delete_task(db, task)
     await snapshot_if_active(db, sprint_id)

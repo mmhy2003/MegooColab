@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
+from app.audit import service as audit
 from app.auth.deps import AuthedUser
 from app.auth.models import User
 from app.core.db import DbSession
@@ -86,6 +87,16 @@ async def complete_sprint(sprint_id: uuid.UUID, body: CompleteIn, user: AuthedUs
     await service.complete(db, sprint, body.move_open_to)
     await _changed(db, sprint)
     return SprintOut.model_validate(sprint)
+
+
+@router.delete("/api/sprints/{sprint_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_sprint(sprint_id: uuid.UUID, user: AuthedUser, db: DbSession) -> None:
+    """Its tasks lose the sprint (ON DELETE SET NULL): open ones are back in the backlog. Its snapshots go with it."""
+    sprint = await _sprint_for(db, user, sprint_id, manage=True)
+    await audit.record(db, "sprint.deleted", actor_id=user.id, target_type="sprint", target_id=sprint.id,
+                       data={"name": sprint.name})
+    await _changed(db, sprint)
+    await db.delete(sprint)
 
 
 @router.get("/api/sprints/{sprint_id}/burndown")
