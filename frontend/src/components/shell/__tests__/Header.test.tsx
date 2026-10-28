@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Header } from "@/components/shell/Header";
@@ -28,12 +29,33 @@ function renderHeader() {
 }
 
 describe("Header", () => {
-  it("closes the user menu on a click outside it", () => {
+  it("closes the user menu on a click outside it, with the page blurred while open", async () => {
     renderHeader();
-    fireEvent.click(screen.getByRole("button", { name: /Ahmed/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Ahmed/ }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
-    fireEvent.click(document.querySelector("[data-backdrop]")!);
+    expect(screen.getAllByRole("menuitem").map((i) => i.textContent?.trim())).toEqual([
+      "Profile", "Access tokens", "My agents", "Notifications", "Sign out",
+    ]);
+    await userEvent.click(document.querySelector("[data-backdrop]")!);
     expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.querySelector("[data-backdrop]")).toBeNull();
+  });
+
+  it("works from the keyboard: arrows move, Escape closes and returns focus", async () => {
+    renderHeader();
+    const trigger = screen.getByRole("button", { name: /Ahmed/ });
+    trigger.focus();
+    await userEvent.keyboard("{Enter}");
+    const items = screen.getAllByRole("menuitem");
+    await userEvent.keyboard("{ArrowDown}");
+    expect(items).toContain(document.activeElement);
+    const first = document.activeElement;
+    await userEvent.keyboard("{ArrowDown}");
+    expect(document.activeElement).not.toBe(first);
+    expect(items).toContain(document.activeElement);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(trigger).toHaveFocus();
   });
 
   it("closes the notification panel on a click outside it and on Escape", () => {

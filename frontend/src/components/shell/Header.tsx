@@ -7,12 +7,20 @@ import { useState } from "react";
 
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { SearchLauncher } from "@/components/search/SearchBox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/shadcn/dropdown-menu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar } from "@/components/ui/Avatar";
 import { Backdrop } from "@/components/ui/Backdrop";
 import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
 import { Hint } from "@/components/ui/Hint";
+
+const LINKS = [
+  { href: "/settings/profile", label: "Profile", icon: UserRound },
+  { href: "/settings/tokens", label: "Access tokens", icon: KeyRound },
+  { href: "/settings/agents", label: "My agents", icon: Bot },
+  { href: "/settings/notifications", label: "Notifications", icon: Bell },
+];
 
 function crumbs(pathname: string): { href: string; label: string }[] {
   const parts = pathname.split("/").filter(Boolean);
@@ -46,46 +54,33 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
       <SearchLauncher />
       <NotificationBell />
       <ThemeToggle />
-      <div className="relative">
-        <button
-          type="button"
-          className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-surface"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-        >
-          <Avatar name={user.name} size={22} />
-          <span className="hidden sm:inline">{user.name}</span>
-        </button>
+      <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-surface">
+            <Avatar name={user.name} size={22} />
+            <span className="hidden sm:inline">{user.name}</span>
+          </button>
+        </DropdownMenuTrigger>
+        {/* the page behind is blurred while the menu is open; a click on it closes the menu */}
         {open && <Backdrop onClose={() => setOpen(false)} />}
-        {open && (
-          <div role="menu" className="card absolute right-0 z-20 mt-1 w-44 p-1" onMouseLeave={() => setOpen(false)}>
-            <Link role="menuitem" href="/settings/profile" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded px-3 py-2 text-sm text-fg no-underline hover:bg-surface-2">
-              <UserRound size={14} aria-hidden /> Profile
-            </Link>
-            <Link role="menuitem" href="/settings/tokens" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded px-3 py-2 text-sm text-fg no-underline hover:bg-surface-2">
-              <KeyRound size={14} aria-hidden /> Access tokens
-            </Link>
-            <Link role="menuitem" href="/settings/agents" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded px-3 py-2 text-sm text-fg no-underline hover:bg-surface-2">
-              <Bot size={14} aria-hidden /> My agents
-            </Link>
-            <Link role="menuitem" href="/settings/notifications" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded px-3 py-2 text-sm text-fg no-underline hover:bg-surface-2">
-              <Bell size={14} aria-hidden /> Notifications
-            </Link>
-            <button
-              role="menuitem"
-              type="button"
-              className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-surface-2"
-              onClick={async () => {
-                await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
-                window.location.assign("/login");
-              }}
-            >
-              <LogOut size={14} aria-hidden /> Sign out
-            </button>
-          </div>
-        )}
-      </div>
+        <DropdownMenuContent align="end" collisionPadding={8} className="w-44">
+          {LINKS.map(({ href, label, icon: Icon }) => (
+            <DropdownMenuItem key={href} asChild>
+              <Link href={href} className="text-fg no-underline">
+                <Icon size={14} aria-hidden /> {label}
+              </Link>
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuItem
+            onSelect={async () => {
+              await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+              window.location.assign("/login");
+            }}
+          >
+            <LogOut size={14} aria-hidden /> Sign out
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </header>
   );
 }
