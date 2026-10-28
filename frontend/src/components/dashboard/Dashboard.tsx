@@ -1,20 +1,26 @@
 "use client";
 
-import { Activity, Bot, Inbox, UserRoundCheck } from "lucide-react";
+import { Activity, BarChart3, Bot, FolderKanban, GitBranch, History, Inbox, UserRoundCheck } from "lucide-react";
 import { useState } from "react";
 
 import { AgentsCard } from "@/components/dashboard/AgentsCard";
+import { FinishedChart } from "@/components/dashboard/FinishedChart";
 import { Kpis } from "@/components/dashboard/Kpis";
 import { MyTasks } from "@/components/dashboard/MyTasks";
 import { NeedsYou } from "@/components/dashboard/NeedsYou";
+import { ProjectsCard } from "@/components/dashboard/ProjectsCard";
+import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { RunningNow } from "@/components/dashboard/RunningNow";
 import { ScopeSwitch } from "@/components/dashboard/ScopeSwitch";
+import { StageBars } from "@/components/dashboard/StageBars";
+import { SystemCard } from "@/components/dashboard/SystemCard";
 import { Widget } from "@/components/dashboard/Widget";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { type DashboardScope, readScope, useDashboard, writeScope } from "@/lib/dashboard";
 import type { User } from "@/lib/types";
 
-/** The home page (layout A): headline numbers; what needs you and your tasks beside what the agents are doing. */
+/** The home page (layout A): headline numbers; what needs you and your tasks beside what the agents are doing; then
+ * the work in numbers, two columns wide; then System for admins. One column on narrow screens. */
 export function Dashboard({ user }: { user: User }) {
   const isAdmin = user.role === "admin";
   const [scope, setScope] = useState<DashboardScope>(() => readScope(isAdmin));
@@ -45,6 +51,17 @@ export function Dashboard({ user }: { user: User }) {
           {data ? <AgentsCard agents={data.agents} isAdmin={isAdmin} /> : <Widget title="Agents" icon={Bot} loading />}
         </div>
       </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        {data ? <StageBars stages={data.stages} /> : <Widget title="Workflows by stage" icon={GitBranch} loading />}
+        {data ? (
+          <FinishedChart days={data.finished_daily} />
+        ) : (
+          <Widget title="Tasks finished · last 14 days" icon={BarChart3} loading />
+        )}
+        {data ? <ProjectsCard projects={data.projects} /> : <Widget title="Projects" icon={FolderKanban} loading />}
+        {data ? <RecentActivity rows={data.activity} /> : <Widget title="Recent activity" icon={History} loading />}
+      </div>
+      {data?.system && <SystemCard system={data.system} />}
     </div>
   );
 }

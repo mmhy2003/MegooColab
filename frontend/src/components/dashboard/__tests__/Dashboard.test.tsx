@@ -8,16 +8,16 @@ import { Dashboard } from "@/components/dashboard/Dashboard";
 import { SCOPE_KEY } from "@/lib/dashboard";
 import type { User } from "@/lib/types";
 
-import { dashboardFixture } from "./fixture";
+import { dashboardFixture, healthy } from "./fixture";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const member = { id: "u1", name: "Mona", email: "m@x.io", role: "member" } as User;
 const admin = { ...member, role: "admin" } as User;
 
-function mockFetch() {
+function mockFetch(body = dashboardFixture()) {
   const fetchMock = vi.fn(async (url: string) =>
-    url.startsWith("/api/dashboard?") ? new Response(JSON.stringify(dashboardFixture()), { status: 200 }) : new Response(null, { status: 204 }),
+    url.startsWith("/api/dashboard?") ? new Response(JSON.stringify(body), { status: 200 }) : new Response(null, { status: 204 }),
   );
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
@@ -81,5 +81,26 @@ describe("Dashboard", () => {
     await waitFor(() => expect(dashboardCalls(memberFetch)).toHaveLength(1));
     await act(() => vi.advanceTimersByTimeAsync(60_000));
     expect(dashboardCalls(memberFetch)).toHaveLength(1);
+  });
+
+  it("lays out every widget, and System only when the server sends it", async () => {
+    mockFetch(dashboardFixture({ system: healthy }));
+    wrap(<Dashboard user={admin} />);
+    await screen.findByText("Refund flow for partial orders");
+    for (const name of ["Needs you", "My tasks", "Running now", "Agents", "Workflows by stage", "Tasks finished · last 14 days", "Projects", "Recent activity", "System"]) {
+      expect(screen.getByRole("region", { name })).toBeInTheDocument();
+    }
+    cleanup();
+    mockFetch();
+    wrap(<Dashboard user={member} />);
+    await screen.findByText("Refund flow for partial orders");
+    expect(screen.queryByRole("region", { name: "System" })).toBeNull();
+  });
+
+  it("keeps every frame while loading", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    wrap(<Dashboard user={member} />);
+    expect(screen.getByRole("region", { name: "Projects" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Recent activity" })).toBeInTheDocument();
   });
 });
