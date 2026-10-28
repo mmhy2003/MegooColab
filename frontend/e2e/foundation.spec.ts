@@ -38,8 +38,8 @@ test("foundation smoke", async ({ browser }) => {
   await admin.getByRole("button", { name: "Create team" }).click();
   await expect(admin.getByRole("heading", { name: "Core" })).toBeVisible();
   await admin.getByRole("button", { name: "Edit members" }).click();
-  await admin.getByLabel(ADMIN.name).check();
-  await admin.getByLabel(MEMBER.name).check();
+  await admin.getByRole("option", { name: new RegExp(ADMIN.name) }).click(); // tick them in the member list
+  await admin.getByRole("option", { name: new RegExp(MEMBER.name) }).click(); // tick them in the member list
   await admin.getByRole("button", { name: "Save members" }).click();
   await expect(admin.getByText(MEMBER.name)).toBeVisible();
 

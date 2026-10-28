@@ -14,3 +14,6 @@ if (!("ResizeObserver" in globalThis)) {
     disconnect() {}
   } as unknown as typeof ResizeObserver;
 }
+
+// jsdom does no layout: cmdk scrolls the highlighted item into view
+if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};

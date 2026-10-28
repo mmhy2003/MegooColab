@@ -274,7 +274,7 @@ test("workflow end to end", async ({ browser }) => {
   await page.getByRole("button", { name: "Create team" }).click();
   await expect(page.getByRole("heading", { name: "Workflow Team" })).toBeVisible();
   await page.getByRole("button", { name: "Edit members" }).click();
-  await page.getByLabel(ADMIN.name).check();
+  await page.getByRole("option", { name: new RegExp(ADMIN.name) }).click(); // tick them in the member list
   await page.getByRole("button", { name: "Save members" }).click();
 
   await page.goto("/projects/new");
