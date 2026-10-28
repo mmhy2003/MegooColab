@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
+import { pickAssignee } from "./helpers/assignee";
 import {
   buildBinaries,
   mcp,
@@ -327,7 +328,7 @@ test("workflow end to end", async ({ browser }) => {
   await expect(column(page, "To Do").getByText("Add a greeting")).toBeVisible();
   await page.goto(`/projects/WFL/board?task=${KEY}`);
   const drawer = page.getByRole("dialog", { name: KEY });
-  await drawer.getByLabel("Assignee").selectOption({ label: AGENT_NAME });
+  await pickAssignee(drawer, AGENT_NAME);
   await expect(drawer.getByText(`assigned this to ${AGENT_NAME}`)).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(drawer).toBeHidden();

@@ -4,9 +4,10 @@ import { Eye, EyeOff } from "lucide-react";
 
 import type { Column, Label, Priority, ProjectAgent, Sprint, Task, TaskType, User } from "@/lib/types";
 
+import { AssigneePicker } from "./AssigneePicker";
+
 const PRIORITIES: Priority[] = ["highest", "high", "medium", "low", "lowest"];
 const TYPES: TaskType[] = ["epic", "story", "task", "bug", "subtask"];
-const AGENT_DENIED = "Only the owner, project managers and admins can assign this agent";
 const FIELD = "w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm disabled:opacity-60";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -49,11 +50,6 @@ export function TaskFields({
 }) {
   const watching = meId ? task.watcher_ids.includes(meId) : false;
   const selectedLabels = new Set(task.labels.map((l) => l.id));
-  const assigneeName = task.assignee_agent_id
-    ? (agents.find((a) => a.id === task.assignee_agent_id)?.name ?? task.assignee_agent?.name)
-    : task.assignee_user_id
-      ? users.find((u) => u.id === task.assignee_user_id)?.name
-      : "Unassigned";
   return (
     <div className="space-y-2.5">
       <Row label="Status">
@@ -71,37 +67,7 @@ export function TaskFields({
         </select>
       </Row>
       <Row label="Assignee">
-        <select
-          aria-label="Assignee"
-          title={assigneeName}
-          className={FIELD}
-          disabled={disabled}
-          value={task.assignee_agent_id ? `agent:${task.assignee_agent_id}` : task.assignee_user_id ? `user:${task.assignee_user_id}` : ""}
-          onChange={(e) => {
-            const [kind, id] = e.target.value.split(":");
-            if (!id) onPatch({ assignee_user_id: null, assignee_agent_id: null });
-            else onPatch(kind === "agent" ? { assignee_agent_id: id } : { assignee_user_id: id });
-          }}
-        >
-          <option value="">Unassigned</option>
-          <optgroup label="People">
-            {users.filter((u) => u.status !== "deactivated" || u.id === task.assignee_user_id).map((u) => (
-              <option key={u.id} value={`user:${u.id}`}>{u.name}</option>
-            ))}
-          </optgroup>
-          {(agents.length > 0 || task.assignee_agent) && (
-            <optgroup label="Agents">
-              {agents.map((a) => (
-                <option key={a.id} value={`agent:${a.id}`} disabled={!a.can_use} title={a.can_use ? undefined : AGENT_DENIED}>
-                  {a.name}
-                </option>
-              ))}
-              {task.assignee_agent && !agents.some((a) => a.id === task.assignee_agent_id) && (
-                <option value={`agent:${task.assignee_agent.id}`} disabled>{task.assignee_agent.name}</option>
-              )}
-            </optgroup>
-          )}
-        </select>
+        <AssigneePicker task={task} users={users} agents={agents} disabled={disabled} onPatch={onPatch} />
       </Row>
       <Row label="Priority">
         <select aria-label="Priority" className={FIELD} disabled={disabled} value={task.priority} onChange={(e) => onPatch({ priority: e.target.value })}>

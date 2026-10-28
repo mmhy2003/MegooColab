@@ -7,6 +7,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
 import { buildBinaries, mcp, onPrompt, say, startRunner, type Binaries, type RunnerHandle } from "./helpers/runner";
+import { pickAssignee } from "./helpers/assignee";
 
 /**
  * End-to-end test of Plan 2: UI -> server -> runner -> (fake) agent and back. Runs are workflow runs (Plan 3):
@@ -153,7 +154,7 @@ test("agents end to end", async ({ browser, request }) => {
   await page.goto("/projects/AGT/board?task=AGT-1");
   const drawer = page.getByRole("dialog", { name: "AGT-1" });
   await expect(drawer).toBeVisible();
-  await drawer.getByLabel("Assignee").selectOption({ label: AGENT_NAME });
+  await pickAssignee(drawer, AGENT_NAME);
   await expect(drawer.getByText(`assigned this to ${AGENT_NAME}`)).toBeVisible();
   const panel = drawer.getByRole("region", { name: "Workflow" });
   await expect(panel.getByText("Not started")).toBeVisible();

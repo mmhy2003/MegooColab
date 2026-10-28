@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { TaskFields } from "@/components/task/TaskFields";
@@ -20,26 +21,57 @@ function setup() {
   );
   return onPatch;
 }
-const pick = (value: string) => fireEvent.change(screen.getByLabelText("Assignee"), { target: { value } });
+const assignee = () => screen.getByRole("combobox", { name: "Assignee" });
+
+async function pick(name: string) {
+  await userEvent.click(assignee());
+  await userEvent.click(screen.getByRole("option", { name }));
+}
 
 describe("TaskFields assignee", () => {
-  it("patches an agent, a user, and both-null for Unassigned", () => {
+  it("patches an agent, a user, and both-null for Unassigned", async () => {
     const onPatch = setup();
-    pick("agent:a1");
+    await pick("Ann's Codex");
     expect(onPatch).toHaveBeenLastCalledWith({ assignee_agent_id: "a1" });
-    pick("user:u2");
+    await pick("Sara Kim");
     expect(onPatch).toHaveBeenLastCalledWith({ assignee_user_id: "u2" });
-    pick("");
+    await pick("Unassigned");
     expect(onPatch).toHaveBeenLastCalledWith({ assignee_user_id: null, assignee_agent_id: null });
   });
 
-  it("shows the full name of the chosen assignee on hover", () => {
+  it("shows the chosen assignee's name", () => {
     setup();
-    expect(screen.getByLabelText("Assignee")).toHaveAttribute("title", "Ann's Codex");
+    expect(assignee()).toHaveTextContent("Ann's Codex");
   });
 
-  it("lists agents the caller cannot use as disabled", () => {
+  it("lists agents the caller cannot use as disabled", async () => {
     setup();
-    expect(screen.getByRole("option", { name: "Bob's Codex" })).toBeDisabled();
+    await userEvent.click(assignee());
+    expect(screen.getByRole("option", { name: "Bob's Codex" })).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("filters as you type, without blurring the page", async () => {
+    setup();
+    await userEvent.click(assignee());
+    await userEvent.keyboard("sar");
+    expect(screen.getByRole("option", { name: "Sara Kim" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Ann's Codex" })).toBeNull();
+    expect(document.querySelector("[data-backdrop]")).toBeNull();
+  });
+
+  it("escape closes only the picker, not the task drawer around it", async () => {
+    const drawerEscape = vi.fn();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && drawerEscape();
+    window.addEventListener("keydown", onKey); // what TaskDrawer listens to
+    try {
+      setup();
+      await userEvent.click(assignee());
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      await userEvent.keyboard("{Escape}");
+      expect(screen.queryByRole("listbox")).toBeNull();
+      expect(drawerEscape).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", onKey);
+    }
   });
 });

@@ -7,6 +7,7 @@ import { expect, test, type APIRequestContext, type Browser, type BrowserContext
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
 import { buildBinaries, mcp, onPrompt, startRunner, type RunnerHandle } from "./helpers/runner";
+import { pickAssignee } from "./helpers/assignee";
 
 /**
  * End-to-end test of Plan 7's notifications: an assignment and a mention reach the person through the bell (and an
@@ -99,7 +100,7 @@ test("notifications reach the right people", async ({ browser }) => {
   // 1. the admin assigns NOT-1 to Bea: her bell shows 1, and the notification opens the task
   await page.goto("/projects/NOT/board?task=NOT-1");
   const drawer = page.getByRole("dialog", { name: "NOT-1" });
-  await drawer.getByLabel("Assignee").selectOption({ label: BEA.name });
+  await pickAssignee(drawer, BEA.name);
   await expect(drawer.getByText(`assigned this to ${BEA.name}`)).toBeVisible();
   const beaPage = await bea.ctx.newPage();
   await beaPage.goto("/projects");
