@@ -2,6 +2,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public detail: string,
+    /** Seconds until a rate limit lets the call through again (429 only). */
+    public retryAfter: number | null = null,
   ) {
     super(`${status} ${detail}`);
     this.name = "ApiError";
@@ -52,7 +54,15 @@ export async function api<T = unknown>(
       window.location.assign("/change-password");
     }
   }
-  throw new ApiError(res.status, detail);
+  throw new ApiError(res.status, detail, retryAfterOf(data));
+}
+
+function retryAfterOf(body: unknown): number | null {
+  if (body && typeof body === "object" && "retry_after" in body) {
+    const n = (body as { retry_after: unknown }).retry_after;
+    if (typeof n === "number" && n > 0) return n;
+  }
+  return null;
 }
 
 function safeJson(text: string): unknown {

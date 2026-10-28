@@ -98,8 +98,17 @@ const MESSAGES: Record<string, string> = {
   validation_error: "Some fields are invalid.",
 };
 
+/** "Try again in 14 minutes." from a 429's retry_after (seconds). */
+function tryAgainIn(seconds: number | null): string {
+  if (seconds == null) return "Too many attempts. Try again later.";
+  if (seconds < 60) return `Too many attempts. Try again in ${seconds} second${seconds === 1 ? "" : "s"}.`;
+  const minutes = Math.ceil(seconds / 60);
+  return `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`;
+}
+
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
+    if (err.status === 429 && err.detail === "rate_limited") return tryAgainIn(err.retryAfter);
     return MESSAGES[err.detail] ?? (err.status >= 500 ? "Something went wrong on the server." : err.detail);
   }
   return "Couldn't reach the server. Check your connection.";

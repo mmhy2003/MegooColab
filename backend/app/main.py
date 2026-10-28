@@ -45,6 +45,7 @@ from app.notifications.router import router as notifications_router
 from app.org.router import router as org_router
 from app.projects.router import router as projects_router
 from app.ratelimit.middleware import RateLimitMiddleware
+from app.ratelimit.router import router as rate_limits_router
 from app.ratelimit.store import RateLimited, rate_limited_response
 from app.realtime.router import router as realtime_router
 from app.runner.router import router as runner_router
@@ -172,6 +173,7 @@ def create_app() -> FastAPI:
         git_webhook_router,
         notifications_router,
         search_router,
+        rate_limits_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect

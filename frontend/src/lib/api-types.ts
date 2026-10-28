@@ -2259,6 +2259,9 @@ export interface paths {
         /**
          * Receive Webhook
          * @description A provider says something changed. Verified, it only queues refreshes of the pull requests it names.
+         *
+         *     Rate limits (Plan 10): a genuine delivery counts against its connection; an unknown connection or a bad
+         *     signature counts against the sender's address, so a forged flood cannot use up a real connection's budget.
          */
         post: operations["receive_webhook_api_git_webhooks__connection_id__post"];
         delete?: never;
@@ -2421,6 +2424,23 @@ export interface paths {
         put?: never;
         /** Rebuild Search */
         post: operations["rebuild_search_api_admin_search_rebuild_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/rate-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rate Limits Status */
+        get: operations["rate_limits_status_api_admin_rate_limits_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3955,6 +3975,11 @@ export interface components {
             groups: components["schemas"]["QuickGroup"][];
             /** Total */
             total: number;
+        };
+        /** RateLimitsOut */
+        RateLimitsOut: {
+            /** Working */
+            working: boolean;
         };
         /** RecordsOut */
         RecordsOut: {
@@ -10344,6 +10369,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    rate_limits_status_api_admin_rate_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitsOut"];
                 };
             };
         };

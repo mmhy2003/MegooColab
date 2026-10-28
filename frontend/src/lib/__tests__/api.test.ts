@@ -69,4 +69,12 @@ describe("api", () => {
     await api("/api/teams").catch(() => undefined);
     expect(assign).toHaveBeenCalledWith("/change-password");
   });
+
+  it("reads retry_after from a 429", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(429, { detail: "rate_limited", retry_after: 840 }));
+    const err = await api("/api/x").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(429);
+    expect((err as ApiError).retryAfter).toBe(840);
+  });
 });

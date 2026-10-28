@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { RateLimitsAdmin } from "@/components/admin/RateLimitsAdmin";
 import { SearchAdmin } from "@/components/admin/SearchAdmin";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Select } from "@/components/ui/Select";
@@ -43,6 +44,7 @@ export default function AdminSettingsPage() {
     <div className="max-w-xl space-y-4">
       <SettingsForm settings={settings.data} />
       <SearchAdmin />
+      <RateLimitsAdmin />
     </div>
   );
 }
