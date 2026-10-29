@@ -209,3 +209,40 @@ async def test_run_without_answer_retries_other_agent_then_needs_human_after_3(c
         assert (q.status, q.attempts, len(q.tried_agent_ids)) == (QuestionStatus.needs_human, 3, 3)
     finally:
         _cleanup(m1, m2, m3)
+
+
+async def test_answering_run_start_and_end_refresh_the_target_project(client, db, monkeypatch):
+    """Everyone viewing the answering project's dashboard sees the run in Running now, not only its owner."""
+    from app.agents import service as agent_service
+
+    published = []
+    real = agent_service.publish
+
+    async def spy(s, event):
+        published.append(event)
+        await real(s, event)
+
+    monkeypatch.setattr(agent_service, "publish", spy)
+    m1, _m2, asker = await _world(client, db)
+    project_id = (await client.get("/api/projects/QBB")).json()["id"]
+    agent = await _agent(client, m1)
+    sock = _online(m1, agent)
+    try:
+        published.clear()
+        async with SessionLocal() as s:
+            user = await s.get(type(asker), asker.id)
+            q, _ = await service.ask(s, user, project_key="QBB", body="Where are retries configured?")
+            qid = q.id
+            await engine.dispatch_queued(s)
+            await s.commit()
+        assert [json.loads(m)["type"] for m in sock.sent] == ["run_start"]
+        started = [str(e.project_id) for e in published if e.type == "agents.updated" and e.project_id]
+        assert project_id in started
+        [run] = await _runs(db, qid)
+        published.clear()
+        async with SessionLocal() as s:
+            await finish_run(s, m1.id, run.id, "completed", "no answer", None)
+        ended = [str(e.project_id) for e in published if e.type == "agents.updated" and e.project_id]
+        assert project_id in ended
+    finally:
+        _cleanup(m1)

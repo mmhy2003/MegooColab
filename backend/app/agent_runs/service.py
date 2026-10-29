@@ -70,6 +70,12 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+async def _answering_projects(db: AsyncSession, run: AgentRun) -> set[uuid.UUID]:
+    """An answering run shows on the answering project's views (its dashboard's Running now), not only its owner's."""
+    target = await db.scalar(select(Question.target_project_id).where(Question.id == run.question_id))
+    return {target} if target else set()
+
+
 async def _announce(db: AsyncSession, task: Task, owner_id: uuid.UUID) -> None:
     """A run's status changed: refresh the task and the project's agent views."""
     await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
@@ -105,7 +111,7 @@ async def _transition(
         # an answering run (§6.6): no task thread to record on; the question moves on instead
         from app.a2a import routing  # local: a2a imports this module
 
-        await publish_agents_updated(db, owner_id, set())
+        await publish_agents_updated(db, owner_id, await _answering_projects(db, run))
         await routing.on_answer_run_finished(db, run)
         return
     task = await db.get(Task, run.task_id)
@@ -367,7 +373,7 @@ async def _send_answer_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.
         await db.commit()
         return False
     await _audit_started(db, run, owner_id)
-    await publish_agents_updated(db, owner_id, set())
+    await publish_agents_updated(db, owner_id, await _answering_projects(db, run))
     await db.commit()
     return True
 
