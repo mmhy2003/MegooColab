@@ -60,11 +60,25 @@ test("every page fits a 280-pixel screen", async ({ page }) => {
   const token = await (await page.request.post("/api/tokens", { data: { name: "Mobile e2e", scopes: ["mcp"] }, headers: WEB })).json();
   await tool(page.request, token.secret, "submit_design", { key: waiting.key, markdown: "# Narrow\n\nFits." });
 
+  // a long agent name (the dashboard's Agents card, My agents) and a long question title (Questions, the question)
+  const agent = await (await page.request.post("/api/agents", {
+    data: { program: "claude_code", max_concurrent_runs: 1, name: `Agent ${"with-a-very-long-unbroken-name".repeat(4)}` },
+    headers: WEB,
+  })).json();
+  await page.request.put(`/api/agents/${agent.id}/bindings`, {
+    data: { bindings: [{ project_ref: "MOB", local_path: "/work/mob" }] },
+    headers: WEB,
+  });
+  const question = await (await page.request.post("/api/questions", {
+    data: { project_key: "MOB", title: `How ${"does-this-very-long-unbroken-question-title ".repeat(4)}`.slice(0, 200), body: "Fits?" },
+    headers: WEB,
+  })).json();
+
   const pages = [
     "/",
     "/projects", "/projects/MOB/board", "/projects/MOB/backlog", "/projects/MOB/tasks/1", "/projects/MOB/reports",
     "/projects/MOB/settings", "/teams", `/teams/${team.id}`, "/kb", "/memory", "/questions", "/search?q=task",
-    "/notifications", "/settings/profile", "/settings/tokens", "/settings/agents", "/settings/notifications",
+    `/questions/${question.id}`, "/notifications", "/settings/profile", "/settings/tokens", "/settings/agents", "/settings/notifications",
     "/admin/users", "/admin/agents", "/admin/settings", "/admin/methodology", "/admin/ai", "/admin/git", "/admin/audit",
   ];
   const problems: Record<string, string[]> = {};
@@ -75,6 +89,9 @@ test("every page fits a 280-pixel screen", async ({ page }) => {
     const found = await overflow(page);
     if (found.length) problems[path] = found;
   }
+  // later specs expect the admin to have one agent: the long-named one has done its job
+  const removed = await page.request.delete(`/api/agents/${agent.id}`, { headers: WEB });
+  expect(removed.ok(), await removed.text()).toBeTruthy();
   expect(problems).toEqual({});
 
   // the user menu, the notification panel and the assignee list stay on the screen

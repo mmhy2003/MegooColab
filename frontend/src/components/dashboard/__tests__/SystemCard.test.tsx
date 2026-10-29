@@ -38,7 +38,7 @@ describe("systemLines", () => {
   it("words each value", () => {
     const values = systemLines({ ...healthy, memory_last_at: hoursAgo(8) }, NOW).map((l) => l.value);
     expect(values.slice(0, 4)).toEqual(["2 connected", "0 waiting", "Available · 120 items", "OK · 12 jobs today"]);
-    expect(values[4]).toMatch(/^last learned \d\d:\d\d$/);
+    expect(values[4]).toMatch(/^last learned (today|yesterday) \d\d:\d\d$/);
     expect(values[5]).toBe("0 in 24 h");
     const down = systemLines({ ...healthy, search_available: false, search_documents: null, ai_configured: false, memory_last_at: null }, NOW);
     expect(down.map((l) => l.value).slice(2, 5)).toEqual(["Unavailable", "Not configured", "never"]);
@@ -50,5 +50,13 @@ describe("SystemCard", () => {
     render(<SystemCard system={healthy} />);
     expect(screen.getByText("admins only")).toBeInTheDocument();
     expect(screen.getByText("Runners connected")).toBeInTheDocument();
+  });
+
+  it("says which day memory last learned", () => {
+    const value = (hours: number) => systemLines({ ...healthy, memory_last_at: hoursAgo(hours) }, NOW)[4].value;
+    expect(value(0.1)).toMatch(/^last learned today \d\d:\d\d$/);
+    const older = value(50);
+    expect(older).not.toMatch(/today|yesterday/);
+    expect(older).toMatch(/^last learned \S.* \d\d:\d\d$/);
   });
 });

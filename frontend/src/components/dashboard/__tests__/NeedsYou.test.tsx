@@ -48,7 +48,8 @@ describe("NeedsYou", () => {
     expect(screen.getByRole("link", { name: "Answer PAY-15" })).toBeInTheDocument();
     expect(screen.getByText("Stuck")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Look API-8" })).toBeInTheDocument();
-    expect(screen.getByText("Pull request · Settings tabs")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Pull request" })).toHaveAttribute("href", "https://example.test/pr/41");
+    expect(screen.getByText(/Settings tabs/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Check API-Q3" })).toHaveAttribute("href", "/questions/q3");
     expect(screen.getByText("Question needs a person")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Answer PAY-Q4" })).toHaveAttribute("href", "/questions/q4");
@@ -80,5 +81,23 @@ describe("NeedsYou", () => {
   it("says when nothing needs you", () => {
     wrap(<NeedsYou items={[]} total={0} showWaitingFor={false} />);
     expect(screen.getByText("Nothing needs you.")).toBeInTheDocument();
+  });
+
+  it("says under a minute instead of seconds that only change once a minute", () => {
+    const since = new Date(Date.now() - 30_000).toISOString();
+    wrap(<NeedsYou items={[need("plan_approval", "PAY-3", "Plan", { since })]} total={1} showWaitingFor={false} />);
+    expect(screen.getByText("< 1 m")).toBeInTheDocument();
+  });
+
+  it("does not link a pull request address that isn't a web address", () => {
+    wrap(
+      <NeedsYou
+        items={[need("human_code_review", "WEB-27", "Settings tabs", { detail: "javascript:alert(1)" })]}
+        total={1}
+        showWaitingFor={false}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: "Pull request" })).toBeNull();
+    expect(screen.getByText("Pull request · Settings tabs")).toBeInTheDocument();
   });
 });

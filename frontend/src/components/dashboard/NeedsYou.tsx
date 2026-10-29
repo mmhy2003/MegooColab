@@ -3,10 +3,10 @@
 import { Inbox } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { Chip, Empty, type Tone, Widget } from "@/components/dashboard/Widget";
-import { type NeedItem, shortDuration } from "@/lib/dashboard";
+import { minuteAge, type NeedItem } from "@/lib/dashboard";
 import { useMarkRead } from "@/lib/notifications";
 import { escalationReasonText } from "@/lib/workflow";
 
@@ -21,14 +21,23 @@ const KINDS: Record<NeedItem["kind"], { label: string; tone: Tone; button: strin
   mention: { label: "Mention", tone: "muted", button: "Reply" },
 };
 
-function summary(item: NeedItem): string {
+const isWebAddress = (url: string | null | undefined): url is string => !!url && /^https?:\/\//i.test(url);
+
+function summary(item: NeedItem): ReactNode {
   switch (item.kind) {
     case "question":
       return item.detail ? `“${item.detail}”` : item.title;
     case "escalation":
       return escalationReasonText(item.detail ?? null);
     case "human_code_review":
-      return `Pull request · ${item.title}`;
+      return isWebAddress(item.detail) ? (
+        <>
+          <a href={item.detail} target="_blank" rel="noopener noreferrer" className="text-cyan-ink hover:underline">Pull request</a>
+          {` · ${item.title}`}
+        </>
+      ) : (
+        `Pull request · ${item.title}`
+      );
     case "mention":
       return item.detail ? `${item.title}: “${item.detail}”` : item.title;
     default:
@@ -82,7 +91,7 @@ export function NeedsYou({ items, total, showWaitingFor }: { items: NeedItem[]; 
                 <Chip tone={kind.tone}>{kind.label}</Chip>
                 {item.ref && <span className="shrink-0 font-mono text-xs text-cyan-ink">{item.ref}</span>}
                 <span className="min-w-0 flex-1 basis-32 truncate">{summary(item)}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">{shortDuration(now - Date.parse(item.since))}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{minuteAge(now - Date.parse(item.since))}</span>
                 {item.kind === "mention" && item.notification_id ? (
                   <ReplyButton item={item} />
                 ) : (

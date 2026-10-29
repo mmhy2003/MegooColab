@@ -29,11 +29,23 @@ export const dashboardKeys = {
   count: () => ["dashboard-count"] as const,
 };
 
+/** The browser's time zone, so the server's "today" (due, overdue, runs today) is the viewer's day. */
+function timeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "";
+  } catch {
+    return "";
+  }
+}
+
 /** Admins also refetch every minute: the System lines (jobs, search, AI, memory) send no live events. */
 export function useDashboard(scope: DashboardScope, isAdmin: boolean) {
   return useQuery({
     queryKey: dashboardKeys.scope(scope),
-    queryFn: () => api<Dashboard>(`/api/dashboard?scope=${scope}`),
+    queryFn: () => {
+      const tz = timeZone();
+      return api<Dashboard>(`/api/dashboard?scope=${scope}${tz ? `&tz=${encodeURIComponent(tz)}` : ""}`);
+    },
     refetchInterval: isAdmin ? 60_000 : false,
   });
 }
@@ -75,6 +87,11 @@ export function shortDuration(ms: number): string {
   if (s < 3600) return `${Math.floor(s / 60)} m`;
   if (s < 86_400) return `${Math.floor(s / 3600)} h`;
   return `${Math.floor(s / 86_400)} d`;
+}
+
+/** For a clock that ticks once a minute: "< 1 m" instead of seconds that would stand still. */
+export function minuteAge(ms: number): string {
+  return ms < 60_000 ? "< 1 m" : shortDuration(ms);
 }
 
 /** The board with the task's drawer open, the link format notifications use. */

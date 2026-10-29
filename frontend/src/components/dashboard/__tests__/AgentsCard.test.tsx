@@ -27,4 +27,9 @@ describe("AgentsCard", () => {
     expect(screen.getByText("No agents in scope.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Manage/ })).toHaveAttribute("href", "/admin/agents");
   });
+
+  it("tells an agent working in a project outside the view apart", () => {
+    render(<AgentsCard isAdmin={false} agents={[agent({ status: "busy_elsewhere", runs_today: 0 })]} />);
+    expect(screen.getByRole("listitem")).toHaveTextContent("Vera's Claude CodeWorking elsewhere0 runs today");
+  });
 });

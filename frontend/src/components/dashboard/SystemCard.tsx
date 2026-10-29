@@ -9,6 +9,16 @@ const MEMORY_STALE_HOURS = 26;
 
 export type SystemLine = { label: string; value: string; attention: boolean };
 
+/** "today 02:00", "yesterday 23:10", "Oct 25 02:00": when, in the browser's time zone. */
+function learnedAt(at: Date, now: Date): string {
+  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (at.toDateString() === now.toDateString()) return `today ${time}`;
+  if (at.toDateString() === yesterday.toDateString()) return `yesterday ${time}`;
+  return `${at.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${time}`;
+}
+
 /** The six status lines, each amber when it needs an admin's attention. */
 export function systemLines(s: SystemOut, now: Date): SystemLine[] {
   const memoryAt = s.memory_last_at ? new Date(s.memory_last_at) : null;
@@ -32,7 +42,7 @@ export function systemLines(s: SystemOut, now: Date): SystemLine[] {
     },
     {
       label: "Memory",
-      value: memoryAt ? `last learned ${memoryAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}` : "never",
+      value: memoryAt ? `last learned ${learnedAt(memoryAt, now)}` : "never",
       attention: s.memory_last_failed || memoryStale,
     },
     { label: "Rate limits hit", value: `${s.rate_limits_24h} in 24 h`, attention: s.rate_limits_24h > 0 },

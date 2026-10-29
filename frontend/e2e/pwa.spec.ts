@@ -32,5 +32,6 @@ test("installable, with an offline page", async ({ browser, page }) => {
   await expect(page.getByRole("heading", { name: "You're offline" })).toBeVisible();
   await page.context().setOffline(false);
   await page.getByRole("link", { name: "Try again" }).click();
-  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page).toHaveURL(/:\d+\/$/); // the home page, the dashboard
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
 });

@@ -2,7 +2,7 @@
 
 import { Activity } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
 import { Dot, Empty, Widget } from "@/components/dashboard/Widget";
 import { type Queued, type RunningItem, shortDuration } from "@/lib/dashboard";
@@ -21,10 +21,25 @@ function where(run: RunningItem): string {
   return stage;
 }
 
-function queuedLine(queued: Queued): string {
-  const shown = queued.items.map((q) => (q.task_key ? `${q.task_key} ${q.stage ? STAGE_LABEL[q.stage] : ""}`.trim() : "a question"));
+function QueuedLine({ queued }: { queued: Queued }) {
   const more = queued.total - queued.items.length;
-  return `Queued: ${shown.join(" · ")}${more > 0 ? ` and ${more} more` : ""}`;
+  return (
+    <>
+      Queued:{" "}
+      {queued.items.map((q, i) => (
+        <Fragment key={i}>
+          {i > 0 && " · "}
+          {q.task_key && q.link ? (
+            <Link href={q.link} className="text-cyan-ink no-underline hover:underline">{q.task_key}</Link>
+          ) : (
+            q.task_key ?? "a question"
+          )}
+          {q.task_key && q.stage ? ` ${STAGE_LABEL[q.stage]}` : ""}
+        </Fragment>
+      ))}
+      {more > 0 ? ` and ${more} more` : ""}
+    </>
+  );
 }
 
 /** Agent runs at work now, with their time ticking in the browser, and what waits in the queue. */
@@ -78,7 +93,7 @@ export function RunningNow({ running, queued, isAdmin }: { running: RunningItem[
           {queued.total > 0 && (
             <li className="flex min-w-0 items-center gap-2 py-1.5 text-sm text-muted-foreground">
               <Dot state="offline" />
-              <span className="min-w-0 flex-1 truncate">{queuedLine(queued)}</span>
+              <span className="min-w-0 flex-1 truncate"><QueuedLine queued={queued} /></span>
             </li>
           )}
         </ul>

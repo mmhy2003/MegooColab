@@ -23,8 +23,10 @@ function mockFetch(body = dashboardFixture()) {
   return fetchMock;
 }
 
+// every request carries the browser's time zone; the scope is what these tests compare
+const TZ = `&tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`;
 const dashboardCalls = (fetchMock: ReturnType<typeof mockFetch>) =>
-  fetchMock.mock.calls.map(([u]) => u).filter((u) => u.startsWith("/api/dashboard?"));
+  fetchMock.mock.calls.map(([u]) => u).filter((u) => u.startsWith("/api/dashboard?")).map((u) => u.replace(TZ, ""));
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -119,5 +121,13 @@ describe("Dashboard", () => {
     view.rerender(<QueryClientProvider client={client}><Dashboard user={member} /></QueryClientProvider>);
     expect(screen.getByRole("button", { name: "My teams" })).toHaveAttribute("aria-pressed", "true");
     expect(dashboardCalls(fetchMock).at(-1)).toBe("/api/dashboard?scope=teams");
+  });
+
+  it("sends the browser's time zone, so today is the viewer's day", async () => {
+    const fetchMock = mockFetch();
+    wrap(<Dashboard user={member} />);
+    await screen.findByText("Refund flow for partial orders");
+    const [url] = fetchMock.mock.calls.map(([u]) => u).filter((u) => u.startsWith("/api/dashboard?"));
+    expect(new URL(url, "http://x").searchParams.get("tz")).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
   });
 });

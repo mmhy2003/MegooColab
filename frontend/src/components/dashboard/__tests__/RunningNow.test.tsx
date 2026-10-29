@@ -37,13 +37,15 @@ describe("RunningNow", () => {
 
   it("lists five queued keys then the rest as a number", () => {
     const items = [
-      { task_key: "PAY-16", stage: "plan" as const },
-      { task_key: "WEB-33", stage: "design" as const },
-      { task_key: null, stage: null },
+      { task_key: "PAY-16", stage: "plan" as const, link: "/projects/PAY/board?task=PAY-16" },
+      { task_key: "WEB-33", stage: "design" as const, link: "/projects/WEB/board?task=WEB-33" },
+      { task_key: null, stage: null, link: null },
     ];
     render(<RunningNow running={[]} queued={{ total: 5, items }} isAdmin={false} />);
     const line = screen.getByText(/^Queued:/);
     expect(line).toHaveTextContent("Queued: PAY-16 Plan · WEB-33 Design · a question and 2 more");
+    expect(screen.getByRole("link", { name: "PAY-16" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-16");
+    expect(screen.getByRole("link", { name: "WEB-33" })).toHaveAttribute("href", "/projects/WEB/board?task=WEB-33");
   });
 
   it("links All runs to the admin page for admins and My agents for others", () => {

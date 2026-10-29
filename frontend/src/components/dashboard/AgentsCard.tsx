@@ -5,6 +5,8 @@ import type { AgentItem } from "@/lib/dashboard";
 
 const STATUS: Record<AgentItem["status"], { label: string; tone: Tone }> = {
   busy: { label: "Working", tone: "cyan" },
+  // working in a project outside this view: not counted in Agents working here
+  busy_elsewhere: { label: "Working elsewhere", tone: "muted" },
   online: { label: "Idle", tone: "green" },
   offline: { label: "Offline", tone: "muted" },
 };
@@ -19,7 +21,7 @@ export function AgentsCard({ agents, isAdmin }: { agents: AgentItem[]; isAdmin: 
         <ul className="divide-y divide-line">
           {agents.map((agent) => (
             <li key={agent.id} className="flex min-w-0 items-center gap-2 py-1.5 text-sm">
-              <Dot state={agent.status} />
+              <Dot state={agent.status === "busy_elsewhere" ? "busy" : agent.status} />
               <span className={`min-w-0 flex-1 truncate ${agent.status === "offline" ? "text-muted-foreground" : ""}`}>{agent.name}</span>
               <Chip tone={STATUS[agent.status].tone}>{STATUS[agent.status].label}</Chip>
               <span className="shrink-0 text-xs text-muted-foreground">

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 
 import { Dot, Empty, Widget } from "@/components/dashboard/Widget";
 import { describeEvent } from "@/components/task/ActivityThread";
-import { type ActivityRow, shortDuration, taskLink } from "@/lib/dashboard";
+import { type ActivityRow, minuteAge, taskLink } from "@/lib/dashboard";
 
 /** The latest task events in scope, worded as a task's own activity list words them. */
 export function RecentActivity({ rows }: { rows: ActivityRow[] }) {
@@ -35,7 +35,7 @@ export function RecentActivity({ rows }: { rows: ActivityRow[] }) {
                     {row.task_key}
                   </Link>
                 </span>
-                <span className="shrink-0 text-xs text-muted-foreground">{shortDuration(now - Date.parse(row.at))}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{minuteAge(now - Date.parse(row.at))}</span>
               </li>
             );
           })}

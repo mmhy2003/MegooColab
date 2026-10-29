@@ -171,6 +171,7 @@ describe("dashboard throttle", () => {
     expect(throttledFor({ type: "agents.changed" })).toEqual([["dashboard"]]);
     expect(throttledFor({ type: "sprint.updated" })).toEqual([["dashboard"]]);
     expect(throttledFor({ type: "project.updated" })).toEqual([["dashboard"]]);
+    expect(throttledFor({ type: "columns.updated" })).toEqual([["dashboard"]]);
     expect(throttledFor({ type: "kb.changed" })).toEqual([]);
   });
 

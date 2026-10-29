@@ -63,6 +63,7 @@ export function throttledFor(event: LiveEvent): QueryKey[] {
     case "agents":
     case "sprint":
     case "project":
+    case "columns": // a column changing category moves open and in-progress counts
       return [["dashboard"]];
     default:
       return [];
