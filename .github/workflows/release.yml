@@ -1,0 +1,181 @@
+name: Release
+
+# A push to main releases each product whose version (VERSION, runner/VERSION) has no GitHub release yet:
+# MegooColab as Docker images and a vX.Y.Z release, the runner as binaries and a runner-vX.Y.Z release, each
+# with its note from docs/releases/. A push with no new version releases nothing. docs/releasing.md has the routine.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io/mmhy2003
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.plan.outputs.app }}
+      app_version: ${{ steps.plan.outputs.app_version }}
+      runner: ${{ steps.plan.outputs.runner }}
+      runner_version: ${{ steps.plan.outputs.runner_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # fails when the version files disagree, a changed product was not bumped, or a release note is missing
+      - id: plan
+        run: python tools/release/versions.py plan >> "$GITHUB_OUTPUT"
+
+  tests:
+    needs: plan
+    if: needs.plan.outputs.app == 'true' || needs.plan.outputs.runner == 'true'
+    uses: ./.github/workflows/ci.yml
+
+  app:
+    needs: [plan, tests]
+    if: needs.plan.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.plan.outputs.app_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # first for this machine only, to start the stack from exactly these images before publishing them
+      - name: Build for the start-up check
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.REGISTRY }}/megoocolab-backend:smoke
+          build-args: APP_VERSION=${{ env.VERSION }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+      - uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.REGISTRY }}/megoocolab-frontend:smoke
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+      - name: Start the stack from the new images
+        run: |
+          cat > smoke.env <<EOF
+          MEGOO_VERSION=smoke
+          SITE_ADDRESS=:80
+          HTTP_PORT=8080
+          HTTPS_PORT=8443
+          PUBLIC_URL=http://localhost:8080
+          SECRET_KEY=$(openssl rand -hex 32)
+          POSTGRES_PASSWORD=$(openssl rand -hex 16)
+          MEILI_MASTER_KEY=$(openssl rand -hex 32)
+          VALKEY_PASSWORD=$(openssl rand -hex 32)
+          UPDATE_CHECK=false
+          EOF
+          docker compose -p smoke -f deploy/docker-compose.yml --env-file smoke.env up -d --wait --wait-timeout 300 --pull never
+          curl -fsS http://localhost:8080/api/health
+      - name: Stack logs (on failure)
+        if: failure()
+        run: docker compose -p smoke -f deploy/docker-compose.yml --env-file smoke.env logs --no-color
+      - name: Stop the stack
+        if: always()
+        run: docker compose -p smoke -f deploy/docker-compose.yml --env-file smoke.env down -v
+
+      - name: Publish the backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/megoocolab-backend:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/megoocolab-backend:latest
+          build-args: APP_VERSION=${{ env.VERSION }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+      - name: Publish the frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/megoocolab-frontend:${{ env.VERSION }}
+            ${{ env.REGISTRY }}/megoocolab-frontend:latest
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v$VERSION" --target "$GITHUB_SHA" \
+            --title "MegooColab $VERSION" --notes-file "docs/releases/v$VERSION.md"
+
+  runner:
+    needs: [plan, tests]
+    if: needs.plan.outputs.runner == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.plan.outputs.runner_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: runner/go.mod
+          cache-dependency-path: runner/go.sum
+      # GoReleaser wants a tag at HEAD and its monorepo prefix is Pro only: a local, never pushed vX.Y.Z tag
+      # makes {{.Version}} X.Y.Z; the release itself is published below under runner-vX.Y.Z.
+      - name: Local tag for GoReleaser
+        run: |
+          git tag -f "v$VERSION"  # -f: a MegooColab release may already hold that tag name
+          echo "GORELEASER_CURRENT_TAG=v$VERSION" >> "$GITHUB_ENV"
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          workdir: runner
+          args: release --clean --skip=publish,validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "runner-v$VERSION" --target "$GITHUB_SHA" \
+            --title "Runner $VERSION" --notes-file "docs/releases/runner-v$VERSION.md" \
+            runner/dist/*.tar.gz runner/dist/*.zip runner/dist/checksums.txt
+      # `scoop install` reads the manifest from main: point it at this release, on main and develop alike
+      # (pushes made with this workflow's token start no new workflow run)
+      - name: Update the Scoop manifest
+        run: |
+          python tools/release/versions.py scoop "$VERSION" runner/dist/checksums.txt
+          cp runner/scoop/megoocolab-runner.json "$RUNNER_TEMP/manifest.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(runner): Scoop manifest for runner $VERSION" -- runner/scoop/megoocolab-runner.json
+          git push origin HEAD:main
+          git fetch origin develop
+          git checkout -B develop origin/develop
+          cp "$RUNNER_TEMP/manifest.json" runner/scoop/megoocolab-runner.json
+          git commit -m "chore(runner): Scoop manifest for runner $VERSION" -- runner/scoop/megoocolab-runner.json
+          git push origin develop

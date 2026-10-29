@@ -3,6 +3,8 @@ name: CI
 on:
   push:
   pull_request:
+  # the release workflow runs these first: nothing is published that they have not passed
+  workflow_call:
 
 permissions:
   contents: read
@@ -98,3 +100,17 @@ jobs:
           git config --global user.email ci@example.invalid
       - run: go test ./...
       - run: go vet ./...
+
+  # the release rules (tools/release/versions.py) and the version files agreeing with each other
+  release-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest
+      - run: pytest tools/release -q
+      - run: python tools/release/versions.py check
