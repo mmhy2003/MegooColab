@@ -76,6 +76,8 @@ runner:
 dev dev-migrate _dev-api _dev-worker: export SECRET_KEY := megoo-dev-secret-key-not-for-production
 dev dev-migrate _dev-api _dev-worker: export MEILI_MASTER_KEY := megoo-dev-master-key
 dev dev-migrate _dev-api _dev-worker: export VALKEY_URL := valkey://:megoo-dev-valkey@localhost:6379/0
+# coloured log levels in terminals that do not say they are one (Git Bash's mintty)
+_dev-api _dev-worker: export FORCE_COLOR := 1
 
 dev-build: dev-runner
 	uv --directory backend sync

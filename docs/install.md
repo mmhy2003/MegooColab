@@ -301,7 +301,8 @@ Then rebuild search from the restored data: Admin → Settings → Search → **
 
 ## 14. Troubleshooting
 
-- **See what a service says:** `docker compose logs -f backend` (or `worker`, `caddy`, `db`).
+- **See what a service says:** `docker compose logs -f backend` (or `worker`, `caddy`, `db`). Each backend and
+  worker line starts with its time (the container's clock, UTC); `FORCE_COLOR=1` in `.env` colours the levels.
 - **The backend keeps restarting:** `SECRET_KEY` is still the example value, or the database password in `.env`
   changed after the first start (the database keeps the first one). The log says which.
 - **Signing in seems to work but you are sent back to the login page:** the page is served over plain HTTP while

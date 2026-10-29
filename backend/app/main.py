@@ -26,6 +26,7 @@ from app.core.config import get_settings
 from app.core.csrf import CsrfHeaderMiddleware
 from app.core.db import SessionLocal
 from app.core.events import hub
+from app.core.logs import setup_logging
 from app.dashboard.router import router as dashboard_router
 from app.git.router import names_router as git_names_router
 from app.git.router import router as git_router
@@ -118,6 +119,7 @@ def create_app() -> FastAPI:
         capture,  # local: installs session hooks that queue search index updates
     )
 
+    setup_logging()  # after uvicorn's own setup, which runs before the app is imported
     capture.install()
     register_kb_context()
     register_memory_context()

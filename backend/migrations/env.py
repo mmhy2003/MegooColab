@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -12,8 +13,9 @@ from alembic import context
 config = context.config
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
+# This line sets up loggers basically. Only for the alembic command: the app migrating on start has set up its
+# own, which this would replace.
+if config.config_file_name is not None and not logging.getLogger().handlers:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # add your model's MetaData object here

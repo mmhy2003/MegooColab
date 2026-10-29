@@ -5,6 +5,7 @@ import contextlib
 import logging
 import signal
 
+from app.core.logs import setup_logging
 from app.jobs.worker import run_worker
 
 # job handler modules register themselves on import
@@ -25,12 +26,12 @@ async def _main() -> None:
     for sig in (signal.SIGTERM, signal.SIGINT):
         with contextlib.suppress(NotImplementedError):  # Windows
             loop.add_signal_handler(sig, stop.set)
-    logging.getLogger(__name__).info("worker started")
+    logging.getLogger("app.worker").info("worker started")  # under -m, __name__ is __main__
     await run_worker(stop)
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    setup_logging()
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(_main())
 

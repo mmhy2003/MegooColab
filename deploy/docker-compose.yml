@@ -68,6 +68,7 @@ services:
       # tests only: local fake embeddings instead of calling a provider
       AI_FAKE: ${AI_FAKE:-false}
       MEMORY_EXTRACT_DELAY_SECONDS: ${MEMORY_EXTRACT_DELAY_SECONDS:-60}
+      FORCE_COLOR: ${FORCE_COLOR:-}
       MEMORY_DREAM_HOUR_UTC: ${MEMORY_DREAM_HOUR_UTC:-3}
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in .env}
@@ -113,6 +114,7 @@ services:
       RUN_MIGRATIONS_ON_STARTUP: "false"
       AI_FAKE: ${AI_FAKE:-false}
       MEMORY_EXTRACT_DELAY_SECONDS: ${MEMORY_EXTRACT_DELAY_SECONDS:-60}
+      FORCE_COLOR: ${FORCE_COLOR:-}
       MEMORY_DREAM_HOUR_UTC: ${MEMORY_DREAM_HOUR_UTC:-3}
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in .env}
