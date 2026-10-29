@@ -46,6 +46,9 @@ export function TaskCardView({
   const P = PRIORITY_ICON[task.priority];
   const TypeIcon = TYPE_ICON[task.type];
   const wf = task.workflow;
+  // where the work starts when that isn't the default branch: the recorded start once the branch exists
+  // (a back-merge means it wasn't the default), Branch from until then
+  const fromBranch = task.start_branch ? (task.back_merge_into ? task.start_branch : null) : task.branch_from;
   return (
     <div
       className={`card space-y-2 p-2.5 text-sm transition-shadow hover:border-cyan ${dragging ? "glow-box border-cyan" : ""}`}
@@ -90,13 +93,13 @@ export function TaskCardView({
           <PullRequestBadge pr={task.pull_request} />
         </div>
       )}
-      {task.branch_from && !(task.start_branch && !task.back_merge_into) && (
+      {fromBranch && (
         <div>
           <span
             className="inline-flex items-center gap-1 rounded-full border border-line px-1.5 text-[11px] text-muted-foreground"
-            title={`Starts from ${task.branch_from} instead of the default branch`}
+            title={`Starts from ${fromBranch} instead of the default branch`}
           >
-            from {task.branch_from}
+            from {fromBranch}
           </span>
         </div>
       )}

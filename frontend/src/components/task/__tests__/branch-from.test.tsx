@@ -77,6 +77,13 @@ describe("Board card", () => {
     expect(badge).toHaveAttribute("title", "Starts from main instead of the default branch");
   });
 
+  it("shows where the work actually started once it did", () => {
+    render(<TaskCardView task={{ ...base, branch_from: "release", start_branch: "main", back_merge_into: "develop" } as Task} />);
+    const badge = screen.getByText("from main");
+    expect(badge).toHaveAttribute("title", "Starts from main instead of the default branch");
+    expect(screen.queryByText("from release")).toBeNull();
+  });
+
   it("hides the badge when it turned out to be the default branch", () => {
     render(<TaskCardView task={{ ...base, branch_from: "develop", start_branch: "develop" } as Task} />);
     expect(screen.queryByText("from develop")).toBeNull();
