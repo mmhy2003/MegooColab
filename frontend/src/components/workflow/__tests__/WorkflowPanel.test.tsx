@@ -287,6 +287,15 @@ describe("WorkflowPanel branches", () => {
     expect(links).toEqual(expect.arrayContaining(["https://g/pr/7", "https://g/pr/8"]));
   });
 
+  it("shows the back-merge branch even without a pull request (plain git)", async () => {
+    setup(wf({
+      status: "finished", stage: "done", branch: "megoo/PAY-1-fix", start_branch: "main", back_merge_into: "develop",
+      back_merge_branch: "megoo/PAY-1-fix-to-develop", finish_outcome: "branch_pushed",
+    } as Partial<Workflow>));
+    expect(await screen.findByText("megoo/PAY-1-fix-to-develop")).toBeInTheDocument();
+    expect(screen.getByText("Into develop:")).toBeInTheDocument();
+  });
+
   it("before work starts, says where it will start", async () => {
     setup(wf({ branch_from: null } as Partial<Workflow>));
     expect(await screen.findByText("Will start from the default branch.")).toBeInTheDocument();

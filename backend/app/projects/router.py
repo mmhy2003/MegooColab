@@ -38,6 +38,7 @@ from app.projects.schemas import (
     WorkflowCountOut,
 )
 from app.tasks import uploads
+from app.tasks.branches import valid_branch_name
 from app.tasks.models import Task
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -262,10 +263,19 @@ async def list_repositories(ref: str, user: AuthedUser, db: DbSession) -> list[R
     return [await _repo_out(db, r) for r in rows.scalars()]
 
 
+def _default_branch(value: str) -> str:
+    """The branch agents start from and production fixes are brought back into (Branch from): a real branch name."""
+    value = value.strip()
+    if not valid_branch_name(value):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_branch_name")
+    return value
+
+
 @router.post("/{ref}/repositories", status_code=status.HTTP_201_CREATED)
 async def add_repository(ref: str, body: RepoIn, user: AuthedUser, db: DbSession) -> RepoOut:
     project = await _managed(db, user, ref)
     await _check_connection(db, body.connection_id)
+    body.default_branch = _default_branch(body.default_branch)
     repo = ProjectRepository(project_id=project.id, **body.model_dump())
     db.add(repo)
     await db.flush()
@@ -277,6 +287,8 @@ async def add_repository(ref: str, body: RepoIn, user: AuthedUser, db: DbSession
 async def update_repository(ref: str, repo_id: uuid.UUID, body: RepoPatch, user: AuthedUser, db: DbSession) -> RepoOut:
     project = await _managed(db, user, ref)
     repo = await _repo(db, project, repo_id)
+    if body.default_branch is not None:
+        body.default_branch = _default_branch(body.default_branch)
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(repo, field, value)
     if "connection_id" in body.model_fields_set:

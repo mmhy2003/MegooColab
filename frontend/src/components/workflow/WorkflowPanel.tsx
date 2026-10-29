@@ -202,7 +202,7 @@ export function WorkflowPanel({
         </p>
       )}
 
-      {(wf.branch || wf.pr_url) && (
+      {(wf.branch || wf.pr_url || wf.back_merge_branch) && (
         <div className="space-y-1 text-xs">
           {wf.branch && (
             <p className="flex items-center gap-1.5">
@@ -216,12 +216,13 @@ export function WorkflowPanel({
               Open the pull request <ExternalLink size={12} aria-hidden />
             </a>
           )}
-          {(wf.back_merge_pull_request || wf.back_merge_pr_url) && (
+          {(wf.back_merge_branch || wf.back_merge_pull_request || wf.back_merge_pr_url) && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-muted-foreground">Into {wf.back_merge_into}:</span>
+              {wf.back_merge_branch && <code className="break-all">{wf.back_merge_branch}</code>}
               {wf.back_merge_pull_request ? (
                 <PullRequestBadge pr={wf.back_merge_pull_request} />
-              ) : (
+              ) : wf.back_merge_pr_url && (
                 <a href={wf.back_merge_pr_url ?? undefined} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-ink underline">
                   Open the pull request <ExternalLink size={12} aria-hidden />
                 </a>

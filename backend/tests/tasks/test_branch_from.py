@@ -71,3 +71,18 @@ async def test_branch_from_locked_for_started_connect_only(client, db, state, co
     await db.commit()
     r = await client.patch(f"/api/tasks/{t['key']}", json={"branch_from": "main"})
     assert r.status_code == code, r.text
+
+
+async def test_repository_default_branch_is_a_valid_branch_name(client, db):
+    await make_project(client, db)
+    base = {"name": "pay", "url": "https://github.com/acme/pay", "provider": "github"}
+    for bad in ("", "  ", "develop..x", "-x"):
+        r = await client.post("/api/projects/PAY/repositories", json={**base, "default_branch": bad})
+        assert r.status_code == 422 and r.json()["detail"] == "invalid_branch_name", (bad, r.text)
+    r = await client.post("/api/projects/PAY/repositories", json={**base, "default_branch": " develop "})
+    assert r.status_code == 201 and r.json()["default_branch"] == "develop"
+    repo_id = r.json()["id"]
+    r = await client.patch(f"/api/projects/PAY/repositories/{repo_id}", json={"default_branch": "a b"})
+    assert r.status_code == 422 and r.json()["detail"] == "invalid_branch_name"
+    r = await client.patch(f"/api/projects/PAY/repositories/{repo_id}", json={"default_branch": "main"})
+    assert r.status_code == 200 and r.json()["default_branch"] == "main"

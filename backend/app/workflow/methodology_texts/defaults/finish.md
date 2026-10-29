@@ -64,13 +64,14 @@ Your prompt states one option. Do exactly that one.
    do not leave a broken merge behind: abort or reset your own merge, and call `ask_human`.
 3. Do not push unless your prompt says to. Do not delete the branch unless it was fully merged and your prompt
    does not say to keep it.
-4. `report_finish(key=..., outcome="merged_local", branch=..., tests_passed=true)`.
+4. If your prompt names a "Back-merge into" branch, do the Back-merge first (see "Back-merge"). Then
+   `report_finish(key=..., outcome="merged_local", branch=..., tests_passed=true)`, with the back-merge fields.
 
 ### pull_request
 
 1. Push the task branch using the developer's own git credentials (`git push -u origin <branch>`). Never put
    tokens in URLs, never print credentials, never push to a different branch or remote than the task branch's
-   own.
+   own (or, for a back-merge, its `-to-` branch).
 2. Open the pull request with the developer's own CLI: `gh pr create` for GitHub, `glab mr create` for GitLab or
    `tea pulls create` for Gitea and Forgejo, whichever matches the remote. If the remote is plain git (no such
    host), there is nothing to open: push the branch only and report `outcome="branch_pushed"` without `pr_url`;
@@ -79,7 +80,9 @@ Your prompt states one option. Do exactly that one.
    start branch (see "Where the work goes").
 3. If the CLI is missing, not signed in, or the remote is unsupported, do not improvise with other credentials.
    Call `ask_human` with what is missing and end your turn.
-4. `report_finish(key=..., outcome="pr_opened", branch=..., pr_url=..., tests_passed=true)`. If the project requires human code review, a
+4. If your prompt names a "Back-merge into" branch, do the Back-merge first (see "Back-merge"). Then
+   `report_finish(key=..., outcome="pr_opened", branch=..., pr_url=..., tests_passed=true)`, with the back-merge
+   fields. If the project requires human code review, a
    person will approve the pull request in MegooColab afterwards; do not merge it yourself.
 
 ### keep_branch
@@ -148,7 +151,7 @@ recorded passing run is flagged to the reviewer.
 - Never discard work. Do not delete the task branch or worktree unless the option clearly calls for it and the
   work is merged.
 - Do not change the finishing option yourself, even if it seems better.
-- Call `report_finish` exactly once, and only after the option has actually been carried out.
+- Call `report_finish` exactly once, after the option (and any back-merge) has actually been carried out.
 
 ## When you are blocked
 

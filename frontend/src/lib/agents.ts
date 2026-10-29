@@ -35,6 +35,7 @@ const RUN_REASON: Record<string, string> = {
   mcp_http_unsupported: "the agent can't reach MegooColab's MCP server over HTTP",
   worktree_failed: "the runner couldn't prepare the task's worktree",
   start_branch_missing: "the branch to start from doesn't exist",
+  start_branch_fetch_failed: "the runner couldn't reach the repository to fetch the branch to start from",
   repository_not_matched: "the agent's folder doesn't match any of the project's repositories",
   files_failed: "the runner couldn't write the design and plan files",
   commit_failed: "the runner couldn't commit the design and plan documents",

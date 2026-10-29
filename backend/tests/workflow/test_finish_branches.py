@@ -145,3 +145,8 @@ def test_finish_text_back_merge_section():
     section = text[text.index("## Back-merge"):]
     assert "Back-merge into" in text and "-to-" in section and "record_decision" in section
     assert "unless the task says otherwise" not in text
+    # no contradiction: the -to- branch may be pushed, and the back-merge comes before the one report_finish
+    text = " ".join(text.split())  # the text wraps lines
+    assert "never push to a different branch or remote than the task branch's own (or" in text
+    assert text.count("do the Back-merge first") == 2  # merge_local and pull_request
+    assert "Call `report_finish` exactly once, after the option (and any back-merge)" in text

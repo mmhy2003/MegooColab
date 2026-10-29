@@ -20,6 +20,7 @@ describe("Branch from messages", () => {
     expect(errorMessage(new ApiError(422, "invalid_branch_name"))).toBe("That isn't a valid branch name.");
     expect(errorMessage(new ApiError(409, "branch_from_locked"))).toBe("Branch from can't change once work has started.");
     expect(runReasonText("start_branch_missing")).toBe("the branch to start from doesn't exist");
+    expect(runReasonText("start_branch_fetch_failed")).toBe("the runner couldn't reach the repository to fetch the branch to start from");
     expect(runReasonText("repository_not_matched")).toBe("the agent's folder doesn't match any of the project's repositories");
   });
 

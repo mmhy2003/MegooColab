@@ -60,7 +60,7 @@ DOC_ROLES = {
 RUNNER_FAILURE_CODES = frozenset({
     "mcp_http_unsupported", "worktree_failed", "not_bound", "files_failed", "commit_failed", "adapter_start_failed",
     "initialize_failed", "session_failed", "prompt_failed", "invalid_run_files", "busy", "git_state_unreadable",
-    "start_branch_missing", "repository_not_matched",
+    "start_branch_missing", "repository_not_matched", "start_branch_fetch_failed",
 })
 
 log = logging.getLogger(__name__)

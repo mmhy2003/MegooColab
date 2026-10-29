@@ -4,6 +4,8 @@ import asyncio
 import time
 import uuid
 
+import pytest
+
 from sqlalchemy import select, update
 
 from app.agent_runs.models import AgentRun
@@ -147,7 +149,8 @@ async def test_runner_without_branch_capability_leaves_task_runs_queued(db, tc_f
         assert mine["problems"] == [WORKFLOW_PROBLEM, BRANCH_PROBLEM]
 
 
-async def test_new_failure_codes_kept_as_reason(db, tc_factory):
+@pytest.mark.parametrize("code", ["start_branch_missing", "repository_not_matched", "start_branch_fetch_failed"])
+async def test_new_failure_codes_kept_as_reason(db, tc_factory, code):
     tc = tc_factory(lifespan=True)
     await _manager_with_project(db, tc)
     token, agent, task = _setup(tc)
@@ -157,8 +160,8 @@ async def test_new_failure_codes_kept_as_reason(db, tc_factory):
         ws.send_json(_hello([_avail(agent)]))
         ws.receive_json()
         ws.send_json({"type": "run_finished", "run_id": run["id"], "outcome": "failed", "summary": "",
-                      "error": "start_branch_missing"})
+                      "error": code})
         _wait_run(tc, task, run["id"], "failed")
     async with SessionLocal() as s:
         row = await s.get(AgentRun, uuid.UUID(run["id"]))
-        assert row.reason == "start_branch_missing"
+        assert row.reason == code
