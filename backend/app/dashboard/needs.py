@@ -4,7 +4,7 @@ Mine) unread mentions. Addressed to the same people the notifications go to (NOT
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import Select, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,19 +33,27 @@ async def _names(db: AsyncSession, ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
     return dict((await db.execute(select(User.id, User.name).where(User.id.in_(ids)))).all())
 
 
-async def _workflow_waits(db: AsyncSession, scope: Scope) -> list[tuple[NeedItem, list[uuid.UUID]]]:
-    owner = _owner_of(func.coalesce(TaskWorkflow.agent_id, Task.assignee_agent_id))
+_WAIT_OWNER = _owner_of(func.coalesce(TaskWorkflow.agent_id, Task.assignee_agent_id))
+
+
+def _workflow_waits_query(scope: Scope, *columns) -> Select:
     stmt = (
-        select(Task.id, Task.number, Task.title, Project.key, TaskWorkflow.needs, TaskWorkflow.escalation_reason,
-               TaskWorkflow.pr_url, func.coalesce(TaskWorkflow.waiting_since, TaskWorkflow.updated_at),
-               owner, Task.assignee_user_id)
+        select(*columns).select_from(TaskWorkflow)
         .join(Task, Task.id == TaskWorkflow.task_id).join(Project, Project.id == Task.project_id)
         .where(TaskWorkflow.status == WorkflowStatus.waiting_human, TaskWorkflow.needs.is_not(None),
                scope.in_projects(Task.project_id))
     )
     if scope.name == "mine":
-        stmt = stmt.where(or_(owner == scope.user.id, Task.assignee_user_id == scope.user.id))
-    rows = (await db.execute(stmt)).all()
+        stmt = stmt.where(or_(_WAIT_OWNER == scope.user.id, Task.assignee_user_id == scope.user.id))
+    return stmt
+
+
+async def _workflow_waits(db: AsyncSession, scope: Scope) -> list[tuple[NeedItem, list[uuid.UUID]]]:
+    rows = (await db.execute(_workflow_waits_query(
+        scope, Task.id, Task.number, Task.title, Project.key, TaskWorkflow.needs, TaskWorkflow.escalation_reason,
+        TaskWorkflow.pr_url, func.coalesce(TaskWorkflow.waiting_since, TaskWorkflow.updated_at), _WAIT_OWNER,
+        Task.assignee_user_id,
+    ))).all()
     asking = [r[0] for r in rows if r[4] == "question"]
     questions: dict[uuid.UUID, str] = {}
     if asking:
@@ -64,28 +72,36 @@ async def _workflow_waits(db: AsyncSession, scope: Scope) -> list[tuple[NeedItem
     return out
 
 
-async def _draft_answers(db: AsyncSession, scope: Scope) -> list[tuple[NeedItem, list[uuid.UUID]]]:
-    owner = _owner_of(Question.draft_agent_id)
+_DRAFT_OWNER = _owner_of(Question.draft_agent_id)
+
+
+def _draft_answers_query(scope: Scope, *columns) -> Select:
     stmt = (
-        select(Question.id, Question.number, Question.title, Question.updated_at, Project.key, owner)
+        select(*columns).select_from(Question)
         .join(Project, Project.id == Question.target_project_id)
         .where(Question.status == QuestionStatus.draft, scope.in_projects(Question.target_project_id))
     )
     if scope.name == "mine":
-        stmt = stmt.where(owner == scope.user.id)
+        stmt = stmt.where(_DRAFT_OWNER == scope.user.id)
+    return stmt
+
+
+async def _draft_answers(db: AsyncSession, scope: Scope) -> list[tuple[NeedItem, list[uuid.UUID]]]:
+    rows = await db.execute(_draft_answers_query(
+        scope, Question.id, Question.number, Question.title, Question.updated_at, Project.key, _DRAFT_OWNER))
     return [
         (NeedItem(kind="draft_answer", ref=f"{key}-Q{number}", title=title, since=since, link=f"/questions/{qid}"),
          [owner_id] if owner_id else [])
-        for qid, number, title, since, key, owner_id in (await db.execute(stmt)).all()
+        for qid, number, title, since, key, owner_id in rows.all()
     ]
 
 
-async def _needs_a_person(db: AsyncSession, scope: Scope) -> list[NeedItem]:
+def _needs_a_person_query(scope: Scope, *columns) -> Select | None:
     """Questions routing gave up on: the target project's members who can answer (not viewers) are asked."""
     if scope.name == "mine" and scope.user.role == Role.viewer:
-        return []
+        return None
     stmt = (
-        select(Question.id, Question.number, Question.title, Question.updated_at, Project.key)
+        select(*columns).select_from(Question)
         .join(Project, Project.id == Question.target_project_id)
         .where(Question.status == QuestionStatus.needs_human, scope.in_projects(Question.target_project_id))
     )
@@ -94,6 +110,13 @@ async def _needs_a_person(db: AsyncSession, scope: Scope) -> list[NeedItem]:
             select(ProjectTeam.project_id).join(TeamMember, TeamMember.team_id == ProjectTeam.team_id)
             .where(ProjectTeam.project_id == Question.target_project_id, TeamMember.user_id == scope.user.id)
         ))
+    return stmt
+
+
+async def _needs_a_person(db: AsyncSession, scope: Scope) -> list[NeedItem]:
+    stmt = _needs_a_person_query(scope, Question.id, Question.number, Question.title, Question.updated_at, Project.key)
+    if stmt is None:
+        return []
     return [
         NeedItem(kind="needs_human", ref=f"{key}-Q{number}", title=title, since=since, link=f"/questions/{qid}",
                  waiting_for=[f"anyone on {key}"] if scope.name != "mine" else [])
@@ -101,20 +124,34 @@ async def _needs_a_person(db: AsyncSession, scope: Scope) -> list[NeedItem]:
     ]
 
 
-async def _mentions(db: AsyncSession, scope: Scope) -> list[NeedItem]:
-    stmt = (
-        select(Notification.id, Notification.title, Notification.body, Notification.link, Notification.created_at,
-               Project.key, Task.number)
+def _mentions_query(scope: Scope, *columns) -> Select:
+    return (
+        select(*columns).select_from(Notification)
         .outerjoin(Task, Task.id == Notification.task_id).outerjoin(Project, Project.id == Task.project_id)
         .where(Notification.user_id == scope.user.id, Notification.kind == Kind.mentioned,
                Notification.read_at.is_(None),
                or_(Notification.project_id.is_(None), scope.in_projects(Notification.project_id)))
     )
+
+
+async def _mentions(db: AsyncSession, scope: Scope) -> list[NeedItem]:
+    rows = await db.execute(_mentions_query(
+        scope, Notification.id, Notification.title, Notification.body, Notification.link, Notification.created_at,
+        Project.key, Task.number))
     return [
         NeedItem(kind="mention", ref=f"{key}-{number}" if key else "", title=title, detail=body, since=since,
                  link=link, notification_id=nid)
-        for nid, title, body, link, since, key, number in (await db.execute(stmt)).all()
+        for nid, title, body, link, since, key, number in rows.all()
     ]
+
+
+async def count(db: AsyncSession, scope: Scope) -> int:
+    """How many wait, counted in the database (the sidebar badge): the same rows `needs` lists."""
+    queries = [_workflow_waits_query(scope, func.count()), _draft_answers_query(scope, func.count()),
+               _needs_a_person_query(scope, func.count())]
+    if scope.name == "mine":
+        queries.append(_mentions_query(scope, func.count()))
+    return sum([await db.scalar(q) or 0 for q in queries if q is not None])
 
 
 async def needs(db: AsyncSession, scope: Scope, limit: int = NEEDS_SHOWN) -> tuple[list[NeedItem], int, int]:

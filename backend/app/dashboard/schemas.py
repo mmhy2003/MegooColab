@@ -65,6 +65,7 @@ class RunningItem(BaseModel):
 class QueuedItem(BaseModel):
     task_key: str | None
     stage: Stage | None
+    link: str | None = None
 
 
 class Queued(BaseModel):
@@ -75,7 +76,8 @@ class Queued(BaseModel):
 class AgentItem(BaseModel):
     id: uuid.UUID
     name: str
-    status: Literal["busy", "online", "offline"]
+    # busy_elsewhere: running only in projects outside the scope (not counted as working here)
+    status: Literal["busy", "busy_elsewhere", "online", "offline"]
     runs_today: int
 
 

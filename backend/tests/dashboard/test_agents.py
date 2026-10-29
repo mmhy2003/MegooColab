@@ -59,7 +59,7 @@ async def test_queued_lists_five_and_counts_all(client, db, world):
     await login(client, world.viewer)
     body = await dash(client)
     assert body["queued"]["total"] == 7 and len(body["queued"]["items"]) == 5
-    assert body["queued"]["items"][0] == {"task_key": "PAY-1", "stage": "plan"}
+    assert body["queued"]["items"][0] == {"task_key": "PAY-1", "stage": "plan", "link": "/projects/PAY/board?task=PAY-1"}
     assert body["numbers"]["runs_queued"] == 7
 
 
@@ -92,3 +92,26 @@ async def test_runs_today_count_only_runs_in_scope(client, db, world):
     await login(client, world.viewer)
     [row] = [a for a in (await dash(client))["agents"] if a["name"] == "Viewer bot"]
     assert row["runs_today"] == 1
+
+
+async def test_mine_lists_the_viewers_agent_with_no_project_yet(client, db, world):
+    db.add(Agent(owner_id=world.viewer.id, name="Fresh bot", program="codex"))
+    db.add(Agent(owner_id=world.other.id, name="Not mine", program="codex"))
+    await db.commit()
+    await login(client, world.viewer)
+    assert sorted(a["name"] for a in (await dash(client, "mine"))["agents"]) == ["Fresh bot", "Viewer bot"]
+    assert "Fresh bot" not in [a["name"] for a in (await dash(client, "teams"))["agents"]]
+
+
+async def test_an_agent_busy_only_outside_the_scope_is_working_elsewhere(client, db, world, monkeypatch):
+    """The Agents working tile agrees with Running now: an agent busy in a project you can't open isn't counted."""
+    db.add(AgentBinding(agent_id=world.agent.id, project_id=world.web.id, local_path="/w/web"))
+    await db.commit()
+    await add_run(db, world.agent, task=await add_task(db, world.web), started_at=datetime.now(UTC))
+    monkeypatch.setattr(registry, "available_agents", lambda owner: set())
+    await login(client, world.viewer)
+    body = await dash(client)
+    [row] = [a for a in body["agents"] if a["name"] == "Viewer bot"]
+    assert row["status"] == "busy_elsewhere"
+    assert body["running"] == []
+    assert (body["numbers"]["agents_working"], body["numbers"]["agents_online"]) == (0, 1)

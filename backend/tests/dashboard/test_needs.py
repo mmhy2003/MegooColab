@@ -84,3 +84,25 @@ async def test_viewers_are_not_asked_to_answer_questions(client, db, world):
     await add_question(db, world.pay, status="needs_human")
     await login(client, world.viewer)
     assert (await client.get("/api/dashboard/count")).json() == {"needs_you": 0}
+
+
+async def test_count_is_counted_in_the_database(client, db, world, monkeypatch):
+    """The sidebar badge counts without building every row: the same total the dashboard shows under Mine."""
+    from app.dashboard import needs
+
+    design = await add_task(db, world.pay, agent=world.agent)
+    await add_workflow(db, design, stage="design", status="waiting_human", needs="design_approval", agent=world.agent)
+    await add_question(db, world.pay, status="draft", draft_agent=world.agent)
+    await add_question(db, world.pay, status="needs_human")
+    db.add(Notification(user_id=world.viewer.id, kind="mentioned", title="m", body="", link="/x"))
+    leak = await add_task(db, world.web, user=world.viewer)  # WEB: not counted
+    await add_workflow(db, leak, stage="plan", status="waiting_human", needs="plan_approval")
+    await db.commit()
+    await login(client, world.viewer)
+    assert (await dash(client, "mine"))["numbers"]["need_you"] == 4
+
+    async def built_rows(*_a, **_k):
+        raise AssertionError("the count built the rows")
+
+    monkeypatch.setattr(needs, "needs", built_rows)
+    assert (await client.get("/api/dashboard/count")).json() == {"needs_you": 4}

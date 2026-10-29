@@ -12,13 +12,13 @@ from app.agent_runs.models import AgentRun, RunStatus
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import agent_statuses
 from app.dashboard.schemas import AgentItem, Queued, QueuedItem, RunningItem
-from app.dashboard.scope import Scope, day_start, task_link, today
+from app.dashboard.scope import Scope, task_link
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.workflow.models import DocKind, DocStatus, Stage, TaskWorkflow, WorkflowDocument
 
 QUEUED_SHOWN = 5
-_ORDER = {"busy": 0, "online": 1, "offline": 2}
+_ORDER = {"busy": 0, "busy_elsewhere": 1, "online": 2, "offline": 3}
 
 
 def _runs(scope: Scope, *columns):
@@ -35,11 +35,11 @@ def _runs(scope: Scope, *columns):
 
 async def agents(db: AsyncSession, scope: Scope) -> list[AgentItem]:
     stmt = select(Agent.id, Agent.name, Agent.owner_id)
-    if scope.project_ids is not None:
+    if scope.name == "mine":  # every agent of the viewer's, bound to a project yet or not
+        stmt = stmt.where(Agent.owner_id == scope.user.id)
+    elif scope.project_ids is not None:
         stmt = stmt.where(exists(select(AgentBinding.id).where(
             AgentBinding.agent_id == Agent.id, AgentBinding.project_id.in_(scope.project_ids))))
-    if scope.name == "mine":
-        stmt = stmt.where(Agent.owner_id == scope.user.id)
     found = (await db.execute(stmt)).all()
     if not found:
         return []
@@ -47,9 +47,17 @@ async def agents(db: AsyncSession, scope: Scope) -> list[AgentItem]:
     # only runs in scope: an agent bound to several projects shows none of another project's work
     today_runs = dict((await db.execute(
         _runs(scope, AgentRun.agent_id, func.count())
-        .where(AgentRun.agent_id.in_([a for a, _, _ in found]), AgentRun.started_at >= day_start(today()))
+        .where(AgentRun.agent_id.in_([a for a, _, _ in found]), AgentRun.started_at >= scope.day_start(scope.today()))
         .group_by(AgentRun.agent_id)
     )).all())
+    # working here means running in scope, as Running now shows; busy only elsewhere is told apart
+    here = set((await db.execute(
+        _runs(scope, AgentRun.agent_id)
+        .where(AgentRun.agent_id.in_([a for a, _, _ in found]), AgentRun.status == RunStatus.running)
+    )).scalars())
+    for agent_id in statuses:
+        if statuses[agent_id] == "busy" and agent_id not in here:
+            statuses[agent_id] = "busy_elsewhere"
     items = [AgentItem(id=agent_id, name=name, status=statuses[agent_id], runs_today=today_runs.get(agent_id, 0))
              for agent_id, name, _ in found]
     return sorted(items, key=lambda a: (_ORDER[a.status], a.name.lower()))
@@ -98,7 +106,9 @@ async def queued(db: AsyncSession, scope: Scope) -> Queued:
         .where(where).order_by(AgentRun.created_at, AgentRun.id).limit(QUEUED_SHOWN)
     )).all()
     return Queued(total=total or 0, items=[
-        QueuedItem(task_key=f"{key}-{number}" if key else None, stage=stage) for key, number, stage in rows
+        QueuedItem(task_key=f"{key}-{number}" if key else None, stage=stage,
+                   link=task_link(key, number) if key else None)
+        for key, number, stage in rows
     ])
 
 

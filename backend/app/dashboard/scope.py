@@ -2,7 +2,8 @@
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, or_, select, true
@@ -26,6 +27,13 @@ class Scope:
     name: ScopeName
     project_ids: frozenset[uuid.UUID] | None  # None: every project
     agent_ids: frozenset[uuid.UUID]  # the viewer's own agents
+    tz: tzinfo | None = None  # the viewer's time zone: what "today" means; None: the server's
+
+    def today(self) -> date:
+        return today(self.tz)
+
+    def day_start(self, d: date) -> datetime:
+        return day_start(d, self.tz)
 
     def in_projects(self, column) -> ColumnElement[bool]:
         return true() if self.project_ids is None else column.in_(self.project_ids)
@@ -36,7 +44,17 @@ class Scope:
         return or_(Task.assignee_user_id == self.user.id, Task.assignee_agent_id.in_(self.agent_ids))
 
 
-async def resolve_scope(db: AsyncSession, user: User, name: ScopeName) -> Scope:
+def viewer_zone(name: str | None) -> tzinfo | None:
+    """The browser's IANA time zone name; an unknown one means the server's."""
+    if not name:
+        return None
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+
+
+async def resolve_scope(db: AsyncSession, user: User, name: ScopeName, tz: tzinfo | None = None) -> Scope:
     admin = user.role == Role.admin
     if name == "all" and not admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
@@ -55,16 +73,16 @@ async def resolve_scope(db: AsyncSession, user: User, name: ScopeName) -> Scope:
     active = frozenset((await db.execute(select(Project.id).where(Project.status == ProjectStatus.active))).scalars())
     project_ids = active if project_ids is None else project_ids & active
     agent_ids = frozenset((await db.execute(select(Agent.id).where(Agent.owner_id == user.id))).scalars())
-    return Scope(user=user, name=name, project_ids=project_ids, agent_ids=agent_ids)
+    return Scope(user=user, name=name, project_ids=project_ids, agent_ids=agent_ids, tz=tz)
 
 
-def today() -> date:
-    """Today in the server's time zone (UTC in the containers)."""
-    return datetime.now().astimezone().date()
+def today(tz: tzinfo | None = None) -> date:
+    """Today in `tz`, or in the server's time zone (UTC in the containers)."""
+    return datetime.now(tz).date() if tz else datetime.now().astimezone().date()
 
 
-def day_start(d: date) -> datetime:
-    return datetime.combine(d, time.min).astimezone()
+def day_start(d: date, tz: tzinfo | None = None) -> datetime:
+    return datetime.combine(d, time.min, tzinfo=tz) if tz else datetime.combine(d, time.min).astimezone()
 
 
 def week_end(d: date) -> date:

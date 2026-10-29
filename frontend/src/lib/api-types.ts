@@ -2413,7 +2413,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Dashboard */
+        /**
+         * Dashboard
+         * @description `tz`: the browser's IANA time zone, so "today" (due, overdue, runs today, finished per day) is the viewer's.
+         */
         get: operations["dashboard_api_dashboard_get"];
         put?: never;
         post?: never;
@@ -2662,7 +2665,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "busy" | "online" | "offline";
+            status: "busy" | "busy_elsewhere" | "online" | "offline";
             /** Runs Today */
             runs_today: number;
         };
@@ -4329,6 +4332,8 @@ export interface components {
             /** Task Key */
             task_key: string | null;
             stage: components["schemas"]["Stage"] | null;
+            /** Link */
+            link?: string | null;
         };
         /** QuickGroup */
         QuickGroup: {
@@ -10845,6 +10850,7 @@ export interface operations {
         parameters: {
             query?: {
                 scope?: "mine" | "teams" | "all";
+                tz?: string | null;
             };
             header?: never;
             path?: never;

@@ -2,7 +2,7 @@
 search engine over HTTP, so its answer is kept for 60 seconds."""
 
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,8 +41,8 @@ async def _search() -> tuple[bool, int | None]:
     return available, documents
 
 
-async def system(db: AsyncSession) -> SystemOut:
-    now, since_midnight = datetime.now(UTC), day_start(today())
+async def system(db: AsyncSession, tz: tzinfo | None = None) -> SystemOut:
+    now, since_midnight = datetime.now(UTC), day_start(today(tz), tz)
     ready = (Job.status == JobStatus.queued, Job.run_after <= func.now())
     row = (await db.execute(select(
         exists(select(Agent.id)).label("agents_exist"),

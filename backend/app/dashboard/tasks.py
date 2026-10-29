@@ -1,7 +1,7 @@
 """Task figures: the headline task numbers, the viewer's own tasks due this week, tasks finished per day, and the
 per-project bars. Each is one aggregate query."""
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from typing import Literal
 
 from sqlalchemy import and_, func, select
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.dashboard.schemas import DayFinished, MyTask, ProjectRow
-from app.dashboard.scope import COUNTED_TYPES, Scope, day_start, task_link, today, week_end
+from app.dashboard.scope import COUNTED_TYPES, Scope, task_link, today, week_end
 from app.projects.access import accessible_project_ids
 from app.projects.models import BoardColumn, ColumnCategory, Project, ProjectStatus
 from app.tasks.models import Task
@@ -26,7 +26,7 @@ def _count(condition):
 
 
 async def task_numbers(db: AsyncSession, scope: Scope) -> dict[str, int]:
-    now, overdue = datetime.now(UTC), and_(_open, Task.due_date < today())
+    now, overdue = datetime.now(UTC), and_(_open, Task.due_date < scope.today())
     row = (await db.execute(
         select(
             _count(_open).label("open_tasks"),
@@ -47,9 +47,9 @@ def due_label(due: date, today_: date) -> Literal["overdue", "today", "week"]:
     return "overdue" if due < today_ else "today" if due == today_ else "week"
 
 
-async def my_tasks(db: AsyncSession, user: User) -> list[MyTask]:
+async def my_tasks(db: AsyncSession, user: User, tz: tzinfo | None = None) -> list[MyTask]:
     """The viewer's own open tasks that are overdue or due by Sunday, whatever the scope."""
-    t = today()
+    t = today(tz)
     allowed = await accessible_project_ids(db, user)
     stmt = (
         select(Project.key, Task.number, Task.title, Task.due_date)
@@ -68,8 +68,8 @@ async def my_tasks(db: AsyncSession, user: User) -> list[MyTask]:
 
 async def finished_daily(db: AsyncSession, scope: Scope) -> list[DayFinished]:
     """Tasks completed on each of the last 14 days, split by whether an agent is (still) assigned."""
-    first = today() - timedelta(days=FINISHED_DAYS - 1)
-    start = day_start(first)
+    first = scope.today() - timedelta(days=FINISHED_DAYS - 1)
+    start = scope.day_start(first)
     day = func.floor((func.extract("epoch", Task.completed_at) - start.timestamp()) / 86400).label("day")
     by_agent = Task.assignee_agent_id.is_not(None)
     rows = await db.execute(
@@ -91,7 +91,7 @@ async def projects(db: AsyncSession, scope: Scope) -> list[ProjectRow]:
         select(
             Project.key, Project.name,
             _count(_open), _count(_in_progress), _count(BoardColumn.category == ColumnCategory.done),
-            _count(and_(_open, Task.due_date < today())),
+            _count(and_(_open, Task.due_date < scope.today())),
         )
         .select_from(Project)
         .outerjoin(Task, counted).outerjoin(BoardColumn, BoardColumn.id == Task.column_id)

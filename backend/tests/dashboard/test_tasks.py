@@ -92,3 +92,19 @@ async def test_projects_rows(client, db, world):
     await login(client, world.viewer)
     [row] = (await dash(client))["projects"]
     assert row == {"key": "PAY", "name": "Project PAY", "open": 2, "in_progress": 1, "done": 1, "late": 1}
+
+
+async def test_today_is_the_browsers_day(client, db, world):
+    """Due today means today where the viewer is: Kiritimati (UTC+14) is always a day or two ahead of Pago Pago
+    (UTC-11)."""
+    from zoneinfo import ZoneInfo
+
+    ahead = datetime.now(ZoneInfo("Pacific/Kiritimati")).date()
+    await add_task(db, world.pay, user=world.viewer, due=ahead, title="due")
+    await login(client, world.viewer)
+    r = await client.get("/api/dashboard", params={"tz": "Pacific/Kiritimati"})
+    assert [t["due"] for t in r.json()["my_tasks"]] == ["today"]
+    r = await client.get("/api/dashboard", params={"tz": "Pacific/Pago_Pago"})
+    assert "today" not in [t["due"] for t in r.json()["my_tasks"]]
+    r = await client.get("/api/dashboard", params={"tz": "Not/A_Zone"})  # unknown: the server's day
+    assert r.status_code == 200, r.text
