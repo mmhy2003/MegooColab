@@ -118,7 +118,11 @@ func Resolve(ctx context.Context, logw io.Writer, repo string, spec *protocol.Ru
 	match := matchRepository(origin, spec.Repositories)
 	if spec.BranchFrom != "" {
 		if match == nil {
-			fmt.Fprintf(logw, "runner: origin %q matches none of the project's %d repositories\n", origin, len(spec.Repositories))
+			urls := make([]string, len(spec.Repositories))
+			for i, r := range spec.Repositories {
+				urls[i] = r.URL
+			}
+			fmt.Fprintf(logw, "runner: origin %q matches none of the project's repositories: %s\n", origin, strings.Join(urls, ", "))
 			return Result{}, ErrRepositoryNotMatched
 		}
 		point, err := startPoint(ctx, logw, repo, origin, spec.BranchFrom)

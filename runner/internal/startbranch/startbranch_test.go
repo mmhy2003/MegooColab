@@ -123,8 +123,13 @@ func TestResolveBranchFromFetchesLatest(t *testing.T) {
 func TestResolveBranchFromWithoutMatchFails(t *testing.T) {
 	_, clone, _ := world(t, "main")
 	spec := &protocol.RunBranch{BranchFrom: "main", Repositories: repos("https://a.example/x", "main", "https://b.example/y", "main")}
-	if _, err := Resolve(context.Background(), nil, clone, spec); !errors.Is(err, ErrRepositoryNotMatched) {
+	var log bytes.Buffer
+	if _, err := Resolve(context.Background(), &log, clone, spec); !errors.Is(err, ErrRepositoryNotMatched) {
 		t.Fatalf("err = %v", err)
+	}
+	// the log names the repositories it compared against, so the mismatch can be fixed
+	if !strings.Contains(log.String(), "https://a.example/x, https://b.example/y") {
+		t.Fatalf("log = %q", log.String())
 	}
 }
 
