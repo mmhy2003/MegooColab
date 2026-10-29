@@ -68,59 +68,79 @@ func git(repo string, args ...string) (string, error) {
 // A failed add is cleaned up before Ensure returns, so a retry starts afresh.
 // What Ensure repairs, and cleanup that fails, is written to logw.
 func Ensure(ctx context.Context, logw io.Writer, repo, cacheRoot, agentID, taskKey, title string) (path, branch string, err error) {
+	path, branch, _, err = EnsureFrom(ctx, logw, repo, cacheRoot, agentID, taskKey, title, nil)
+	return path, branch, err
+}
+
+// EnsureFrom is Ensure with the start point of a new branch: startPoint is
+// called only when the task's branch has to be created ("" is HEAD), and its
+// error is returned as is. created says the branch was created by this call.
+func EnsureFrom(ctx context.Context, logw io.Writer, repo, cacheRoot, agentID, taskKey, title string,
+	startPoint func() (string, error)) (path, branch string, created bool, err error) {
 	if logw == nil {
 		logw = io.Discard
 	}
 	if out, e := git(repo, "rev-parse", "--is-inside-work-tree"); e != nil || out != "true" {
-		return "", "", fmt.Errorf("worktree: %q is not a git work tree", repo)
+		return "", "", false, fmt.Errorf("worktree: %q is not a git work tree", repo)
 	}
 	if !safeID.MatchString(taskKey) || !safeID.MatchString(agentID) {
-		return "", "", fmt.Errorf("worktree: unsafe agent id or task key")
+		return "", "", false, fmt.Errorf("worktree: unsafe agent id or task key")
 	}
 	branch = "megoo/" + taskKey + "-" + Slug(title)
 	path = filepath.Join(cacheRoot, "worktrees", agentID, taskKey)
 	if rel, e := filepath.Rel(filepath.Join(cacheRoot, "worktrees"), path); e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", "", fmt.Errorf("worktree: path escapes the worktree root")
+		return "", "", false, fmt.Errorf("worktree: path escapes the worktree root")
 	}
 	unlock, err := lockPath(ctx, path)
 	if err != nil {
-		return "", "", fmt.Errorf("worktree: %w", err)
+		return "", "", false, fmt.Errorf("worktree: %w", err)
 	}
 	defer unlock()
 
 	if _, statErr := os.Stat(path); statErr == nil {
 		registered, lock, e := worktreeEntry(repo, path)
 		if e != nil {
-			return "", "", e
+			return "", "", false, e
 		}
 		if !registered {
-			return "", "", fmt.Errorf("worktree: %s exists but is not a worktree of %s; remove it manually", path, repo)
+			return "", "", false, fmt.Errorf("worktree: %s exists but is not a worktree of %s; remove it manually", path, repo)
 		}
 		why, e := broken(path, lock)
 		if e != nil {
-			return "", "", e
+			return "", "", false, e
 		}
 		if why == "" {
-			return path, branch, nil
+			return path, branch, false, nil
 		}
 		fmt.Fprintf(logw, "worktree: %s is broken (%s); recreating it\n", path, why)
 		discard(repo, path, logw)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	args := []string{"worktree", "add", "-b", branch, path}
 	if _, e := git(repo, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); e == nil {
 		args = []string{"worktree", "add", path, branch}
+	} else if startPoint != nil {
+		point, e := startPoint()
+		if e != nil {
+			return "", "", false, e
+		}
+		if point != "" {
+			args = append(args, point)
+		}
+		created = true
+	} else {
+		created = true
 	}
 	if _, e := gitstate.RunContext(ctx, addTimeout, repo, args...); e != nil {
 		// git registers the worktree, locked as initializing, before it checks
 		// out a file: an add that failed part-way leaves a half-written tree
 		// that a retry must not be handed.
 		discard(repo, path, logw)
-		return "", "", fmt.Errorf("worktree: %w", e)
+		return "", "", false, fmt.Errorf("worktree: %w", e)
 	}
-	return path, branch, nil
+	return path, branch, created, nil
 }
 
 // broken says why a registered worktree must not be handed to an agent, or ""

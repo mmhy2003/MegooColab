@@ -935,3 +935,41 @@ func TestRetriedRunWaitsForTheStoppedRunOfTheSameTask(t *testing.T) {
 		t.Fatal("the old run's adapter was never killed")
 	}
 }
+
+func TestRunStartsFromBranchAndReports(t *testing.T) {
+	e := newEnvWithCache(t, `[{"say":"ok"}]`, 1, t.TempDir())
+	if out, err := exec.Command("git", "-C", e.repo, "branch", "develop").CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	branch := &protocol.RunBranch{Repositories: []protocol.RunBranchRepo{{URL: "https://example.com/acme/meg", DefaultBranch: "develop"}}}
+	e.startRunWith("run-b1", "MEG-1", func(rs *protocol.RunStart) { rs.Branch = branch })
+	if rf := e.finished("run-b1"); rf.Outcome != "completed" {
+		t.Fatalf("finished = %+v", rf)
+	}
+	ups := e.updates("run-b1")
+	if len(ups) == 0 || ups[0].Kind != "branch" || ups[0].Data["start_branch"] != "develop" ||
+		ups[0].Data["default_branch"] != "develop" || ups[0].Data["repository_url"] != "https://example.com/acme/meg" {
+		t.Fatalf("first update = %+v", ups)
+	}
+	e.startRunWith("run-b2", "MEG-1", func(rs *protocol.RunStart) { rs.Branch = branch })
+	e.finished("run-b2")
+	for _, u := range e.updates("run-b2") {
+		if u.Kind == "branch" {
+			t.Fatal("a reused worktree reported its branch again")
+		}
+	}
+}
+
+func TestRunFailsWithStartBranchMissing(t *testing.T) {
+	e := newEnvWithCache(t, `[{"say":"ok"}]`, 1, t.TempDir())
+	e.startRunWith("run-m", "MEG-3", func(rs *protocol.RunStart) {
+		rs.Branch = &protocol.RunBranch{BranchFrom: "hotfix-base",
+			Repositories: []protocol.RunBranchRepo{{URL: "https://example.com/acme/meg", DefaultBranch: "main"}}}
+	})
+	if rf := e.finished("run-m"); rf.Error == nil || *rf.Error != "start_branch_missing" {
+		t.Fatalf("finished = %+v", rf)
+	}
+	if _, err := os.Stat(e.worktree("MEG-3")); err == nil {
+		t.Error("a worktree was left behind")
+	}
+}

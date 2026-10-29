@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -180,5 +181,54 @@ func TestEnsureTimesOutOnAHangingGit(t *testing.T) {
 	}
 	if time.Since(start) > 10*time.Second {
 		t.Fatal("did not time out")
+	}
+}
+
+func TestEnsureStartsFromGivenPoint(t *testing.T) {
+	repo, cache := newRepo(t), t.TempDir()
+	runGit(t, repo, "checkout", "-q", "-b", "develop")
+	if err := os.WriteFile(filepath.Join(repo, "d.txt"), []byte("d"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-q", "-m", "d")
+	tip := runGit(t, repo, "rev-parse", "develop")
+	runGit(t, repo, "checkout", "-q", "-")
+	path, _, created, err := EnsureFrom(context.Background(), io.Discard, repo, cache, "a", "MEG-10", "x",
+		func() (string, error) { return "develop", nil })
+	if err != nil || !created {
+		t.Fatalf("created=%v err=%v", created, err)
+	}
+	if got := runGit(t, path, "rev-parse", "HEAD"); got != tip {
+		t.Fatalf("HEAD = %s, want develop's tip %s", got, tip)
+	}
+}
+
+func TestEnsureReuseDoesNotCallStartPoint(t *testing.T) {
+	repo, cache := newRepo(t), t.TempDir()
+	never := func() (string, error) { t.Fatal("startPoint called"); return "", nil }
+	if _, _, _, err := EnsureFrom(context.Background(), io.Discard, repo, cache, "a", "MEG-11", "x",
+		func() (string, error) { return "", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, created, err := EnsureFrom(context.Background(), io.Discard, repo, cache, "a", "MEG-11", "x", never); err != nil || created {
+		t.Fatalf("created=%v err=%v", created, err)
+	}
+	runGit(t, repo, "branch", "megoo/MEG-12-x")
+	if _, _, created, err := EnsureFrom(context.Background(), io.Discard, repo, cache, "a", "MEG-12", "x", never); err != nil || created {
+		t.Fatalf("existing branch: created=%v err=%v", created, err)
+	}
+}
+
+func TestEnsureStartPointErrorReturnedAsIs(t *testing.T) {
+	repo, cache := newRepo(t), t.TempDir()
+	boom := errors.New("start_branch_missing")
+	_, _, _, err := EnsureFrom(context.Background(), io.Discard, repo, cache, "a", "MEG-13", "x",
+		func() (string, error) { return "", boom })
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, e := os.Stat(filepath.Join(cache, "worktrees", "a", "MEG-13")); !os.IsNotExist(e) {
+		t.Fatalf("a worktree was left behind: %v", e)
 	}
 }

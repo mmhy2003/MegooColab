@@ -25,6 +25,7 @@ import (
 	"github.com/mmhy2003/megoocolab/runner/internal/gitstate"
 	"github.com/mmhy2003/megoocolab/runner/internal/policy"
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
+	"github.com/mmhy2003/megoocolab/runner/internal/startbranch"
 	"github.com/mmhy2003/megoocolab/runner/internal/worktree"
 )
 
@@ -617,9 +618,26 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if err := m.awaitPrevious(r, logf); err != nil {
 		return fail("worktree_failed", err)
 	}
-	wt, _, err := worktree.Ensure(r.ctx, logf, repo, m.cacheRoot, rs.AgentID, rs.Task.Key, rs.Task.Title)
-	if err != nil {
+	// A new task branch starts from the start branch (Branch from), fetched first; a reused one is left alone.
+	var start startbranch.Result
+	wt, _, created, err := worktree.EnsureFrom(r.ctx, logf, repo, m.cacheRoot, rs.AgentID, rs.Task.Key, rs.Task.Title,
+		func() (string, error) {
+			res, err := startbranch.Resolve(r.ctx, logf, repo, rs.Branch)
+			start = res
+			return res.StartPoint, err
+		})
+	switch {
+	case errors.Is(err, startbranch.ErrStartBranchMissing):
+		return fail("start_branch_missing", err)
+	case errors.Is(err, startbranch.ErrRepositoryNotMatched):
+		return fail("repository_not_matched", err)
+	case err != nil:
 		return fail("worktree_failed", err)
+	}
+	if created && start.Report {
+		r.emit("branch", map[string]any{
+			"start_branch": start.StartBranch, "default_branch": start.DefaultBranch, "repository_url": start.RepositoryURL,
+		})
 	}
 	taskBranchPrefix := "megoo/" + rs.Task.Key + "-"
 	pol, err := policy.New(kind, wt)
