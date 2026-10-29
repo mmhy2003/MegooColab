@@ -15,15 +15,16 @@ BACK = f"{BASE}/acme/pay/pull/8"
 BACK_BRANCH = "megoo/PAY-1-to-develop"
 
 
-async def _with_back_merge(db, tc, github, *, back_state="open", back_merged=False, back_ref=BACK_BRANCH):  # noqa: F811
+async def _with_back_merge(db, tc, github, *, back_state="open", back_merged=False, back_ref=BACK_BRANCH,  # noqa: F811
+                           back_url=BACK):
     """Waiting on the main PR (review on); then the back-merge PR is reported and tracked too."""
     b, _conn = await _finished_waiting(db, tc, github)
     github.set(number=8, state=back_state, merged=back_merged, ref=back_ref)
     async with SessionLocal() as s:
         await s.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == b.task_id)
-                        .values(back_merge_pr_url=BACK, back_merge_branch=BACK_BRANCH))
+                        .values(back_merge_pr_url=back_url, back_merge_branch=BACK_BRANCH))
         await s.execute(update(Task).where(Task.id == b.task_id).values(start_branch="main", back_merge_into="develop"))
-        await service.track_pr(s, await s.get(Task, b.task_id), BACK, kind=PR_BACK_MERGE)
+        await service.track_pr(s, await s.get(Task, b.task_id), back_url, kind=PR_BACK_MERGE)
         await s.commit()
     return b
 
@@ -67,6 +68,29 @@ async def test_back_merge_closed_can_be_accepted(db, tc_factory, github):  # noq
     r = tc.post(f"/api/tasks/{b.key}/workflow/escalation", json={"action": "accept"})
     assert r.status_code == 200, r.text
     assert (await _wf(b.task_id)).status == "finished"
+
+
+async def test_untracked_back_merge_waits_for_a_person(db, tc_factory, github):  # noqa: F811
+    """The back-merge PR is on a host no connection covers: the merged main PR alone never finishes the task, but a
+    closed main PR still escalates."""
+    tc = tc_factory(lifespan=True)
+    b = await _with_back_merge(db, tc, github, back_url="https://elsewhere.example/acme/pay/pull/8")
+    rows = await _rows(b.task_id)
+    assert rows[PR_MAIN].connection_id is not None and rows[PR_BACK_MERGE].connection_id is None
+    github.set(state="closed", merged=True)
+    await _refresh(b.task_id)
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs) == ("waiting_human", "human_code_review")
+    assert await _events(b.task_id, "pr.merged") == []
+
+
+async def test_untracked_back_merge_does_not_hide_a_closed_main_pr(db, tc_factory, github):  # noqa: F811
+    tc = tc_factory(lifespan=True)
+    b = await _with_back_merge(db, tc, github, back_url="https://elsewhere.example/acme/pay/pull/8")
+    github.set(state="closed", merged=False)
+    await _refresh(b.task_id)
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "escalation", "pr_closed")
 
 
 async def test_back_merge_branch_mismatch_waits(db, tc_factory, github):  # noqa: F811
