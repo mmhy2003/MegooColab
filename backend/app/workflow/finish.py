@@ -193,10 +193,10 @@ async def report_finish(
                        "back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url}
     wf.branch, wf.pr_url, wf.finish_outcome = branch or None, pr_url, outcome
     wf.back_merge_branch, wf.back_merge_pr_url = back_merge_branch, back_merge_pr_url
-    await engine.record_workflow_event(db, task, None, "finish.reported", {
-        "outcome": outcome, "branch": branch, "pr_url": pr_url, "tests_passed": tests_passed,
-        "back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url,
-    })
+    reported = {"outcome": outcome, "branch": branch, "pr_url": pr_url, "tests_passed": tests_passed}
+    if back_merge_branch:  # a production fix's second delivery
+        reported |= {"back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url}
+    await engine.record_workflow_event(db, task, None, "finish.reported", reported)
     from app.git import service as git  # local: git imports the workflow
 
     if pr_url:
