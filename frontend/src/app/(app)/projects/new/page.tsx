@@ -9,14 +9,18 @@ import { Input, Textarea } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { useMe } from "@/lib/me";
 import { useTeams } from "@/lib/project";
 import { qk } from "@/lib/queries";
+import { teamChoices } from "@/lib/rights";
 import type { Project } from "@/lib/types";
 
 export default function NewProjectPage() {
   const router = useRouter();
   const client = useQueryClient();
   const teams = useTeams();
+  const { data: me } = useMe();
+  const choices = teamChoices(teams.data ?? [], me, []);
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -52,7 +56,7 @@ export default function NewProjectPage() {
         <fieldset>
           <legend className="mb-1 text-xs tracking-wider text-muted-foreground uppercase">Teams</legend>
           <div className="flex flex-wrap gap-3">
-            {teams.data?.map((t) => (
+            {choices.map((t) => (
               <label key={t.id} className="flex items-center gap-1.5 text-sm">
                 <input
                   type="checkbox"
@@ -62,7 +66,7 @@ export default function NewProjectPage() {
                 {t.name}
               </label>
             ))}
-            {teams.data?.length === 0 && <p className="text-sm text-muted-foreground">Create a team first.</p>}
+            {teams.data && choices.length === 0 && <p className="text-sm text-muted-foreground">Create a team first.</p>}
           </div>
         </fieldset>
         {error && <p role="alert" className="text-sm text-pink">{error}</p>}

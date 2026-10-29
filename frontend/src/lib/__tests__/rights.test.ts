@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canDeleteTask, projectRights } from "@/lib/rights";
+import { canDeleteTask, projectRights, teamChoices } from "@/lib/rights";
 import type { User } from "@/lib/types";
 
 const user = (role: string, id = "u1") => ({ id, role }) as unknown as User;
@@ -50,5 +50,23 @@ describe("canDeleteTask", () => {
     expect(canDeleteTask(user("admin"), { reporter_id: null }, active("admin"))).toBe(true);
     const closed = projectRights(user("member"), project("archived"));
     expect(canDeleteTask(user("member"), { reporter_id: "u1" }, closed)).toBe(false);
+  });
+});
+
+describe("teamChoices", () => {
+  const teams = [
+    { id: "a", name: "A", is_member: true },
+    { id: "b", name: "B", is_member: false },
+    { id: "c", name: "C", is_member: false },
+  ] as never[];
+  const ids = (list: { id: string }[]) => list.map((t) => t.id);
+
+  it("admins may attach any team, others only their own", () => {
+    expect(ids(teamChoices(teams, user("admin"), []))).toEqual(["a", "b", "c"]);
+    expect(ids(teamChoices(teams, user("manager"), []))).toEqual(["a"]);
+  });
+
+  it("keeps a project's current teams listed, so saving does not drop them", () => {
+    expect(ids(teamChoices(teams, user("manager"), ["c"]))).toEqual(["a", "c"]);
   });
 });

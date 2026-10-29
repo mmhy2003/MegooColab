@@ -57,6 +57,7 @@ async def _detail(db: AsyncSession, team: Team, viewer: User) -> TeamDetail:
         description=team.description,
         members=[UserOut.model_validate(u) for u in members],
         projects=await _visible_projects(db, team, viewer),
+        project_count=(await service.team_project_counts(db)).get(team.id, 0),
         agents=await agents_out(db, list(agents), viewer),
     )
 
@@ -79,10 +80,11 @@ async def list_teams(user: AuthedUser, db: DbSession) -> list[TeamSummary]:
         .order_by(Team.name)
     )
     project_counts = await service.team_project_counts(db)
+    mine = await service.user_team_ids(db, user.id)
     return [
         TeamSummary(
             id=t.id, name=t.name, description=t.description,
-            member_count=n, project_count=project_counts.get(t.id, 0),
+            member_count=n, project_count=project_counts.get(t.id, 0), is_member=t.id in mine,
         )
         for t, n in rows
     ]

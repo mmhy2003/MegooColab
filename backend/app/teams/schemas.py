@@ -28,6 +28,7 @@ class TeamOut(BaseModel):
 class TeamSummary(TeamOut):
     member_count: int
     project_count: int
+    is_member: bool = False  # the caller belongs to it (a manager may only attach their own teams)
 
 
 class ProjectRef(BaseModel):
@@ -38,7 +39,8 @@ class ProjectRef(BaseModel):
 
 class TeamDetail(TeamOut):
     members: list[UserOut]
-    projects: list[ProjectRef]
+    projects: list[ProjectRef]  # the ones the caller can see
+    project_count: int = 0  # all of them: a team with projects cannot be deleted
     agents: list[AgentOut] = []
 
 

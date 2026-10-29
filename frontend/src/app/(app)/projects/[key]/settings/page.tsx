@@ -16,7 +16,7 @@ import { TabPanel, Tabs, useTabParam } from "@/components/ui/Tabs";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useMe } from "@/lib/me";
-import { projectRights } from "@/lib/rights";
+import { projectRights, teamChoices } from "@/lib/rights";
 import { useColumns, useLabels, useProject, useRepos, useTeams } from "@/lib/project";
 import { qk } from "@/lib/queries";
 import type { Project } from "@/lib/types";
@@ -52,6 +52,7 @@ function General({ project, canEdit }: { project: Project; canEdit: boolean }) {
 function GeneralForm({ project }: { project: Project }) {
   const client = useQueryClient();
   const teams = useTeams();
+  const { data: me } = useMe();
   const [form, setForm] = useState({
     name: project.name,
     description: project.description,
@@ -83,7 +84,7 @@ function GeneralForm({ project }: { project: Project }) {
       <fieldset>
         <legend className="mb-1 text-xs tracking-wider text-muted-foreground uppercase">Teams</legend>
         <div className="flex flex-wrap gap-3">
-          {teams.data?.map((t) => (
+          {teamChoices(teams.data ?? [], me, project.team_ids).map((t) => (
             <label key={t.id} className="flex items-center gap-1.5 text-sm">
               <input
                 type="checkbox"

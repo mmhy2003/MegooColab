@@ -5072,6 +5072,11 @@ export interface components {
             /** Projects */
             projects: components["schemas"]["ProjectRef"][];
             /**
+             * Project Count
+             * @default 0
+             */
+            project_count: number;
+            /**
              * Agents
              * @default []
              */
@@ -5121,6 +5126,11 @@ export interface components {
             member_count: number;
             /** Project Count */
             project_count: number;
+            /**
+             * Is Member
+             * @default false
+             */
+            is_member: boolean;
         };
         /** TestEmailIn */
         TestEmailIn: {

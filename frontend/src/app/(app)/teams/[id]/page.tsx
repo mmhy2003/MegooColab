@@ -49,6 +49,7 @@ export default function TeamPage() {
                 <Button variant="ghost" onClick={() => setEditing(true)}>Edit members</Button>
                 <Button
                   variant="danger"
+                  disabled={t.project_count > 0}
                   onClick={async () => {
                     if (!(await ask({ tone: "danger", title: `Delete team ${t.name}?`, text: "Its members keep their accounts; its Knowledge Base space is deleted.", ok: "Delete" }))) return;
                     try {
@@ -60,12 +61,15 @@ export default function TeamPage() {
                     }
                   }}
                 >
-                  Delete
+                  Delete team
                 </Button>
               </>
             )
           }
         />
+        {canEdit && t.project_count > 0 && (
+          <p className="text-xs text-muted-foreground">Move or delete this team&apos;s projects first.</p>
+        )}
         {error && <p role="alert" className="text-sm text-pink">{error}</p>}
         <section>
           <h2 className="mb-2 text-xs tracking-widest text-muted-foreground uppercase">Members ({t.members.length})</h2>
