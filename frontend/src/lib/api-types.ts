@@ -5082,6 +5082,11 @@ export interface components {
              */
             project_count: number;
             /**
+             * Blocking Project Count
+             * @default 0
+             */
+            blocking_project_count: number;
+            /**
              * Agents
              * @default []
              */

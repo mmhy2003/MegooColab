@@ -58,6 +58,7 @@ async def _detail(db: AsyncSession, team: Team, viewer: User) -> TeamDetail:
         members=[UserOut.model_validate(u) for u in members],
         projects=await _visible_projects(db, team, viewer),
         project_count=(await service.team_project_counts(db, [team.id])).get(team.id, 0),
+        blocking_project_count=await service.blocking_project_count(db, team.id),
         agents=await agents_out(db, list(agents), viewer),
     )
 
@@ -126,11 +127,17 @@ async def update_team(team_id: uuid.UUID, body: TeamPatch, user: AuthedUser, db:
 async def delete_team(team_id: uuid.UUID, user: AuthedUser, db: DbSession) -> None:
     team = await service.get_team_or_404(db, team_id)
     await service.require_team_manage(db, user, team)
-    if await service.team_projects(db, team.id):
+    if await service.blocking_project_count(db, team.id):
         raise HTTPException(status.HTTP_409_CONFLICT, "team_has_projects")
+    from app.projects.models import ProjectTeam  # local: the projects modules import teams
+
+    # archived projects let the team go: an admin gives one teams again when restoring it
+    released = [p["id"] for p in await service.team_projects(db, team.id)]
+    await db.execute(delete(ProjectTeam).where(ProjectTeam.team_id == team.id))
     removed = await service.team_member_ids(db, team.id)
     await db.delete(team)
-    await audit.record(db, "team.deleted", actor_id=user.id, target_type="team", target_id=team.id)
+    await audit.record(db, "team.deleted", actor_id=user.id, target_type="team", target_id=team.id,
+                       data={"archived_projects_released": [str(p) for p in released]} if released else None)
     for uid in removed:
         await publish(db, Event(type="membership.changed", user_id=uid))
 

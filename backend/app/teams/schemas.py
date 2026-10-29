@@ -40,7 +40,8 @@ class ProjectRef(BaseModel):
 class TeamDetail(TeamOut):
     members: list[UserOut]
     projects: list[ProjectRef]  # the ones the caller can see
-    project_count: int = 0  # all of them: a team with projects cannot be deleted
+    project_count: int = 0  # all of them
+    blocking_project_count: int = 0  # all but archived ones: the team can be deleted when this is 0
     agents: list[AgentOut] = []
 
 

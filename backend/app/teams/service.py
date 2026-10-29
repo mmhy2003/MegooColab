@@ -37,6 +37,16 @@ async def team_projects(db: AsyncSession, team_id: uuid.UUID) -> list[dict]:
     return [{"id": i, "key": k, "name": n} for i, k, n in rows.all()]
 
 
+async def blocking_project_count(db: AsyncSession, team_id: uuid.UUID) -> int:
+    """The team's projects that keep it from being deleted: all but archived ones, which are let go instead."""
+    from app.projects.models import Project, ProjectStatus, ProjectTeam
+
+    return await db.scalar(
+        select(func.count()).select_from(ProjectTeam).join(Project, Project.id == ProjectTeam.project_id)
+        .where(ProjectTeam.team_id == team_id, Project.status != ProjectStatus.archived)
+    ) or 0
+
+
 async def team_project_counts(
     db: AsyncSession, team_ids: list[uuid.UUID] | None = None
 ) -> dict[uuid.UUID, int]:

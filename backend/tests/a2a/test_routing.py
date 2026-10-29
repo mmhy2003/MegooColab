@@ -246,3 +246,18 @@ async def test_answering_run_start_and_end_refresh_the_target_project(client, db
         assert project_id in ended
     finally:
         _cleanup(m1)
+
+
+async def test_owner_can_cancel_an_answering_run(client, db):
+    m1, _m2, asker = await _world(client, db)
+    agent = await _agent(client, m1)
+    _online(m1, agent)
+    try:
+        qid = await _question(db, asker)
+        [run] = await _runs(db, qid)
+        await login(client, m1)
+        r = await client.post(f"/api/agent-runs/{run.id}/cancel")
+        assert r.status_code == 204, r.text
+        assert (await _runs(db, qid))[0].status == "cancelled"
+    finally:
+        _cleanup(m1)

@@ -9,13 +9,13 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
-function setup(projectCount: number) {
+function setup(projectCount: number, blocking = projectCount) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
       const body =
         url === "/api/auth/me" ? { user: { id: "u1", name: "Admin", email: "a@x.io", role: "admin" } }
-        : url === "/api/teams/t1" ? { id: "t1", name: "Core", description: "", members: [], projects: [], agents: [], project_count: projectCount }
+        : url === "/api/teams/t1" ? { id: "t1", name: "Core", description: "", members: [], projects: [], agents: [], project_count: projectCount, blocking_project_count: blocking }
         : [];
       return new Response(JSON.stringify(body));
     }),
@@ -43,6 +43,12 @@ describe("Delete team", () => {
 
   it("is offered once the team has none", async () => {
     setup(0);
+    expect(await screen.findByRole("button", { name: "Delete team" })).toBeEnabled();
+    expect(screen.queryByText("Move or delete this team's projects first.")).toBeNull();
+  });
+
+  it("is offered when the team's only projects are archived", async () => {
+    setup(2, 0);
     expect(await screen.findByRole("button", { name: "Delete team" })).toBeEnabled();
     expect(screen.queryByText("Move or delete this team's projects first.")).toBeNull();
   });

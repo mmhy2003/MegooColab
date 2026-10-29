@@ -49,8 +49,8 @@ export default function TeamPage() {
                 <Button variant="ghost" onClick={() => setEditing(true)}>Edit members</Button>
                 <Button
                   variant="danger"
-                  disabled={t.project_count > 0}
-                  aria-describedby={t.project_count > 0 ? "team-delete-reason" : undefined}
+                  disabled={t.blocking_project_count > 0}
+                  aria-describedby={t.blocking_project_count > 0 ? "team-delete-reason" : undefined}
                   onClick={async () => {
                     if (!(await ask({ tone: "danger", title: `Delete team ${t.name}?`, text: "Its members keep their accounts; its Knowledge Base space is deleted.", ok: "Delete" }))) return;
                     try {
@@ -68,7 +68,7 @@ export default function TeamPage() {
             )
           }
         />
-        {canEdit && t.project_count > 0 && (
+        {canEdit && t.blocking_project_count > 0 && (
           <p id="team-delete-reason" className="text-xs text-muted-foreground">Move or delete this team&apos;s projects first.</p>
         )}
         {error && <p role="alert" className="text-sm text-pink">{error}</p>}

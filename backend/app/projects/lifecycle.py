@@ -31,6 +31,10 @@ async def set_status(db: AsyncSession, user: User, project: Project, status: Pro
     if old == ProjectStatus.active:
         # one at a time, in id order: pause takes each task's and workflow's locks itself
         for task in await active_workflow_tasks(db, project.id):
+            # under its locks again: it may have finished or paused since it was listed
+            wf = await engine.lock_task(db, task)
+            if wf is None or wf.driver == Driver.manual or wf.status not in engine.ACTIVE:
+                continue
             await engine.pause(db, user, task)
     project.status = status
     await audit.record(db, "project.status_changed", actor_id=user.id, target_type="project", target_id=project.id,
