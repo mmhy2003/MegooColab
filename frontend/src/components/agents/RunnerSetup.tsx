@@ -6,8 +6,9 @@ import { Snippet } from "@/components/agents/Snippet";
 
 type Platform = "windows" | "unix";
 
-const RELEASES = "https://github.com/mmhy2003/MegooColab/releases/latest";
-const INSTALL: Record<Platform, string> = {
+// the runner's releases only: the newest release of all may be a MegooColab one (tagged v…)
+const RELEASES = "https://github.com/mmhy2003/MegooColab/releases?q=runner-v&expanded=true";
+export const RUNNER_INSTALL: Record<Platform, string> = {
   windows: "scoop install https://raw.githubusercontent.com/mmhy2003/MegooColab/main/runner/scoop/megoocolab-runner.json",
   unix: "curl -fsSL https://raw.githubusercontent.com/mmhy2003/MegooColab/main/runner/install.sh | sh",
 };
@@ -37,7 +38,7 @@ export function RunnerSetup() {
           </button>
         ))}
       </div>
-      <Snippet label="1. Install" value={INSTALL[platform]} />
+      <Snippet label="1. Install" value={RUNNER_INSTALL[platform]} />
       <p className="text-xs text-muted-foreground">
         Or <a href={RELEASES} target="_blank" rel="noreferrer">download it from GitHub</a>.
       </p>

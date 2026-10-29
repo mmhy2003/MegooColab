@@ -27,6 +27,7 @@ export const qk = {
   team: (id: string) => ["team", id] as const,
   tokens: () => ["tokens"] as const,
   agents: () => ["agents"] as const,
+  updates: () => ["updates"] as const,
   adminAgents: () => ["agents", "admin"] as const,
   agentRuns: (taskKey: string) => ["agent-runs", taskKey] as const,
   projectAgents: (ref: string) => ["project-agents", ref] as const,
