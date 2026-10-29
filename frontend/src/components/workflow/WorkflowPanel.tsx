@@ -5,6 +5,7 @@ import { Bot, ExternalLink, GitBranch } from "lucide-react";
 import { useState } from "react";
 
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
+import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PullRequestBadge } from "@/components/git/PullRequestBadge";
 import { Button } from "@/components/ui/Button";
 import { api, ApiError } from "@/lib/api";
@@ -107,6 +108,7 @@ export function WorkflowPanel({
           <Bot size={14} aria-hidden className="text-cyan-ink" />
           <span className="min-w-0 flex-1 truncate">{agent.name}</span>
           <AgentStatusDot status={agent.status} />
+          <RunnerUpdateArrow runner={agent.runner} ownerId={agent.owner.id} />
         </p>
       )}
       {agent?.status === "offline" && (

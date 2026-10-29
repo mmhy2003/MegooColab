@@ -11,6 +11,10 @@ COPY alembic.ini ./
 COPY migrations ./migrations
 COPY app ./app
 
+# the release build passes the version (APP_VERSION=0.2.0); a local build stays "dev"
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 RUN useradd --system --uid 10001 megoo && mkdir -p /data/uploads && chown megoo /data/uploads
 USER megoo
 EXPOSE 8000

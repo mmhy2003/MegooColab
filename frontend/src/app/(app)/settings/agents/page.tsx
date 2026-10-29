@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
+import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { BindingEditor } from "@/components/agents/BindingEditor";
 import { RunnerSetup } from "@/components/agents/RunnerSetup";
 import { Badge } from "@/components/ui/Badge";
@@ -79,6 +80,7 @@ function AgentCard({ agent, projects, onChanged }: { agent: Agent; projects: Pro
           <h3 className="flex-1 text-sm font-bold">{agent.name}</h3>
           <Badge>{PROGRAM_LABEL[agent.program]}</Badge>
           <AgentStatusDot status={agent.status} />
+          <RunnerUpdateArrow runner={agent.runner} ownerId={agent.owner.id} />
           <Button
             variant="danger"
             aria-label={`Delete ${agent.name}`}

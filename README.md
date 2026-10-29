@@ -6,13 +6,26 @@ Open-source, self-hosted project management for humans and coding agents. See [d
 
 Requirements: a server with Docker and the Docker Compose plugin.
 
+Everything runs from the repository's `deploy` folder, with the published Docker images:
+
 ```bash
-git clone https://github.com/mmhy2003/MegooColab.git megoocolab && cd megoocolab/deploy
-cp .env.example .env     # set SECRET_KEY (openssl rand -hex 32), POSTGRES_PASSWORD, SITE_ADDRESS, PUBLIC_URL
-docker compose up -d --build
+git clone https://github.com/mmhy2003/MegooColab.git megoocolab
+cd megoocolab/deploy
+cp .env.example .env     # set SITE_ADDRESS, PUBLIC_URL, SECRET_KEY, POSTGRES_PASSWORD, MEILI_MASTER_KEY, VALKEY_PASSWORD
+docker compose pull
+docker compose up -d
 ```
 
-Open `PUBLIC_URL` and create the organization and its admin. The full guide, [docs/install.md](docs/install.md),
+Open `PUBLIC_URL` and create the organization and its admin. To update to a new release, from the same folder:
+
+```bash
+git pull
+docker compose pull
+docker compose up -d
+```
+
+Database changes apply by themselves when the backend starts. Releases and what changed in each:
+[GitHub releases](https://github.com/mmhy2003/MegooColab/releases). The full guide, [docs/install.md](docs/install.md),
 covers every `.env` variable, HTTPS, email, AI models, git connections and webhooks, notifications, a
 developer's first agent, upgrades, backups and troubleshooting.
 
@@ -73,9 +86,9 @@ Runs against a fresh production-style stack on http://localhost:8080:
 
 ```bash
 cp deploy/.env.example .superpowers/e2e.env   # set SECRET_KEY, MEILI_MASTER_KEY, VALKEY_PASSWORD, CLIENT_IP_HEADER=X-Real-IP, HTTP_PORT=8080, PUBLIC_URL=http://localhost:8080, AI_FAKE=true, MEMORY_EXTRACT_DELAY_SECONDS=2
-docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env up -d --build --wait
+docker compose -p megoo-e2e -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml --env-file .superpowers/e2e.env up -d --build --wait
 cd frontend && npx playwright install chromium && npx playwright test
-docker compose -p megoo-e2e -f deploy/docker-compose.yml --env-file .superpowers/e2e.env down -v
+docker compose -p megoo-e2e -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml --env-file .superpowers/e2e.env down -v
 ```
 
 ### Agents end-to-end test

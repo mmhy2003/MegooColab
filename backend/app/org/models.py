@@ -24,6 +24,12 @@ class OrgSettings(TimestampMixin, Base):
     dream_hour_utc: Mapped[int | None]
     # global search: when the index was last rebuilt from the database
     search_rebuilt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # the newest releases on GitHub, as the update check last found them (app.updates.check)
+    latest_app_version: Mapped[str | None] = mapped_column(String(50))
+    latest_app_url: Mapped[str | None] = mapped_column(String(500))
+    latest_runner_version: Mapped[str | None] = mapped_column(String(50))
+    latest_runner_url: Mapped[str | None] = mapped_column(String(500))
+    updates_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # ADM-1: what a new project starts with
     default_finishing_option: Mapped[str] = mapped_column(String(20), default="pull_request",
                                                           server_default="pull_request")

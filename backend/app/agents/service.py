@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agents.models import Agent, AgentBinding, AgentProgram
-from app.agents.schemas import AdminAgentOut, AgentOut, BindingOut, ProjectAgentOut
+from app.agents.schemas import AdminAgentOut, AgentOut, BindingOut, ProjectAgentOut, RunnerInfo
 from app.auth.models import Role, User
 from app.auth.schemas import UserOut
 from app.core.events import Event, publish
@@ -56,6 +56,13 @@ async def agent_statuses(db: AsyncSession, agents: list[tuple[uuid.UUID, uuid.UU
         else "offline"
         for agent_id, owner_id in agents
     }
+
+
+def runner_info(owner_id: uuid.UUID) -> RunnerInfo | None:
+    conn = registry.conn_for_user(owner_id)
+    if conn is None or not conn.version:
+        return None
+    return RunnerInfo(version=conn.version, os=conn.os or "")
 
 
 def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User) -> list[str]:
@@ -200,6 +207,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "status": statuses[a.id],
             "problems": agent_problems(a.id, a.owner_id, viewer),
             "bindings": bindings.get(a.id, []),
+            "runner": runner_info(a.owner_id),
         }
         for a in agents
     ]

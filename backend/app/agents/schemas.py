@@ -38,6 +38,13 @@ class BindingOut(BaseModel):
     local_path: str | None
 
 
+class RunnerInfo(BaseModel):
+    """The owner's live runner, as its hello said (the frontend compares the version with the latest release)."""
+
+    version: str
+    os: str
+
+
 class AgentOut(BaseModel):
     id: uuid.UUID
     name: str
@@ -48,6 +55,7 @@ class AgentOut(BaseModel):
     status: str
     problems: list[str] = []
     bindings: list[BindingOut]
+    runner: RunnerInfo | None = None  # None while the owner's runner is offline
 
 
 class ProjectAgentOut(AgentOut):

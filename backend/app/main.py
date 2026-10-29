@@ -59,6 +59,7 @@ from app.tasks.router import router as tasks_router
 from app.teams.router import router as teams_router
 from app.users.router import admin_router as admin_users_router
 from app.users.router import users_router
+from app.updates.router import router as updates_router
 from app.workflow.methodology import seed_defaults
 from app.workflow.router import router as workflow_router
 
@@ -178,6 +179,7 @@ def create_app() -> FastAPI:
         dashboard_router,
         search_router,
         rate_limits_router,
+        updates_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect

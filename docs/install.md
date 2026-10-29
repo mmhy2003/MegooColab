@@ -86,12 +86,14 @@ stays. If Valkey is down, requests are let through and Admin → Settings → Ra
 ## 4. Start
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose ps
 ```
 
-The first build takes a few minutes. When `docker compose ps` shows the backend as `healthy`, MegooColab is up.
-Database migrations run by themselves each time the backend starts.
+`pull` downloads the published images (`ghcr.io/mmhy2003/megoocolab-backend` and `-frontend`), the latest release
+unless `.env` pins one with `MEGOO_VERSION`. When `docker compose ps` shows the backend as `healthy`, MegooColab
+is up. Database migrations run by themselves each time the backend starts.
 
 The stack has eight services: `db` (PostgreSQL 17 with pgvector), `meilisearch` (global search; reachable only
 by the backend and worker), `valkey` (rate-limit counters; reachable only by the backend), `backend` (the API), `worker` (background jobs: search indexing, memory, pull-request
@@ -251,12 +253,21 @@ the **MCP** scope and point the agent at `https://<your host>/api/mcp` with the 
 
 ## 12. Upgrades
 
+Admins see an **Update** pill in the header when a newer MegooColab is out; it links to the release notes. From
+the `deploy` directory:
+
 ```bash
 git pull
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
-Migrations run when the backend starts. Take a backup first (section 13).
+`git pull` brings any change to the compose file and `.env.example` (each release's notes say when there is one);
+`docker compose pull` fetches the new images. Migrations run when the backend starts. Take a backup first
+(section 13).
+
+To stay on a version, set `MEGOO_VERSION=0.1.0` (say) in `.env`; to update, change it and run the commands
+above. Without it you get the latest release.
 
 Upgrading to a version with rate limits (the `valkey` service): add `VALKEY_PASSWORD` to `.env` first
 (`openssl rand -hex 32`); `docker compose` refuses to start without it. Its counters need no backup.

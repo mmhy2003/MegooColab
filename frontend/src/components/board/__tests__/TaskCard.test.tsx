@@ -1,8 +1,14 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { TaskCardView } from "@/components/board/TaskCard";
 import type { Task } from "@/lib/types";
+
+// the runner arrow reads the latest versions: a client that never fetches
+const client = new QueryClient({ defaultOptions: { queries: { enabled: false } } });
+const renderCard = (ui: React.ReactElement) =>
+  render(ui, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
 
 const task: Task = {
   id: "t1",
@@ -37,7 +43,7 @@ const task: Task = {
 
 describe("TaskCardView", () => {
   it("shows key, title, points, labels, assignee and subtask progress", () => {
-    render(<TaskCardView task={task} assigneeName="Ahmed Ali" />);
+    renderCard(<TaskCardView task={task} assigneeName="Ahmed Ali" />);
     expect(screen.getByText("PAY-12")).toBeInTheDocument();
     expect(screen.getByText("Sync orders with ERP")).toBeInTheDocument();
     expect(screen.getByLabelText("5 story points")).toBeInTheDocument();
@@ -48,20 +54,20 @@ describe("TaskCardView", () => {
   });
 
   it("highlights the card being dragged", () => {
-    const { container, rerender } = render(<TaskCardView task={task} />);
+    const { container, rerender } = renderCard(<TaskCardView task={task} />);
     expect(container.firstElementChild).not.toHaveClass("glow-box");
     rerender(<TaskCardView task={task} dragging />);
     expect(container.firstElementChild).toHaveClass("glow-box");
   });
 
   it("omits subtask progress when there are none", () => {
-    render(<TaskCardView task={{ ...task, subtask_count: 0, subtask_done_count: 0 }} />);
+    renderCard(<TaskCardView task={{ ...task, subtask_count: 0, subtask_done_count: 0 }} />);
     expect(screen.queryByLabelText(/subtasks done/)).not.toBeInTheDocument();
   });
 
   it("shows a bot avatar and status for an agent assignee", () => {
     const agent = { id: "a1", name: "Ann's Codex", program: "codex", owner_id: "u1", status: "busy" };
-    render(<TaskCardView task={{ ...task, assignee_user_id: null, assignee_agent_id: "a1", assignee_agent: agent }} />);
+    renderCard(<TaskCardView task={{ ...task, assignee_user_id: null, assignee_agent_id: "a1", assignee_agent: agent }} />);
     expect(screen.getByRole("img", { name: "Agent Ann's Codex" })).toBeInTheDocument();
     expect(screen.getByText("Busy")).toBeInTheDocument();
   });
@@ -72,7 +78,7 @@ describe("TaskCardView", () => {
   } as const;
 
   it("shows NEEDS YOU only when can_act", () => {
-    const { rerender } = render(<TaskCardView task={{ ...task, workflow: wf }} />);
+    const { rerender } = renderCard(<TaskCardView task={{ ...task, workflow: wf }} />);
     expect(screen.getByText("NEEDS YOU")).toHaveAttribute("title", "Approve the plan");
     expect(screen.getByLabelText("Stage: Plan (3 of 6)")).toBeInTheDocument();
     expect(screen.getByText(/waiting for you/)).toBeInTheDocument();
@@ -84,7 +90,7 @@ describe("TaskCardView", () => {
 
   it("shows enforcement chip and build progress", () => {
     const build = { ...wf, stage: "build", status: "running", needs: null, current_step: 2, steps_total: 5 } as const;
-    const { rerender } = render(<TaskCardView task={{ ...task, workflow: { ...build, enforcement: "unenforced" } }} />);
+    const { rerender } = renderCard(<TaskCardView task={{ ...task, workflow: { ...build, enforcement: "unenforced" } }} />);
     expect(screen.getByText("unenforced")).toHaveAttribute("title");
     expect(screen.getByText("2 of 5 steps")).toBeInTheDocument();
     rerender(<TaskCardView task={{ ...task, workflow: { ...build, enforcement: "partially_enforced" } }} />);

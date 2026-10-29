@@ -10,7 +10,7 @@ from sqlalchemy.orm import aliased
 from app.a2a.models import Question
 from app.agent_runs.models import AgentRun, RunStatus
 from app.agents.models import Agent, AgentBinding
-from app.agents.service import agent_statuses
+from app.agents.service import agent_statuses, runner_info
 from app.dashboard.schemas import AgentItem, Queued, QueuedItem, RunningItem
 from app.dashboard.scope import Scope, task_link
 from app.projects.models import Project
@@ -58,8 +58,9 @@ async def agents(db: AsyncSession, scope: Scope) -> list[AgentItem]:
     for agent_id in statuses:
         if statuses[agent_id] == "busy" and agent_id not in here:
             statuses[agent_id] = "busy_elsewhere"
-    items = [AgentItem(id=agent_id, name=name, status=statuses[agent_id], runs_today=today_runs.get(agent_id, 0))
-             for agent_id, name, _ in found]
+    items = [AgentItem(id=agent_id, name=name, status=statuses[agent_id], runs_today=today_runs.get(agent_id, 0),
+                       owner_id=owner_id, runner=runner_info(owner_id))
+             for agent_id, name, owner_id in found]
     return sorted(items, key=lambda a: (_ORDER[a.status], a.name.lower()))
 
 

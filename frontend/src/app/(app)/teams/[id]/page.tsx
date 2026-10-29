@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
+import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PROGRAM_LABEL } from "@/lib/agents";
 import { MemberPicker } from "@/components/team/MemberPicker";
 import { Avatar } from "@/components/ui/Avatar";
@@ -106,6 +107,7 @@ export default function TeamPage() {
                 <span className="text-muted-foreground">{a.owner.name}</span>
                 <Badge>{PROGRAM_LABEL[a.program]}</Badge>
                 <AgentStatusDot status={a.status} />
+                <RunnerUpdateArrow runner={a.runner} ownerId={a.owner.id} />
               </li>
             ))}
             {t.agents.length === 0 && <li className="px-3 py-4 text-sm text-muted-foreground">No agents yet.</li>}

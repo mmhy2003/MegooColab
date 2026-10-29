@@ -187,6 +187,7 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
     conn.touch()
     if isinstance(msg, Hello):
         conn.capabilities = set(msg.capabilities)
+        conn.version, conn.os = msg.runner_version, msg.os
         await _fail_unclaimed(conn)
         await _apply_reports(conn, msg.agents)
     elif isinstance(msg, AgentStatus):

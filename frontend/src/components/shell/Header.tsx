@@ -8,6 +8,7 @@ import { useState } from "react";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { SearchLauncher } from "@/components/search/SearchBox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/shadcn/dropdown-menu";
+import { UpdatePill } from "@/components/shell/UpdatePill";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar } from "@/components/ui/Avatar";
 import { Backdrop } from "@/components/ui/Backdrop";
@@ -52,6 +53,7 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
         ))}
       </nav>
       <SearchLauncher />
+      <UpdatePill />
       <NotificationBell />
       <ThemeToggle />
       <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>

@@ -45,8 +45,9 @@ services:
       timeout: 3s
       retries: 30
 
+  # the published images; deploy/docker-compose.build.yml builds them from this checkout instead
   backend:
-    build: ../backend
+    image: ghcr.io/mmhy2003/megoocolab-backend:${MEGOO_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       db:
@@ -99,7 +100,7 @@ services:
       retries: 30
 
   worker:
-    build: ../backend
+    image: ghcr.io/mmhy2003/megoocolab-backend:${MEGOO_VERSION:-latest}
     restart: unless-stopped
     command: ["python", "-m", "app.worker"]
     depends_on:
@@ -116,12 +117,13 @@ services:
       MEMORY_EXTRACT_DELAY_SECONDS: ${MEMORY_EXTRACT_DELAY_SECONDS:-60}
       FORCE_COLOR: ${FORCE_COLOR:-}
       MEMORY_DREAM_HOUR_UTC: ${MEMORY_DREAM_HOUR_UTC:-3}
+      UPDATE_CHECK: ${UPDATE_CHECK:-true}
       MEILI_URL: http://meilisearch:7700
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in .env}
     extra_hosts: ["host.docker.internal:host-gateway"]
 
   frontend:
-    build: ../frontend
+    image: ghcr.io/mmhy2003/megoocolab-frontend:${MEGOO_VERSION:-latest}
     restart: unless-stopped
     depends_on:
       - backend

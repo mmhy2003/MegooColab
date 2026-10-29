@@ -35,7 +35,7 @@ export function run(over: Partial<RunningItem> = {}): RunningItem {
 }
 
 export function agent(over: Partial<AgentItem> = {}): AgentItem {
-  return { id: "a1", name: "Vera's Claude Code", status: "busy", runs_today: 9, ...over };
+  return { id: "a1", name: "Vera's Claude Code", status: "busy", runs_today: 9, owner_id: "u1", ...over };
 }
 
 export function stageRow(stage: StageRow["stage"], running = 0, waiting = 0, paused = 0): StageRow {

@@ -36,6 +36,8 @@ class RunnerConn:
         self.close_code: int | None = None  # why the server closed it, if it did
         self.closed = asyncio.Event()  # set once the server has closed this connection
         self.capabilities: set[str] = set()  # from the runner's hello; empty for a v1 runner
+        self.version: str | None = None  # from the hello: megoocolab-runner's version and operating system
+        self.os: str | None = None
         self.run_ids: set[uuid.UUID] = set()  # runs dispatched over this connection
 
     @property

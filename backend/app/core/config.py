@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://megoo:megoo@localhost:5433/megoo"
     # POSTGRES_PASSWORD, when the URL carries no password: added encoded, so any character works
     postgres_password: str | None = None
+    # the release build bakes the version into the image; run from source it is "dev" (never "out of date")
+    app_version: str = "dev"
+    # ask GitHub a few times a day for the latest MegooColab and runner versions (update notices); false: never
+    update_check: bool = True
     secret_key: str
     cookie_secure: bool = False
     upload_dir: str = "/data/uploads"
