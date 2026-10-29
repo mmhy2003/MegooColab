@@ -214,3 +214,39 @@ func TestEnsureReusesAHealthyWorktreeAsIs(t *testing.T) {
 		t.Fatalf("work in progress lost: %q %v", b, err)
 	}
 }
+
+func TestEnsureRepairsAMissingOrGarbledGitFileAndKeepsTheWork(t *testing.T) {
+	for name, damage := range map[string]func(path string) error{
+		"missing": func(path string) error { return os.Remove(filepath.Join(path, ".git")) },
+		"garbled": func(path string) error { return os.WriteFile(filepath.Join(path, ".git"), []byte("nonsense"), 0o644) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo, cache := newRepo(t), t.TempDir()
+			path, branch, err := Ensure(context.Background(), io.Discard, repo, cache, "agent-1", "MEG-6", "Title")
+			if err != nil {
+				t.Fatal(err)
+			}
+			work := filepath.Join(path, "work.txt")
+			if err := os.WriteFile(work, []byte("wip"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := damage(path); err != nil {
+				t.Fatal(err)
+			}
+			var log strings.Builder
+			p, b, err := Ensure(context.Background(), &log, repo, cache, "agent-1", "MEG-6", "Title")
+			if err != nil || p != path || b != branch {
+				t.Fatalf("Ensure = %q %q %v", p, b, err)
+			}
+			if got, err := os.ReadFile(work); err != nil || string(got) != "wip" {
+				t.Fatalf("uncommitted work lost: %q %v\n%s", got, err, log.String())
+			}
+			if got := runGit(t, path, "rev-parse", "--abbrev-ref", "HEAD"); got != branch {
+				t.Fatalf("HEAD = %q", got)
+			}
+			if !strings.Contains(log.String(), "repaired") {
+				t.Fatalf("log = %q", log.String())
+			}
+		})
+	}
+}

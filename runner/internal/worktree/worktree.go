@@ -112,6 +112,16 @@ func EnsureFrom(ctx context.Context, logw io.Writer, repo, cacheRoot, agentID, t
 		if why == "" {
 			return path, branch, false, nil
 		}
+		// a lost or garbled .git file is git's to rebuild from the registration, keeping the agent's
+		// uncommitted work; recreating the worktree would throw that away
+		if why == noGitFile || why == noGitdir {
+			// repair exits non-zero even when it repaired, so its result is judged by broken() again
+			_, _ = git(repo, "worktree", "repair", path)
+			if again, e := broken(path, lock); e == nil && again == "" {
+				fmt.Fprintf(logw, "worktree: %s had %s; repaired it\n", path, why)
+				return path, branch, false, nil
+			}
+		}
 		fmt.Fprintf(logw, "worktree: %s is broken (%s); recreating it\n", path, why)
 		discard(repo, path, logw)
 	}
@@ -158,13 +168,13 @@ func broken(path, lock string) (string, error) {
 	}
 	b, err := os.ReadFile(filepath.Join(path, ".git"))
 	if errors.Is(err, os.ErrNotExist) {
-		return "no .git file", nil
+		return noGitFile, nil
 	} else if err != nil {
 		return "", fmt.Errorf("worktree: %w", err)
 	}
 	admin, ok := strings.CutPrefix(strings.TrimSpace(string(b)), "gitdir:")
 	if !ok {
-		return "no gitdir in .git", nil
+		return noGitdir, nil
 	}
 	if admin = strings.TrimSpace(admin); !filepath.IsAbs(admin) {
 		admin = filepath.Join(path, admin)
@@ -176,6 +186,12 @@ func broken(path, lock string) (string, error) {
 	}
 	return "", nil
 }
+
+// What broken says of a worktree whose .git file is lost or names nothing.
+const (
+	noGitFile = "no .git file"
+	noGitdir  = "no gitdir in .git"
+)
 
 // discard removes the worktree at path, best effort: git's removal first, then
 // whatever directory is left, then the registration. Failures are logged; the
