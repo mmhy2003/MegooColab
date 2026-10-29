@@ -46,6 +46,8 @@ jobs:
     env:
       MEILI_URL: http://localhost:7700
       VALKEY_URL: valkey://localhost:6379/0
+      # CI's Valkey has no password (service containers take no command); the default is the dev stack's
+      VALKEY_PASSWORD: ""
       MEILI_MASTER_KEY: ci-meili-master-key
       TEST_DATABASE_URL: postgresql+asyncpg://megoo:megoo@localhost:5433/megoo_test
       SECRET_KEY: ci-secret-key-0123456789abcdef
