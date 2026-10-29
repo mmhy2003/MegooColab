@@ -8,11 +8,9 @@ export type ProjectRights = {
   canWrite: boolean;
   canManage: boolean;
   canChangeStatus: boolean;
-  canDeleteProject: boolean;
-  closed: boolean;
 };
 
-const NONE: ProjectRights = { canWrite: false, canManage: false, canChangeStatus: false, canDeleteProject: false, closed: false };
+const NONE: ProjectRights = { canWrite: false, canManage: false, canChangeStatus: false };
 
 export function projectRights(me: User | undefined, project: Pick<Project, "status"> | undefined): ProjectRights {
   if (!me || !project) return NONE;
@@ -22,8 +20,6 @@ export function projectRights(me: User | undefined, project: Pick<Project, "stat
     canWrite: me.role !== "viewer" && !closed,
     canManage: manager && !closed,
     canChangeStatus: manager,
-    canDeleteProject: me.role === "admin",
-    closed,
   };
 }
 

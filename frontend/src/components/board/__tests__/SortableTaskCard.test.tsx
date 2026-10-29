@@ -29,7 +29,11 @@ describe("SortableTaskCard", () => {
 
   it("cannot be dragged by a viewer or in a closed project", () => {
     const card = renderCard(false);
-    expect(card).toHaveAttribute("aria-disabled", "true");
     expect(card.className).not.toMatch(/cursor-grab/);
+    // still a button that opens the task, but never announced as something to pick up, nor as unavailable
+    expect(card).toHaveAttribute("tabindex", "0");
+    expect(card).not.toHaveAttribute("aria-roledescription");
+    expect(card).not.toHaveAttribute("aria-describedby");
+    expect(card).not.toHaveAttribute("aria-disabled");
   });
 });

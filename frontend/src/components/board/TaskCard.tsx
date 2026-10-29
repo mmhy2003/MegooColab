@@ -162,7 +162,8 @@ export function SortableTaskCard({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-      {...attributes}
+      // a card that can't move is only a button that opens the task: no "sortable" announcement or drag hint
+      {...(canDrag ? attributes : { role: "button", tabIndex: 0 })}
       {...listeners}
       aria-label={`${task.key} ${task.title}`}
       onClick={onOpen}

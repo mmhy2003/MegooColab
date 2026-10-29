@@ -35,8 +35,10 @@ afterEach(() => {
 describe("Delete team", () => {
   it("waits until the team has no projects, and says why", async () => {
     setup(1);
-    expect(await screen.findByRole("button", { name: "Delete team" })).toBeDisabled();
+    const button = await screen.findByRole("button", { name: "Delete team" });
+    expect(button).toBeDisabled();
     expect(screen.getByText("Move or delete this team's projects first.")).toBeInTheDocument();
+    expect(button).toHaveAccessibleDescription("Move or delete this team's projects first.");
   });
 
   it("is offered once the team has none", async () => {

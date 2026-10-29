@@ -9,33 +9,33 @@ const project = (status: string) => ({ status }) as never;
 describe("projectRights", () => {
   it("an active project: writing for all but viewers, managing for admins and managers", () => {
     expect(projectRights(user("admin"), project("active"))).toEqual({
-      canWrite: true, canManage: true, canChangeStatus: true, canDeleteProject: true, closed: false,
+      canWrite: true, canManage: true, canChangeStatus: true,
     });
     expect(projectRights(user("manager"), project("active"))).toEqual({
-      canWrite: true, canManage: true, canChangeStatus: true, canDeleteProject: false, closed: false,
+      canWrite: true, canManage: true, canChangeStatus: true,
     });
     expect(projectRights(user("member"), project("active"))).toEqual({
-      canWrite: true, canManage: false, canChangeStatus: false, canDeleteProject: false, closed: false,
+      canWrite: true, canManage: false, canChangeStatus: false,
     });
     expect(projectRights(user("viewer"), project("active"))).toEqual({
-      canWrite: false, canManage: false, canChangeStatus: false, canDeleteProject: false, closed: false,
+      canWrite: false, canManage: false, canChangeStatus: false,
     });
   });
 
-  it("a closed project is read-only; managers can still reopen it and admins delete it", () => {
+  it("a closed project is read-only; managers can still reopen it", () => {
     for (const status of ["finished", "archived"]) {
       expect(projectRights(user("manager"), project(status))).toEqual({
-        canWrite: false, canManage: false, canChangeStatus: true, canDeleteProject: false, closed: true,
+        canWrite: false, canManage: false, canChangeStatus: true,
       });
       expect(projectRights(user("admin"), project(status))).toEqual({
-        canWrite: false, canManage: false, canChangeStatus: true, canDeleteProject: true, closed: true,
+        canWrite: false, canManage: false, canChangeStatus: true,
       });
       expect(projectRights(user("member"), project(status)).canWrite).toBe(false);
     }
   });
 
   it("nothing while the user or the project is still loading", () => {
-    const none = { canWrite: false, canManage: false, canChangeStatus: false, canDeleteProject: false, closed: false };
+    const none = { canWrite: false, canManage: false, canChangeStatus: false };
     expect(projectRights(undefined, project("active"))).toEqual(none);
     expect(projectRights(user("admin"), undefined)).toEqual(none);
   });
