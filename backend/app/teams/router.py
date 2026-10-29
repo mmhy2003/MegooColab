@@ -57,7 +57,7 @@ async def _detail(db: AsyncSession, team: Team, viewer: User) -> TeamDetail:
         description=team.description,
         members=[UserOut.model_validate(u) for u in members],
         projects=await _visible_projects(db, team, viewer),
-        project_count=(await service.team_project_counts(db)).get(team.id, 0),
+        project_count=(await service.team_project_counts(db, [team.id])).get(team.id, 0),
         agents=await agents_out(db, list(agents), viewer),
     )
 

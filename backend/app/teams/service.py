@@ -37,12 +37,16 @@ async def team_projects(db: AsyncSession, team_id: uuid.UUID) -> list[dict]:
     return [{"id": i, "key": k, "name": n} for i, k, n in rows.all()]
 
 
-async def team_project_counts(db: AsyncSession) -> dict[uuid.UUID, int]:
+async def team_project_counts(
+    db: AsyncSession, team_ids: list[uuid.UUID] | None = None
+) -> dict[uuid.UUID, int]:
+    """How many projects each team is on (every team, or only `team_ids`); a team on none is left out."""
     from app.projects.models import ProjectTeam
 
-    rows = await db.execute(
-        select(ProjectTeam.team_id, func.count()).group_by(ProjectTeam.team_id)
-    )
+    stmt = select(ProjectTeam.team_id, func.count()).group_by(ProjectTeam.team_id)
+    if team_ids is not None:
+        stmt = stmt.where(ProjectTeam.team_id.in_(team_ids))
+    rows = await db.execute(stmt)
     return dict(rows.all())
 
 

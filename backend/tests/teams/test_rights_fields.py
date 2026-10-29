@@ -24,3 +24,12 @@ async def test_team_detail_counts_all_projects(client, db, client_factory):
     await login(c2, outsider)
     detail = (await c2.get(f"/api/teams/{team.id}")).json()
     assert detail["project_count"] == 2 and detail["projects"] == []
+
+
+async def test_project_counts_for_one_team_count_only_that_team(client, db):
+    from app.teams import service
+
+    _p, _manager, team = await make_project(client, db, "PAY")
+    _q, _other, other_team = await make_project(client, db, "OPS")
+    assert await service.team_project_counts(db, [team.id]) == {team.id: 1}
+    assert (await service.team_project_counts(db))[other_team.id] == 1
