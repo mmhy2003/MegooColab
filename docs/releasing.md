@@ -48,9 +48,10 @@ Documentation-only changes need no release.
    git checkout main && git pull
    git merge --no-ff develop
    # set the new version(s): VERSION + backend/pyproject.toml + frontend/package.json, and/or runner/VERSION;
-   # add the release note(s)
+   # write the release note(s) in docs/releases/
+   git add VERSION backend/pyproject.toml frontend/package.json runner/VERSION docs/releases
    python tools/release/versions.py plan      # must list what is about to be released, without errors
-   git commit -am "release: MegooColab X.Y.Z, runner X.Y.Z"
+   git commit -m "release: MegooColab X.Y.Z, runner X.Y.Z"
    git push origin main
    git checkout develop && git merge main && git push origin develop
    ```

@@ -61,11 +61,16 @@ def _last_tag(root: Path, prefix: str) -> str | None:
 
 
 def guard(root: Path) -> list[str]:
-    """A product that changed since its last release must carry a new version."""
+    """A product that changed since its last release must carry a new version, and never a lower one (`latest`
+    would move servers back to it)."""
     errors = []
     for product in PRODUCTS.values():
         tag = _last_tag(root, product["tag"])
-        if tag is None or _read(root, product["version_file"]) != tag.removeprefix(product["tag"]):
+        version = _read(root, product["version_file"])
+        if tag is not None and (parse(version) or (0, 0, 0)) < parse(tag.removeprefix(product["tag"])):
+            errors.append(f"{product['version_file']} says {version}, lower than the last release {tag}")
+            continue
+        if tag is None or version != tag.removeprefix(product["tag"]):
             continue
         changed = [p for p in _git(root, "diff", "--name-only", tag, "HEAD", "--", *product["paths"]).split()
                    if p != SCOOP_MANIFEST]
@@ -86,8 +91,10 @@ def plan(root: Path) -> dict[str, str]:
     for name, product in PRODUCTS.items():
         version = _read(root, product["version_file"])
         needed = not _git(root, "tag", "--list", f"{product['tag']}{version}").strip()
-        if needed and not (root / note_path(name, version)).is_file():
-            errors.append(f"{note_path(name, version)} is missing: every release needs its release note")
+        # added to git, not just on disk: the workflow sees only what was pushed
+        if needed and not _git(root, "ls-files", "--", note_path(name, version)).strip():
+            errors.append(f"{note_path(name, version)} is missing (or not added to git): every release needs its "
+                          "release note")
         out[name] = "true" if needed else "false"
         out[f"{name}_version"] = version
     if errors:

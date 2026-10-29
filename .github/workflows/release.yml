@@ -88,7 +88,7 @@ jobs:
           VALKEY_PASSWORD=$(openssl rand -hex 32)
           UPDATE_CHECK=false
           EOF
-          docker compose -p smoke -f deploy/docker-compose.yml --env-file smoke.env up -d --wait --wait-timeout 300 --pull never
+          docker compose -p smoke -f deploy/docker-compose.yml --env-file smoke.env up -d --wait --wait-timeout 300 --pull missing
           curl -fsS http://localhost:8080/api/health
       - name: Stack logs (on failure)
         if: failure()
@@ -126,7 +126,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v$VERSION" --target "$GITHUB_SHA" \
+          # a re-run of a failed job finds the release already made
+          gh release view "v$VERSION" > /dev/null 2>&1 || gh release create "v$VERSION" --target "$GITHUB_SHA" \
             --title "MegooColab $VERSION" --notes-file "docs/releases/v$VERSION.md"
 
   runner:
@@ -161,7 +162,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "runner-v$VERSION" --target "$GITHUB_SHA" \
+          # a re-run (say, after the Scoop push below failed) finds the release already made
+          gh release view "runner-v$VERSION" > /dev/null 2>&1 || gh release create "runner-v$VERSION" --target "$GITHUB_SHA" \
             --title "Runner $VERSION" --notes-file "docs/releases/runner-v$VERSION.md" \
             runner/dist/*.tar.gz runner/dist/*.zip runner/dist/checksums.txt
       # `scoop install` reads the manifest from main: point it at this release, on main and develop alike
@@ -172,10 +174,15 @@ jobs:
           cp runner/scoop/megoocolab-runner.json "$RUNNER_TEMP/manifest.json"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(runner): Scoop manifest for runner $VERSION" -- runner/scoop/megoocolab-runner.json
-          git push origin HEAD:main
+          # onto main's tip, and only a change: on a re-run main may hold it already
+          git checkout -- runner/scoop/megoocolab-runner.json
+          git fetch origin main
+          git checkout -B main origin/main
+          cp "$RUNNER_TEMP/manifest.json" runner/scoop/megoocolab-runner.json
+          git diff --quiet -- runner/scoop/megoocolab-runner.json || git commit -m "chore(runner): Scoop manifest for runner $VERSION" -- runner/scoop/megoocolab-runner.json
+          git push origin main
           git fetch origin develop
           git checkout -B develop origin/develop
           cp "$RUNNER_TEMP/manifest.json" runner/scoop/megoocolab-runner.json
-          git commit -m "chore(runner): Scoop manifest for runner $VERSION" -- runner/scoop/megoocolab-runner.json
+          git diff --quiet -- runner/scoop/megoocolab-runner.json || git commit -m "chore(runner): Scoop manifest for runner $VERSION" -- runner/scoop/megoocolab-runner.json
           git push origin develop

@@ -151,3 +151,23 @@ def test_update_scoop(repo):
     assert data["architecture"]["arm64"] == {"url": f"{base}/megoocolab-runner_0.2.0_windows_arm64.zip", "hash": "b" * 64}
     assert data["bin"] == "megoocolab-runner.exe"
     assert text.endswith("}\n") and '\n    "version"' in text
+
+
+def test_guard_refuses_a_version_lower_than_the_last_release(repo):
+    git(repo, "tag", "v0.1.0")
+    set_app_version(repo, "0.0.9")
+    commit(repo, "typo")
+    errors = versions.guard(repo)
+    assert len(errors) == 1 and "0.0.9" in errors[0] and "v0.1.0" in errors[0]
+
+
+def test_plan_wants_the_release_note_committed(repo, capsys):
+    """The workflow sees only what was pushed: a note left on disk but never added is no note."""
+    (repo / "docs/releases/v0.1.0.md").unlink()
+    commit(repo, "drop the note")
+    write(repo, "docs/releases/v0.1.0.md", "notes\n")  # back on disk, untracked
+    with pytest.raises(SystemExit):
+        versions.plan(repo)
+    assert "docs/releases/v0.1.0.md" in capsys.readouterr().err
+    git(repo, "add", "docs/releases/v0.1.0.md")  # added (not yet committed) is enough, as in docs/releasing.md
+    assert versions.plan(repo)["app"] == "true"
