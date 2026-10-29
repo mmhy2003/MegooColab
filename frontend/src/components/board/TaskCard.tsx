@@ -5,6 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Bookmark, Bot, Bug, CheckSquare, ChevronDown, ChevronsDown, ChevronsUp, ChevronUp, Equal, Zap } from "lucide-react";
 
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
+import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PullRequestBadge } from "@/components/git/PullRequestBadge";
 import { LabelChip } from "@/components/project/LabelEditor";
 import { Avatar } from "@/components/ui/Avatar";
@@ -128,6 +129,7 @@ export function TaskCardView({
               <Bot size={12} aria-hidden />
             </span>
             <AgentStatusDot status={task.assignee_agent.status} />
+            <RunnerUpdateArrow runner={task.assignee_agent.runner} ownerId={task.assignee_agent.owner_id} />
           </span>
         ) : (
           assigneeName && (

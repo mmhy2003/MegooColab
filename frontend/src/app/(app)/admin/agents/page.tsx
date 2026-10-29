@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { AdminOnly } from "@/components/admin/AdminOnly";
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
+import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
 import { PROGRAM_LABEL } from "@/lib/agents";
@@ -34,7 +35,12 @@ function AdminAgentsPageContent() {
                 <td className="px-3 py-2">{a.owner.name}</td>
                 <td className="px-3 py-2">{a.name}</td>
                 <td className="px-3 py-2 text-muted-foreground">{PROGRAM_LABEL[a.program]}</td>
-                <td className="px-3 py-2"><AgentStatusDot status={a.status} /></td>
+                <td className="px-3 py-2">
+                  <span className="inline-flex items-center gap-1.5">
+                    <AgentStatusDot status={a.status} />
+                    <RunnerUpdateArrow runner={a.runner} ownerId={a.owner.id} />
+                  </span>
+                </td>
                 <td className="px-3 py-2 text-muted-foreground">{runLabel(a.current_run)}</td>
               </tr>
             ))}
