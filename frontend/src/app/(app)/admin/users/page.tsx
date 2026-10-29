@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, UserPlus, UserRoundPlus, UserX } from "lucide-react";
 import { useState } from "react";
 
+import { AdminOnly } from "@/components/admin/AdminOnly";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -86,7 +87,7 @@ function NewUserDialog({ mode, onClose }: { mode: "invite" | "create"; onClose: 
   );
 }
 
-export default function AdminUsersPage() {
+function AdminUsersPageContent() {
   const { ask, dialog: confirmDialog } = useConfirm();
   const { data: me } = useMe();
   const client = useQueryClient();
@@ -208,5 +209,13 @@ export default function AdminUsersPage() {
       </div>
       {confirmDialog}
     </>
+  );
+}
+
+export default function AdminUsersPage() {
+  return (
+    <AdminOnly>
+      <AdminUsersPageContent />
+    </AdminOnly>
   );
 }

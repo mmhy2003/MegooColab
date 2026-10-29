@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Suspense, useState } from "react";
 
+import { AdminOnly } from "@/components/admin/AdminOnly";
 import { RateLimitsAdmin } from "@/components/admin/RateLimitsAdmin";
 import { SearchAdmin } from "@/components/admin/SearchAdmin";
 import { Button } from "@/components/ui/Button";
@@ -195,10 +196,18 @@ function SettingsTabs() {
   );
 }
 
-export default function AdminSettingsPage() {
+function AdminSettingsPageContent() {
   return (
     <Suspense>
       <SettingsTabs />
     </Suspense>
+  );
+}
+
+export default function AdminSettingsPage() {
+  return (
+    <AdminOnly>
+      <AdminSettingsPageContent />
+    </AdminOnly>
   );
 }

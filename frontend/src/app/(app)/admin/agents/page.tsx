@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { AdminOnly } from "@/components/admin/AdminOnly";
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
@@ -10,7 +11,7 @@ import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AdminAgent } from "@/lib/types";
 
-export default function AdminAgentsPage() {
+function AdminAgentsPageContent() {
   const agents = useQuery({ queryKey: qk.adminAgents(), queryFn: () => api<AdminAgent[]>("/api/admin/agents") });
   return (
     <div>
@@ -50,4 +51,12 @@ export default function AdminAgentsPage() {
 function runLabel(run: AdminAgent["current_run"]): string {
   const key = run && typeof run.task_key === "string" ? run.task_key : null;
   return key ?? "—";
+}
+
+export default function AdminAgentsPage() {
+  return (
+    <AdminOnly>
+      <AdminAgentsPageContent />
+    </AdminOnly>
+  );
 }

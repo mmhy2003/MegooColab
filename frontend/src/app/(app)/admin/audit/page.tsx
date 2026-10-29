@@ -3,12 +3,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { AdminOnly } from "@/components/admin/AdminOnly";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queries";
 import type { AuditEntry, User } from "@/lib/types";
 
-export default function AuditPage() {
+function AuditPageContent() {
   const [action, setAction] = useState("");
   const users = useQuery({ queryKey: qk.users(), queryFn: () => api<User[]>("/api/users") });
   const entries = useQuery({
@@ -58,5 +59,13 @@ export default function AuditPage() {
         </table>
       </div>
     </div>
+  );
+}
+
+export default function AuditPage() {
+  return (
+    <AdminOnly>
+      <AuditPageContent />
+    </AdminOnly>
   );
 }

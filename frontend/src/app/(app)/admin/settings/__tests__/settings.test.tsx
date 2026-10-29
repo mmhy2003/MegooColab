@@ -26,6 +26,7 @@ const puts = () =>
 beforeEach(() => {
   search = "";
   fetchMock = vi.fn(async (url: string) => {
+    if (url === "/api/auth/me") return new Response(JSON.stringify({ user: { id: "u1", name: "A", email: "a@x.io", role: "admin" } }));
     if (url === "/api/admin/settings") return new Response(JSON.stringify(SETTINGS));
     if (url === "/api/admin/search") return new Response(JSON.stringify({ available: true, documents: 12, last_rebuild_at: null }));
     if (url === "/api/admin/rate-limits") return new Response(JSON.stringify({ valkey: true, limits: [] }));
