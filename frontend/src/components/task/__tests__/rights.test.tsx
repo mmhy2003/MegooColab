@@ -52,6 +52,15 @@ describe("Task page rights", () => {
     await screen.findByText("Fix login");
     expect(await screen.findByRole("combobox", { name: "Priority" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Delete task" })).toBeNull();
+    // nothing else that writes: the description, subtasks, links, comments, attachments and cross-project asks
+    expect(screen.getByRole("textbox", { name: "Title" })).toBeDisabled();
+    for (const name of ["Edit description", "Ask another project", /Attach a file/]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+    for (const name of ["New subtask", "Task key to link", "Add a comment"]) {
+      expect(screen.queryByRole("textbox", { name })).toBeNull();
+    }
+    expect(document.querySelector("input[type=file]")).toBeNull();
   });
 
   it("a member who did not report the task cannot delete it", async () => {
