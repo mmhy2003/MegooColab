@@ -34,6 +34,11 @@ function General({ project, canEdit }: { project: Project; canEdit: boolean }) {
   const teams = useTeams();
   if (!canEdit) {
     const names = new Map(teams.data?.map((t) => [t.id, t.name]));
+    const teamLine = !teams.data
+      ? "Loading…"
+      : project.team_ids.length === 0
+        ? "None"
+        : project.team_ids.map((id) => names.get(id) ?? "A team you can't see").join(", ");
     return (
       <dl className="card max-w-xl space-y-3 p-4 text-sm">
         <div><dt className="text-xs tracking-wider text-muted-foreground uppercase">Name</dt><dd>{project.name}</dd></div>
@@ -41,7 +46,7 @@ function General({ project, canEdit }: { project: Project; canEdit: boolean }) {
         <div><dt className="text-xs tracking-wider text-muted-foreground uppercase">Sprints</dt><dd>{project.sprints_enabled ? "On" : "Off"}</dd></div>
         <div>
           <dt className="text-xs tracking-wider text-muted-foreground uppercase">Teams</dt>
-          <dd>{project.team_ids.map((id) => names.get(id) ?? "A team you can't see").join(", ")}</dd>
+          <dd>{teamLine}</dd>
         </div>
       </dl>
     );
