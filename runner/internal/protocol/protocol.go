@@ -50,6 +50,10 @@ type Hello struct {
 // protocol v2 run_start fields and reports git state and session id.
 const CapabilityWorkflow = "workflow/1"
 
+// CapabilityBranch is advertised in every hello: the runner starts a task's
+// branch from run_start.branch and reports where it started (kind "branch").
+const CapabilityBranch = "branch/1"
+
 // Heartbeat is sent every 15 s.
 type Heartbeat struct {
 	Type string `json:"type"`
@@ -137,6 +141,21 @@ type McpAccess struct {
 	Token string `json:"token"`
 }
 
+// RunBranchRepo is one of the project's repositories and its default branch.
+type RunBranchRepo struct {
+	URL           string `json:"url"`
+	DefaultBranch string `json:"default_branch"`
+}
+
+// RunBranch says where a task's branch starts: the task's Branch from (empty:
+// the matched repository's default branch), or the start branch the server
+// recorded when the branch was first created.
+type RunBranch struct {
+	BranchFrom   string          `json:"branch_from"`
+	StartBranch  string          `json:"start_branch"`
+	Repositories []RunBranchRepo `json:"repositories"`
+}
+
 // RunStart tells the runner to start a run. Policy is read_only or workspace.
 type RunStart struct {
 	Type      string  `json:"type"`
@@ -157,6 +176,9 @@ type RunStart struct {
 	Files           []File     `json:"files,omitempty"`
 	RepoFiles       []File     `json:"repo_files,omitempty"`
 	CommitMessage   string     `json:"commit_message,omitempty"`
+
+	// Every task run (capability branch/1); nil for answering runs.
+	Branch *RunBranch `json:"branch,omitempty"`
 }
 
 // RunCancel asks the runner to stop a run.
@@ -179,7 +201,7 @@ func NewHello(version, os, arch string, agents []AgentAvailability) Hello {
 		}
 		out[i] = a
 	}
-	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow}}
+	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch}}
 }
 
 // NewHeartbeat builds a heartbeat.
