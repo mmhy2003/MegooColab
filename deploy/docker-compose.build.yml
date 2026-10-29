@@ -1,0 +1,16 @@
+# Builds MegooColab from this checkout instead of pulling the published images: for development and the
+# end-to-end tests (`make build`, `make up`, README). Use it on top of the main file:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml up -d --build
+services:
+  backend:
+    build:
+      context: ../backend
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+  worker:
+    build:
+      context: ../backend
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+  frontend:
+    build: ../frontend

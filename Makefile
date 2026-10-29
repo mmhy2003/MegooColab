@@ -4,7 +4,8 @@
 
 .DEFAULT_GOAL := help
 
-COMPOSE     := docker compose -f deploy/docker-compose.yml
+# built from this checkout (deploy/docker-compose.build.yml); servers pull the published images instead
+COMPOSE     := docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml
 DEV_COMPOSE := docker compose -f deploy/docker-compose.dev.yml
 
 ifeq ($(OS),Windows_NT)
