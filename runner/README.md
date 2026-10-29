@@ -29,9 +29,9 @@ Windows (Scoop):
 scoop install https://raw.githubusercontent.com/mmhy2003/MegooColab/main/runner/scoop/megoocolab-runner.json
 ```
 
-The manifest's version and hashes are placeholders: Scoop's `checkver -u` /
-autoupdate fills them in from the first `runner-v*` release (the release workflow does
-not edit the manifest).
+The release workflow points the manifest at each new `runner-v*` release (version, URLs
+and SHA-256 hashes), so this command always installs the latest runner, and
+`scoop update megoocolab-runner` updates it.
 
 Manual: download the archive for your platform from the
 [releases page](https://github.com/mmhy2003/MegooColab/releases) (tags `runner-v*`),
