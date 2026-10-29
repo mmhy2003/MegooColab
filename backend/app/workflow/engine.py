@@ -351,6 +351,18 @@ def requires_human_review(project: Project, wf: TaskWorkflow) -> bool:
     return bool(project.require_human_code_review)
 
 
+UNKNOWN_START = "unknown — deliver into the branch the task branch was created from (git merge-base helps)"
+
+
+def delivery_lines(task: Task) -> str:
+    """Where the finish run delivers (Branch from): the recorded start branch and, for a production fix, the
+    default branch it is also brought back into. Stated outside untrusted blocks: task text never decides this."""
+    lines = f"Start branch: {task.start_branch or UNKNOWN_START}"
+    if task.back_merge_into:
+        lines += f"\nBack-merge into: {task.back_merge_into}"
+    return lines
+
+
 def finishing_option(project: Project, wf: TaskWorkflow) -> FinishingOption:
     """WF-6a/6b: human code review forces a pull request; else the task's override; else the project's option."""
     if wf.stage == Stage.done and wf.finish_requires_human_review is not None:  # frozen when Done began
@@ -392,7 +404,7 @@ async def enqueue(
     extra = None
     if role == RunRole.finish:
         option = finishing_option(await db.get(Project, task.project_id), wf)
-        extra = [f"## Finishing\nFinishing option: {option.value}"]
+        extra = [f"## Finishing\nFinishing option: {option.value}\n{delivery_lines(task)}"]
     from app.workflow import (
         records as run_records,  # local: records imports this module
     )

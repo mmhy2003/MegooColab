@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent_runs.models import AgentRun
 from app.auth.models import User
 from app.mcp_server.auth import current_run, live_run, require_run_task, tool_session
-from app.projects.models import Project
+from app.projects.models import Project, ProjectRepository
 from app.tasks.models import Task
 from app.tasks.service import get_task_for
 from app.workflow import (
@@ -43,6 +43,7 @@ from app.workflow.context import ROLE_KEY
 from app.workflow.models import (
     DocKind,
     DocStatus,
+    Driver,
     MethodologyVersion,
     Needs,
     RunRole,
@@ -120,6 +121,20 @@ async def _readable(db: AsyncSession, user: User, key: str, tool: str) -> tuple[
     return task, wf
 
 
+async def _branches(db: AsyncSession, task: Task, wf: TaskWorkflow | None) -> dict[str, str | None]:
+    """Where the work starts and, for a production fix, the default branch it is also brought back into: as
+    recorded when the runner created the branch. A connect-only workflow has no runner: then Branch from (or the
+    project's single repository's default branch) and that repository's default, when it differs."""
+    if task.start_branch is not None or wf is None or wf.driver != Driver.connect_only:
+        return {"start": task.start_branch, "back_merge_into": task.back_merge_into}
+    defaults = (
+        await db.execute(select(ProjectRepository.default_branch).where(ProjectRepository.project_id == task.project_id))
+    ).scalars().all()
+    default = defaults[0] if len(defaults) == 1 else None
+    start = task.branch_from or default
+    return {"start": start, "back_merge_into": default if default and start and default != start else None}
+
+
 async def _workflow_view(db: AsyncSession, task: Task, wf: TaskWorkflow | None) -> dict[str, Any]:
     stage = Stage(wf.stage) if wf else Stage.brainstorm
     wf_status = WorkflowStatus(wf.status) if wf else WorkflowStatus.idle
@@ -141,6 +156,7 @@ async def _workflow_view(db: AsyncSession, task: Task, wf: TaskWorkflow | None) 
         "current_step": step,
         "steps_total": total,
         "documents": [{"kind": str(d.kind), "version": d.version} for d in approved],
+        "branches": await _branches(db, task, wf),
     }
     run = current_run.get()
     if run is not None:
@@ -318,14 +334,19 @@ def register_workflow_tools(mcp: MCPServer) -> None:
 
     @mcp.tool()
     async def report_finish(
-        key: str, outcome: str, branch: str, tests_passed: bool, pr_url: str | None = None
+        key: str, outcome: str, branch: str, tests_passed: bool, pr_url: str | None = None,
+        back_merge_branch: str | None = None, back_merge_pr_url: str | None = None,
     ) -> dict[str, Any]:
         """Report how you finished: `outcome` is merged_local, pr_opened or branch_kept (as the finishing option
-        says), the branch, the pull request URL for pr_opened, and whether the tests pass."""
+        says), the branch, the pull request URL for pr_opened, and whether the tests pass. When your prompt names
+        a "Back-merge into" branch (and the option is not keep_branch), also report the back-merge: its branch,
+        and for a pull request its URL."""
         async with tool_session() as (db, user):
             task = await _task(db, user, key, "report_finish", write=True)
-            await finish.report_finish(db, await live_run(db, task), outcome, branch, pr_url, tests_passed)
-            return {"outcome": outcome, "branch": branch, "tests_passed": tests_passed}
+            await finish.report_finish(db, await live_run(db, task), outcome, branch, pr_url, tests_passed,
+                                       back_merge_branch, back_merge_pr_url)
+            return {"outcome": outcome, "branch": branch, "tests_passed": tests_passed,
+                    "back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url}
 
 
 async def _record_target(db: AsyncSession, user: User, task: Task) -> tuple[AgentRun | None, TaskWorkflow]:

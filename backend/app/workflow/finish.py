@@ -33,6 +33,7 @@ from app.kb import filing
 from app.projects.models import ColumnCategory, Project, ProjectRepository, RepoProvider
 from app.tasks.models import Task
 from app.workflow import build, engine, questions
+from app.git.models import PR_BACK_MERGE
 from app.workflow.models import (
     Driver,
     FinishingOption,
@@ -155,10 +156,12 @@ async def finish_workflow(db: AsyncSession, wf: TaskWorkflow, task: Task, actor_
 
 
 async def report_finish(
-    db: AsyncSession, run: AgentRun, outcome: str, branch: str, pr_url: str | None, tests_passed: bool
+    db: AsyncSession, run: AgentRun, outcome: str, branch: str, pr_url: str | None, tests_passed: bool,
+    back_merge_branch: str | None = None, back_merge_pr_url: str | None = None,
 ) -> None:
     """A finish run reports how it finished (MCP tool in Task 11). A later report from the same run replaces it.
-    The caller commits."""
+    A production fix (the task's back_merge_into is set) also reports its back-merge: the branch, and for a pull
+    request its URL; keep_branch delivers nothing, so takes none. The caller commits."""
     wf, task = await build.lock_run_role(db, run, (RunRole.finish,))
     project = await db.get(Project, task.project_id)
     option = engine.finishing_option(project, wf)
@@ -185,15 +188,56 @@ async def report_finish(
             raise _422("invalid_pr_url")
     else:
         pr_url = None
-    run.step_result = {"outcome": outcome, "branch": branch, "pr_url": pr_url, "tests_passed": tests_passed}
+    back_merge_branch, back_merge_pr_url = _back_merge(task, option, outcome, back_merge_branch, back_merge_pr_url)
+    run.step_result = {"outcome": outcome, "branch": branch, "pr_url": pr_url, "tests_passed": tests_passed,
+                       "back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url}
     wf.branch, wf.pr_url, wf.finish_outcome = branch or None, pr_url, outcome
+    wf.back_merge_branch, wf.back_merge_pr_url = back_merge_branch, back_merge_pr_url
     await engine.record_workflow_event(db, task, None, "finish.reported", {
         "outcome": outcome, "branch": branch, "pr_url": pr_url, "tests_passed": tests_passed,
+        "back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url,
     })
-    if pr_url:
-        from app.git import service as git  # local: git imports the workflow
+    from app.git import service as git  # local: git imports the workflow
 
+    if pr_url:
         await git.track_pr(db, task, pr_url)
+    if back_merge_pr_url:
+        await git.track_pr(db, task, back_merge_pr_url, kind=PR_BACK_MERGE)
+
+
+def _pr_url(url: str, missing: str) -> str:
+    url = strip_nul(url or "").strip()
+    if not url:
+        raise _422(missing)
+    if len(url) > MAX_PR_URL:
+        raise _422("too_large")
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise _422("invalid_pr_url")
+    return url
+
+
+def _back_merge(
+    task: Task, option: FinishingOption, outcome: str, branch: str | None, pr_url: str | None
+) -> tuple[str | None, str | None]:
+    """The checked back-merge result: required for a production fix that delivers (not keep_branch), refused
+    otherwise. A pull request needs its URL; a local merge or a plain push does not."""
+    if not task.back_merge_into or option == FinishingOption.keep_branch:
+        if branch is not None or pr_url is not None:
+            raise _422("back_merge_not_expected")
+        return None, None
+    if not isinstance(branch, str) or not strip_nul(branch).strip():
+        raise _422("back_merge_required")
+    branch = strip_nul(branch).strip()
+    if len(branch) > MAX_BRANCH:
+        raise _422("too_large")
+    if outcome == OUTCOME_OF[FinishingOption.pull_request]:
+        if pr_url is not None and not isinstance(pr_url, str):
+            raise _422("invalid_finish_result")
+        return branch, _pr_url(pr_url, "back_merge_pr_url_required")
+    if pr_url is not None:
+        raise _422("back_merge_not_expected")
+    return branch, None
 
 
 async def _plain_git(db: AsyncSession, project_id: uuid.UUID) -> bool:
@@ -211,7 +255,11 @@ async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Ag
         return
     if (run.step_result or {}).get("tests_passed") is True:
         project = await db.get(Project, task.project_id)
-        if engine.requires_human_review(project, wf) and engine.finishing_option(project, wf) == FinishingOption.pull_request:
+        # a production fix waits for both pull requests to merge, whether or not review is required
+        waits = engine.requires_human_review(project, wf) or bool(
+            wf.back_merge_pr_url and wf.finish_outcome == OUTCOME_OF[FinishingOption.pull_request]
+        )
+        if waits and engine.finishing_option(project, wf) == FinishingOption.pull_request:
             from app.git import service as git  # local: git imports the workflow
 
             await engine.wait_for(db, wf, Needs.human_code_review)
