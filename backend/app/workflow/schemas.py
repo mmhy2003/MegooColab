@@ -63,6 +63,14 @@ class WorkflowOut(TaskWorkflowOut):
     branch: str | None
     pr_url: str | None
     pull_request: PullRequestOut | None = None  # GIT-5: as last read from the git host
+    # Branch from: where the work started and, for a production fix, its second delivery into the default branch
+    back_merge_branch: str | None = None
+    back_merge_pr_url: str | None = None
+    back_merge_pull_request: PullRequestOut | None = None
+    finish_outcome: str | None = None
+    branch_from: str | None = None
+    start_branch: str | None = None
+    back_merge_into: str | None = None
     documents: list[WorkflowDocumentBrief]
     open_question_id: uuid.UUID | None
     steps: list[WorkflowStepOut]

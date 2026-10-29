@@ -95,10 +95,15 @@ async def _waiting_on(db: AsyncSession, task_ids: list[uuid.UUID]) -> dict[uuid.
     return out
 
 
-async def pull_requests_of(db: AsyncSession, task_ids: list[uuid.UUID]) -> dict[uuid.UUID, PullRequestOut]:
+async def pull_requests_of(
+    db: AsyncSession, task_ids: list[uuid.UUID], kind: str = "main"
+) -> dict[uuid.UUID, PullRequestOut]:
+    """The tasks' pull requests of one kind: "main" (their own) or "back_merge" (a production fix's second)."""
     from app.git.models import TaskPullRequest  # local: git imports the task models
 
-    rows = await db.execute(select(TaskPullRequest).where(TaskPullRequest.task_id.in_(task_ids)))
+    rows = await db.execute(
+        select(TaskPullRequest).where(TaskPullRequest.task_id.in_(task_ids), TaskPullRequest.kind == kind)
+    )
     return {
         r.task_id: PullRequestOut(url=r.url, state=r.state, checks=r.checks, review=r.review,
                                   tracked=r.connection_id is not None)
@@ -143,6 +148,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[T
     workflows = await _workflows_for(db, tasks, viewer)
     waiting = await _waiting_on(db, ids)
     pulls = await pull_requests_of(db, ids)
+    back_merges = await pull_requests_of(db, ids, "back_merge")
     agent_ids = {t.assignee_agent_id for t in tasks if t.assignee_agent_id}
     agents: dict[uuid.UUID, AssigneeAgentOut] = {}
     if agent_ids:
@@ -184,6 +190,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[T
             workflow=workflows.get(t.id),
             waiting_on=waiting.get(t.id, []),
             pull_request=pulls.get(t.id),
+            back_merge_pull_request=back_merges.get(t.id),
             branch_from=t.branch_from,
             start_branch=t.start_branch,
             back_merge_into=t.back_merge_into,

@@ -18,9 +18,9 @@ log = logging.getLogger(__name__)
 
 @queue.register("git.pr_refresh")
 async def pr_refresh(db: AsyncSession, payload: dict) -> None:
-    row = await db.get(TaskPullRequest, uuid.UUID(str(payload["task_id"])))
-    if row is not None and row.connection_id is not None:
-        await service.refresh_pr(db, row)
+    for row in await service.pull_requests_of_task(db, uuid.UUID(str(payload["task_id"]))):
+        if row.connection_id is not None:
+            await service.refresh_pr(db, row)
 
 
 # a connection failing like this fails for all its pull requests: try the rest at the next poll
@@ -33,27 +33,27 @@ async def pr_poll(db: AsyncSession, payload: dict) -> None:
     one slow or failing provider, or one bad row, does not hold the others back."""
     due = (
         await db.execute(
-            select(TaskPullRequest.task_id, TaskPullRequest.connection_id)
+            select(TaskPullRequest.task_id, TaskPullRequest.kind, TaskPullRequest.connection_id)
             .where(TaskPullRequest.connection_id.is_not(None), TaskPullRequest.state == "open",
                    TaskPullRequest.next_check_at <= datetime.now(UTC))
-            .order_by(TaskPullRequest.next_check_at, TaskPullRequest.task_id)
+            .order_by(TaskPullRequest.next_check_at, TaskPullRequest.task_id, TaskPullRequest.kind)
             .limit(service.POLL_LIMIT)
         )
     ).all()
     down: set[uuid.UUID] = set()
-    for task_id, connection_id in due:
+    for task_id, kind, connection_id in due:
         if connection_id in down:
             continue
         try:
             async with SessionLocal() as s:
-                row = await s.get(TaskPullRequest, task_id)
+                row = await s.get(TaskPullRequest, (task_id, kind))
                 code = await service.refresh_pr(s, row) if row is not None else None
                 await s.commit()
         except Exception:
             log.exception("pull request check failed for task %s", task_id)
             code = "error"
             async with SessionLocal() as s:
-                await service.back_off(s, task_id, code)
+                await service.back_off(s, task_id, kind, code)
                 await s.commit()
         if code in _CONNECTION_DOWN:
             down.add(connection_id)

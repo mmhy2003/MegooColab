@@ -82,6 +82,7 @@ class TaskOut(BaseModel):
     # projects this task asked questions of that are still open (§6.6 A2A-5)
     waiting_on: list[str] = []
     pull_request: PullRequestOut | None = None  # GIT-5
+    back_merge_pull_request: PullRequestOut | None = None  # a production fix's PR into the default branch
     branch_from: str | None = None
     start_branch: str | None = None
     back_merge_into: str | None = None

@@ -216,7 +216,7 @@ async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Ag
 
             await engine.wait_for(db, wf, Needs.human_code_review)
             # a tracked pull request merged (or closed) before this run ended moves on at once
-            await git.settle_done(db, wf, task, await git.pull_request_of(db, task.id))
+            await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))
         else:
             await finish_workflow(db, wf, task, None)
         return

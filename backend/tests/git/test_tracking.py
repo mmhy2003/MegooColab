@@ -98,7 +98,7 @@ async def _refresh(task_id):
 
 async def _row(task_id) -> TaskPullRequest | None:
     async with SessionLocal() as s:
-        return await s.get(TaskPullRequest, task_id)
+        return await s.get(TaskPullRequest, (task_id, "main"))
 
 
 async def _to_finish_reviewed(db, tc, *, review=True, link=None):

@@ -86,7 +86,7 @@ async def test_webhook_signature_rejected_and_payload_never_trusted(client, db):
     assert r.status_code == 204
     assert await _queued() == {str(rows["https://git.acme.io/acme/pay/pull/7"])}
     async with SessionLocal() as s:  # the payload's "merged" changed nothing: only a refresh was queued
-        row = await s.get(TaskPullRequest, rows["https://git.acme.io/acme/pay/pull/7"])
+        row = await s.get(TaskPullRequest, (rows["https://git.acme.io/acme/pay/pull/7"], "main"))
         assert row.state == "open"
 
 

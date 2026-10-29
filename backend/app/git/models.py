@@ -27,6 +27,11 @@ class GitConnection(IdMixin, TimestampMixin, Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
 
 
+# a task's pull requests: its own, and a production fix's back-merge into the default branch (Branch from)
+PR_MAIN = "main"
+PR_BACK_MERGE = "back_merge"
+
+
 class TaskPullRequest(TimestampMixin, Base):
     """The pull request a task's Finish run opened (GIT-3, GIT-5). Tracked when a connection follows it; an
     untracked one is shown as reported and finishes only by a person's "Mark merged"."""
@@ -35,6 +40,7 @@ class TaskPullRequest(TimestampMixin, Base):
     __table_args__ = (Index("ix_task_pull_requests_poll", "state", "next_check_at"),)
 
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), primary_key=True, default=PR_MAIN, server_default=PR_MAIN)
     url: Mapped[str] = mapped_column(String(500))
     connection_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("git_connections.id", ondelete="SET NULL"), index=True
