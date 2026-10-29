@@ -270,3 +270,33 @@ describe("WorkflowPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("You can only use your own agents");
   });
 });
+
+describe("WorkflowPanel branches", () => {
+  const pr = (url: string) => ({ url, state: "open", checks: "none", review: "none", tracked: true });
+
+  it("says where the work starts and is delivered, with both pull requests", async () => {
+    setup(wf({
+      status: "waiting_human", stage: "done", needs: "human_code_review", branch: "megoo/PAY-1-fix", pr_url: "https://g/pr/7",
+      start_branch: "main", back_merge_into: "develop", branch_from: "main",
+      pull_request: pr("https://g/pr/7"), back_merge_branch: "megoo/PAY-1-fix-to-develop", back_merge_pr_url: "https://g/pr/8",
+      back_merge_pull_request: pr("https://g/pr/8"), finish_outcome: "pr_opened",
+    } as Partial<Workflow>));
+    expect(await screen.findByText("Starts from main. Delivers to main, then develop.")).toBeInTheDocument();
+    expect(screen.getByText("Into develop:")).toBeInTheDocument();
+    const links = screen.getAllByRole("link").map((a) => a.getAttribute("href"));
+    expect(links).toEqual(expect.arrayContaining(["https://g/pr/7", "https://g/pr/8"]));
+  });
+
+  it("before work starts, says where it will start", async () => {
+    setup(wf({ branch_from: null } as Partial<Workflow>));
+    expect(await screen.findByText("Will start from the default branch.")).toBeInTheDocument();
+  });
+
+  it("reminds that a kept production fix still has to reach both branches", async () => {
+    setup(wf({
+      status: "finished", stage: "done", branch: "megoo/PAY-1-fix", finishing_option: "keep_branch",
+      start_branch: "main", back_merge_into: "develop", finish_outcome: "branch_kept",
+    } as Partial<Workflow>));
+    expect(await screen.findByText("This fix still has to reach main and develop.")).toBeInTheDocument();
+  });
+});

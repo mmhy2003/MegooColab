@@ -9,7 +9,7 @@ import { useProjectAgents } from "@/lib/agents";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useMe } from "@/lib/me";
-import { useColumns, useLabels, useProject, useSprints, useTasks, useUsers } from "@/lib/project";
+import { useColumns, useLabels, useProject, useRepos, useSprints, useTasks, useUsers } from "@/lib/project";
 import { qk } from "@/lib/queries";
 import type { ActivityItem, Attachment, Task } from "@/lib/types";
 
@@ -72,6 +72,7 @@ export function TaskView({
   const users = useUsers();
   const agents = useProjectAgents(projectKey);
   const sprints = useSprints(projectKey, project.data?.sprints_enabled ?? false);
+  const repos = useRepos(projectKey);
   const all = useTasks(projectKey);
   const workflow = useWorkflow(taskKey);
   const mockups = useMockups(taskKey);
@@ -249,6 +250,7 @@ export function TaskView({
               sprints={project.data?.sprints_enabled ? sprints.data : undefined}
               meId={me?.id}
               disabled={disabled}
+              defaultBranch={repos.data?.length === 1 ? repos.data[0].default_branch : null}
               onPatch={(patch) => void run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: patch }))}
               onMove={(column_id) => void run(() => api(`/api/tasks/${t.key}/move`, { method: "POST", json: { column_id } }))}
               onSprint={(sprint_id) => void run(() => api(`/api/tasks/${t.key}/sprint`, { method: "PUT", json: { sprint_id } }))}

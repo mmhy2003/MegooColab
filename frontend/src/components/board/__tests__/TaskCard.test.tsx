@@ -9,6 +9,7 @@ const task: Task = {
   key: "PAY-12",
   number: 12,
   project_id: "p1",
+  branch_from_locked: false,
   type: "story",
   title: "Sync orders with ERP",
   description_md: "",

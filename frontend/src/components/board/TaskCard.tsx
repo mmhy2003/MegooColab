@@ -90,6 +90,16 @@ export function TaskCardView({
           <PullRequestBadge pr={task.pull_request} />
         </div>
       )}
+      {task.branch_from && !(task.start_branch && !task.back_merge_into) && (
+        <div>
+          <span
+            className="inline-flex items-center gap-1 rounded-full border border-line px-1.5 text-[11px] text-muted-foreground"
+            title={`Starts from ${task.branch_from} instead of the default branch`}
+          >
+            from {task.branch_from}
+          </span>
+        </div>
+      )}
       {task.labels.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {task.labels.map((l) => (

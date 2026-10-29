@@ -4884,6 +4884,8 @@ export interface components {
              * @default []
              */
             label_ids: string[];
+            /** Branch From */
+            branch_from?: string | null;
         };
         /** TaskLinkOut */
         TaskLinkOut: {
@@ -4979,6 +4981,18 @@ export interface components {
              */
             waiting_on: string[];
             pull_request?: components["schemas"]["PullRequestOut"] | null;
+            back_merge_pull_request?: components["schemas"]["PullRequestOut"] | null;
+            /** Branch From */
+            branch_from?: string | null;
+            /** Start Branch */
+            start_branch?: string | null;
+            /** Back Merge Into */
+            back_merge_into?: string | null;
+            /**
+             * Branch From Locked
+             * @default false
+             */
+            branch_from_locked: boolean;
         };
         /** TaskRef */
         TaskRef: {
@@ -5020,6 +5034,8 @@ export interface components {
             parent_id?: string | null;
             /** Label Ids */
             label_ids?: string[] | null;
+            /** Branch From */
+            branch_from?: string | null;
         };
         /** TaskWorkflowOut */
         TaskWorkflowOut: {
@@ -5378,6 +5394,19 @@ export interface components {
             /** Pr Url */
             pr_url: string | null;
             pull_request?: components["schemas"]["PullRequestOut"] | null;
+            /** Back Merge Branch */
+            back_merge_branch?: string | null;
+            /** Back Merge Pr Url */
+            back_merge_pr_url?: string | null;
+            back_merge_pull_request?: components["schemas"]["PullRequestOut"] | null;
+            /** Finish Outcome */
+            finish_outcome?: string | null;
+            /** Branch From */
+            branch_from?: string | null;
+            /** Start Branch */
+            start_branch?: string | null;
+            /** Back Merge Into */
+            back_merge_into?: string | null;
             /** Documents */
             documents: components["schemas"]["WorkflowDocumentBrief"][];
             /** Open Question Id */

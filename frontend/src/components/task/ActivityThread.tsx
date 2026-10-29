@@ -42,6 +42,8 @@ export function describeEvent(
       }
       return `changed ${label}`;
     }
+    case "branch_started":
+      return `started work from ${str(data.start_branch) ?? "its start branch"}`;
     case "sprint_changed":
       return data.to ? "moved this into a sprint" : "moved this to the backlog";
     case "question_asked":

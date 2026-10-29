@@ -98,6 +98,14 @@ export const FINISHING_LABEL: Record<FinishingOption, string> = {
   keep_branch: "Keep the branch",
 };
 
+/** Where the work starts and is delivered (Branch from): recorded once the task's branch exists, else a preview. */
+export function branchLine(start: string | null | undefined, backMergeInto: string | null | undefined, branchFrom: string | null | undefined): string {
+  if (start && backMergeInto) return `Starts from ${start}. Delivers to ${start}, then ${backMergeInto}.`;
+  if (start) return `Starts from ${start}. Delivers to ${start}.`;
+  if (branchFrom) return `Will start from ${branchFrom}.`;
+  return "Will start from the default branch.";
+}
+
 /** One line for the panel: "Running: Build, step 2 of 5", "Waiting: Approve the plan". */
 export function statusLine(wf: Pick<Workflow, "stage" | "status" | "needs" | "current_step" | "steps_total">): string {
   switch (wf.status) {

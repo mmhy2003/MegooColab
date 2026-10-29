@@ -50,6 +50,8 @@ const MESSAGES: Record<string, string> = {
   invalid_question: "Ask a question of up to 1,000 characters.",
   project_not_found: "Project not found.",
   task_not_found: "Task not found.",
+  invalid_branch_name: "That isn't a valid branch name.",
+  branch_from_locked: "Branch from can't change once work has started.",
   cannot_use_agent: "You can only use your own agents, or agents on projects you manage.",
   agent_not_bound: "That agent isn't set up for this project. Add the project to the agent first.",
   unknown_agent: "That agent no longer exists.",

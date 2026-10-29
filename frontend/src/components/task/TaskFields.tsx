@@ -29,6 +29,7 @@ export function TaskFields({
   sprints,
   meId,
   disabled,
+  defaultBranch = null,
   onPatch,
   onMove,
   onSprint,
@@ -43,6 +44,8 @@ export function TaskFields({
   sprints: Sprint[] | undefined;
   meId: string | undefined;
   disabled: boolean;
+  /** the project's default branch, when it has exactly one repository: Branch from's placeholder */
+  defaultBranch?: string | null;
   onPatch: (patch: Record<string, unknown>) => void;
   onMove: (columnId: string) => void;
   onSprint: (sprintId: string | null) => void;
@@ -90,6 +93,29 @@ export function TaskFields({
             if (v !== task.story_points) onPatch({ story_points: v });
           }}
         />
+      </Row>
+      <Row label="Branch from">
+        <div className="space-y-0.5">
+          <input
+            aria-label="Branch from"
+            className={FIELD}
+            disabled={disabled}
+            readOnly={task.branch_from_locked}
+            placeholder={defaultBranch ? `${defaultBranch} (default)` : "Default branch"}
+            defaultValue={task.branch_from ?? ""}
+            key={`bf-${task.branch_from}`}
+            onBlur={(e) => {
+              if (task.branch_from_locked) return;
+              const v = e.target.value.trim() || null;
+              if (v !== (task.branch_from ?? null)) onPatch({ branch_from: v });
+            }}
+          />
+          {task.branch_from_locked && (
+            <p className="text-[11px] text-muted-foreground">
+              {task.start_branch ? `Locked: work started from ${task.start_branch}.` : "Locked: the workflow has started."}
+            </p>
+          )}
+        </div>
       </Row>
       <Row label="Due">
         <input aria-label="Due date" type="date" className={FIELD} disabled={disabled} value={task.due_date ?? ""} onChange={(e) => onPatch({ due_date: e.target.value || null })} />

@@ -16,6 +16,7 @@ import {
   ACCEPTABLE_REASONS,
   FINISHING_LABEL,
   STAGES,
+  branchLine,
   escalationReasonText,
   statusLine,
   useRunRecords,
@@ -192,6 +193,15 @@ export function WorkflowPanel({
         </div>
       )}
 
+      {wf.driver !== "manual" && (
+        <p className="text-xs text-muted-foreground">{branchLine(wf.start_branch, wf.back_merge_into, wf.branch_from)}</p>
+      )}
+      {wf.finish_outcome === "branch_kept" && wf.start_branch && wf.back_merge_into && (
+        <p className="text-xs text-amber">
+          This fix still has to reach {wf.start_branch} and {wf.back_merge_into}.
+        </p>
+      )}
+
       {(wf.branch || wf.pr_url) && (
         <div className="space-y-1 text-xs">
           {wf.branch && (
@@ -205,6 +215,18 @@ export function WorkflowPanel({
             <a href={wf.pr_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-ink underline">
               Open the pull request <ExternalLink size={12} aria-hidden />
             </a>
+          )}
+          {(wf.back_merge_pull_request || wf.back_merge_pr_url) && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-muted-foreground">Into {wf.back_merge_into}:</span>
+              {wf.back_merge_pull_request ? (
+                <PullRequestBadge pr={wf.back_merge_pull_request} />
+              ) : (
+                <a href={wf.back_merge_pr_url ?? undefined} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-ink underline">
+                  Open the pull request <ExternalLink size={12} aria-hidden />
+                </a>
+              )}
+            </div>
           )}
         </div>
       )}
