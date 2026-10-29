@@ -15,6 +15,9 @@ from app.runner.protocol import CLOSE_REPLACED, ServerMessage
 
 WORKFLOW_CAPABILITY = "workflow/1"
 WORKFLOW_PROBLEM = "runner too old for workflows — update megoocolab-runner"
+# the runner starts task branches from run_start.branch and reports where it started (Branch from)
+BRANCH_CAPABILITY = "branch/1"
+BRANCH_PROBLEM = "runner too old to choose the start branch — update megoocolab-runner"
 
 
 class RunnerClosed(Exception):

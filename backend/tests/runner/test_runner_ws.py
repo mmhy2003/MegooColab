@@ -43,8 +43,15 @@ def _wait_status(tc: TestClient, agent_id: str, expected: str) -> None:
         time.sleep(0.02)
 
 
-def _hello(agents: list[dict]) -> dict:
-    return {"type": "hello", "runner_version": "0.1.0", "os": "linux", "arch": "amd64", "agents": agents}
+CURRENT_CAPABILITIES = ("workflow/1", "branch/1")
+
+
+def _hello(agents: list[dict], capabilities=CURRENT_CAPABILITIES) -> dict:
+    """A current runner's hello; capabilities=None is a v1 runner's (no capabilities field)."""
+    hello = {"type": "hello", "runner_version": "0.1.0", "os": "linux", "arch": "amd64", "agents": agents}
+    if capabilities is not None:
+        hello["capabilities"] = list(capabilities)
+    return hello
 
 
 def _expect_close(ws, code: int) -> None:

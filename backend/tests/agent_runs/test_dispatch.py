@@ -180,6 +180,7 @@ async def test_run_queued_while_runner_offline_then_dispatched_on_hello_exactly_
             "local_path": "/repo/pay",
             "policy": "read_only",
             "prompt": "Do it",
+            "branch": {"branch_from": "", "start_branch": "", "repositories": []},
         }
         _wait_run(tc, task, run["id"], "running")
         _wait_status(tc, agent["id"], "busy")
@@ -223,6 +224,7 @@ async def _offline_runs(client, db, n=1, max_runs=1):
 
 def _fake_conn(user, agent, socket):
     conn = RunnerConn(user.id, socket)
+    conn.capabilities = {"workflow/1", "branch/1"}  # a current runner
     conn.set_availability(uuid.UUID(agent["id"]), True, [])
     registry._conns[user.id] = conn
     return conn

@@ -167,6 +167,20 @@ class McpAccess(BaseModel):
     token: str
 
 
+class RunBranchRepo(BaseModel):
+    url: str
+    default_branch: str
+
+
+class RunBranch(BaseModel):
+    """Where a task run's branch starts (Branch from). The runner matches its folder's origin against the
+    repositories; a recorded start_branch wins once the task's branch exists."""
+
+    branch_from: str = ""
+    start_branch: str = ""
+    repositories: list[RunBranchRepo] = []
+
+
 class RunStart(BaseModel):
     type: Literal["run_start"] = "run_start"
     run_id: uuid.UUID
@@ -185,6 +199,8 @@ class RunStart(BaseModel):
     files: list[RunFile] = []
     repo_files: list[RunFile] = []
     commit_message: str | None = None
+    # every task run, workflow or not (a branch/1 runner); None for answering runs
+    branch: RunBranch | None = None
 
     @field_validator("files")
     @classmethod
@@ -204,8 +220,10 @@ class RunStart(BaseModel):
 
 
 _V1_START_FIELDS = {"type", "run_id", "agent_id", "task", "local_path", "policy", "prompt"}
+# sent with every task run: a runner without branch/1 is never sent a task run (agent_runs._claim_next)
+_TASK_RUN_FIELDS = {"branch"}
 # derived, so a future RunStart field cannot leak to a v1 runner
-V2_START_FIELDS = set(RunStart.model_fields) - _V1_START_FIELDS
+V2_START_FIELDS = set(RunStart.model_fields) - _V1_START_FIELDS - _TASK_RUN_FIELDS
 
 
 class RunCancel(BaseModel):

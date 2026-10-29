@@ -10,7 +10,7 @@ from app.agent_runs.models import AgentRun
 from app.agent_runs.service import finish_run
 from app.agents.models import Agent, AgentBinding
 from app.core.db import SessionLocal
-from app.runner.registry import WORKFLOW_CAPABILITY, registry
+from app.runner.registry import registry
 from app.workflow import engine
 from tests.agent_runs.test_dispatch import _fake_conn, _FakeSocket
 from tests.factories import login, make_project, make_user
@@ -32,8 +32,8 @@ async def _agent(client, user, bind=True, max_runs=1):
 def _online(user, agent, v2=True):
     sock = _FakeSocket()
     conn = _fake_conn(user, agent, sock)
-    if v2:
-        conn.capabilities.add(WORKFLOW_CAPABILITY)
+    if not v2:
+        conn.capabilities = set()
     return sock
 
 

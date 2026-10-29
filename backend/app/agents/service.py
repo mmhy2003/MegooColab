@@ -18,7 +18,7 @@ from app.projects.access import (
     project_team_ids,
 )
 from app.projects.models import Project, ProjectTeam
-from app.runner.registry import WORKFLOW_CAPABILITY, WORKFLOW_PROBLEM, registry
+from app.runner.registry import BRANCH_CAPABILITY, BRANCH_PROBLEM, WORKFLOW_CAPABILITY, WORKFLOW_PROBLEM, registry
 from app.tasks.models import Task
 from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
@@ -68,6 +68,8 @@ def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User) -> li
     problems = list(conn.problems.get(agent_id, [])) if private else []
     if WORKFLOW_CAPABILITY not in conn.capabilities:
         problems.append(WORKFLOW_PROBLEM)
+    if BRANCH_CAPABILITY not in conn.capabilities:
+        problems.append(BRANCH_PROBLEM)
     return problems
 
 

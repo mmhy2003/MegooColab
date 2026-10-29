@@ -16,7 +16,7 @@ from app.core.db import SessionLocal
 from app.core.security import hash_token
 from app.projects.models import Project
 from app.runner.protocol import RunFile, RunStart, RunTask
-from app.runner.registry import WORKFLOW_PROBLEM, RunnerConn, registry
+from app.runner.registry import BRANCH_PROBLEM, WORKFLOW_PROBLEM, RunnerConn, registry
 from app.tasks.models import Task
 from app.workflow.models import DocKind, DocStatus, WorkflowDocument
 from tests.agent_runs.test_dispatch import (
@@ -40,8 +40,8 @@ V2_KEYS = {"role", "stage", "step", "resume_session_id", "resume_prompt", "mcp",
 SHA = "a" * 40
 
 
-def _hello_v2(agent, capabilities=("workflow/1",)):
-    return {**_hello([_avail(agent)]), "capabilities": list(capabilities)}
+def _hello_v2(agent, capabilities=("workflow/1", "branch/1")):
+    return _hello([_avail(agent)], capabilities=capabilities)
 
 
 async def _make_workflow(db, run_id: str, role: str = "implement", **fields) -> None:
@@ -72,10 +72,14 @@ async def test_v1_runner_hello_still_accepted(db, tc_factory):
     run = _start(tc, task, prompt="Go")
     with tc.websocket_connect(URL, headers=token["headers"]) as ws:
         ws.receive_json()
-        ws.send_json(_hello([_avail(agent)]))  # no capabilities field
+        ws.send_json(_hello([_avail(agent)], capabilities=None))  # no capabilities field
+        _wait_status(tc, agent["id"], "online")  # accepted, but it is sent no task run (no branch/1)
+        assert (await _row(db, run["id"])).status == "queued"
+        ws.send_json(_hello([_avail(agent)], capabilities=["branch/1"]))
         start = ws.receive_json()
         assert start["run_id"] == run["id"]
-        assert V2_KEYS.isdisjoint(start)  # a plan-2 style run keeps the v1 shape
+        assert V2_KEYS.isdisjoint(start)  # a plain run keeps the v1 shape, plus its branch
+        assert start["branch"] == {"branch_from": "", "start_branch": "", "repositories": []}
         _wait_status(tc, agent["id"], "busy")
 
 
@@ -87,7 +91,7 @@ async def test_workflow_run_not_dispatched_without_capability_and_problem_shown(
     await _make_workflow(db, run["id"])
     with tc.websocket_connect(URL, headers=token["headers"]) as ws:
         ws.receive_json()
-        ws.send_json(_hello([_avail(agent)]))  # a v1 runner
+        ws.send_json(_hello([_avail(agent)], capabilities=["branch/1"]))  # no workflow/1
         _wait_status(tc, agent["id"], "online")
         mine = next(a for a in tc.get("/api/agents/mine").json() if a["id"] == agent["id"])
         assert mine["problems"] == [WORKFLOW_PROBLEM]
@@ -243,7 +247,7 @@ async def _dispatch_one(client, db, role: str, *, commit_docs: bool = False) -> 
     sock = _FakeSocket()
     conn = RunnerConn(me.id, sock)
     conn.set_availability(uuid.UUID(agent["id"]), True, [])
-    conn.capabilities = {"workflow/1"}
+    conn.capabilities = {"workflow/1", "branch/1"}
     registry._conns[me.id] = conn
     try:
         async with SessionLocal() as s:
@@ -286,7 +290,7 @@ async def test_failed_send_requeues_and_clears_token(client, db):
     await _make_workflow(db, runs[0]["id"])
     conn = RunnerConn(me.id, _FakeSocket(fail=True))
     conn.set_availability(uuid.UUID(agent["id"]), True, [])
-    conn.capabilities = {"workflow/1"}
+    conn.capabilities = {"workflow/1", "branch/1"}
     registry._conns[me.id] = conn
     try:
         async with SessionLocal() as s:
@@ -305,7 +309,7 @@ async def test_oversized_documents_fail_the_run_without_a_token(client, db):
     sock = _FakeSocket()
     conn = RunnerConn(me.id, sock)
     conn.set_availability(uuid.UUID(agent["id"]), True, [])
-    conn.capabilities = {"workflow/1"}
+    conn.capabilities = {"workflow/1", "branch/1"}
     registry._conns[me.id] = conn
     try:
         async with SessionLocal() as s:
@@ -445,10 +449,10 @@ async def test_runner_problems_visible_to_owner_and_admins_only(db):
     conn.set_availability(agent_id, False, ["claude not installed"])
     registry._conns[owner.id] = conn
     try:
-        assert agent_problems(agent_id, owner.id, owner) == ["claude not installed", WORKFLOW_PROBLEM]
-        assert agent_problems(agent_id, owner.id, admin) == ["claude not installed", WORKFLOW_PROBLEM]
-        assert agent_problems(agent_id, owner.id, other) == [WORKFLOW_PROBLEM]
-        conn.capabilities = {"workflow/1"}
+        assert agent_problems(agent_id, owner.id, owner) == ["claude not installed", WORKFLOW_PROBLEM, BRANCH_PROBLEM]
+        assert agent_problems(agent_id, owner.id, admin) == ["claude not installed", WORKFLOW_PROBLEM, BRANCH_PROBLEM]
+        assert agent_problems(agent_id, owner.id, other) == [WORKFLOW_PROBLEM, BRANCH_PROBLEM]
+        conn.capabilities = {"workflow/1", "branch/1"}
         assert agent_problems(agent_id, owner.id, other) == []
     finally:
         registry._conns.pop(owner.id, None)

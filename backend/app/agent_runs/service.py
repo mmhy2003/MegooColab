@@ -27,18 +27,21 @@ from app.core.events import Event, publish
 from app.core.text import strip_nul
 from app.notifications import service as notifications
 from app.notifications.models import Kind
-from app.projects.models import Project
+from app.projects.models import Project, ProjectRepository
 from app.runner.protocol import (
     CLOSE_UNAUTHORIZED,
     V2_START_FIELDS,
     McpAccess,
     RunCancel,
     RunFile,
+    RunBranch,
+    RunBranchRepo,
     RunFinished,
     RunStart,
     RunTask,
 )
-from app.runner.registry import WORKFLOW_CAPABILITY, RunnerClosed, RunnerConn, registry
+from app.runner.registry import BRANCH_CAPABILITY, WORKFLOW_CAPABILITY, RunnerClosed, RunnerConn, registry
+from app.tasks.branches import valid_branch_name
 from app.tasks.models import Task, task_watchers
 from app.tasks.service import record_event
 from app.workflow.models import (
@@ -57,6 +60,7 @@ DOC_ROLES = {
 RUNNER_FAILURE_CODES = frozenset({
     "mcp_http_unsupported", "worktree_failed", "not_bound", "files_failed", "commit_failed", "adapter_start_failed",
     "initialize_failed", "session_failed", "prompt_failed", "invalid_run_files", "busy", "git_state_unreadable",
+    "start_branch_missing", "repository_not_matched",
 })
 
 log = logging.getLogger(__name__)
@@ -158,11 +162,14 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
     )
     run = None
     if agent.max_concurrent_runs > (running or 0):
-        # a runner without workflow/1 leaves workflow and answering runs queued (they need the MCP run token)
-        runnable = (
-            true()
-            if registry.supports(owner_id, WORKFLOW_CAPABILITY)
-            else and_(AgentRun.workflow_role.is_(None), AgentRun.question_id.is_(None))
+        # a runner without workflow/1 leaves workflow and answering runs queued (they need the MCP run token); one
+        # without branch/1 leaves every task run queued (it would start the task's branch from whatever is checked out)
+        workflow = registry.supports(owner_id, WORKFLOW_CAPABILITY)
+        branch = registry.supports(owner_id, BRANCH_CAPABILITY)
+        task_run = AgentRun.question_id.is_(None)
+        runnable = and_(
+            true() if workflow else and_(AgentRun.workflow_role.is_(None), task_run),
+            true() if branch else ~task_run,
         )
         sibling = aliased(AgentRun)
         task_running = (
@@ -276,6 +283,16 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     task_key = f"{project_key}-{task.number}"
     try:
         v2 = await _v2_start_fields(db, run, task, task_key) if run.workflow_role else {}
+        repos = await db.execute(
+            select(ProjectRepository.url, ProjectRepository.default_branch)
+            .where(ProjectRepository.project_id == task.project_id)
+            .order_by(ProjectRepository.created_at, ProjectRepository.id)
+        )
+        branch = RunBranch(
+            branch_from=task.branch_from or "",
+            start_branch=task.start_branch or "",
+            repositories=[RunBranchRepo(url=url, default_branch=default) for url, default in repos],
+        )
         message = RunStart(
             run_id=run.id,
             agent_id=agent_id,
@@ -285,6 +302,7 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
             local_path=local_path,
             policy=run.policy,
             prompt=run.prompt,
+            branch=branch,
             **v2,
         )
     except ValueError:  # e.g. the documents are too large to hand to the runner
@@ -619,6 +637,13 @@ _DECISIONS = {"allowed", "denied"}
 _DRIVE = re.compile(r"^[A-Za-z]:")
 
 
+MAX_REPOSITORY_URL = 1000
+
+
+def _branch(value) -> str | None:
+    return value if isinstance(value, str) and valid_branch_name(value) else None
+
+
 def _pick(fields: dict) -> dict:
     return {k: v for k, v in fields.items() if v is not None}
 
@@ -689,6 +714,12 @@ def sanitize_update(kind: str, data: dict) -> dict | None:
             })
         case "command":
             return _pick({"command": _first_token(g("command")), "exit_code": _int(g("exit_code"))})
+        case "branch":
+            return _pick({
+                "start_branch": _branch(g("start_branch")),
+                "default_branch": _branch(g("default_branch")),
+                "repository_url": _text(g("repository_url"), MAX_REPOSITORY_URL),
+            })
         case "permission":
             return _pick({
                 "tool_kind": _choice(g("tool_kind"), _TOOL_KINDS),
@@ -697,6 +728,24 @@ def sanitize_update(kind: str, data: dict) -> dict | None:
                 "reason": _text(g("reason"), MAX_TITLE),
             })
     return None
+
+
+async def record_start_branch(db: AsyncSession, task: Task, start_branch: str, default_branch: str) -> bool:
+    """The runner created the task's branch from `start_branch`; `default_branch` is the repository's. Recorded
+    once: later runs, the finish run and the task page read these, so nothing moves the target afterwards. True
+    when it recorded."""
+    locked = (
+        await db.execute(
+            select(Task).where(Task.id == task.id).with_for_update().execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    if locked.start_branch is not None or not start_branch:
+        return False
+    locked.start_branch = start_branch
+    locked.back_merge_into = default_branch if default_branch and default_branch != start_branch else None
+    await record_event(db, locked, None, "branch_started",
+                       {"start_branch": start_branch, "back_merge_into": locked.back_merge_into})
+    return True
 
 
 async def apply_update(
@@ -724,6 +773,10 @@ async def apply_update(
     if claimed is None or claimed.task_id is None:
         return  # an answering run's progress is not stored: its answer is what counts
     task = await db.get(Task, claimed.task_id)
+    if kind == "branch":  # not progress to show: where the task's branch started, recorded once
+        if await record_start_branch(db, task, clean.get("start_branch") or "", clean.get("default_branch") or ""):
+            await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
+        return
     event = {**clean, "run_id": str(run_id), "agent_id": str(claimed.agent_id)}
     await record_event(db, task, None, f"agent_{kind}", event)
     await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
