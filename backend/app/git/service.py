@@ -7,7 +7,7 @@ backs off; it never finishes or escalates anything.
 
 While a workflow waits on `human_code_review`: merged -> finished; closed -> escalation `pr_closed`. A production
 fix (Branch from) has two rows, its own pull request and the back-merge into the default branch: it finishes only
-when both are merged, and either one closed escalates.
+when both are merged, and either one closed escalates (`back_merge_pr_closed` for the back-merge one).
 """
 
 import uuid
@@ -158,7 +158,7 @@ async def apply_status(
 
 async def settle_done(db: AsyncSession, wf, task: Task, rows: list[TaskPullRequest]) -> bool:
     """A workflow waiting on human code review follows its tracked pull requests: one closed escalates
-    pr_closed; all of them merged finishes it (a production fix has two). An untracked one waits for a person.
+    pr_closed (back_merge_pr_closed for the back-merge one); all of them merged finishes it (a production fix has two). An untracked one waits for a person.
     True when it acted. The caller holds the workflow lock."""
     from app.workflow import engine, finish  # local: the workflow imports this module
     from app.workflow.models import Needs, WorkflowStatus
@@ -173,7 +173,7 @@ async def settle_done(db: AsyncSession, wf, task: Task, rows: list[TaskPullReque
         row = by_kind[kind]
         if row.connection_id is not None and row.state == "closed":
             await engine.record_workflow_event(db, task, None, "pr.closed", {"url": row.url, "kind": row.kind})
-            await engine.escalate(db, wf, "pr_closed")
+            await engine.escalate(db, wf, "back_merge_pr_closed" if kind == PR_BACK_MERGE else "pr_closed")
             return True
     if set(by_kind) != expected or any(r.connection_id is None or r.state != "merged" for r in by_kind.values()):
         return False

@@ -95,6 +95,14 @@ describe("WorkflowPanel", () => {
     expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
   });
 
+  it("says when it was the back-merge pull request that closed", async () => {
+    setup(wf({ stage: "done", status: "waiting_human", needs: "escalation", escalation_reason: "back_merge_pr_closed" }));
+    expect(
+      await screen.findByText("The back-merge pull request (into the default branch) was closed without being merged."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
+  });
+
   it("does not offer Accept where it is not allowed", async () => {
     setup(wf({ stage: "build", status: "waiting_human", needs: "escalation", escalation_reason: "retries_exhausted" }));
     expect(await screen.findByText("The agent's runs failed 3 times in a row.")).toBeInTheDocument();

@@ -54,9 +54,19 @@ async def test_back_merge_closed_escalates_even_if_main_merged(db, tc_factory, g
     github.set(number=8, state="closed", merged=False, ref=BACK_BRANCH)
     await _refresh(b.task_id)
     wf = await _wf(b.task_id)
-    assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "escalation", "pr_closed")
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "escalation", "back_merge_pr_closed")
     [closed] = await _events(b.task_id, "pr.closed")
     assert closed.data == {"url": BACK, "kind": "back_merge"}
+
+
+async def test_back_merge_closed_can_be_accepted(db, tc_factory, github):  # noqa: F811
+    tc = tc_factory(lifespan=True)
+    b = await _with_back_merge(db, tc, github)
+    github.set(number=8, state="closed", merged=False, ref=BACK_BRANCH)
+    await _refresh(b.task_id)
+    r = tc.post(f"/api/tasks/{b.key}/workflow/escalation", json={"action": "accept"})
+    assert r.status_code == 200, r.text
+    assert (await _wf(b.task_id)).status == "finished"
 
 
 async def test_back_merge_branch_mismatch_waits(db, tc_factory, github):  # noqa: F811

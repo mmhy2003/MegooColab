@@ -315,7 +315,8 @@ async def set_finishing(db: AsyncSession, user: User, task: Task, option: Finish
 
 
 async def _accept_pr_closed(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
-    """The pull request was closed without merging and a person accepts the work as done anyway."""
+    """A pull request (the main or the back-merge one) was closed without merging and a person accepts the work
+    as done anyway."""
     await finish_workflow(db, wf, task, user.id)
 
 
@@ -324,3 +325,4 @@ engine.ROLE_HANDLERS[RunRole.final_fix] = _handle_final_fix
 engine.ROLE_HANDLERS[RunRole.finish] = _handle_finish
 engine.ACCEPT_HANDLERS["final_review_not_clean"] = _accept_final_review
 engine.ACCEPT_HANDLERS["pr_closed"] = _accept_pr_closed
+engine.ACCEPT_HANDLERS["back_merge_pr_closed"] = _accept_pr_closed
