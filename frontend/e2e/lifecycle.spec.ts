@@ -47,11 +47,10 @@ test("project lifecycle: finish, reopen, archive, delete a sprint and a project"
   await page.getByRole("button", { name: "Finished" }).click();
   await expect(page.getByRole("status").filter({ hasText: "This project is finished. It is read-only." })).toBeVisible();
   await page.goto("/projects/LIF/backlog");
-  await page.getByLabel("New backlog item").fill("Too late");
-  await page.getByLabel("New backlog item").press("Enter");
-  await expect(page.getByRole("alert").filter({ hasText: "This project is closed" })).toHaveText(
-    "This project is closed. Reopen it to make changes.",
-  );
+  // read-only: nothing to create or plan is offered, rather than refused after the click
+  await expect(page.getByText("This project is finished. It is read-only.")).toBeVisible();
+  await expect(page.getByLabel("New backlog item")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "New sprint" })).toHaveCount(0);
 
   // 3. reopen it: the banner goes, and creating works again
   await page.getByRole("button", { name: "Reopen" }).click();
