@@ -48,7 +48,9 @@ export function WorkflowSettings({ project, canEdit }: { project: Project; canEd
           <div>{yesNo(project.commit_docs_to_repo)}</div>
           <p className="text-xs text-muted-foreground">{DOCS_HELP}</p>
         </div>
-        <p className="text-xs text-muted-foreground">Only managers can change these.</p>
+        <p className="text-xs text-muted-foreground">
+          {project.status === "active" ? "Only managers can change these." : "Read-only while the project is closed."}
+        </p>
       </section>
     );
   }

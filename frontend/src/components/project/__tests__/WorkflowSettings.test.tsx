@@ -8,18 +8,19 @@ import type { Project } from "@/lib/types";
 const project = {
   id: "p1",
   key: "PAY",
+  status: "active",
   finishing_option: "pull_request",
   require_human_code_review: false,
   commit_docs_to_repo: false,
 } as Project;
 
-function setup(canEdit: boolean, reply: Response = new Response("{}", { status: 200 })) {
+function setup(canEdit: boolean, reply: Response = new Response("{}", { status: 200 }), shown: Project = project) {
   const fetchMock = vi.fn(async () => reply.clone());
   vi.stubGlobal("fetch", fetchMock);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <WorkflowSettings project={project} canEdit={canEdit} />
+      <WorkflowSettings project={shown} canEdit={canEdit} />
     </QueryClientProvider>,
   );
   return fetchMock;
@@ -31,6 +32,12 @@ afterEach(() => {
 });
 
 describe("Workflow settings", () => {
+  it("says a closed project is why they cannot change, not the person's role", () => {
+    setup(false, undefined, { ...project, status: "archived" } as Project);
+    expect(screen.getByText("Read-only while the project is closed.")).toBeInTheDocument();
+    expect(screen.queryByText("Only managers can change these.")).toBeNull();
+  });
+
   it("saves finishing option", async () => {
     const fetchMock = setup(true);
     fireEvent.change(screen.getByLabelText("Default finishing option"), { target: { value: "merge_local" } });
