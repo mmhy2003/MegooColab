@@ -66,7 +66,7 @@ export default function NewProjectPage() {
                 {t.name}
               </label>
             ))}
-            {teams.data && choices.length === 0 && <p className="text-sm text-muted-foreground">Create a team first.</p>}
+            {teams.data && me && choices.length === 0 && <p className="text-sm text-muted-foreground">Create a team first.</p>}
           </div>
         </fieldset>
         {error && <p role="alert" className="text-sm text-pink">{error}</p>}
