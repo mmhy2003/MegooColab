@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -46,6 +46,16 @@ describe("Branch from field", () => {
     await userEvent.clear(field());
     await userEvent.tab();
     expect(onPatch).toHaveBeenLastCalledWith({ branch_from: null });
+  });
+
+  it("goes back to the saved branch when the server refuses the name", async () => {
+    const onPatch = setup({ branch_from: "main" } as Partial<Task>);
+    onPatch.mockResolvedValue(false);
+    await userEvent.clear(field());
+    await userEvent.type(field(), "bad..name");
+    await userEvent.tab();
+    expect(onPatch).toHaveBeenLastCalledWith({ branch_from: "bad..name" });
+    await waitFor(() => expect(field()).toHaveValue("main"));
   });
 
   it("is read-only once work started from a branch", () => {

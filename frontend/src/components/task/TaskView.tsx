@@ -98,14 +98,20 @@ export function TaskView({
       client.invalidateQueries({ queryKey: ["tasks", projectKey] }),
     ]);
   };
-  const run = async (fn: () => Promise<unknown>) => {
+  /** true when the change went through; a refusal shows its message */
+  const attempt = async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
       await fn();
       await refresh();
+      return true;
     } catch (err) {
       setError(errorMessage(err));
+      return false;
     }
+  };
+  const run = async (fn: () => Promise<unknown>) => {
+    await attempt(fn);
   };
   const subtasks = (all.data ?? []).filter((x) => x.parent_id === t.id && x.type === "subtask");
   const parents = (all.data ?? []).filter((x) =>
@@ -253,7 +259,7 @@ export function TaskView({
               meId={me?.id}
               disabled={disabled}
               defaultBranch={repos.data?.length === 1 ? repos.data[0].default_branch : null}
-              onPatch={(patch) => void run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: patch }))}
+              onPatch={(patch) => attempt(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: patch }))}
               onMove={(column_id) => void run(() => api(`/api/tasks/${t.key}/move`, { method: "POST", json: { column_id } }))}
               onSprint={(sprint_id) => void run(() => api(`/api/tasks/${t.key}/sprint`, { method: "PUT", json: { sprint_id } }))}
               onWatch={(watch) => void run(() => api(`/api/tasks/${t.key}/watch`, { method: watch ? "PUT" : "DELETE" }))}

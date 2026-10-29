@@ -46,7 +46,8 @@ export function TaskFields({
   disabled: boolean;
   /** the project's default branch, when it has exactly one repository: Branch from's placeholder */
   defaultBranch?: string | null;
-  onPatch: (patch: Record<string, unknown>) => void;
+  /** may resolve false when the server refused the change */
+  onPatch: (patch: Record<string, unknown>) => Promise<boolean> | void;
   onMove: (columnId: string) => void;
   onSprint: (sprintId: string | null) => void;
   onWatch: (watch: boolean) => void;
@@ -104,10 +105,13 @@ export function TaskFields({
             placeholder={defaultBranch ? `${defaultBranch} (default)` : "Default branch"}
             defaultValue={task.branch_from ?? ""}
             key={`bf-${task.branch_from}`}
-            onBlur={(e) => {
+            onBlur={async (e) => {
               if (task.branch_from_locked) return;
-              const v = e.target.value.trim() || null;
-              if (v !== (task.branch_from ?? null)) onPatch({ branch_from: v });
+              const input = e.currentTarget;
+              const v = input.value.trim() || null;
+              if (v === (task.branch_from ?? null)) return;
+              // a refused name goes back to the saved one, so the field never shows a branch that is not set
+              if ((await onPatch({ branch_from: v })) === false) input.value = task.branch_from ?? "";
             }}
           />
           {task.branch_from_locked && (
