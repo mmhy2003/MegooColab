@@ -951,12 +951,22 @@ func TestRunStartsFromBranchAndReports(t *testing.T) {
 		ups[0].Data["default_branch"] != "develop" || ups[0].Data["repository_url"] != "https://example.com/acme/meg" {
 		t.Fatalf("first update = %+v", ups)
 	}
-	e.startRunWith("run-b2", "MEG-1", func(rs *protocol.RunStart) { rs.Branch = branch })
+	// the server recorded it: a reused worktree says nothing more
+	recorded := *branch
+	recorded.StartBranch = "develop"
+	e.startRunWith("run-b2", "MEG-1", func(rs *protocol.RunStart) { rs.Branch = &recorded })
 	e.finished("run-b2")
 	for _, u := range e.updates("run-b2") {
 		if u.Kind == "branch" {
-			t.Fatal("a reused worktree reported its branch again")
+			t.Fatal("a reused worktree reported a branch the server already has")
 		}
+	}
+	// the first report was lost (nothing recorded): the next run sends it again
+	e.startRunWith("run-b3", "MEG-1", func(rs *protocol.RunStart) { rs.Branch = branch })
+	e.finished("run-b3")
+	ups = e.updates("run-b3")
+	if len(ups) == 0 || ups[0].Kind != "branch" || ups[0].Data["start_branch"] != "develop" {
+		t.Fatalf("run-b3 updates = %+v", ups)
 	}
 }
 

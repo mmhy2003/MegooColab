@@ -20,6 +20,8 @@ import (
 var (
 	ErrStartBranchMissing   = errors.New("start_branch_missing")
 	ErrRepositoryNotMatched = errors.New("repository_not_matched")
+	// origin could not be reached and there is no copy of the branch to start from
+	ErrStartBranchFetchFailed = errors.New("start_branch_fetch_failed")
 )
 
 // FetchTimeout bounds the fetch of the start branch. A var for tests.
@@ -129,7 +131,7 @@ func Resolve(ctx context.Context, logw io.Writer, repo string, spec *protocol.Ru
 	}
 	if match == nil {
 		fmt.Fprintf(logw, "runner: no project repository matches origin %q; starting from HEAD\n", origin)
-		return Result{}, nil
+		return headResult(repo), nil
 	}
 	res := Result{StartBranch: match.DefaultBranch, DefaultBranch: match.DefaultBranch, RepositoryURL: match.URL, Report: true}
 	point, err := startPoint(ctx, logw, repo, origin, match.DefaultBranch)
@@ -137,14 +139,22 @@ func Resolve(ctx context.Context, logw io.Writer, repo string, spec *protocol.Ru
 	case err == nil:
 		res.StartPoint = point
 	case errors.Is(err, ErrStartBranchMissing):
-		// the stored default may be the unchecked "main" of a repository whose branch is master
-		if b, e := git(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); e == nil && strings.HasPrefix(b, "origin/") {
-			actual := strings.TrimPrefix(b, "origin/")
+		// confirmed absent (not merely unreachable): the stored default may be the unchecked "main" of a
+		// repository whose branch is master
+		var point string
+		var e error = ErrStartBranchMissing
+		actual := ""
+		if b, e2 := git(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); e2 == nil && strings.HasPrefix(b, "origin/") {
+			actual = strings.TrimPrefix(b, "origin/")
+			point, e = startPoint(ctx, logw, repo, origin, actual)
+		}
+		if e == nil {
 			fmt.Fprintf(logw, "runner: default branch %q not found; using origin's default %q\n", match.DefaultBranch, actual)
-			res.StartPoint, res.StartBranch, res.DefaultBranch = b, actual, actual
-		} else if head, e := git(repo, "symbolic-ref", "--short", "HEAD"); e == nil && head != "" {
-			fmt.Fprintf(logw, "runner: default branch %q not found; starting from the checked-out %q\n", match.DefaultBranch, head)
-			res.StartPoint, res.StartBranch, res.DefaultBranch = "", head, head
+			res.StartPoint, res.StartBranch, res.DefaultBranch = point, actual, actual
+		} else if head := headResult(repo); head.Report {
+			fmt.Fprintf(logw, "runner: default branch %q not found; starting from the checked-out %q\n", match.DefaultBranch, head.StartBranch)
+			head.RepositoryURL = match.URL
+			res = head
 		} else {
 			fmt.Fprintf(logw, "runner: default branch %q not found; starting from HEAD\n", match.DefaultBranch)
 			return Result{}, nil
@@ -156,19 +166,45 @@ func Resolve(ctx context.Context, logw io.Writer, repo string, spec *protocol.Ru
 	return res, nil
 }
 
-// startPoint fetches branch from origin and returns origin/<branch>; offline
-// or without origin, the local branch of that name; else ErrStartBranchMissing.
+// headResult is "start from HEAD", reported as the checked-out branch so the
+// server records where the work started; nothing when HEAD is detached.
+func headResult(repo string) Result {
+	head, err := git(repo, "symbolic-ref", "--short", "HEAD")
+	if err != nil || head == "" {
+		return Result{}
+	}
+	return Result{StartBranch: head, DefaultBranch: head, Report: true}
+}
+
+// startPoint fetches branch from origin and returns origin/<branch>. A branch
+// origin does not have (or a folder without origin) falls back to the local
+// branch, else ErrStartBranchMissing. An origin that cannot be reached falls
+// back to the last fetched origin/<branch>, then the local branch, else
+// ErrStartBranchFetchFailed: never to a different branch.
 func startPoint(ctx context.Context, logw io.Writer, repo, origin, branch string) (string, error) {
 	why := "the folder has no origin remote"
 	if origin != "" {
 		refspec := "+refs/heads/" + branch + ":refs/remotes/origin/" + branch
-		if _, err := gitstate.RunContext(ctx, FetchTimeout, repo, "fetch", "--no-tags", "origin", refspec); err == nil {
+		_, err := gitstate.RunContext(ctx, FetchTimeout, repo, "fetch", "--no-tags", "origin", refspec)
+		switch {
+		case err == nil:
 			return "origin/" + branch, nil
-		} else if ctx.Err() != nil {
+		case ctx.Err() != nil:
 			return "", ctx.Err()
-		} else {
-			why = err.Error()
+		case !strings.Contains(err.Error(), "couldn't find remote ref"):
+			// unreachable (offline, no credentials): the branch may well exist there
+			if hasRef(repo, "refs/remotes/origin/"+branch) {
+				fmt.Fprintf(logw, "runner: could not fetch %s (%v); using the last fetched origin/%s\n", branch, err, branch)
+				return "origin/" + branch, nil
+			}
+			if hasRef(repo, "refs/heads/"+branch) {
+				fmt.Fprintf(logw, "runner: using the local %s: %v\n", branch, err)
+				return branch, nil
+			}
+			fmt.Fprintf(logw, "runner: could not fetch %s and there is no copy of it: %v\n", branch, err)
+			return "", ErrStartBranchFetchFailed
 		}
+		why = "origin has no branch " + branch
 	}
 	if hasRef(repo, "refs/heads/"+branch) {
 		fmt.Fprintf(logw, "runner: using the local %s: %s\n", branch, why)
@@ -176,4 +212,29 @@ func startPoint(ctx context.Context, logw io.Writer, repo, origin, branch string
 	}
 	fmt.Fprintf(logw, "runner: branch %q not found on origin or locally: %s\n", branch, why)
 	return "", ErrStartBranchMissing
+}
+
+// Remember stores where the task branch started in the repository's config
+// (branch.<name>.megoocolab-*), so a later run can report it again if the
+// first report never reached the server.
+func Remember(repo, branch string, res Result) error {
+	for k, v := range map[string]string{"start": res.StartBranch, "default": res.DefaultBranch, "repository": res.RepositoryURL} {
+		if _, err := git(repo, "config", "branch."+branch+".megoocolab-"+k, v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Recall reads what Remember stored for branch.
+func Recall(repo, branch string) (Result, bool) {
+	get := func(k string) string {
+		v, _ := git(repo, "config", "--get", "branch."+branch+".megoocolab-"+k)
+		return v
+	}
+	start := get("start")
+	if start == "" {
+		return Result{}, false
+	}
+	return Result{StartBranch: start, DefaultBranch: get("default"), RepositoryURL: get("repository"), Report: true}, true
 }

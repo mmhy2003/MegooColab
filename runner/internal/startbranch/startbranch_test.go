@@ -137,11 +137,16 @@ func TestResolveSingleRepositoryUsedWithoutMatch(t *testing.T) {
 	}
 }
 
-func TestResolveNoRepositoriesKeepsHead(t *testing.T) {
+func TestResolveNoRepositoriesKeepsHeadAndReportsIt(t *testing.T) {
 	_, clone, _ := world(t, "main")
 	res, err := Resolve(context.Background(), nil, clone, &protocol.RunBranch{})
-	if err != nil || res != (Result{}) {
+	// HEAD as before, but reported: the server then locks Branch from and the finish knows the target
+	if err != nil || res != (Result{StartBranch: "main", DefaultBranch: "main", Report: true}) {
 		t.Fatalf("got %+v, %v", res, err)
+	}
+	runGit(t, clone, "checkout", "-q", "--detach")
+	if res, err := Resolve(context.Background(), nil, clone, &protocol.RunBranch{}); err != nil || res != (Result{}) {
+		t.Fatalf("detached: %+v, %v", res, err)
 	}
 	if res, err := Resolve(context.Background(), nil, clone, nil); err != nil || res != (Result{}) {
 		t.Fatalf("nil spec: %+v, %v", res, err)
@@ -175,6 +180,7 @@ func TestResolveImplicitDefaultFallsBackToOriginHead(t *testing.T) {
 func TestResolveOfflineUsesLocalBranch(t *testing.T) {
 	origin, clone, _ := world(t, "main")
 	runGit(t, clone, "branch", "develop", "origin/develop")
+	runGit(t, clone, "update-ref", "-d", "refs/remotes/origin/develop") // only the local branch is left
 	if err := os.RemoveAll(origin); err != nil {
 		t.Fatal(err)
 	}
@@ -194,5 +200,71 @@ func TestResolveRecordedStartNotReported(t *testing.T) {
 	res, err := Resolve(context.Background(), nil, clone, spec)
 	if err != nil || res.StartPoint != "origin/main" || res.StartBranch != "main" || res.Report {
 		t.Fatalf("got %+v, %v", res, err)
+	}
+}
+
+func TestResolveOfflineImplicitKeepsItsBranch(t *testing.T) {
+	origin, clone, _ := world(t, "main")
+	if err := os.RemoveAll(origin); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	res, err := Resolve(context.Background(), &log, clone, &protocol.RunBranch{Repositories: repos(origin, "develop")})
+	if err != nil || res.StartPoint != "origin/develop" || res.StartBranch != "develop" || res.DefaultBranch != "develop" {
+		t.Fatalf("got %+v, %v (a failed fetch must not switch to origin's default)", res, err)
+	}
+	if !strings.Contains(log.String(), "last fetched origin/develop") {
+		t.Fatalf("log: %s", log.String())
+	}
+}
+
+func TestResolveOfflineWithNoCopyFails(t *testing.T) {
+	origin, clone, _ := world(t, "main")
+	if err := os.RemoveAll(origin); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Resolve(context.Background(), nil, clone, &protocol.RunBranch{Repositories: repos(origin, "release")})
+	if !errors.Is(err, ErrStartBranchFetchFailed) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestResolveExplicitOfflineUsesLastFetched(t *testing.T) {
+	origin, clone, _ := world(t, "main")
+	if err := os.RemoveAll(origin); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Resolve(context.Background(), nil, clone, &protocol.RunBranch{BranchFrom: "main", Repositories: repos(origin, "develop")})
+	if err != nil || res.StartPoint != "origin/main" || res.DefaultBranch != "develop" {
+		t.Fatalf("got %+v, %v", res, err)
+	}
+}
+
+func TestResolveOriginHeadFallbackIsFetched(t *testing.T) {
+	origin, clone, pusher := world(t, "master")
+	runGit(t, origin, "branch", "-D", "main")
+	commit(t, pusher, "late.txt")
+	runGit(t, pusher, "push", "-q", "origin", "master")
+	latest := runGit(t, pusher, "rev-parse", "HEAD")
+	res, err := Resolve(context.Background(), nil, clone, &protocol.RunBranch{Repositories: repos(origin, "main")})
+	if err != nil || res.StartPoint != "origin/master" {
+		t.Fatalf("got %+v, %v", res, err)
+	}
+	if got := runGit(t, clone, "rev-parse", "origin/master"); got != latest {
+		t.Fatalf("origin/master = %s, want the pushed %s", got, latest)
+	}
+}
+
+func TestRememberAndRecall(t *testing.T) {
+	_, clone, _ := world(t, "main")
+	if _, ok := Recall(clone, "megoo/MEG-1-x"); ok {
+		t.Fatal("recalled before remembering")
+	}
+	want := Result{StartBranch: "main", DefaultBranch: "develop", RepositoryURL: "https://example.com/x", Report: true}
+	if err := Remember(clone, "megoo/MEG-1-x", want); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := Recall(clone, "megoo/MEG-1-x"); !ok || got != want {
+		t.Fatalf("got %+v, %v", got, ok)
 	}
 }

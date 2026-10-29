@@ -620,7 +620,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	}
 	// A new task branch starts from the start branch (Branch from), fetched first; a reused one is left alone.
 	var start startbranch.Result
-	wt, _, created, err := worktree.EnsureFrom(r.ctx, logf, repo, m.cacheRoot, rs.AgentID, rs.Task.Key, rs.Task.Title,
+	wt, taskBranch, created, err := worktree.EnsureFrom(r.ctx, logf, repo, m.cacheRoot, rs.AgentID, rs.Task.Key, rs.Task.Title,
 		func() (string, error) {
 			res, err := startbranch.Resolve(r.ctx, logf, repo, rs.Branch)
 			start = res
@@ -631,10 +631,21 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return fail("start_branch_missing", err)
 	case errors.Is(err, startbranch.ErrRepositoryNotMatched):
 		return fail("repository_not_matched", err)
+	case errors.Is(err, startbranch.ErrStartBranchFetchFailed):
+		return fail("start_branch_fetch_failed", err)
 	case err != nil:
 		return fail("worktree_failed", err)
 	}
+	// Reported until the server has it: a report lost with a dropped connection is sent again by the next run.
+	report := created && start.Report
 	if created && start.Report {
+		if err := startbranch.Remember(repo, taskBranch, start); err != nil {
+			fmt.Fprintf(logf, "runner: remembering the start branch: %v\n", err)
+		}
+	} else if !created && rs.Branch != nil && rs.Branch.StartBranch == "" {
+		start, report = startbranch.Recall(repo, taskBranch)
+	}
+	if report {
 		r.emit("branch", map[string]any{
 			"start_branch": start.StartBranch, "default_branch": start.DefaultBranch, "repository_url": start.RepositoryURL,
 		})
