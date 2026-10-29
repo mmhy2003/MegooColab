@@ -103,7 +103,7 @@ describe("RepoEditor", () => {
       return undefined;
     });
     const onChanged = vi.fn();
-    wrap(<RepoEditor projectKey="PAY" repos={[repo]} onChanged={onChanged} />);
+    wrap(<RepoEditor projectKey="PAY" repos={[repo]} canEdit onChanged={onChanged} />);
     const select = await screen.findByRole("combobox", { name: "Connection for pay" });
     await within(select).findByRole("option", { name: "GHE" });
     expect(select).toHaveValue("");

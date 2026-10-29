@@ -23,10 +23,13 @@ const CATEGORIES = Object.keys(CATEGORY_LABEL) as ColumnCategory[];
 export function ColumnEditor({
   projectKey,
   columns,
+  canEdit,
   onChanged,
 }: {
   projectKey: string;
   columns: Column[];
+  /** manages the project (read-only otherwise) */
+  canEdit: boolean;
   onChanged: () => void;
 }) {
   const { ask, dialog } = useConfirm();
@@ -72,6 +75,13 @@ export function ColumnEditor({
         <ol className="flex gap-3 overflow-x-auto pb-2">
           {columns.map((col, i) => (
             <li key={col.id} className="card w-52 shrink-0 space-y-2 p-3">
+              {!canEdit ? (
+                <>
+                  <p className="text-sm font-semibold">{col.name}</p>
+                  <p className="text-xs text-muted-foreground">{CATEGORY_LABEL[col.category]} · {col.task_count} tasks</p>
+                </>
+              ) : (
+              <>
               <input
                 aria-label={`Name of ${col.name}`}
                 defaultValue={col.name}
@@ -111,9 +121,12 @@ export function ColumnEditor({
                   </Hint>
                 </span>
               </div>
+              </>
+              )}
             </li>
           ))}
         </ol>
+        {canEdit && (
         <form
           className="flex flex-wrap items-end gap-2"
           onSubmit={async (e) => {
@@ -141,6 +154,7 @@ export function ColumnEditor({
           </select>
           <Button type="submit" variant="ghost">Add column</Button>
         </form>
+        )}
         {deleting && (
           <Dialog open title={`Delete ${deleting.name}`} onClose={() => setDeleting(null)}>
             <div className="space-y-3">

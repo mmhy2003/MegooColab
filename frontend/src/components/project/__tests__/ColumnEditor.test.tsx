@@ -25,7 +25,7 @@ describe("ColumnEditor", () => {
   it("asks where to move tasks before deleting a non-empty column", async () => {
     vi.mocked(fetch).mockResolvedValue(json(204, null));
     const onChanged = vi.fn();
-    render(<ColumnEditor projectKey="PAY" columns={COLS} onChanged={onChanged} />);
+    render(<ColumnEditor projectKey="PAY" columns={COLS} canEdit onChanged={onChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete In Review" }));
     const target = await screen.findByLabelText(/move its 2 tasks to/i);
     fireEvent.change(target, { target: { value: "c4" } });
@@ -38,7 +38,7 @@ describe("ColumnEditor", () => {
 
   it("explains why the last done column can't go", async () => {
     vi.mocked(fetch).mockResolvedValue(json(409, { detail: "last_before_or_done_column" }));
-    render(<ColumnEditor projectKey="PAY" columns={COLS} onChanged={vi.fn()} />);
+    render(<ColumnEditor projectKey="PAY" columns={COLS} canEdit onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete Done" }));
     await answer("Delete");
     expect(
@@ -48,7 +48,7 @@ describe("ColumnEditor", () => {
 
   it("reorders by sending every column id in the new order", async () => {
     vi.mocked(fetch).mockResolvedValue(json(200, []));
-    render(<ColumnEditor projectKey="PAY" columns={COLS} onChanged={vi.fn()} />);
+    render(<ColumnEditor projectKey="PAY" columns={COLS} canEdit onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Move Backlog right" }));
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     const [url, init] = vi.mocked(fetch).mock.calls[0];

@@ -18,7 +18,18 @@ export function LabelChip({ label }: { label: Label }) {
   );
 }
 
-export function LabelEditor({ projectKey, labels, onChanged }: { projectKey: string; labels: Label[]; onChanged: () => void }) {
+export function LabelEditor({
+  projectKey,
+  labels,
+  canEdit,
+  onChanged,
+}: {
+  projectKey: string;
+  labels: Label[];
+  /** manages the project (read-only otherwise) */
+  canEdit: boolean;
+  onChanged: () => void;
+}) {
   const base = `/api/projects/${projectKey}/labels`;
   const [name, setName] = useState("");
   const [color, setColor] = useState("#05D9E8");
@@ -43,15 +54,18 @@ export function LabelEditor({ projectKey, labels, onChanged }: { projectKey: str
         {labels.map((l) => (
           <li key={l.id} className="flex items-center gap-1">
             <LabelChip label={l} />
+            {canEdit && (
             <Hint label={`Delete label ${l.name}`}>
               <button type="button" className="icon-btn h-6 w-6 hover:text-pink" aria-label={`Delete label ${l.name}`} onClick={() => run(() => api(`${base}/${l.id}`, { method: "DELETE" }))}>
                 <Trash2 size={12} aria-hidden />
               </button>
             </Hint>
+            )}
           </li>
         ))}
         {labels.length === 0 && <li className="text-sm text-muted-foreground">No labels yet.</li>}
       </ul>
+      {canEdit && (
       <form
         className="flex items-end gap-2"
         onSubmit={async (e) => {
@@ -63,6 +77,7 @@ export function LabelEditor({ projectKey, labels, onChanged }: { projectKey: str
         <input aria-label="Label color" type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-10 rounded border border-line bg-surface-2" />
         <Button type="submit" variant="ghost">Add label</Button>
       </form>
+      )}
     </div>
   );
 }

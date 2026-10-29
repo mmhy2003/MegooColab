@@ -13,7 +13,18 @@ import { Hint } from "@/components/ui/Hint";
 const PROVIDERS: Repo["provider"][] = ["github", "gitlab", "gitea", "plain"];
 const FIELD = "rounded border border-line bg-surface-2 px-2 py-1.5 text-sm";
 
-export function RepoEditor({ projectKey, repos, onChanged }: { projectKey: string; repos: Repo[]; onChanged: () => void }) {
+export function RepoEditor({
+  projectKey,
+  repos,
+  canEdit,
+  onChanged,
+}: {
+  projectKey: string;
+  repos: Repo[];
+  /** manages the project (read-only otherwise) */
+  canEdit: boolean;
+  onChanged: () => void;
+}) {
   const base = `/api/projects/${projectKey}/repositories`;
   const [form, setForm] = useState({ name: "", url: "", provider: "github" as Repo["provider"], default_branch: "main" });
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +51,8 @@ export function RepoEditor({ projectKey, repos, onChanged }: { projectKey: strin
             <span className="font-semibold">{r.name}</span>
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{r.url}</span>
             <span className="text-xs text-muted-foreground">{r.provider} · {r.default_branch}</span>
+            {canEdit ? (
+            <>
             <select
               aria-label={`Connection for ${r.name}`}
               title="The git connection that follows this repository's pull requests"
@@ -57,10 +70,15 @@ export function RepoEditor({ projectKey, repos, onChanged }: { projectKey: strin
                 <Trash2 size={14} aria-hidden />
               </button>
             </Hint>
+            </>
+            ) : (
+              <span className="text-xs text-muted-foreground">{r.connection ? `Tracked by ${r.connection.name}` : "Not tracked"}</span>
+            )}
           </li>
         ))}
         {repos.length === 0 && <li className="px-3 py-3 text-sm text-muted-foreground">No repositories linked yet.</li>}
       </ul>
+      {canEdit && (
       <form
         className="flex flex-wrap items-end gap-2"
         onSubmit={async (e) => {
@@ -78,6 +96,7 @@ export function RepoEditor({ projectKey, repos, onChanged }: { projectKey: strin
         <input aria-label="Default branch" className={`${FIELD} w-28`} value={form.default_branch} onChange={(e) => setForm({ ...form, default_branch: e.target.value })} />
         <Button type="submit" variant="ghost">Add</Button>
       </form>
+      )}
     </div>
   );
 }
