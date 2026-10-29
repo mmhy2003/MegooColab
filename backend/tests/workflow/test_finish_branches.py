@@ -150,3 +150,16 @@ def test_finish_text_back_merge_section():
     assert "never push to a different branch or remote than the task branch's own (or" in text
     assert text.count("do the Back-merge first") == 2  # merge_local and pull_request
     assert "Call `report_finish` exactly once, after the option (and any back-merge)" in text
+
+
+def test_finish_text_back_merge_gaps_closed():
+    text = " ".join((DEFAULTS_DIR / "finish.md").read_text(encoding="utf-8").split())
+    section = text[text.index("## Back-merge"):text.index("## When something fails")]
+    # where the -to- branch is made, and back to the task branch afterwards
+    assert "in this worktree" in section and "switch this worktree back to the task branch" in section
+    # merge_local keeps the task branch until the back-merge has used it
+    assert "never before the Back-merge is done" in text
+    # conflict attempts are edits, which "When something fails" otherwise forbids
+    assert "three attempts at resolving the conflicts" in section
+    fails = text[text.index("## When something fails"):]
+    assert "except a back-merge's conflict resolution" in fails

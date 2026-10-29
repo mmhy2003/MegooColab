@@ -63,7 +63,7 @@ Your prompt states one option. Do exactly that one.
    configured, and merge the task branch into it. Then **re-run the tests on the merged result**. If they fail,
    do not leave a broken merge behind: abort or reset your own merge, and call `ask_human`.
 3. Do not push unless your prompt says to. Do not delete the branch unless it was fully merged and your prompt
-   does not say to keep it.
+   does not say to keep it, and never before the Back-merge is done: the back-merge merges the task branch too.
 4. If your prompt names a "Back-merge into" branch, do the Back-merge first (see "Back-merge"). Then
    `report_finish(key=..., outcome="merged_local", branch=..., tests_passed=true)`, with the back-merge fields.
 
@@ -95,11 +95,13 @@ Your prompt states one option. Do exactly that one.
 Only when your prompt names a "Back-merge into" branch (call it the back-merge branch) and the option is not
 `keep_branch`. Do it after the delivery into the start branch above, and report both in the one `report_finish`.
 
-- **pull_request:** create `megoo/<TASK-KEY>-<slug>-to-<back-merge branch>` (the task branch's name plus `-to-` and
-  the back-merge branch, slugged) from `origin/<back-merge branch>`, fetched first. Merge the task branch into it,
-  resolve any conflicts (below), run the full test suite and record it with `record_tests`. Push it and open a
-  second pull request from it into the back-merge branch, saying it brings the production fix back. Report
-  `back_merge_branch` (that branch) and `back_merge_pr_url`.
+- **pull_request:** in this worktree, fetch the back-merge branch and create
+  `megoo/<TASK-KEY>-<slug>-to-<back-merge branch>` (the task branch's name plus `-to-` and the back-merge branch,
+  slugged) from `origin/<back-merge branch>` (`git switch -c <that name> origin/<back-merge branch>`). Merge the
+  task branch into it, resolve any conflicts (below), run the full test suite and record it with `record_tests`.
+  Push it and open a second pull request from it into the back-merge branch, saying it brings the production fix
+  back. Then switch this worktree back to the task branch. Report `back_merge_branch` (that branch) and
+  `back_merge_pr_url`.
 - **merge_local:** in the developer's main checkout, after merging into the start branch and re-running the tests,
   switch to the back-merge branch, update it from the remote if one is configured, merge the task branch, resolve
   any conflicts (below) and re-run the tests on the result. Report `back_merge_branch` (the back-merge branch).
@@ -109,8 +111,9 @@ Only when your prompt names a "Back-merge into" branch (call it the back-merge b
 **Resolving conflicts.** This is the one place in this stage where you change code, and only to resolve the
 back-merge's conflicts: keep the intent of both sides (the fix, and what the back-merge branch has gained since),
 add nothing else. Record each conflicted file and how you resolved it with `record_decision`. Then run the full
-suite and record it. If the suite fails and three attempts (as in "When something fails") do not fix it, abort
-your merge, leave the back-merge branch as it was, and call `ask_human`.
+suite and record it. If the suite fails, diagnose it as "When something fails" says; you may change only how the
+conflicts were resolved. If three attempts at resolving the conflicts do not make the suite pass, abort your
+merge, leave the back-merge branch as it was, and call `ask_human`.
 
 ## When something fails
 
@@ -123,7 +126,8 @@ the human can decide:
 2. **Find the root cause.** Trace the bad value or behaviour back to where it starts, by reading the code and
    running read-only commands. Tell a real failure apart from the environment (a missing tool, a service that is
    not running, a stale dependency install).
-3. **One hypothesis at a time.** Check each by reading or by running a command, never by editing files.
+3. **One hypothesis at a time.** Check each by reading or by running a command, never by editing files (except a
+   back-merge's conflict resolution, see "Back-merge").
 4. **Stop after three attempts.** If three hypotheses or three attempts to fix the environment (for example
    reinstalling dependencies) leave the cause unclear, stop guessing.
 
