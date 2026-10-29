@@ -36,7 +36,7 @@ async def test_owner_assigns_own_agent(client, db):
     assert out["assignee_agent_id"] == agent["id"]
     assert out["assignee_agent"] == {
         "id": agent["id"], "name": agent["name"], "program": "claude_code",
-        "owner_id": str(me.id), "status": "offline",
+        "owner_id": str(me.id), "status": "offline", "runner": None,
     }
     r = await client.post("/api/projects/PAY/tasks", json={"title": "N", "assignee_agent_id": agent["id"]})
     assert r.status_code == 201 and r.json()["assignee_agent_id"] == agent["id"]

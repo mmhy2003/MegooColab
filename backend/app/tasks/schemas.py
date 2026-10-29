@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.agents.schemas import RunnerInfo
 from app.core.text import NoNulStr
 from app.projects.models import ColumnCategory
 from app.projects.schemas import LabelOut
@@ -48,6 +49,7 @@ class AssigneeAgentOut(BaseModel):
     program: str
     owner_id: uuid.UUID
     status: str
+    runner: RunnerInfo | None = None
 
 
 class TaskOut(BaseModel):

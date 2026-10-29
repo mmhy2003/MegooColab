@@ -83,6 +83,19 @@ async def test_v1_runner_hello_still_accepted(db, tc_factory):
         _wait_status(tc, agent["id"], "busy")
 
 
+async def test_the_hello_records_the_runners_version(db, tc_factory):
+    """The agents carry it, so the app can tell when a newer runner is out."""
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, _task = _setup(tc)
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello_v2(agent))
+        _wait_status(tc, agent["id"], "online")
+        mine = tc.get("/api/agents/mine").json()
+        assert [a["runner"] for a in mine if a["id"] == agent["id"]] == [{"version": "0.1.0", "os": "linux"}]
+
+
 async def test_workflow_run_not_dispatched_without_capability_and_problem_shown(db, tc_factory):
     tc = tc_factory(lifespan=True)
     await _manager_with_project(db, tc)

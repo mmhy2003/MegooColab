@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.agents.schemas import RunnerInfo
 from app.workflow.models import Stage
 
 ScopeName = Literal["mine", "teams", "all"]
@@ -79,6 +80,8 @@ class AgentItem(BaseModel):
     # busy_elsewhere: running only in projects outside the scope (not counted as working here)
     status: Literal["busy", "busy_elsewhere", "online", "offline"]
     runs_today: int
+    owner_id: uuid.UUID
+    runner: RunnerInfo | None = None
 
 
 class StageRow(BaseModel):

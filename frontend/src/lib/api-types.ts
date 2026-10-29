@@ -2531,6 +2531,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Updates
+         * @description The latest releases, as the update check last found them. The server's own update is for admins only:
+         *     they are the ones who can install it.
+         */
+        get: operations["get_updates_api_updates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2618,6 +2639,7 @@ export interface components {
             problems: string[];
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
+            runner?: components["schemas"]["RunnerInfo"] | null;
             /** Current Run */
             current_run?: {
                 [key: string]: unknown;
@@ -2668,6 +2690,12 @@ export interface components {
             status: "busy" | "busy_elsewhere" | "online" | "offline";
             /** Runs Today */
             runs_today: number;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            runner?: components["schemas"]["RunnerInfo"] | null;
         };
         /** AgentOut */
         AgentOut: {
@@ -2692,6 +2720,7 @@ export interface components {
             problems: string[];
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
+            runner?: components["schemas"]["RunnerInfo"] | null;
         };
         /** AgentPatch */
         AgentPatch: {
@@ -2711,6 +2740,15 @@ export interface components {
          * @enum {string}
          */
         AnswerMode: "auto" | "manual";
+        /** AppUpdate */
+        AppUpdate: {
+            /** Current */
+            current: string;
+            /** Latest */
+            latest: string;
+            /** Url */
+            url: string;
+        };
         /** ApproveIn */
         ApproveIn: {
             /** Answer Md */
@@ -2747,6 +2785,7 @@ export interface components {
             owner_id: string;
             /** Status */
             status: string;
+            runner?: components["schemas"]["RunnerInfo"] | null;
         };
         /** AssigneeFacet */
         AssigneeFacet: {
@@ -4074,6 +4113,7 @@ export interface components {
             problems: string[];
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
+            runner?: components["schemas"]["RunnerInfo"] | null;
             /** Can Use */
             can_use: boolean;
         };
@@ -4560,6 +4600,23 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "queued" | "running" | "completed" | "failed" | "cancelled";
+        /**
+         * RunnerInfo
+         * @description The owner's live runner, as its hello said (the frontend compares the version with the latest release).
+         */
+        RunnerInfo: {
+            /** Version */
+            version: string;
+            /** Os */
+            os: string;
+        };
+        /** RunnerRelease */
+        RunnerRelease: {
+            /** Latest */
+            latest: string;
+            /** Url */
+            url: string;
+        };
         /** RunningItem */
         RunningItem: {
             /**
@@ -5286,6 +5343,11 @@ export interface components {
             /** Name */
             name?: string | null;
             role?: components["schemas"]["Role"] | null;
+        };
+        /** UpdatesOut */
+        UpdatesOut: {
+            app?: components["schemas"]["AppUpdate"] | null;
+            runner?: components["schemas"]["RunnerRelease"] | null;
         };
         /** UsageRow */
         UsageRow: {
@@ -11033,6 +11095,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RateLimitsOut"];
+                };
+            };
+        };
+    };
+    get_updates_api_updates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdatesOut"];
                 };
             };
         };
