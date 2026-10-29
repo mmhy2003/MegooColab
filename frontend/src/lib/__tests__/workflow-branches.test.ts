@@ -13,6 +13,11 @@ describe("branchLine", () => {
     expect(branchLine(null, null, "main")).toBe("Will start from main.");
     expect(branchLine(null, null, null)).toBe("Will start from the default branch.");
   });
+
+  it("a started connect-only workflow says what the agent was told, not what will happen", () => {
+    expect(branchLine(null, null, "main", true)).toBe("The agent was told to start from main.");
+    expect(branchLine(null, null, null, true)).toBe("The agent was told to start from the default branch.");
+  });
 });
 
 describe("Branch from messages", () => {

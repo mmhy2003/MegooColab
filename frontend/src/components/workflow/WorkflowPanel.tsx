@@ -194,7 +194,7 @@ export function WorkflowPanel({
       )}
 
       {wf.driver !== "manual" && (
-        <p className="text-xs text-muted-foreground">{branchLine(wf.start_branch, wf.back_merge_into, wf.branch_from)}</p>
+        <p className="text-xs text-muted-foreground">{branchLine(wf.start_branch, wf.back_merge_into, wf.branch_from, wf.driver === "connect_only" && wf.status !== "idle")}</p>
       )}
       {wf.finish_outcome === "branch_kept" && wf.start_branch && wf.back_merge_into && (
         <p className="text-xs text-amber">

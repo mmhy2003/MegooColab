@@ -101,9 +101,16 @@ export const FINISHING_LABEL: Record<FinishingOption, string> = {
 };
 
 /** Where the work starts and is delivered (Branch from): recorded once the task's branch exists, else a preview. */
-export function branchLine(start: string | null | undefined, backMergeInto: string | null | undefined, branchFrom: string | null | undefined): string {
+/** `toldAgent`: a started connect-only workflow, whose agent makes its own branch and never reports where it started. */
+export function branchLine(
+  start: string | null | undefined,
+  backMergeInto: string | null | undefined,
+  branchFrom: string | null | undefined,
+  toldAgent = false,
+): string {
   if (start && backMergeInto) return `Starts from ${start}. Delivers to ${start}, then ${backMergeInto}.`;
   if (start) return `Starts from ${start}. Delivers to ${start}.`;
+  if (toldAgent) return `The agent was told to start from ${branchFrom ?? "the default branch"}.`;
   if (branchFrom) return `Will start from ${branchFrom}.`;
   return "Will start from the default branch.";
 }
