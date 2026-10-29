@@ -11,10 +11,9 @@ ifeq ($(OS),Windows_NT)
 EXE := .exe
 endif
 
-# The runner's version: the latest runner-vX.Y.Z tag (with -N-g<commit> after it when commits
-# follow the tag), or 0.0.0-<commit> before the first release. `make runner VERSION=1.2.3` overrides.
-DESCRIBE := $(shell git describe --tags --match "runner-v*" --always)
-VERSION  := $(if $(filter runner-v%,$(DESCRIBE)),$(patsubst runner-v%,%,$(DESCRIBE)),0.0.0-$(DESCRIBE))
+# The runner's version: runner/VERSION with -dev+<commit> after it, so a local build is never taken for a
+# release (no update arrow in the app). `make runner VERSION=1.2.3` overrides.
+VERSION := $(strip $(file < runner/VERSION))-dev+$(shell git rev-parse --short HEAD)
 
 # The targets GoReleaser ships (runner/.goreleaser.yaml)
 RUNNER_PLATFORMS := windows/amd64 windows/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
@@ -107,4 +106,4 @@ dev-stop:
 	$(DEV_COMPOSE) down
 
 dev-runner:
-	go build -C runner -o bin/megoocolab-runner$(EXE) .
+	go build -C runner -ldflags "-X main.version=$(VERSION)" -o bin/megoocolab-runner$(EXE) .
