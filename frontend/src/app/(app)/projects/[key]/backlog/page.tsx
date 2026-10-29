@@ -15,7 +15,8 @@ import { TaskDrawer } from "@/components/task/TaskDrawer";
 import { Button } from "@/components/ui/Button";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-import { canManage, useMe } from "@/lib/me";
+import { useMe } from "@/lib/me";
+import { projectRights } from "@/lib/rights";
 import { useProject, useSprints, useTasks } from "@/lib/project";
 import { qk } from "@/lib/queries";
 import type { Sprint, Task } from "@/lib/types";
@@ -37,8 +38,9 @@ function BacklogPage() {
   const [completing, setCompleting] = useState<Sprint | null>(null);
   const [error, setError] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor));
-  const disabled = me?.role === "viewer";
-  const canPlan = canManage(me); // sprint create/start/complete is for managers and admins
+  const rights = projectRights(me, project.data);
+  const disabled = !rights.canWrite;
+  const canPlan = rights.canManage; // sprint create/start/complete is for managers and admins, in an open project
   const openKey = params.get("task");
 
   const all = tasks.data ?? [];

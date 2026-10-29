@@ -141,15 +141,19 @@ export function TaskCardView({
 export function SortableTaskCard({
   task,
   assigneeName,
+  canDrag,
   onOpen,
 }: {
   task: Task;
   assigneeName?: string;
+  /** may change the board (not a viewer, the project is open) */
+  canDrag: boolean;
   onOpen: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.key,
     data: { columnId: task.column_id },
+    disabled: !canDrag,
   });
   return (
     <li
@@ -163,7 +167,7 @@ export function SortableTaskCard({
         listeners?.onKeyDown?.(e);
         if (e.key === "Enter" && !e.defaultPrevented) onOpen();
       }}
-      className="cursor-grab list-none rounded focus-visible:outline-2 focus-visible:outline-cyan"
+      className={`${canDrag ? "cursor-grab" : "cursor-pointer"} list-none rounded focus-visible:outline-2 focus-visible:outline-cyan`}
     >
       <TaskCardView task={task} assigneeName={assigneeName} />
     </li>

@@ -43,6 +43,7 @@ export function BoardColumn({
               key={t.key}
               task={t}
               assigneeName={t.assignee_user_id ? userNames.get(t.assignee_user_id) : undefined}
+              canDrag={canWrite}
               onOpen={() => onOpen(t.key)}
             />
           ))}

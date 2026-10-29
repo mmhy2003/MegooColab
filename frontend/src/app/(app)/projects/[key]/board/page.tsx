@@ -10,6 +10,7 @@ import { BoardFilters, type BoardFilterState } from "@/components/board/BoardFil
 import { TaskDrawer } from "@/components/task/TaskDrawer";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/me";
+import { projectRights } from "@/lib/rights";
 import { useColumns, useLabels, useProject, useSprints, useTasks, useUsers } from "@/lib/project";
 import { qk } from "@/lib/queries";
 import type { Task } from "@/lib/types";
@@ -48,7 +49,7 @@ function BoardPage() {
   };
 
   if (!project.data || !columns.data) return null;
-  const canWrite = me?.role !== "viewer";
+  const canWrite = projectRights(me, project.data).canWrite;
 
   if (sprintsOn && sprints.data && !activeSprint) {
     return (

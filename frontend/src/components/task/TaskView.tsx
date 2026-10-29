@@ -8,6 +8,7 @@ import { TYPE_ICON } from "@/components/board/TaskCard";
 import { useProjectAgents } from "@/lib/agents";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { canDeleteTask, projectRights } from "@/lib/rights";
 import { useMe } from "@/lib/me";
 import { useColumns, useLabels, useProject, useRepos, useSprints, useTasks, useUsers } from "@/lib/project";
 import { qk } from "@/lib/queries";
@@ -88,7 +89,8 @@ export function TaskView({
   const t = task.data;
   if (!t || !columns.data) return <p className="p-4 text-sm text-muted-foreground">Loading…</p>;
 
-  const disabled = me?.role === "viewer";
+  const rights = projectRights(me, project.data);
+  const disabled = !rights.canWrite;
   const refresh = async () => {
     await Promise.all([
       client.invalidateQueries({ queryKey: qk.task(taskKey) }),
@@ -126,7 +128,7 @@ export function TaskView({
               onSave={(title) => void run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { title } }))}
             />
           </div>
-          {!disabled && (
+          {canDeleteTask(me, t, rights) && (
             <Hint label="Delete task">
               <button
                 type="button"
