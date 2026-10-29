@@ -1,11 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from app.audit import service as audit
-from app.auth import service, totp
+from app.auth import service, tokens, totp
 from app.auth.deps import CurrentUser, CurrentUserOrToken, current_session
 from app.auth.models import Session, TokenPurpose, User, UserStatus
 from app.auth.schemas import LowerEmail, Password, UserEnvelope, UserOut
@@ -139,7 +139,8 @@ async def accept_invite(
 
 @router.post("/forgot", status_code=status.HTTP_204_NO_CONTENT)
 async def forgot_password(
-    body: ForgotIn, request: Request, db: DbSession, mailer: Annotated[Mailer | None, Depends(get_mailer)]
+    body: ForgotIn, request: Request, db: DbSession, mailer: Annotated[Mailer | None, Depends(get_mailer)],
+    background: BackgroundTasks,
 ) -> None:
     # every request counts (each may send an email), the same for known and unknown addresses
     await guards.hit("forgot_ip", client_ip(request), request)
@@ -149,7 +150,9 @@ async def forgot_password(
         return
     token = await service.issue_token(db, user, TokenPurpose.reset)
     url = service.token_url(TokenPurpose.reset, token)
-    await service.try_send(
+    # after the response: sending can take seconds, which would tell a known address from an unknown one
+    background.add_task(
+        service.try_send,
         mailer,
         user.email,
         "Reset your MegooColab password",
@@ -165,6 +168,9 @@ async def reset_password(body: TokenPasswordIn, request: Request, db: DbSession)
     user.must_change_password = False
     service.register_successful_login(user)
     await service.revoke_user_sessions(db, user.id)
+    # whoever knew the old password may have made tokens: recovering the account ends them too (the runner signs
+    # in again)
+    await tokens.revoke_user_tokens(db, user.id)
     await audit.record(db, "auth.password_reset", actor_id=user.id)
 
 

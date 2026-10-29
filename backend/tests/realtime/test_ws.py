@@ -194,3 +194,17 @@ async def test_ws_rechecks_session_periodically_even_without_events(db, tc_facto
             while True:
                 ws.receive_json()
         assert exc.value.code == 4401
+
+
+async def test_ws_refuses_a_page_from_another_site(db, tc_factory):
+    """A page on another site can't open the live socket with the visitor's cookie: its Origin must be ours."""
+    user = await make_user(db)
+    tc = tc_factory(lifespan=True)
+    _login(tc, user)
+    with pytest.raises(WebSocketDisconnect) as exc, tc.websocket_connect(
+        "/api/ws", headers={"origin": "https://evil.example"}
+    ) as ws:
+        ws.receive_json()
+    assert exc.value.code == 4403
+    with tc.websocket_connect("/api/ws", headers={"origin": "http://testserver"}) as ws:
+        ws.close()

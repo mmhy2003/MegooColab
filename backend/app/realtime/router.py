@@ -1,11 +1,13 @@
 import asyncio
 import uuid
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.auth.deps import user_from_session_token
 from app.auth.models import Role
 from app.auth.service import SESSION_COOKIE
+from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.events import Event, hub
 from app.projects.access import accessible_project_ids
@@ -17,6 +19,7 @@ router = APIRouter()
 # also the re-authorization interval: a socket never outlives its session by more than this
 PING_EVERY_SECONDS = 25
 CLOSE_UNAUTHORIZED = 4401
+CLOSE_FOREIGN_ORIGIN = 4403
 RECHECK_EVENTS = {"membership.changed", "sessions.revoked"}
 
 
@@ -46,8 +49,21 @@ def _visible(
     return allowed is None or event.project_id in allowed
 
 
+def same_site(websocket: WebSocket) -> bool:
+    """A browser names the page that opens a socket (Origin): it must be this site, as the request reached it or as
+    PUBLIC_URL names it, so another site's page can't listen with the visitor's cookie. No Origin: not a browser."""
+    origin = websocket.headers.get("origin")
+    if not origin:
+        return True
+    host = urlsplit(origin).netloc.lower()
+    return host in {websocket.headers.get("host", "").lower(), urlsplit(get_settings().public_url).netloc.lower()}
+
+
 @router.websocket("/api/ws")
 async def events_socket(websocket: WebSocket) -> None:
+    if not same_site(websocket):
+        await websocket.close(code=CLOSE_FOREIGN_ORIGIN)
+        return
     if not await connect_allowed(websocket):
         await websocket.close(code=CLOSE_RATE_LIMITED)
         return
