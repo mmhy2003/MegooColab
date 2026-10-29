@@ -58,7 +58,9 @@ services:
       valkey:
         condition: service_started
     environment:
-      DATABASE_URL: postgresql+asyncpg://megoo:${POSTGRES_PASSWORD}@db:5432/megoo
+      # the password goes in separately, so any character in it works (the backend encodes it into the URL)
+      DATABASE_URL: postgresql+asyncpg://megoo@db:5432/megoo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
@@ -103,7 +105,9 @@ services:
       backend:
         condition: service_healthy  # the backend applies migrations on startup
     environment:
-      DATABASE_URL: postgresql+asyncpg://megoo:${POSTGRES_PASSWORD}@db:5432/megoo
+      # the password goes in separately, so any character in it works (the backend encodes it into the URL)
+      DATABASE_URL: postgresql+asyncpg://megoo@db:5432/megoo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
       RUN_MIGRATIONS_ON_STARTUP: "false"

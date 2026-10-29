@@ -76,7 +76,9 @@ def _key(kind: str, limit: Limit, subject: str, index: int) -> str:
 
 
 async def hit(limit: Limit, subject: str) -> Decision:
-    """Counts one and decides: allowed while the count stays within the limit."""
+    """Counts one and decides: allowed while the count stays within the limit. A limit of 0 (or less) is off."""
+    if limit.max <= 0:
+        return Decision(True, 0)
     index, retry_after = _window(limit)
     key = _key("rl", limit, subject, index)
     try:
@@ -91,7 +93,9 @@ async def hit(limit: Limit, subject: str) -> Decision:
 
 
 async def peek(limit: Limit, subject: str) -> Decision:
-    """Decides without counting: blocked once the count has reached the limit."""
+    """Decides without counting: blocked once the count has reached the limit. A limit of 0 (or less) is off."""
+    if limit.max <= 0:
+        return Decision(True, 0)
     index, retry_after = _window(limit)
     try:
         count = await _valkey().get(_key("rl", limit, subject, index))

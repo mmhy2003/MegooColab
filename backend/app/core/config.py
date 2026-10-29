@@ -1,12 +1,16 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+asyncpg://megoo:megoo@localhost:5433/megoo"
+    # POSTGRES_PASSWORD, when the URL carries no password: added encoded, so any character works
+    postgres_password: str | None = None
     secret_key: str
     cookie_secure: bool = False
     upload_dir: str = "/data/uploads"
@@ -41,6 +45,20 @@ class Settings(BaseSettings):
     rate_limit_ai_per_user: int = 30
     rate_limit_webhook_per_connection: int = 120
     rate_limit_ws_connect: int = 30
+
+    @model_validator(mode="after")
+    def _password_into_url(self) -> "Settings":
+        """POSTGRES_PASSWORD goes into a URL that has none, percent-encoded: `@`, `:`, `/`, `%`, `#` all work."""
+        if self.postgres_password:
+            url = make_url(self.database_url)
+            if url.password is None:
+                self.database_url = url.set(password=self.postgres_password).render_as_string(hide_password=False)
+        return self
+
+
+def alembic_url(url: str) -> str:
+    """Alembic keeps the URL in a config file format where `%` starts an interpolation: double it."""
+    return url.replace("%", "%%")
 
 
 @lru_cache

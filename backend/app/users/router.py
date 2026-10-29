@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.service import cancel_user_runs
@@ -35,6 +36,16 @@ async def _ensure_email_free(db: AsyncSession, email: str) -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, "email_taken")
 
 
+async def _add_user(db: AsyncSession, user: User) -> None:
+    """Insert, the unique email deciding: two admins adding one address at once get 409, not a server error."""
+    try:
+        async with db.begin_nested():
+            db.add(user)
+            await db.flush()
+    except IntegrityError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "email_taken") from None
+
+
 async def _org_name(db: AsyncSession) -> str:
     org = await db.get(OrgSettings, ORG_SETTINGS_ID)
     return org.name if org else "MegooColab"
@@ -49,8 +60,7 @@ async def invite_user(
 ) -> InviteOut:
     await _ensure_email_free(db, body.email)
     user = User(email=body.email, name=body.name, role=body.role, status=UserStatus.invited)
-    db.add(user)
-    await db.flush()
+    await _add_user(db, user)
     token = await auth_service.issue_token(db, user, TokenPurpose.invite)
     url = auth_service.token_url(TokenPurpose.invite, token)
     org = await _org_name(db)
@@ -79,8 +89,7 @@ async def create_user(body: CreateUserIn, admin: AdminUser, db: DbSession) -> Us
         password_hash=hash_password(body.temporary_password),
         must_change_password=True,
     )
-    db.add(user)
-    await db.flush()
+    await _add_user(db, user)
     await audit.record(
         db, "user.created", actor_id=admin.id, target_type="user", target_id=user.id,
         data={"email": user.email, "role": user.role},

@@ -12,6 +12,11 @@ class Mailer(Protocol):
     async def send(self, to: str, subject: str, body: str) -> None: ...
 
 
+def one_line(value: str) -> str:
+    """A header value never breaks its line: a newline in it (a user's name, say) would end or inject a header."""
+    return " ".join(value.split())
+
+
 class SmtpMailer:
     def __init__(self, org: OrgSettings):
         self._org = org
@@ -20,8 +25,8 @@ class SmtpMailer:
         org = self._org
         msg = EmailMessage()
         msg["From"] = org.smtp_from or org.smtp_user or "megoocolab@localhost"
-        msg["To"] = to
-        msg["Subject"] = subject
+        msg["To"] = one_line(to)
+        msg["Subject"] = one_line(subject)
         msg.set_content(body)
         await aiosmtplib.send(
             msg,

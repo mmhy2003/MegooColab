@@ -21,10 +21,10 @@ if config.config_file_name is not None:
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 import app.models  # noqa: F401,E402
-from app.core.config import get_settings  # noqa: E402
+from app.core.config import alembic_url, get_settings  # noqa: E402
 from app.core.db import Base  # noqa: E402
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+config.set_main_option("sqlalchemy.url", alembic_url(get_settings().database_url))
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

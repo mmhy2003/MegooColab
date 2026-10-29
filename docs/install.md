@@ -40,7 +40,7 @@ Then edit `.env`. Every variable:
 | `PUBLIC_URL` | The address people open, with no trailing slash. Invitation, password-reset and notification emails link to it. | `https://megoo.example.com` |
 | `COOKIE_SECURE` | `true` when served over HTTPS, so session cookies are only sent over HTTPS. | `true` |
 | `SECRET_KEY` | Signs sessions and encrypts stored secrets (SMTP password, AI keys, git tokens). Generate it once with `openssl rand -hex 32`; the backend refuses to start with the example value. **Keep it: changing it makes the stored secrets unreadable.** | 64 hex characters |
-| `POSTGRES_PASSWORD` | The database password, used only between the containers. | a long random string |
+| `POSTGRES_PASSWORD` | The database password, used only between the containers. Any characters work. | a long random string |
 | `MEILI_MASTER_KEY` | The key the backend and worker use for Meilisearch, the search service. Used only between the containers; at least 16 characters. | 64 hex characters |
 | `VALKEY_PASSWORD` | The password of Valkey, which keeps the rate-limit counters. Used only between the containers; any characters work. | 64 hex characters |
 | `CLIENT_IP_HEADER` | Only behind a proxy that hides visitors' addresses (a Cloudflare tunnel, ...): the header it sets with the real address, e.g. `CF-Connecting-IP` or `X-Real-IP`. Without it, every visitor would share one per-address limit. **Set it only when every request reaches MegooColab through that proxy:** anyone who can reach Caddy directly can forge the header. | *(unset)* |
@@ -64,7 +64,7 @@ MegooColab limits how often anyone can call it, counted in Valkey so the limits 
 Someone over a limit gets "Too many attempts. Try again in N minutes"; each block is written once to the audit
 log (`rate_limit.blocked`). Only failures count where a success should never be held back: an office of people
 signing in from one address never hits the sign-in limit, and nobody's anonymous traffic at a shared address
-blocks the people signed in there. The defaults, each changeable in `.env`:
+blocks the people signed in there. The defaults, each changeable in `.env` (0 turns a limit off):
 
 | Variable | Limit | Default |
 |---|---|---|
