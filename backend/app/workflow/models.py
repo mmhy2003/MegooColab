@@ -124,6 +124,9 @@ class TaskWorkflow(Base):
     branch: Mapped[str | None] = mapped_column(String(300))
     pr_url: Mapped[str | None] = mapped_column(String(1000))
     finish_outcome: Mapped[str | None] = mapped_column(String(100))
+    # a production fix's second delivery: the back-merge branch and its pull request, as the finish run reported
+    back_merge_branch: Mapped[str | None] = mapped_column(String(300))
+    back_merge_pr_url: Mapped[str | None] = mapped_column(String(1000))
     # frozen when the Done stage begins: was human code review required (WF-6a)? None before that
     finish_requires_human_review: Mapped[bool | None]
     # role-or-"implement:<n>" -> ACP session id

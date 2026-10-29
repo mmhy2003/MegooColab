@@ -88,6 +88,12 @@ class Task(IdMixin, TimestampMixin, Base):
         ForeignKey("sprints.id", ondelete="SET NULL"), index=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # the branch the work starts from; None: the repository's default branch
+    branch_from: Mapped[str | None] = mapped_column(String(200))
+    # recorded once, when the runner created the task's branch: where it started, and the default branch a
+    # production fix is also brought back into (None when the work started from the default branch)
+    start_branch: Mapped[str | None] = mapped_column(String(200))
+    back_merge_into: Mapped[str | None] = mapped_column(String(200))
 
 
 class LinkKind(StrEnum):

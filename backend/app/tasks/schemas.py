@@ -23,6 +23,7 @@ class TaskCreate(BaseModel):
     assignee_agent_id: uuid.UUID | None = None
     parent_id: uuid.UUID | None = None
     label_ids: list[uuid.UUID] = []
+    branch_from: NoNulStr | None = None  # checked by the service (invalid_branch_name); "" means none
 
 
 class TaskUpdate(BaseModel):
@@ -38,6 +39,7 @@ class TaskUpdate(BaseModel):
     assignee_agent_id: uuid.UUID | None = None
     parent_id: uuid.UUID | None = None
     label_ids: list[uuid.UUID] | None = None
+    branch_from: NoNulStr | None = None
 
 
 class AssigneeAgentOut(BaseModel):
@@ -80,6 +82,10 @@ class TaskOut(BaseModel):
     # projects this task asked questions of that are still open (§6.6 A2A-5)
     waiting_on: list[str] = []
     pull_request: PullRequestOut | None = None  # GIT-5
+    branch_from: str | None = None
+    start_branch: str | None = None
+    back_merge_into: str | None = None
+    branch_from_locked: bool = False
 
 
 class LinkedTask(BaseModel):

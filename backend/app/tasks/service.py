@@ -18,6 +18,7 @@ from app.projects.models import BoardColumn, ColumnCategory, Label, Project, Pro
 from app.projects.schemas import LabelOut
 from app.sprints.service import snapshot_if_active
 from app.tasks import ordering
+from app.tasks.branches import branch_from_locked, valid_branch_name
 from app.tasks.models import (
     LinkKind,
     Task,
@@ -183,6 +184,12 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[T
             workflow=workflows.get(t.id),
             waiting_on=waiting.get(t.id, []),
             pull_request=pulls.get(t.id),
+            branch_from=t.branch_from,
+            start_branch=t.start_branch,
+            back_merge_into=t.back_merge_into,
+            branch_from_locked=t.start_branch is not None or (
+                (wf := workflows.get(t.id)) is not None and wf.driver == "connect_only" and wf.status != "idle"
+            ),
         )
         for t in tasks
     ]
@@ -433,6 +440,7 @@ async def next_number(db: AsyncSession, project: Project) -> int:
 
 async def create_task(db: AsyncSession, user: User, project: Project, data: TaskCreate) -> Task:
     await validate_parent(db, project, data.type, data.parent_id)
+    branch_from = clean_branch_from(data.branch_from)
     if data.assignee_user_id and data.assignee_agent_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "single_assignee")
     await check_assignee(db, project, data.assignee_user_id)
@@ -454,6 +462,7 @@ async def create_task(db: AsyncSession, user: User, project: Project, data: Task
         assignee_agent_id=data.assignee_agent_id,
         reporter_id=user.id,
         parent_id=data.parent_id,
+        branch_from=branch_from,
     )
     apply_column(task, column)
     db.add(task)
@@ -485,7 +494,19 @@ async def notify_assigned(db: AsyncSession, actor: User, project: Project, task:
                                project_id=project.id, actor_id=actor.id)
 
 
-TRACKED_FIELDS = ("type", "parent_id", "title", "description_md", "priority", "story_points", "due_date")
+TRACKED_FIELDS = (
+    "type", "parent_id", "title", "description_md", "priority", "story_points", "due_date", "branch_from",
+)
+
+
+def clean_branch_from(value: str | None) -> str | None:
+    """Branch from as stored: stripped, empty means none, otherwise a valid branch name (422)."""
+    value = (value or "").strip()
+    if not value:
+        return None
+    if not valid_branch_name(value):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_branch_name")
+    return value
 
 
 def _jsonable(v):
@@ -497,6 +518,12 @@ def _jsonable(v):
 async def update_task(db: AsyncSession, user: User, project: Project, task: Task, data: TaskUpdate) -> Task:
     fields = data.model_fields_set
     before = {name: getattr(task, name) for name in TRACKED_FIELDS}
+    if "branch_from" in fields:
+        branch_from = clean_branch_from(data.branch_from)
+        if branch_from != task.branch_from:
+            if await branch_from_locked(db, task):
+                raise HTTPException(status.HTTP_409_CONFLICT, "branch_from_locked")
+            task.branch_from = branch_from
     new_type = data.type if "type" in fields and data.type is not None else task.type
     new_parent = data.parent_id if "parent_id" in fields else task.parent_id
     if "type" in fields or "parent_id" in fields:
