@@ -22,7 +22,7 @@ def test_branch_name_rules_valid(name):
 
 @pytest.mark.parametrize("name", [
     "", "main..x", "-x", "a b", "x.lock", "x/", "/x", "a//b", "@", "a@{b", "x~1", "x^", "x:y", "x?", "x*", "x[",
-    "x\\y", ".x", "a/.b", "x.", "a\x01b", "a" * 201,
+    "x\\y", ".x", "a/.b", "x.", "a\x01b", "a" * 201, "HEAD",
 ])
 def test_branch_name_rules_invalid(name):
     assert not valid_branch_name(name)

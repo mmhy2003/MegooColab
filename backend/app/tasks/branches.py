@@ -11,8 +11,9 @@ _FORBIDDEN = re.compile(r"[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{|//")
 
 
 def valid_branch_name(name: str) -> bool:
-    """`git check-ref-format --branch` rules, without asking git."""
-    if not name or len(name) > MAX_BRANCH_NAME or name == "@" or _FORBIDDEN.search(name):
+    """`git check-ref-format --branch` rules, without asking git; and not HEAD, which git allows as a branch name
+    but which always means the checked-out commit."""
+    if not name or len(name) > MAX_BRANCH_NAME or name in ("@", "HEAD") or _FORBIDDEN.search(name):
         return False
     if name.startswith(("-", "/")) or name.endswith(("/", ".", ".lock")):
         return False
