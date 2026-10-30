@@ -153,11 +153,11 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[T
     agents: dict[uuid.UUID, AssigneeAgentOut] = {}
     if agent_ids:
         rows = list((await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))).scalars())
-        statuses = await agent_statuses(db, [(a.id, a.owner_id) for a in rows])
+        statuses = await agent_statuses(db, [a.id for a in rows])
         for a in rows:
             agents[a.id] = AssigneeAgentOut(
                 id=a.id, name=a.name, program=a.program, owner_id=a.owner_id, status=statuses[a.id],
-                runner=runner_info(a.owner_id),
+                runner=runner_info(a.id),
             )
     return [
         TaskOut(

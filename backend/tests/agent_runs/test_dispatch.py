@@ -223,10 +223,12 @@ async def _offline_runs(client, db, n=1, max_runs=1):
 
 
 def _fake_conn(user, agent, socket):
-    conn = RunnerConn(user.id, socket)
+    # keyed by the user's id as if it were the token's, so registry._conns.pop(user.id) still clears it
+    conn = RunnerConn(user.id, user.id, socket)
     conn.capabilities = {"workflow/1", "branch/1"}  # a current runner
+    conn.owned_agents.add(uuid.UUID(agent["id"]))
     conn.set_availability(uuid.UUID(agent["id"]), True, [])
-    registry._conns[user.id] = conn
+    registry._conns[conn.token_id] = conn
     return conn
 
 
@@ -267,8 +269,8 @@ async def test_closed_connection_is_not_used(client, db):
     conn = _fake_conn(me, agent, sock)
     conn.closed.set()
     try:
-        assert registry.conn_for_user(me.id) is None
-        assert registry.available_agents(me.id) == set()
+        assert registry.conn_for_token(me.id) is None and registry.conns_for_user(me.id) == []
+        assert not registry.is_available(uuid.UUID(agent["id"]))
         await _dispatch_in_own_session(me.id)
         with pytest.raises(RunnerClosed):
             await conn.send({"type": "heartbeat"})

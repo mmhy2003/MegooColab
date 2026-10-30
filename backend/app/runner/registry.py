@@ -1,4 +1,4 @@
-"""In-process registry of live runner connections (one per user).
+"""In-process registry of live runner connections: one per runner token, that is one per machine.
 
 Single backend worker, event loop only: no locks, no threads.
 """
@@ -25,13 +25,14 @@ class RunnerClosed(Exception):
 
 
 class RunnerConn:
-    def __init__(self, user_id: uuid.UUID, socket: WebSocket) -> None:
+    def __init__(self, token_id: uuid.UUID, user_id: uuid.UUID, socket: WebSocket) -> None:
+        self.token_id = token_id  # the runner token it signed in with: its machine
         self.user_id = user_id
         self.socket = socket
         self.last_seen = time.monotonic()
         self.problems: dict[uuid.UUID, list[str]] = {}
         self._available: set[uuid.UUID] = set()
-        self.owned_agents: set[uuid.UUID] = set()  # the user's agents, as of the last welcome
+        self.owned_agents: set[uuid.UUID] = set()  # the agents linked to its token, as of the last welcome
         self.last_welcome: dict | None = None
         self.close_code: int | None = None  # why the server closed it, if it did
         self.closed = asyncio.Event()  # set once the server has closed this connection
@@ -83,38 +84,51 @@ class RunnerConn:
 
 class RunnerRegistry:
     def __init__(self) -> None:
-        self._conns: dict[uuid.UUID, RunnerConn] = {}
+        self._conns: dict[uuid.UUID, RunnerConn] = {}  # by token id
 
-    async def connect(self, user_id: uuid.UUID, socket: WebSocket) -> RunnerConn:
-        """Register a new connection; an older one for the same user is closed with 4409."""
-        conn = RunnerConn(user_id, socket)
-        old = self._conns.get(user_id)
-        self._conns[user_id] = conn
+    async def connect(self, token_id: uuid.UUID, user_id: uuid.UUID, socket: WebSocket) -> RunnerConn:
+        """Register a new connection; an older one on the same token is closed with 4409."""
+        conn = RunnerConn(token_id, user_id, socket)
+        old = self._conns.get(token_id)
+        self._conns[token_id] = conn
         if old is not None:
             await old.close(CLOSE_REPLACED)
         return conn
 
     def disconnect(self, conn: RunnerConn) -> None:
         # a replaced connection must not unregister its successor
-        if self._conns.get(conn.user_id) is conn:
-            del self._conns[conn.user_id]
+        if self._conns.get(conn.token_id) is conn:
+            del self._conns[conn.token_id]
 
-    def conn_for_user(self, user_id: uuid.UUID) -> RunnerConn | None:
-        """The user's live connection; one that is closed but not yet unregistered does not count."""
-        conn = self._conns.get(user_id)
+    def _live(self) -> list[RunnerConn]:
+        """Connections that are not closed; one closed but not yet unregistered does not count."""
+        return [conn for conn in self._conns.values() if not conn.closed.is_set()]
+
+    def conn_for_token(self, token_id: uuid.UUID) -> RunnerConn | None:
+        conn = self._conns.get(token_id)
         return conn if conn is not None and not conn.closed.is_set() else None
 
-    def supports(self, user_id: uuid.UUID, capability: str) -> bool:
-        conn = self.conn_for_user(user_id)
+    def conns_for_user(self, user_id: uuid.UUID) -> list[RunnerConn]:
+        return [conn for conn in self._live() if conn.user_id == user_id]
+
+    def conn_for_agent(self, agent_id: uuid.UUID) -> RunnerConn | None:
+        """The live connection of the agent's machine (its welcome lists the agent)."""
+        return next((conn for conn in self._live() if agent_id in conn.owned_agents), None)
+
+    def conn_for_run(self, run_id: uuid.UUID) -> RunnerConn | None:
+        """The live connection the run was sent over."""
+        return next((conn for conn in self._live() if run_id in conn.run_ids), None)
+
+    def is_available(self, agent_id: uuid.UUID) -> bool:
+        return any(agent_id in conn.available for conn in self._live())
+
+    def agent_supports(self, agent_id: uuid.UUID, capability: str) -> bool:
+        conn = self.conn_for_agent(agent_id)
         return conn is not None and capability in conn.capabilities
 
     def connected_count(self) -> int:
         """Live connections to this backend (closed ones not yet unregistered do not count)."""
-        return sum(1 for conn in self._conns.values() if not conn.closed.is_set())
-
-    def available_agents(self, user_id: uuid.UUID) -> set[uuid.UUID]:
-        conn = self.conn_for_user(user_id)
-        return set(conn.available) if conn is not None else set()
+        return len(self._live())
 
 
 registry = RunnerRegistry()

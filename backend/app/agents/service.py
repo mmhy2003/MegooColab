@@ -39,10 +39,10 @@ def is_absolute_path(path: str) -> bool:
     return bool(_ABSOLUTE_PATH.match(path))
 
 
-async def agent_statuses(db: AsyncSession, agents: list[tuple[uuid.UUID, uuid.UUID]]) -> dict[uuid.UUID, str]:
-    """online | busy | offline for (agent_id, owner_id) pairs. busy: it has a running run;
-    online: the owner's live runner reports it available."""
-    ids = {agent_id for agent_id, _ in agents}
+async def agent_statuses(db: AsyncSession, agent_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """online | busy | offline per agent. busy: it has a running run; online: its machine's live runner
+    reports it available."""
+    ids = set(agent_ids)
     busy: set[uuid.UUID] = set()
     if ids:
         rows = await db.execute(
@@ -53,23 +53,24 @@ async def agent_statuses(db: AsyncSession, agents: list[tuple[uuid.UUID, uuid.UU
         agent_id: "busy"
         if agent_id in busy
         else "online"
-        if agent_id in registry.available_agents(owner_id)
+        if registry.is_available(agent_id)
         else "offline"
-        for agent_id, owner_id in agents
+        for agent_id in agent_ids
     }
 
 
-def runner_info(owner_id: uuid.UUID) -> RunnerInfo | None:
-    conn = registry.conn_for_user(owner_id)
+def runner_info(agent_id: uuid.UUID) -> RunnerInfo | None:
+    """The live runner of the agent's machine, as its hello said."""
+    conn = registry.conn_for_agent(agent_id)
     if conn is None or not conn.version:
         return None
     return RunnerInfo(version=conn.version, os=conn.os or "")
 
 
 def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User) -> list[str]:
-    """What the owner's live runner reports as wrong with the agent (shown to the owner and admins only),
+    """What its machine's live runner reports as wrong with the agent (shown to the owner and admins only),
     plus the server's own too-old-runner notice (shown to everyone who can see the agent)."""
-    conn = registry.conn_for_user(owner_id)
+    conn = registry.conn_for_agent(agent_id)
     if conn is None:
         return []
     private = viewer.id == owner_id or viewer.role == Role.admin
@@ -81,8 +82,8 @@ def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User) -> li
     return problems
 
 
-async def agent_status(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> str:
-    return (await agent_statuses(db, [(agent_id, owner_id)]))[agent_id]
+async def agent_status(db: AsyncSession, agent_id: uuid.UUID) -> str:
+    return (await agent_statuses(db, [agent_id]))[agent_id]
 
 
 async def has_active_runs(db: AsyncSession, agent_id: uuid.UUID) -> bool:
@@ -222,7 +223,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
         if token_ids
         else {}
     )
-    statuses = await agent_statuses(db, list(owner_of.items()))
+    statuses = await agent_statuses(db, list(owner_of))
     allowed = await accessible_project_ids(db, viewer)
     rows = await db.execute(
         select(AgentBinding, Project.key)
@@ -252,7 +253,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "status": statuses[a.id],
             "problems": agent_problems(a.id, a.owner_id, viewer),
             "bindings": bindings.get(a.id, []),
-            "runner": runner_info(a.owner_id),
+            "runner": runner_info(a.id),
             "machine": _machine(tokens.get(a.runner_token_id), a.owner_id, viewer),
         }
         for a in agents

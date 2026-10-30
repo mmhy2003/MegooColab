@@ -100,7 +100,7 @@ async def test_deleting_a_project_stops_agents_answering_its_questions(client, d
         sent.append(msg)
 
     conn = SimpleNamespace(run_ids={run.id}, send=send)
-    monkeypatch.setattr(registry, "conn_for_user", lambda user_id: conn if user_id == manager.id else None)
+    monkeypatch.setattr(registry, "conn_for_run", lambda run_id: conn if run_id == run.id else None)
     await close(db, "PAY", "archived")  # archive first, delete later: answering carried on meanwhile
     await login(client, await make_user(db, role=Role.admin))
     assert (await client.delete("/api/projects/PAY")).status_code == 204

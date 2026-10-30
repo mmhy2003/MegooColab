@@ -219,8 +219,8 @@ async def cancel_question_runs(db: AsyncSession, q: Question, actor_id: uuid.UUI
         owner_id = await db.scalar(select(Agent.owner_id).where(Agent.id == run.agent_id))
         run.cancelled_by = actor_id
         if run.status == RunStatus.running:
-            conn = registry.conn_for_user(owner_id)
-            if conn is not None and run.id in conn.run_ids:
+            conn = registry.conn_for_run(run.id)
+            if conn is not None:
                 try:
                     await conn.send(RunCancel(run_id=run.id))
                     continue

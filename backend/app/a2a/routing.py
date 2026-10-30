@@ -52,10 +52,9 @@ async def candidates(db: AsyncSession, q: Question) -> list[Agent]:
     ).scalars().all()
     out: list[tuple[int, uuid.UUID, Agent]] = []
     for a in agents:
-        conn = registry.conn_for_user(a.owner_id)
-        if a.id in tried or conn is None or a.id not in conn.available:
+        if a.id in tried or not registry.is_available(a.id):
             continue
-        if not registry.supports(a.owner_id, WORKFLOW_CAPABILITY):
+        if not registry.agent_supports(a.id, WORKFLOW_CAPABILITY):
             continue
         running = await _active_runs(db, a.id)
         if running >= a.max_concurrent_runs:
@@ -169,8 +168,7 @@ async def release_stale(db: AsyncSession) -> None:
         )
     ).all()
     for run_id, question_id, agent_id, owner_id in rows:
-        conn = registry.conn_for_user(owner_id)
-        if conn is not None and agent_id in conn.available:
+        if registry.is_available(agent_id):
             continue
         # the question before the run: the order of a human answer or a withdrawal
         await db.execute(select(Question.id).where(Question.id == question_id).with_for_update())
@@ -198,7 +196,7 @@ async def route_and_dispatch() -> None:
             )
         ).scalars().all()
     for owner_id in sorted(owners):
-        if registry.conn_for_user(owner_id) is None:
+        if not registry.conns_for_user(owner_id):
             continue
         async with SessionLocal() as s:
             await dispatch_pending(s, owner_id)

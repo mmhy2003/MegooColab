@@ -43,7 +43,7 @@ async def agents(db: AsyncSession, scope: Scope) -> list[AgentItem]:
     found = (await db.execute(stmt)).all()
     if not found:
         return []
-    statuses = await agent_statuses(db, [(agent_id, owner_id) for agent_id, _, owner_id in found])
+    statuses = await agent_statuses(db, [agent_id for agent_id, _, _ in found])
     # only runs in scope: an agent bound to several projects shows none of another project's work
     today_runs = dict((await db.execute(
         _runs(scope, AgentRun.agent_id, func.count())
@@ -59,7 +59,7 @@ async def agents(db: AsyncSession, scope: Scope) -> list[AgentItem]:
         if statuses[agent_id] == "busy" and agent_id not in here:
             statuses[agent_id] = "busy_elsewhere"
     items = [AgentItem(id=agent_id, name=name, status=statuses[agent_id], runs_today=today_runs.get(agent_id, 0),
-                       owner_id=owner_id, runner=runner_info(owner_id))
+                       owner_id=owner_id, runner=runner_info(agent_id))
              for agent_id, name, owner_id in found]
     return sorted(items, key=lambda a: (_ORDER[a.status], a.name.lower()))
 
