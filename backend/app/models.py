@@ -13,6 +13,7 @@ from app.memory import models as memory_models  # noqa: F401
 from app.notifications import models as notifications_models  # noqa: F401
 from app.org import models as org_models  # noqa: F401
 from app.projects import models as projects_models  # noqa: F401
+from app.push import models as push_models  # noqa: F401
 from app.sprints import models as sprints_models  # noqa: F401
 from app.tasks import models as tasks_models  # noqa: F401
 from app.teams import models as teams_models  # noqa: F401

@@ -22,6 +22,7 @@ from app.ai.router import router as ai_router
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
 from app.auth.tokens_router import router as tokens_router
+from app.push.router import router as push_router
 from app.auth.tokens_router import self_router as tokens_self_router
 from app.core.config import get_settings
 from app.core.csrf import CsrfHeaderMiddleware
@@ -153,6 +154,7 @@ def create_app() -> FastAPI:
         auth_router,
         tokens_self_router,
         tokens_router,
+        push_router,
         admin_users_router,
         users_router,
         org_router,

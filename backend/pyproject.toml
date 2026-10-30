@@ -21,6 +21,7 @@ dependencies = [
     "pydantic-settings>=2.16.1",
     "pyotp>=2.10.0",
     "python-multipart>=0.0.32",
+    "pywebpush>=2.5.0",
     "sqlalchemy[asyncio]>=2",
     "tzdata>=2026.6",
     "valkey>=6.2.0",
