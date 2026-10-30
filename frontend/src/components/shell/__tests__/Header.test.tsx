@@ -88,3 +88,34 @@ describe("Header", () => {
     expect(bell).toHaveFocus();
   });
 });
+
+describe("Header sign-out", () => {
+  it("forgets this device's push subscription before signing out", async () => {
+    const endpoint = "https://fcm.googleapis.com/fcm/send/this-device";
+    const unsubscribe = vi.fn(async () => true);
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: { ready: Promise.resolve({ pushManager: { getSubscription: async () => ({ endpoint, unsubscribe }) } }) },
+    });
+    vi.stubGlobal("PushManager", function PushManager() {});
+    vi.stubGlobal("Notification", { permission: "granted" });
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${url}`);
+      if (url === "/api/push/subscriptions" && !init?.method) {
+        return new Response(JSON.stringify([{ id: "s1", endpoint, name: "Chrome on Windows", created_at: "2026-10-30T10:00:00Z" }]), { status: 200 });
+      }
+      return new Response(JSON.stringify(url.includes("unread-count") ? { count: 0 } : []), { status: 200 });
+    }));
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    renderHeader();
+    await userEvent.click(screen.getByRole("button", { name: /Ahmed/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /Sign out/ }));
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/login"));
+    expect(calls.indexOf("DELETE /api/push/subscriptions/s1")).toBeGreaterThan(-1);
+    expect(calls.indexOf("DELETE /api/push/subscriptions/s1")).toBeLessThan(calls.indexOf("POST /api/auth/logout"));
+    expect(unsubscribe).toHaveBeenCalled();
+    Reflect.deleteProperty(navigator, "serviceWorker");
+  });
+});

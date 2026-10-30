@@ -13,6 +13,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar } from "@/components/ui/Avatar";
 import { Backdrop } from "@/components/ui/Backdrop";
 import { api } from "@/lib/api";
+import { forgetThisDevice } from "@/lib/push";
 import type { User } from "@/lib/types";
 import { Hint } from "@/components/ui/Hint";
 
@@ -75,6 +76,7 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
           ))}
           <DropdownMenuItem
             onSelect={async () => {
+              await forgetThisDevice().catch(() => undefined); // its push stops before the session ends
               await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
               window.location.assign("/login");
             }}

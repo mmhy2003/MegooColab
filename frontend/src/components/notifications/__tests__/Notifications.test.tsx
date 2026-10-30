@@ -122,6 +122,27 @@ describe("NotificationPrefs", () => {
     await waitFor(() => expect(fetchMock.mock.calls.filter(([, i]) => i?.method === "PUT")).toHaveLength(2));
   });
 
+  it("has a Push column, unticked by default, saved per kind", async () => {
+    const prefs = [
+      { kind: "assigned", in_app: true, email: true, push: false },
+      { kind: "mentioned", in_app: true, email: false, push: false },
+    ];
+    const fetchMock = mockFetch((url, init) => {
+      if (url === "/api/me/notification-preferences" && !init?.method) return json(prefs);
+      if (url === "/api/me/notification-preferences" && init?.method === "PUT") return json(JSON.parse(String(init.body)));
+      return undefined;
+    });
+    wrap(<NotificationPrefs />);
+    const push = await screen.findByRole("checkbox", { name: "Push: Mentioned in a comment" });
+    expect(screen.getByRole("columnheader", { name: "Push" })).toBeTruthy();
+    expect(push).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Push: Assigned to me" })).not.toBeChecked();
+    fireEvent.click(push);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === "PUT")).toBe(true));
+    const put = fetchMock.mock.calls.find(([, i]) => i?.method === "PUT")!;
+    expect(JSON.parse(String(put[1]!.body))).toEqual([{ kind: "mentioned", in_app: true, email: false, push: true }]);
+  });
+
   it("shows a toggle at once, and puts it back when saving fails", async () => {
     const prefs = [{ kind: "assigned", in_app: true, email: true }];
     let fail: (r: Response) => void = () => undefined;

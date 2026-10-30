@@ -58,6 +58,8 @@ const MESSAGES: Record<string, string> = {
   agent_has_active_runs: "This agent is working on a task. Cancel its runs first.",
   agent_has_active_workflows: "This agent still drives a workflow. Finish it or assign the task to someone else first.",
   agent_name_taken: "You already have an agent with that name.",
+  invalid_push_endpoint: "This browser gave an address MegooColab can't send to.",
+  push_subscription_not_found: "That device was already removed.",
   agent_running: "This agent is running a task. Wait for it to finish or cancel it first.",
   runner_token_invalid: "Pick one of your runner tokens that hasn't expired or been revoked.",
   project_not_accessible: "You don't have access to that project.",

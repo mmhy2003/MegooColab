@@ -11,7 +11,7 @@ import {
   useSavePref,
 } from "@/lib/notifications";
 
-/** Per kind: in the app, and by email (email goes out only when an admin set up SMTP). */
+/** Per kind: in the app, by email (only once an admin set up SMTP), and as push (to the devices turned on above). */
 export function NotificationPrefs() {
   const prefs = useNotificationPrefs();
   // a toggle shows at once; once its save settles, the saved choices (or, after a failure, the old ones) show
@@ -19,14 +19,16 @@ export function NotificationPrefs() {
   const save = useSavePref((pref) =>
     setUnsaved((u) => {
       const shown = u[pref.kind];
-      if (!shown || shown.in_app !== pref.in_app || shown.email !== pref.email) return u; // a newer toggle waits
+      if (!shown || shown.in_app !== pref.in_app || shown.email !== pref.email || shown.push !== pref.push) {
+        return u; // a newer toggle waits
+      }
       const rest = { ...u };
       delete rest[pref.kind];
       return rest;
     }),
   );
   if (prefs.isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  const toggle = (p: NotificationPref, field: "in_app" | "email") => {
+  const toggle = (p: NotificationPref, field: "in_app" | "email" | "push") => {
     const next = { ...p, [field]: !p[field] };
     setUnsaved((u) => ({ ...u, [p.kind]: next }));
     save.mutate(next);
@@ -39,6 +41,7 @@ export function NotificationPrefs() {
             <th className="px-3 py-2 font-normal">When</th>
             <th className="px-3 py-2 font-normal">In app</th>
             <th className="px-3 py-2 font-normal">Email</th>
+            <th className="px-3 py-2 font-normal">Push</th>
           </tr>
         </thead>
         <tbody>
@@ -50,6 +53,9 @@ export function NotificationPrefs() {
               </td>
               <td className="px-3 py-2">
                 <input type="checkbox" aria-label={`Email: ${KIND_LABELS[p.kind]}`} checked={p.email} onChange={() => toggle(p, "email")} />
+              </td>
+              <td className="px-3 py-2">
+                <input type="checkbox" aria-label={`Push: ${KIND_LABELS[p.kind]}`} checked={p.push ?? false} onChange={() => toggle(p, "push")} />
               </td>
             </tr>
           ))}
