@@ -36,5 +36,5 @@ changelog:
 
 # The repository holds several projects, so runner releases are tagged
 # runner-vX.Y.Z. GoReleaser's monorepo and release.tag options are Pro only, so
-# runner-release.yml sets GORELEASER_CURRENT_TAG=vX.Y.Z (making {{.Version}}
+# the runner job of release.yml sets GORELEASER_CURRENT_TAG=vX.Y.Z (making {{.Version}}
 # X.Y.Z), builds with --skip=publish and publishes dist/ under the real tag.

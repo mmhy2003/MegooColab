@@ -203,12 +203,17 @@ func (c *Client) session(ctx context.Context) (gotWelcome bool, err error) {
 	if c.probe != nil {
 		agents = c.probe()
 	}
-	if err := writeJSON(ws, protocol.NewHello(c.version, runtime.GOOS, runtime.GOARCH, agents)); err != nil {
+	// hello goes first, and the connection is live for Send the moment it has gone: a Send meanwhile waits for
+	// the lock instead of failing with "not connected" (or overtaking hello)
+	c.mu.Lock()
+	err = writeJSON(ws, protocol.NewHello(c.version, runtime.GOOS, runtime.GOARCH, agents))
+	if err == nil {
+		c.conn = ws
+	}
+	c.mu.Unlock()
+	if err != nil {
 		return false, err
 	}
-	c.mu.Lock()
-	c.conn = ws
-	c.mu.Unlock()
 	defer func() {
 		c.mu.Lock()
 		c.conn = nil
