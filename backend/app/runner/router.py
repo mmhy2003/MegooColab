@@ -16,6 +16,7 @@ from app.agent_runs.service import (
     fail_unclaimed_runs,
     finish_run,
 )
+from app.agent_runs.models import AgentRun
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import bound_project_ids, publish_agents_updated
 from app.auth.models import TokenScope
@@ -200,12 +201,26 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
     elif isinstance(msg, AgentStatus):
         await _apply_reports(conn, [msg])
     elif isinstance(msg, RunUpdate):
-        await _run_message(apply_update, conn.user_id, msg.run_id, msg.seq, msg.kind, msg.data)
+        if await _on_this_machine(conn, msg.run_id):
+            await _run_message(apply_update, conn.user_id, msg.run_id, msg.seq, msg.kind, msg.data)
     elif isinstance(msg, RunFinished):
-        await _run_message(finish_run, conn.user_id, msg.run_id, msg.outcome, msg.summary, msg.error, msg)
+        if await _on_this_machine(conn, msg.run_id):
+            await _run_message(finish_run, conn.user_id, msg.run_id, msg.outcome, msg.summary, msg.error, msg)
         conn.run_ids.discard(msg.run_id)
     # Heartbeat only refreshes last_seen
     return True
+
+
+async def _on_this_machine(conn: RunnerConn, run_id: uuid.UUID) -> bool:
+    """Run messages count only from the machine the run belongs to: one it was sent over, or one whose
+    agent is linked to this connection's token. Another machine of the same person is ignored."""
+    if run_id in conn.run_ids:
+        return True
+    async with SessionLocal() as db:
+        token_id = await db.scalar(
+            select(Agent.runner_token_id).join(AgentRun, AgentRun.agent_id == Agent.id).where(AgentRun.id == run_id)
+        )
+    return token_id == conn.token_id
 
 
 async def _cancel(*tasks: asyncio.Task) -> None:

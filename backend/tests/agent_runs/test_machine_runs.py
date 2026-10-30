@@ -5,7 +5,6 @@ import uuid
 from sqlalchemy import select
 
 from app.agent_runs.models import AgentRun
-from app.agent_runs.service import fail_orphaned_runs
 from app.core.db import SessionLocal
 from tests.agent_runs.test_dispatch import _run_status, _start, _task, _wait_run
 from tests.agent_runs.test_run_guards import _next_of
@@ -67,7 +66,7 @@ async def test_run_message_from_wrong_machine_is_ignored(db, tc_factory):
         with tc.websocket_connect(URL, headers=legion["headers"]) as ws_legion:
             ws_legion.receive_json()
             ws_legion.send_json(
-                {"type": "run_finished", "run_id": run["id"], "outcome": "succeeded", "summary": "not mine"}
+                {"type": "run_finished", "run_id": run["id"], "outcome": "completed", "summary": "not mine"}
             )
             # the socket is still served: its next report is processed
             ws_legion.send_json(_all_available(b))
@@ -109,6 +108,8 @@ async def test_startup_sweep_fails_running_runs_of_unlinked_agents(db, tc_factor
         db.add(AgentRun(task_id=uuid.UUID(task["id"]), agent_id=uuid.UUID(agent["id"]), requested_by=me.id,
                         policy="read_only", status="running", prompt="p"))
     await db.commit()
+
+    from app.agent_runs.service import fail_orphaned_runs
 
     async with SessionLocal() as s:
         await fail_orphaned_runs(s)

@@ -14,6 +14,7 @@ from app.a2a.context import register as register_a2a_context
 from app.a2a.router import router as a2a_router
 from app.a2a.routing import route_loop
 from app.agent_runs.router import router as agent_runs_router
+from app.agent_runs.service import fail_orphaned_runs
 from app.agents.router import admin_router as admin_agents_router
 from app.agents.router import project_agents_router
 from app.agents.router import router as agents_router
@@ -95,6 +96,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await seed_defaults(session)
         await ensure_spaces(session)
         await ensure_core_entities(session)
+        await fail_orphaned_runs(session)  # runs of agents no runner can claim (from before per-machine runners)
         await session.commit()
     await hub.start(settings.database_url)
     try:

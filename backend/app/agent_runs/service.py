@@ -473,7 +473,11 @@ async def fail_disconnected_runs(db: AsyncSession, conn: RunnerConn) -> None:
     socket because the token or user was revoked (4401), are cancelled with runner_unauthorized. If a newer
     connection already took over, only the runs this connection was given are touched."""
     superseded = registry.conn_for_token(conn.token_id) is not None
-    async for run, owner_id in _lock_runs_one_by_one(db, (RunStatus.running,), Agent.owner_id == conn.user_id):
+    # this machine's runs: its agents', and the ones it was given (a revoke unlinks the agents before the close)
+    mine = or_(Agent.runner_token_id == conn.token_id, AgentRun.id.in_(conn.run_ids))
+    async for run, owner_id in _lock_runs_one_by_one(
+        db, (RunStatus.running,), Agent.owner_id == conn.user_id, mine
+    ):
         if superseded and run.id not in conn.run_ids:
             continue
         if run.cancelled_by is not None:  # a user asked for the cancel: the runner going away completes it
@@ -507,19 +511,33 @@ async def _notify_offline(db: AsyncSession, run: AgentRun) -> None:
 
 
 async def fail_unclaimed_runs(db: AsyncSession, conn: RunnerConn) -> None:
-    """On hello: running runs of this user that this connection was not given (left over from a server
-    restart or an earlier connection) can never finish, so they fail with runner_disconnected."""
-    async for run, owner_id in _lock_runs_one_by_one(db, (RunStatus.running,), Agent.owner_id == conn.user_id):
+    """On hello: running runs of this machine's agents that this connection was not given (left over from a
+    server restart or an earlier connection) can never finish, so they fail with runner_disconnected."""
+    async for run, owner_id in _lock_runs_one_by_one(
+        db, (RunStatus.running,), Agent.owner_id == conn.user_id, Agent.runner_token_id == conn.token_id
+    ):
         if run.id in conn.run_ids:
             continue
-        if run.cancelled_by is not None:
-            await _transition(
-                db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, actor_id=run.cancelled_by
-            )
-        else:
-            await _transition(
-                db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
-            )
+        await _end_lost_run(db, run, owner_id)
+
+
+async def fail_orphaned_runs(db: AsyncSession) -> None:
+    """At startup: running runs of unlinked agents (left over from before agents had machines) can never be
+    claimed by a runner, so they fail with runner_disconnected."""
+    async for run, owner_id in _lock_runs_one_by_one(db, (RunStatus.running,), Agent.runner_token_id.is_(None)):
+        await _end_lost_run(db, run, owner_id)
+
+
+async def _end_lost_run(db: AsyncSession, run: AgentRun, owner_id: uuid.UUID) -> None:
+    """A running run no runner holds: a requested cancel completes, anything else fails."""
+    if run.cancelled_by is not None:
+        await _transition(
+            db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, actor_id=run.cancelled_by
+        )
+    else:
+        await _transition(
+            db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
+        )
 
 
 async def stop_runs_before_delete(db: AsyncSession, task_ids, question_ids=()) -> None:
