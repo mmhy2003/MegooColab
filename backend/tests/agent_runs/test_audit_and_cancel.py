@@ -40,7 +40,7 @@ async def _ask(asker, body="Where is the retry policy?"):
 
 async def test_agent_run_start_and_end_audited(client, db):
     me, agent, [queued] = await _offline_runs(client, db)
-    _fake_conn(me, agent, _FakeSocket())
+    await _fake_conn(me, agent, _FakeSocket())
     try:
         await _dispatch_in_own_session(me.id)
     finally:
@@ -57,7 +57,7 @@ async def test_agent_run_start_and_end_audited(client, db):
 async def test_answering_run_audited(client, db):
     m1, _m2, asker = await _world(client, db)
     a1 = await _agent(client, m1)
-    _online(m1, a1)
+    await _online(m1, a1)
     try:
         qid = await _ask(asker)
     finally:
@@ -69,7 +69,7 @@ async def test_answering_run_audited(client, db):
 async def test_cancel_answering_run_by_owner_or_admin(client, client_factory, db):
     m1, m2, asker = await _world(client, db)
     a1 = await _agent(client, m1)
-    _online(m1, a1)
+    await _online(m1, a1)
     try:
         qid = await _ask(asker)
     finally:
@@ -86,7 +86,7 @@ async def test_cancel_answering_run_by_owner_or_admin(client, client_factory, db
     await db.refresh(run)
     assert run.status == "cancelled"
     qid2 = None
-    _online(m1, a1)
+    await _online(m1, a1)
     try:
         qid2 = await _ask(asker, body="And the backoff?")
     finally:
@@ -100,7 +100,7 @@ async def test_cancel_answering_run_by_owner_or_admin(client, client_factory, db
 async def test_admin_agents_shows_answering_run(client, client_factory, db):
     m1, _m2, asker = await _world(client, db)
     a1 = await _agent(client, m1)
-    _online(m1, a1)
+    await _online(m1, a1)
     try:
         await _ask(asker)
         admin = client_factory()

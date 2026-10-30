@@ -143,7 +143,9 @@ async def _lock_question_of(db: AsyncSession, question_id: uuid.UUID | None) -> 
         await db.execute(select(Question.id).where(Question.id == question_id).with_for_update())
 
 
-async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> AgentRun | None:
+async def _claim_next(
+    db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID, token_id: uuid.UUID
+) -> AgentRun | None:
     """Under the agent lock, mark its oldest queued run running and COMMIT, if a slot is free.
 
     The agent row is locked FOR NO KEY UPDATE (serialises concurrent dispatches so max_concurrent_runs
@@ -153,7 +155,9 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
     agent = (
         await db.execute(
             select(Agent)
-            .where(Agent.id == agent_id, Agent.owner_id == owner_id)
+            # the agent's link decides, under its lock: a machine whose welcome still lists an agent that was
+            # just linked elsewhere must not be given its run
+            .where(Agent.id == agent_id, Agent.owner_id == owner_id, Agent.runner_token_id == token_id)
             .with_for_update(key_share=True)
             .execution_options(populate_existing=True)
         )
@@ -394,7 +398,7 @@ async def dispatch_pending(db: AsyncSession, owner_id: uuid.UUID) -> None:
 async def _send_pending(db: AsyncSession, conn: RunnerConn, owner_id: uuid.UUID) -> None:
     for agent_id in sorted(conn.available):
         while True:
-            run = await _claim_next(db, agent_id, owner_id)
+            run = await _claim_next(db, agent_id, owner_id, conn.token_id)
             if run is None:
                 break
             if not await _send_start(db, conn, agent_id, run):

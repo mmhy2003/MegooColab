@@ -29,9 +29,9 @@ async def _agent(client, user, bind=True, max_runs=1):
     return agent
 
 
-def _online(user, agent, v2=True):
+async def _online(user, agent, v2=True):
     sock = _FakeSocket()
-    conn = _fake_conn(user, agent, sock)
+    conn = await _fake_conn(user, agent, sock)
     if not v2:
         conn.capabilities = set()
     return sock
@@ -77,15 +77,15 @@ async def test_route_picks_online_member_with_binding(client, db):
     project_id = (await db.execute(select(AgentBinding.project_id))).scalars().first()
     db.add(AgentBinding(agent_id=stranger.id, project_id=project_id, local_path="/x"))
     await db.commit()
-    _online(m1, unbound)
-    _online(m2, v1, v2=False)
-    _online(outsider, {"id": str(stranger.id)})
+    await _online(m1, unbound)
+    await _online(m2, v1, v2=False)
+    await _online(outsider, {"id": str(stranger.id)})
     try:
         qid = await _question(db, asker)
         assert await _runs(db, qid) == []
         assert (await db.get(Question, qid)).status == QuestionStatus.queued
         good = await _agent(client, m1)
-        _online(m1, good)
+        await _online(m1, good)
         async with SessionLocal() as s:
             run = await routing.route_question(s, qid)
             await s.commit()
@@ -99,8 +99,8 @@ async def test_route_prefers_least_busy_agent(client, db):
     m1, m2, asker = await _world(client, db)
     busy = await _agent(client, m1, max_runs=3)
     idle = await _agent(client, m2, max_runs=3)
-    _online(m1, busy)
-    _online(m2, idle)
+    await _online(m1, busy)
+    await _online(m2, idle)
     try:
         q1 = await _question(db, asker)
         [first] = await _runs(db, q1)
@@ -116,7 +116,7 @@ async def test_no_candidate_stays_queued_and_routes_when_runner_says_hello(clien
     agent = await _agent(client, m1)
     qid = await _question(db, asker)
     assert (await db.get(Question, qid)).status == QuestionStatus.queued
-    sock = _online(m1, agent)
+    sock = await _online(m1, agent)
     try:
         from app.runner.router import _dispatch
 
@@ -132,7 +132,7 @@ async def test_two_route_jobs_create_one_run(client, db):
     m1, _m2, asker = await _world(client, db)
     agent = await _agent(client, m1, max_runs=3)
     qid = await _question(db, asker)
-    _online(m1, agent)
+    await _online(m1, agent)
     try:
         async def once():
             async with SessionLocal() as s:
@@ -150,7 +150,7 @@ async def test_two_route_jobs_create_one_run(client, db):
 async def test_run_start_for_answer_is_read_only_with_synthetic_key_and_mcp(client, db):
     m1, _m2, asker = await _world(client, db)
     agent = await _agent(client, m1)
-    sock = _online(m1, agent)
+    sock = await _online(m1, agent)
     try:
         async with SessionLocal() as s:
             user = await s.get(type(asker), asker.id)
@@ -189,7 +189,7 @@ async def test_run_without_answer_retries_other_agent_then_needs_human_after_3(c
     await db.commit()
     agents = [(m1, await _agent(client, m1)), (m2, await _agent(client, m2)), (m3, await _agent(client, m3))]
     for user, agent in agents:
-        _online(user, agent)
+        await _online(user, agent)
     try:
         qid = await _question(db, asker)
         seen = []
@@ -226,7 +226,7 @@ async def test_answering_run_start_and_end_refresh_the_target_project(client, db
     m1, _m2, asker = await _world(client, db)
     project_id = (await client.get("/api/projects/QBB")).json()["id"]
     agent = await _agent(client, m1)
-    sock = _online(m1, agent)
+    sock = await _online(m1, agent)
     try:
         published.clear()
         async with SessionLocal() as s:
@@ -251,7 +251,7 @@ async def test_answering_run_start_and_end_refresh_the_target_project(client, db
 async def test_owner_can_cancel_an_answering_run(client, db):
     m1, _m2, asker = await _world(client, db)
     agent = await _agent(client, m1)
-    _online(m1, agent)
+    await _online(m1, agent)
     try:
         qid = await _question(db, asker)
         [run] = await _runs(db, qid)

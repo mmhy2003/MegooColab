@@ -66,13 +66,13 @@ async def test_question_run_claim_one_active_per_question(client, db):
     q = await _question(db, pid, me)
     db.add_all([_question_run(q, agent, me), _question_run(q, agent, me)])
     await db.commit()
-    conn = _fake_conn(me, agent, _FakeSocket())
+    conn = await _fake_conn(me, agent, _FakeSocket())
     conn.capabilities.add(WORKFLOW_CAPABILITY)
     try:
         async with SessionLocal() as s:
-            first = await _claim_next(s, uuid.UUID(agent["id"]), me.id)
+            first = await _claim_next(s, uuid.UUID(agent["id"]), me.id, conn.token_id)
         async with SessionLocal() as s:
-            second = await _claim_next(s, uuid.UUID(agent["id"]), me.id)
+            second = await _claim_next(s, uuid.UUID(agent["id"]), me.id, conn.token_id)
         assert first is not None and second is None
     finally:
         registry._conns.pop(me.id, None)
@@ -83,10 +83,11 @@ async def test_question_run_not_claimed_on_v1_runner(client, db):
     q = await _question(db, pid, me)
     db.add(_question_run(q, agent, me))
     await db.commit()
-    _fake_conn(me, agent, _FakeSocket()).capabilities = set()  # no workflow/1 capability
+    conn = await _fake_conn(me, agent, _FakeSocket())
+    conn.capabilities = set()  # no workflow/1 capability
     try:
         async with SessionLocal() as s:
-            assert await _claim_next(s, uuid.UUID(agent["id"]), me.id) is None
+            assert await _claim_next(s, uuid.UUID(agent["id"]), me.id, conn.token_id) is None
     finally:
         registry._conns.pop(me.id, None)
 

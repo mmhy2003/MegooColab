@@ -12,7 +12,8 @@ from starlette.websockets import WebSocketDisconnect
 from app.agent_runs.models import AgentRun
 from app.agent_runs.service import _claim_next, _send_start, dispatch_pending, runs_out
 from app.agents.models import Agent
-from app.auth.models import Role
+from app.auth.models import Role, TokenScope, User
+from app.auth.tokens import create_token
 from app.core.db import SessionLocal
 from app.projects.models import Project
 from app.runner.registry import RunnerClosed, RunnerConn, registry
@@ -222,13 +223,18 @@ async def _offline_runs(client, db, n=1, max_runs=1):
     return me, agent, runs
 
 
-def _fake_conn(user, agent, socket):
-    # keyed by the user's id as if it were the token's, so registry._conns.pop(user.id) still clears it
-    conn = RunnerConn(user.id, user.id, socket)
+async def _fake_conn(user, agent, socket):
+    """A live connection for the agent's machine: a real runner token, with the agent linked to it. Registered
+    under the user's id rather than the token's, so the tests' registry._conns.pop(user.id) clears it."""
+    async with SessionLocal() as s:
+        token, _ = await create_token(s, await s.get(User, user.id), "fake machine", [TokenScope.runner], None)
+        await s.execute(update(Agent).where(Agent.id == uuid.UUID(agent["id"])).values(runner_token_id=token.id))
+        await s.commit()
+    conn = RunnerConn(token.id, user.id, socket)
     conn.capabilities = {"workflow/1", "branch/1"}  # a current runner
     conn.owned_agents.add(uuid.UUID(agent["id"]))
     conn.set_availability(uuid.UUID(agent["id"]), True, [])
-    registry._conns[conn.token_id] = conn
+    registry._conns[user.id] = conn
     return conn
 
 
@@ -241,7 +247,7 @@ async def _dispatch_in_own_session(owner_id):
 async def test_concurrent_dispatch_sends_each_run_once(client, db):
     me, agent, runs = await _offline_runs(client, db, n=3, max_runs=2)
     sock = _FakeSocket()
-    _fake_conn(me, agent, sock)
+    await _fake_conn(me, agent, sock)
     try:
         await asyncio.gather(*[_dispatch_in_own_session(me.id) for _ in range(4)])
     finally:
@@ -254,7 +260,7 @@ async def test_concurrent_dispatch_sends_each_run_once(client, db):
 
 async def test_failed_send_leaves_run_queued(client, db):
     me, agent, _runs = await _offline_runs(client, db)
-    _fake_conn(me, agent, _FakeSocket(fail=True))
+    await _fake_conn(me, agent, _FakeSocket(fail=True))
     try:
         await _dispatch_in_own_session(me.id)
     finally:
@@ -266,7 +272,7 @@ async def test_failed_send_leaves_run_queued(client, db):
 async def test_closed_connection_is_not_used(client, db):
     me, agent, _runs = await _offline_runs(client, db)
     sock = _FakeSocket()
-    conn = _fake_conn(me, agent, sock)
+    conn = await _fake_conn(me, agent, sock)
     conn.closed.set()
     try:
         assert registry.conn_for_token(me.id) is None and registry.conns_for_user(me.id) == []
@@ -438,7 +444,7 @@ async def test_token_revocation_cancels_running_runs_as_runner_unauthorized(db, 
 
 async def _claim(owner, agent):
     s = SessionLocal()
-    run = await _claim_next(s, uuid.UUID(agent["id"]), owner.id)
+    run = await _claim_next(s, uuid.UUID(agent["id"]), owner.id, registry.conn_for_agent(uuid.UUID(agent["id"])).token_id)
     assert run is not None and run.status == "running"
     return s, run
 
@@ -446,7 +452,7 @@ async def _claim(owner, agent):
 async def test_cancel_between_claim_and_send_never_starts_the_run(client, db):
     me, agent, _runs = await _offline_runs(client, db)
     sock = _FakeSocket()
-    conn = _fake_conn(me, agent, sock)
+    conn = await _fake_conn(me, agent, sock)
     try:
         s, run = await _claim(me, agent)
         async with s:
@@ -464,7 +470,7 @@ async def test_cancel_between_claim_and_send_never_starts_the_run(client, db):
 async def test_unbound_check_does_not_overwrite_a_cancel(client, db):
     me, agent, _runs = await _offline_runs(client, db)
     sock = _FakeSocket()
-    conn = _fake_conn(me, agent, sock)
+    conn = await _fake_conn(me, agent, sock)
     try:
         s, run = await _claim(me, agent)
         async with s:
@@ -498,7 +504,7 @@ class _GatedSocket(_FakeSocket):
 async def test_cancel_during_send_waits_and_follows_run_start(client, db):
     me, agent, runs = await _offline_runs(client, db)
     sock = _GatedSocket()
-    _fake_conn(me, agent, sock)
+    await _fake_conn(me, agent, sock)
     dispatch = asyncio.create_task(_dispatch_in_own_session(me.id))
     cancel = None
     try:

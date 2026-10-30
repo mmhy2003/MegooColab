@@ -76,7 +76,9 @@ async def update_agent(agent_id: uuid.UUID, body: AgentPatch, user: AuthedUser, 
     if body.max_concurrent_runs is not None:
         agent.max_concurrent_runs = body.max_concurrent_runs
     if "runner_token_id" in body.model_fields_set and body.runner_token_id != agent.runner_token_id:
-        # a running run belongs to the machine it was sent to: moving the agent would orphan it
+        # a running run belongs to the machine it was sent to: moving the agent would orphan it. The agent row is
+        # locked as a dispatch's claim locks it, so a claim in progress commits (and is seen) first.
+        await db.execute(select(Agent.id).where(Agent.id == agent.id).with_for_update(key_share=True))
         if await service.has_running_runs(db, agent.id):
             raise HTTPException(status.HTTP_409_CONFLICT, "agent_running")
         if body.runner_token_id is not None:

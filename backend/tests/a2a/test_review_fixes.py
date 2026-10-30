@@ -26,9 +26,9 @@ from tests.agent_runs.test_dispatch import _fake_conn, _FakeSocket
 from tests.factories import login, make_user
 
 
-def _conn(user, agent):
+async def _conn(user, agent):
     sock = _FakeSocket()
-    conn = _fake_conn(user, agent, sock)
+    conn = await _fake_conn(user, agent, sock)
     conn.capabilities.add(WORKFLOW_CAPABILITY)
     return conn, sock
 
@@ -54,14 +54,14 @@ async def _set_running(run_id) -> None:
 async def test_runner_disconnect_mid_answer_starts_the_next_agent(client, db):
     m1, m2, asker = await _world(client, db)
     a1, a2 = await _agent(client, m1), await _agent(client, m2)
-    conn1, sock1 = _conn(m1, a1)
+    conn1, sock1 = await _conn(m1, a1)
     try:
         async with SessionLocal() as s:
             user = await s.get(type(asker), asker.id)
             q, _ = await service.ask(s, user, project_key="QBB", body="Where is the retry policy?")
             await engine.dispatch_queued(s)
         assert len(_starts(sock1)) == 1
-        _conn2, sock2 = _conn(m2, a2)
+        _conn2, sock2 = await _conn(m2, a2)
         registry._conns.pop(m1.id, None)  # m1's laptop sleeps
         await runner_router._fail_runs(conn1)
         assert len(_starts(sock2)) == 1, "the rerouted run was never sent"
@@ -74,7 +74,7 @@ async def test_runner_disconnect_mid_answer_starts_the_next_agent(client, db):
 async def test_queued_answer_run_of_connected_owner_is_dispatched_by_the_loop(client, db):
     m1, _m2, asker = await _world(client, db)
     a1 = await _agent(client, m1)
-    _conn1, sock1 = _conn(m1, a1)
+    _conn1, sock1 = await _conn(m1, a1)
     try:
         qid = await _question(db, asker)  # routed and queued, never dispatched (no dispatch_queued)
         assert [r.status for r in await _runs(db, qid)] == ["queued"]
@@ -87,7 +87,7 @@ async def test_queued_answer_run_of_connected_owner_is_dispatched_by_the_loop(cl
 async def test_answer_run_queued_on_an_agent_gone_offline_is_released(client, db):
     m1, m2, asker = await _world(client, db)
     a1, a2 = await _agent(client, m1), await _agent(client, m2)
-    _conn(m1, a1)
+    await _conn(m1, a1)
     try:
         qid = await _question(db, asker)
         [stale] = await _runs(db, qid)
@@ -96,7 +96,7 @@ async def test_answer_run_queued_on_an_agent_gone_offline_is_released(client, db
             await s.execute(update(AgentRun).where(AgentRun.id == stale.id)
                             .values(created_at=datetime.now(UTC) - timedelta(minutes=10)))
             await s.commit()
-        _conn2, sock2 = _conn(m2, a2)
+        _conn2, sock2 = await _conn(m2, a2)
         await routing.route_and_dispatch()
         runs = {str(r.agent_id): r.status for r in await _runs(db, qid)}
         assert runs == {a1["id"]: "cancelled", a2["id"]: "running"} and len(_starts(sock2)) == 1
@@ -111,7 +111,7 @@ async def test_answer_run_queued_on_an_agent_gone_offline_is_released(client, db
 async def test_only_agent_failing_moves_question_to_needs_human(client, db):
     m1, _m2, asker = await _world(client, db)
     a1 = await _agent(client, m1)
-    _conn(m1, a1)
+    await _conn(m1, a1)
     try:
         qid = await _question(db, asker)
         [run] = await _runs(db, qid)
@@ -136,7 +136,7 @@ async def test_no_bound_agent_at_all_still_waits_queued(client, db):
 async def test_rejecting_the_only_agents_draft_asks_a_human(client, db):
     m1, _m2, asker = await _world(client, db)
     a1 = await _agent(client, m1)
-    _conn(m1, a1)
+    await _conn(m1, a1)
     try:
         qid = await _question(db, asker)
         [run] = await _runs(db, qid)
@@ -160,7 +160,7 @@ async def test_rejecting_the_only_agents_draft_asks_a_human(client, db):
 async def test_withdraw_while_run_finishes_does_not_deadlock(client, db):
     m1, _m2, asker = await _world(client, db)
     a1 = await _agent(client, m1)
-    _conn(m1, a1)
+    await _conn(m1, a1)
     try:
         qid = await _question(db, asker)
         [run] = await _runs(db, qid)
@@ -227,7 +227,7 @@ async def test_answer_run_that_changed_the_repository_loses_its_draft(client, db
     m1, m2, asker = await _world(client, db)
     a1 = await _agent(client, m1)
     await _agent(client, m2)  # bound, offline: the question waits for it
-    _conn(m1, a1)
+    await _conn(m1, a1)
     try:
         qid = await _question(db, asker)
         [run] = await _runs(db, qid)
