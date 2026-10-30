@@ -222,7 +222,9 @@ questions that need a person. Each person chooses, per kind, in-app and email un
 What a developer does after receiving an invitation, in about 15 minutes:
 
 1. **Accept the invitation** (the email link, or the link an admin sent) and set a password.
-2. **Create a runner token:** avatar → **Access tokens** → create a token with the **Runner** scope. Copy it; it is shown once.
+2. **Create a runner token:** avatar → **Access tokens** → create a token with the **Runner** scope, named after the
+   computer (say "Laptop"). Copy it; it is shown once. Use **one token per computer**: a token is how MegooColab
+   tells your machines apart, and a second runner signing in with the same token replaces the first.
 3. **Install the runner** on the computer where the code and the coding agent live:
    - Linux and macOS:
      ```sh
@@ -238,8 +240,9 @@ What a developer does after receiving an invitation, in about 15 minutes:
    megoocolab-runner doctor
    ```
    `doctor` checks the server, Node.js, git and the agent adapters.
-5. **Register the agent:** avatar → **My agents** → Add agent (Claude Code or Codex), then bind it to the project
-   with the path of your local clone of the project's repository.
+5. **Register the agent:** avatar → **My agents** → Add agent (Claude Code or Codex), pick that computer's token
+   as its **Machine**, then bind it to the project with the path of your local clone of the project's repository.
+   Only the runner signed in with an agent's token runs it; an agent with no machine stays offline.
 6. **Start the runner:** `megoocolab-runner run` (or `megoocolab-runner service install` and
    `megoocolab-runner service start` to keep it running in the background). The agent shows **Online**.
 7. **Give it a task:** on the project board, assign a task to the agent and drag it to **In Progress**. The
@@ -329,8 +332,9 @@ Then rebuild search from the restored data: Admin → Settings → Search → **
 - **Everyone behind one proxy gets "Too many attempts" together:** the backend sees the proxy's address for all of
   them; set `CLIENT_IP_HEADER` to the header the proxy fills with the visitor's address (see section 3).
 - **Emails do not arrive:** use **Send test** under Admin → Settings; the error shown comes from the mail server.
-- **The agent stays Offline:** run `megoocolab-runner doctor` on the developer's computer; check the token has the
-  Runner scope and that WebSockets reach `/api/runner/ws` through any proxy.
+- **The agent stays Offline:** check, under My agents, that its **Machine** is the token the runner on that
+  computer signed in with (revoking a token unlinks its agents). Then run `megoocolab-runner doctor` on that computer;
+  check the token has the Runner scope and that WebSockets reach `/api/runner/ws` through any proxy.
 - **A pull request is not followed:** the repository has no git connection (project Settings → Repositories),
   **Test** fails under Admin → Git, or the pull request URL is on another host than the connection's base URL.
 - **Webhook deliveries fail with 401:** the secret in the git host differs from the connection's; with 404, the

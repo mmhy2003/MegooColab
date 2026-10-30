@@ -7,7 +7,7 @@ import { expect, test, type APIRequestContext, type BrowserContext } from "@play
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
 import { pullRequestDelivery, startFakeGit, type FakeGit } from "./helpers/fakeGit";
-import { buildBinaries, mcp, onPrompt, startRunner, type RunnerHandle } from "./helpers/runner";
+import { buildBinaries, mcp, onPrompt, mintLinkedRunnerToken, startRunner, type RunnerHandle } from "./helpers/runner";
 
 /**
  * End-to-end test of Plan 7's git integration: a GitHub Enterprise connection (a fake one on the host) follows
@@ -158,7 +158,7 @@ test("a pull request followed through a git connection", async ({ browser }) => 
     headers: WEB,
   });
   expect(bound.ok(), await bound.text()).toBeTruthy();
-  const runnerToken = (await post<{ secret: string }>(request, "/api/tokens", { name: "Git runner", scopes: ["runner"] })).secret;
+  const runnerToken = await mintLinkedRunnerToken(request, agent.id, "Git runner");
   leftovers.runner = startRunner({
     url: BASE,
     token: runnerToken,

@@ -130,6 +130,7 @@ test("agents end to end", async ({ browser, request }) => {
   // 3. add the agent and bind it to AGT
   await page.goto("/settings/agents");
   await page.getByRole("button", { name: "Add agent" }).click();
+  await page.getByRole("dialog").getByLabel("Machine").selectOption({ label: "Laptop runner" });
   await page.getByRole("dialog").getByRole("button", { name: "Add agent" }).click();
   await expect(page.getByRole("heading", { name: AGENT_NAME })).toBeVisible();
   await page.getByRole("button", { name: "Add project" }).click();
