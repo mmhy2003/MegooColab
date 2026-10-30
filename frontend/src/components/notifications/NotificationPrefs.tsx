@@ -35,32 +35,35 @@ export function NotificationPrefs() {
   };
   return (
     <div className="space-y-2">
-      <table className="card w-full max-w-xl text-sm">
-        <thead>
-          <tr className="text-left text-xs text-muted-foreground">
-            <th className="px-3 py-2 font-normal">When</th>
-            <th className="px-3 py-2 font-normal">In app</th>
-            <th className="px-3 py-2 font-normal">Email</th>
-            <th className="px-3 py-2 font-normal">Push</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(prefs.data ?? []).map((saved) => unsaved[saved.kind] ?? saved).map((p) => (
-            <tr key={p.kind} className="border-t border-line">
-              <td className="px-3 py-2">{KIND_LABELS[p.kind]}</td>
-              <td className="px-3 py-2">
-                <input type="checkbox" aria-label={`In app: ${KIND_LABELS[p.kind]}`} checked={p.in_app} onChange={() => toggle(p, "in_app")} />
-              </td>
-              <td className="px-3 py-2">
-                <input type="checkbox" aria-label={`Email: ${KIND_LABELS[p.kind]}`} checked={p.email} onChange={() => toggle(p, "email")} />
-              </td>
-              <td className="px-3 py-2">
-                <input type="checkbox" aria-label={`Push: ${KIND_LABELS[p.kind]}`} checked={p.push ?? false} onChange={() => toggle(p, "push")} />
-              </td>
+      {/* four columns: on a narrow phone the table scrolls inside its card instead of widening the page */}
+      <div className="card max-w-xl overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-muted-foreground">
+              <th className="px-2 py-2 sm:px-3 font-normal">When</th>
+              <th className="px-2 py-2 sm:px-3 font-normal">In app</th>
+              <th className="px-2 py-2 sm:px-3 font-normal">Email</th>
+              <th className="px-2 py-2 sm:px-3 font-normal">Push</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {(prefs.data ?? []).map((saved) => unsaved[saved.kind] ?? saved).map((p) => (
+              <tr key={p.kind} className="border-t border-line">
+                <td className="px-2 py-2 sm:px-3">{KIND_LABELS[p.kind]}</td>
+                <td className="px-2 py-2 sm:px-3">
+                  <input type="checkbox" aria-label={`In app: ${KIND_LABELS[p.kind]}`} checked={p.in_app} onChange={() => toggle(p, "in_app")} />
+                </td>
+                <td className="px-2 py-2 sm:px-3">
+                  <input type="checkbox" aria-label={`Email: ${KIND_LABELS[p.kind]}`} checked={p.email} onChange={() => toggle(p, "email")} />
+                </td>
+                <td className="px-2 py-2 sm:px-3">
+                  <input type="checkbox" aria-label={`Push: ${KIND_LABELS[p.kind]}`} checked={p.push ?? false} onChange={() => toggle(p, "push")} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {save.error && <p role="alert" className="text-sm text-pink">{errorMessage(save.error)}</p>}
     </div>
   );

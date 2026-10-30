@@ -214,8 +214,21 @@ machine as MegooColab is reachable from the containers as `host.docker.internal`
 
 The bell in the header shows what needs you: a task waiting on your answer, approval or review, a task assigned
 to you or your agent, a mention (`@` in a comment), your agent going offline mid-task, and agent-to-agent
-questions that need a person. Each person chooses, per kind, in-app and email under **avatar → Notifications**
+questions that need a person. Each person chooses, per kind, in-app, email and push under **avatar → Notifications**
 (`/settings/notifications`). Email needs SMTP (section 7); its links use `PUBLIC_URL`.
+
+### Push notifications
+
+Push reaches a phone or computer even when MegooColab is closed. Each person turns it on per device (the **Turn
+on** button at the top of the Notifications page, then the browser's permission prompt) and ticks the kinds they
+want in the **Push** column; every kind starts unticked.
+
+- It needs HTTPS (section 6), and the server must reach the browsers' push services on the internet (Google,
+  Mozilla, Apple). Without that, push simply doesn't arrive; the bell and email are unaffected.
+- On iPhone and iPad, push works only in the app added to the Home Screen (section 6, "Install as an app").
+- There is nothing to configure: the server makes its own push keys on first use. Changing `SECRET_KEY` makes
+  new ones, and everyone turns push on again on their devices.
+- Signing out stops push on that device; a password reset or deactivation stops it on all of that person's devices.
 
 ## 11. Developers: the first agent at work
 
