@@ -27,6 +27,10 @@ const token = "mgc_test"
 // never speaks ACP and just sleeps, for the kill-on-cancel test.
 func TestMain(m *testing.M) {
 	if os.Getenv("JOBS_TEST_HANG") == "1" {
+		// the adapter that never answers: it says it is running (for a test to wait on), then hangs
+		if started := os.Getenv("JOBS_TEST_HANG_STARTED"); started != "" {
+			_ = os.WriteFile(started, nil, 0o644)
+		}
 		time.Sleep(time.Minute)
 		os.Exit(0)
 	}
@@ -363,12 +367,21 @@ func TestCancelKillsAgentThatNeverAnswers(t *testing.T) {
 	})
 	t.Setenv("MEGOO_ADAPTER_CLAUDE_CODE", `"`+exe+`"`)
 	t.Setenv("JOBS_TEST_HANG", "1")
+	started := filepath.Join(t.TempDir(), "started")
+	t.Setenv("JOBS_TEST_HANG_STARTED", started)
 	e.startRun("run-h", "MEG-4", "workspace")
-	deadline := time.Now().Add(10 * time.Second)
-	for e.mgr.Active() == 0 && time.Now().Before(deadline) {
+	// cancel only once the adapter process runs (Initialize then blocks on it): a fixed wait was too short on
+	// slow CI machines, where the cancel came before there was a process to kill
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if _, err := os.Stat(started); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the adapter process never started")
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	time.Sleep(300 * time.Millisecond) // let the process start and Initialize block
 	if err := e.srv.Send(protocol.RunCancel{Type: protocol.TypeRunCancel, RunID: "run-h"}); err != nil {
 		t.Fatal(err)
 	}
