@@ -99,7 +99,8 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
   };
 
   return (
-    <div className="space-y-3 text-sm">
+    // data-waiting: the task's "waiting on you" button jumps here (JumpButtons)
+    <div data-waiting={canDecide ? kind : undefined} className="space-y-3 text-sm">
       <div role="group" aria-label={`${kind} versions`} className="flex flex-wrap gap-1">
         {versions.map((v) => (
           <button

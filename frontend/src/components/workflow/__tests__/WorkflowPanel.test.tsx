@@ -89,6 +89,16 @@ describe("WorkflowPanel", () => {
     expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
   });
 
+  it("marks an escalation and a code review as waiting on the person", async () => {
+    setup(wf({ stage: "build", status: "waiting_human", needs: "escalation", escalation_reason: "review_rounds_exhausted" }));
+    await screen.findByRole("button", { name: "Retry" });
+    expect(document.body.querySelector('[data-waiting="escalation"]')).toContainElement(screen.getByRole("button", { name: "Retry" }));
+    cleanup();
+    setup(wf({ stage: "done", status: "waiting_human", needs: "human_code_review", pr_url: "https://x/pr/1", branch: "task/pay-1" }));
+    await screen.findByRole("button", { name: "Mark merged" });
+    expect(document.body.querySelector('[data-waiting="code_review"]')).toContainElement(screen.getByRole("button", { name: "Mark merged" }));
+  });
+
   it("a closed pull request can be accepted as finished", async () => {
     setup(wf({ stage: "done", status: "waiting_human", needs: "escalation", escalation_reason: "pr_closed" }));
     expect(await screen.findByText("The pull request was closed without being merged.")).toBeInTheDocument();

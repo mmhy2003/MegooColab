@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { TYPE_ICON } from "@/components/board/TaskCard";
 import { useProjectAgents } from "@/lib/agents";
@@ -28,6 +28,7 @@ import { ActivityThread } from "./ActivityThread";
 import { Attachments } from "./Attachments";
 import { CommentBox } from "./CommentBox";
 import { Description } from "./Description";
+import { JumpButtons } from "./JumpButtons";
 import { Links } from "./Links";
 import { Subtasks } from "./Subtasks";
 import { TaskFields } from "./TaskFields";
@@ -66,6 +67,12 @@ export function TaskView({
   });
   // older pages, prepended as the user asks for them; the live first page keeps refreshing
   const [older, setOlder] = useState<{ items: ActivityItem[]; more: boolean }>({ items: [], more: true });
+  // the latest older pages, for loadEarlier called several times in a row (the jump to an older agent question)
+  const olderRef = useRef(older);
+  useEffect(() => {
+    olderRef.current = older;
+  }, [older]);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const attachments = useQuery({ queryKey: qk.attachments(taskKey), queryFn: () => api<Attachment[]>(`/api/tasks/${taskKey}/attachments`) });
   const project = useProject(projectKey);
   const columns = useColumns(projectKey);
@@ -109,6 +116,18 @@ export function TaskView({
       setError(errorMessage(err));
       return false;
     }
+  };
+  /** Prepends the page before the oldest loaded entry; false when there was nothing to load. */
+  const loadEarlier = async () => {
+    const current = olderRef.current;
+    const first = current.items[0] ?? activity.data?.[0];
+    if (!first || !current.more) return false;
+    const params = new URLSearchParams({ limit: String(ACTIVITY_PAGE), before: first.at, before_id: first.id });
+    const page = await api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?${params}`);
+    const next = { items: [...page, ...current.items], more: page.length >= ACTIVITY_PAGE };
+    olderRef.current = next;
+    setOlder(next);
+    return page.length > 0;
   };
   const run = async (fn: () => Promise<unknown>) => {
     await attempt(fn);
@@ -158,125 +177,131 @@ export function TaskView({
           {headerExtra}
         </header>
         {error && <p role="alert" className="px-4 pt-2 text-sm text-pink">{error}</p>}
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="min-w-0 space-y-6">
-            <Section title="Description">
-              <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />
-            </Section>
-            {t.type !== "subtask" && t.type !== "epic" && (
-              <Section title={`Subtasks (${t.subtask_done_count}/${t.subtask_count})`}>
-                <Subtasks
-                  subtasks={subtasks}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {/* pb-20: the last content scrolls clear of the corner buttons */}
+          <div ref={scrollRef} className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto p-4 pb-20 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="min-w-0 space-y-6">
+              <Section title="Description">
+                <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />
+              </Section>
+              {t.type !== "subtask" && t.type !== "epic" && (
+                <Section title={`Subtasks (${t.subtask_done_count}/${t.subtask_count})`}>
+                  <Subtasks
+                    subtasks={subtasks}
+                    disabled={disabled}
+                    onOpen={onOpenTask}
+                    onAdd={(title) => run(() => api(`/api/projects/${projectKey}/tasks`, { method: "POST", json: { title, type: "subtask", parent_id: t.id } }))}
+                  />
+                </Section>
+              )}
+              {(mockups.data?.length ?? 0) > 0 && (
+                <Section id="mockups" title="Mockups">
+                  <MockupPanel taskKey={t.key} disabled={disabled} />
+                </Section>
+              )}
+              {(["design", "plan"] as const).map(
+                (kind) =>
+                  workflow.data?.documents.some((d) => d.kind === kind) && (
+                    <Section key={kind} id={`document-${kind}`} title={kind === "design" ? "Design" : "Plan"}>
+                      <DocumentView taskKey={t.key} kind={kind} disabled={disabled} />
+                    </Section>
+                  ),
+              )}
+              {decisionCount > 0 && (
+                <Section id="decisions" title={`Decisions (${decisionCount})`}>
+                  <Decisions taskKey={t.key} />
+                </Section>
+              )}
+              <Section title="Linked tasks">
+                <Links
+                  task={t}
                   disabled={disabled}
                   onOpen={onOpenTask}
-                  onAdd={(title) => run(() => api(`/api/projects/${projectKey}/tasks`, { method: "POST", json: { title, type: "subtask", parent_id: t.id } }))}
+                  onAdd={(target_key, kind) => run(() => api(`/api/tasks/${t.key}/links`, { method: "POST", json: { target_key, kind } }))}
+                  onRemove={(id) => run(() => api(`/api/tasks/${t.key}/links/${id}`, { method: "DELETE" }))}
                 />
               </Section>
-            )}
-            {(mockups.data?.length ?? 0) > 0 && (
-              <Section id="mockups" title="Mockups">
-                <MockupPanel taskKey={t.key} disabled={disabled} />
+              <KbReferences taskKey={t.key} />
+              <TaskQuestions taskKey={t.key} canAsk={!disabled} />
+              <Section title="Attachments">
+                <Attachments
+                  items={attachments.data ?? []}
+                  disabled={disabled}
+                  onUpload={async (file) => {
+                    const form = new FormData();
+                    form.append("file", file);
+                    await run(() => api(`/api/tasks/${t.key}/attachments`, { method: "POST", body: form }));
+                    await client.invalidateQueries({ queryKey: qk.attachments(taskKey) });
+                  }}
+                  onDelete={async (id) => {
+                    await run(() => api(`/api/attachments/${id}`, { method: "DELETE" }));
+                    await client.invalidateQueries({ queryKey: qk.attachments(taskKey) });
+                  }}
+                />
               </Section>
-            )}
-            {(["design", "plan"] as const).map(
-              (kind) =>
-                workflow.data?.documents.some((d) => d.kind === kind) && (
-                  <Section key={kind} id={`document-${kind}`} title={kind === "design" ? "Design" : "Plan"}>
-                    <DocumentView taskKey={t.key} kind={kind} disabled={disabled} />
-                  </Section>
-                ),
-            )}
-            {decisionCount > 0 && (
-              <Section id="decisions" title={`Decisions (${decisionCount})`}>
-                <Decisions taskKey={t.key} />
+              <Section title="Activity">
+                <ActivityThread
+                  items={[...older.items, ...(activity.data ?? [])]}
+                  columnNames={columnNames}
+                  userNames={userNames}
+                  agentNames={agentNames}
+                  taskKey={taskKey}
+                  canAct={workflow.data?.can_act === true}
+                  readOnly={disabled}
+                  onAnswered={async () => {
+                    // older pages are local state: reload the same range so an answered question does not stay open
+                    const first = activity.data?.[0];
+                    if (older.items.length === 0 || !first) return;
+                    const params = new URLSearchParams({ limit: String(older.items.length), before: first.at, before_id: first.id });
+                    const page = await api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?${params}`);
+                    setOlder((o) => ({ ...o, items: page }));
+                  }}
+                  hasMore={older.more && (older.items.length > 0 || (activity.data?.length ?? 0) >= ACTIVITY_PAGE)}
+                  onLoadEarlier={() => void loadEarlier()}
+                />
+                {!disabled && <CommentBox users={activeUsers} onSubmit={(body_md) => run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md } }))} />}
               </Section>
-            )}
-            <Section title="Linked tasks">
-              <Links
+            </div>
+            <aside className="space-y-4">
+              <TaskFields
                 task={t}
+                columns={columns.data}
+                users={users.data ?? []}
+                agents={agents.data ?? []}
+                labels={labels.data ?? []}
+                parents={parents}
+                sprints={project.data?.sprints_enabled ? sprints.data : undefined}
+                meId={me?.id}
                 disabled={disabled}
-                onOpen={onOpenTask}
-                onAdd={(target_key, kind) => run(() => api(`/api/tasks/${t.key}/links`, { method: "POST", json: { target_key, kind } }))}
-                onRemove={(id) => run(() => api(`/api/tasks/${t.key}/links/${id}`, { method: "DELETE" }))}
+                defaultBranch={repos.data?.length === 1 ? repos.data[0].default_branch : null}
+                onPatch={(patch) => attempt(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: patch }))}
+                onMove={(column_id) => void run(() => api(`/api/tasks/${t.key}/move`, { method: "POST", json: { column_id } }))}
+                onSprint={(sprint_id) => void run(() => api(`/api/tasks/${t.key}/sprint`, { method: "PUT", json: { sprint_id } }))}
+                onWatch={(watch) => void run(() => api(`/api/tasks/${t.key}/watch`, { method: watch ? "PUT" : "DELETE" }))}
               />
-            </Section>
-            <KbReferences taskKey={t.key} />
-            <TaskQuestions taskKey={t.key} canAsk={!disabled} />
-            <Section title="Attachments">
-              <Attachments
-                items={attachments.data ?? []}
-                disabled={disabled}
-                onUpload={async (file) => {
-                  const form = new FormData();
-                  form.append("file", file);
-                  await run(() => api(`/api/tasks/${t.key}/attachments`, { method: "POST", body: form }));
-                  await client.invalidateQueries({ queryKey: qk.attachments(taskKey) });
-                }}
-                onDelete={async (id) => {
-                  await run(() => api(`/api/attachments/${id}`, { method: "DELETE" }));
-                  await client.invalidateQueries({ queryKey: qk.attachments(taskKey) });
-                }}
-              />
-            </Section>
-            <Section title="Activity">
-              <ActivityThread
-                items={[...older.items, ...(activity.data ?? [])]}
-                columnNames={columnNames}
-                userNames={userNames}
-                agentNames={agentNames}
-                taskKey={taskKey}
-                canAct={workflow.data?.can_act === true}
-                readOnly={disabled}
-                onAnswered={async () => {
-                  // older pages are local state: reload the same range so an answered question does not stay open
-                  const first = activity.data?.[0];
-                  if (older.items.length === 0 || !first) return;
-                  const params = new URLSearchParams({ limit: String(older.items.length), before: first.at, before_id: first.id });
-                  const page = await api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?${params}`);
-                  setOlder((o) => ({ ...o, items: page }));
-                }}
-                hasMore={older.more && (older.items.length > 0 || (activity.data?.length ?? 0) >= ACTIVITY_PAGE)}
-                onLoadEarlier={async () => {
-                  const first = older.items[0] ?? activity.data?.[0];
-                  if (!first) return;
-                  const params = new URLSearchParams({ limit: String(ACTIVITY_PAGE), before: first.at, before_id: first.id });
-                  const page = await api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?${params}`);
-                  setOlder({ items: [...page, ...older.items], more: page.length >= ACTIVITY_PAGE });
-                }}
-              />
-              {!disabled && <CommentBox users={activeUsers} onSubmit={(body_md) => run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md } }))} />}
-            </Section>
+              {["story", "task", "bug"].includes(t.type) && (
+                <WorkflowPanel
+                  taskKey={t.key}
+                  unassigned={t.assignee_agent_id == null}
+                  agent={t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined}
+                  disabled={disabled}
+                />
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                Reported by {t.reporter_id ? userNames.get(t.reporter_id) ?? "someone" : "someone"} ·{" "}
+                {new Date(t.created_at).toLocaleDateString()}
+              </p>
+            </aside>
           </div>
-          <aside className="space-y-4">
-            <TaskFields
-              task={t}
-              columns={columns.data}
-              users={users.data ?? []}
-              agents={agents.data ?? []}
-              labels={labels.data ?? []}
-              parents={parents}
-              sprints={project.data?.sprints_enabled ? sprints.data : undefined}
-              meId={me?.id}
-              disabled={disabled}
-              defaultBranch={repos.data?.length === 1 ? repos.data[0].default_branch : null}
-              onPatch={(patch) => attempt(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: patch }))}
-              onMove={(column_id) => void run(() => api(`/api/tasks/${t.key}/move`, { method: "POST", json: { column_id } }))}
-              onSprint={(sprint_id) => void run(() => api(`/api/tasks/${t.key}/sprint`, { method: "PUT", json: { sprint_id } }))}
-              onWatch={(watch) => void run(() => api(`/api/tasks/${t.key}/watch`, { method: watch ? "PUT" : "DELETE" }))}
+          {activity.data && (
+            <JumpButtons
+              key={taskKey}
+              scrollRef={scrollRef}
+              activity={activity.data}
+              loadEarlier={loadEarlier}
+              expectQuestion={workflow.data?.needs === "question" && workflow.data.can_act && !disabled}
             />
-            {["story", "task", "bug"].includes(t.type) && (
-              <WorkflowPanel
-                taskKey={t.key}
-                unassigned={t.assignee_agent_id == null}
-                agent={t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined}
-                disabled={disabled}
-              />
-            )}
-            <p className="text-[11px] text-muted-foreground">
-              Reported by {t.reporter_id ? userNames.get(t.reporter_id) ?? "someone" : "someone"} ·{" "}
-              {new Date(t.created_at).toLocaleDateString()}
-            </p>
-          </aside>
+          )}
         </div>
       </div>
       {dialog}

@@ -84,7 +84,8 @@ export function QuestionCard({
   };
 
   return (
-    <div className={`card min-w-0 flex-1 space-y-2 px-3 py-2 ${q.status === "withdrawn" ? "opacity-60" : ""}`}>
+    // data-waiting: the task's "waiting on you" button jumps here (JumpButtons)
+    <div data-waiting={answerable ? "question" : undefined} className={`card min-w-0 flex-1 space-y-2 px-3 py-2 ${q.status === "withdrawn" ? "opacity-60" : ""}`}>
       <p className="text-xs text-muted-foreground">
         <span className="text-fg">Agent question</span>
         {q.status === "withdrawn" && <> · withdrawn</>}

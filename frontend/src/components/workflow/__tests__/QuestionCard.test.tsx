@@ -97,6 +97,21 @@ describe("QuestionCard", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Someone already answered.");
   });
 
+  it("marks itself as waiting on the person only while they can answer it", () => {
+    const marked = (selector = "[data-waiting]") => document.body.querySelector(selector);
+    setup({});
+    expect(marked('[data-waiting="question"]')).not.toBeNull();
+    cleanup();
+    setup({}, false);
+    expect(marked()).toBeNull();
+    cleanup();
+    setup({}, true, undefined, { readOnly: true });
+    expect(marked()).toBeNull();
+    cleanup();
+    setup({ status: "answered", answered_by: { id: "u1", name: "Sara Kim" }, answer_choice: "pg" });
+    expect(marked()).toBeNull();
+  });
+
   it("shows no answer controls without permission, and who answered afterwards", () => {
     setup({}, false);
     expect(screen.queryByRole("button")).toBeNull();

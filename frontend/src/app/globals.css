@@ -300,3 +300,27 @@ a {
 .kb-prose pre {
   font-family: var(--font-mono);
 }
+
+/* The item the task's "waiting on you" button jumped to (JumpButtons): an amber ring that fades out over 1.6s.
+   With reduced motion it is a still outline for the same time instead. */
+@keyframes jump-flash {
+  0%,
+  40% {
+    box-shadow: 0 0 0 3px var(--amber);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.jump-flash {
+  animation: jump-flash 1.6s ease-out;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jump-flash {
+    outline: 3px solid var(--amber);
+    outline-offset: 2px;
+  }
+}
