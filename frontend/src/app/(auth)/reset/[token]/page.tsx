@@ -15,6 +15,7 @@ export default function ResetPage() {
     return (
       <div className="space-y-4 text-sm">
         <p>Your password is updated, and you&apos;ve been signed out everywhere else.</p>
+        <p>Your access tokens were revoked too: create new ones for your runners and link your agents to them.</p>
         <Link href="/login">Sign in</Link>
       </div>
     );

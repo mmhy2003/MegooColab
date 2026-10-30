@@ -44,6 +44,7 @@ export function RunnerSetup() {
       </p>
       <Snippet label="2. Sign in" value={`megoocolab-runner login --url ${origin} --token <paste a runner token>`} />
       <p className="text-xs text-muted-foreground">Create the runner token under Access tokens, with the Runner scope.</p>
+      <p className="text-xs text-muted-foreground">Create one token per computer, and link each agent to the token of the computer it runs on.</p>
       <Snippet label="3. Start" value="megoocolab-runner run" />
       <Snippet label="4. Keep it running in the background (optional)" value="megoocolab-runner service install" />
     </div>

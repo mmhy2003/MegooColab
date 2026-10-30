@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { BindingEditor } from "@/components/agents/BindingEditor";
+import { MachineField } from "@/components/agents/MachineField";
 import { RunnerSetup } from "@/components/agents/RunnerSetup";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -17,11 +18,12 @@ import { api } from "@/lib/api";
 import { ANSWER_MODE_HELP, PROGRAM_LABEL } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
-import type { Agent, AgentProgram, AnswerMode, Project } from "@/lib/types";
+import type { AccessToken, Agent, AgentProgram, AnswerMode, Project } from "@/lib/types";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 
-function AddAgentDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[]; onClose: () => void; onCreated: () => void }) {
   const [program, setProgram] = useState<AgentProgram>("claude_code");
+  const [machine, setMachine] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [answerMode, setAnswerMode] = useState<AnswerMode>("manual");
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +40,7 @@ function AddAgentDialog({ onClose, onCreated }: { onClose: () => void; onCreated
           try {
             await api("/api/agents", {
               method: "POST",
-              json: { program, name: name.trim() || null, answer_mode: answerMode },
+              json: { program, name: name.trim() || null, answer_mode: answerMode, runner_token_id: machine },
             });
             onCreated();
           } catch (err) {
@@ -53,6 +55,7 @@ function AddAgentDialog({ onClose, onCreated }: { onClose: () => void; onCreated
           <option value="codex">{PROGRAM_LABEL.codex}</option>
         </Select>
         <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Leave blank for a default name" maxLength={200} />
+        <MachineField machine={null} tokens={tokens} value={machine} onChange={setMachine} />
         <div>
           <Select label="Answer mode" value={answerMode} onChange={(e) => setAnswerMode(e.target.value as AnswerMode)}>
             <option value="manual">Manual</option>
@@ -70,7 +73,17 @@ function AddAgentDialog({ onClose, onCreated }: { onClose: () => void; onCreated
   );
 }
 
-function AgentCard({ agent, projects, onChanged }: { agent: Agent; projects: Project[]; onChanged: () => void }) {
+function AgentCard({
+  agent,
+  projects,
+  tokens,
+  onChanged,
+}: {
+  agent: Agent;
+  projects: Project[];
+  tokens: AccessToken[];
+  onChanged: () => void;
+}) {
   const { ask, dialog } = useConfirm();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -80,6 +93,7 @@ function AgentCard({ agent, projects, onChanged }: { agent: Agent; projects: Pro
           <h3 className="flex-1 text-sm font-bold">{agent.name}</h3>
           <Badge>{PROGRAM_LABEL[agent.program]}</Badge>
           <AgentStatusDot status={agent.status} />
+          {agent.machine && <span className="text-xs text-muted-foreground">on {agent.machine.name}</span>}
           <RunnerUpdateArrow runner={agent.runner} ownerId={agent.owner.id} />
           <Button
             variant="danger"
@@ -97,6 +111,20 @@ function AgentCard({ agent, projects, onChanged }: { agent: Agent; projects: Pro
             Delete
           </Button>
         </div>
+        <MachineField
+          machine={agent.machine ?? null}
+          tokens={tokens}
+          value={agent.machine?.token_id ?? null}
+          onChange={async (tokenId) => {
+            setError(null);
+            try {
+              await api(`/api/agents/${agent.id}`, { method: "PATCH", json: { runner_token_id: tokenId } });
+              onChanged();
+            } catch (err) {
+              setError(errorMessage(err));
+            }
+          }}
+        />
         {error && <p role="alert" className="text-sm text-pink">{error}</p>}
         <BindingEditor agent={agent} projects={projects} onSaved={onChanged} />
       </li>
@@ -110,7 +138,11 @@ export default function AgentsPage() {
   const [adding, setAdding] = useState(false);
   const agents = useQuery({ queryKey: qk.agents(), queryFn: () => api<Agent[]>("/api/agents/mine") });
   const projects = useQuery({ queryKey: qk.projects(), queryFn: () => api<Project[]>("/api/projects") });
-  const refresh = () => client.invalidateQueries({ queryKey: qk.agents() });
+  const tokens = useQuery({ queryKey: qk.tokens(), queryFn: () => api<AccessToken[]>("/api/tokens") });
+  const refresh = () => {
+    void client.invalidateQueries({ queryKey: qk.agents() });
+    return client.invalidateQueries({ queryKey: qk.tokens() });  // tokens list their linked agents
+  };
 
   return (
     <div className="space-y-8">
@@ -128,6 +160,7 @@ export default function AgentsPage() {
               key={`${a.id}:${a.bindings.map((b) => `${b.project_id}=${b.local_path}`).join("|")}`}
               agent={a}
               projects={projects.data ?? []}
+              tokens={tokens.data ?? []}
               onChanged={refresh}
             />
           ))}
@@ -140,6 +173,7 @@ export default function AgentsPage() {
       </section>
       {adding && (
         <AddAgentDialog
+          tokens={tokens.data ?? []}
           onClose={() => setAdding(false)}
           onCreated={async () => {
             setAdding(false);

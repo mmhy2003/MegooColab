@@ -2640,6 +2640,7 @@ export interface components {
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
+            machine?: components["schemas"]["MachineOut"] | null;
             /** Current Run */
             current_run?: {
                 [key: string]: unknown;
@@ -2673,6 +2674,8 @@ export interface components {
              * @default 1
              */
             max_concurrent_runs: number;
+            /** Runner Token Id */
+            runner_token_id?: string | null;
         };
         /** AgentItem */
         AgentItem: {
@@ -2721,6 +2724,7 @@ export interface components {
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
+            machine?: components["schemas"]["MachineOut"] | null;
         };
         /** AgentPatch */
         AgentPatch: {
@@ -2729,6 +2733,8 @@ export interface components {
             answer_mode?: components["schemas"]["AnswerMode"] | null;
             /** Max Concurrent Runs */
             max_concurrent_runs?: number | null;
+            /** Runner Token Id */
+            runner_token_id?: string | null;
         };
         /**
          * AgentProgram
@@ -3717,6 +3723,21 @@ export interface components {
             /** Totp Code */
             totp_code?: string | null;
         };
+        /**
+         * MachineOut
+         * @description The runner token an agent is linked to (shown to its owner and admins).
+         */
+        MachineOut: {
+            /**
+             * Token Id
+             * Format: uuid
+             */
+            token_id: string;
+            /** Name */
+            name: string;
+            /** Expired */
+            expired: boolean;
+        };
         /** ManualWorkflowIn */
         ManualWorkflowIn: {
             /**
@@ -4114,6 +4135,7 @@ export interface components {
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
+            machine?: components["schemas"]["MachineOut"] | null;
             /** Can Use */
             can_use: boolean;
         };
@@ -5246,6 +5268,16 @@ export interface components {
              */
             created_at: string;
         };
+        /** TokenAgentOut */
+        TokenAgentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** TokenOut */
         TokenOut: {
             /**
@@ -5270,6 +5302,11 @@ export interface components {
             created_at: string;
             /** Revoked At */
             revoked_at: string | null;
+            /**
+             * Agents
+             * @default []
+             */
+            agents: components["schemas"]["TokenAgentOut"][];
         };
         /** TokenPasswordIn */
         TokenPasswordIn: {

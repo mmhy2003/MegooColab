@@ -26,6 +26,10 @@ const EXPIRY = [
   { value: "365", label: "365 days" },
 ];
 
+/** Revoking a runner token unlinks the agents linked to it. */
+const unlinkWarning = (n: number) =>
+  n === 0 ? "" : ` ${n} linked agent${n === 1 ? "" : "s"} will be unlinked and stay offline until you link them again.`;
+
 const when = (iso: string | null, empty: string) => (iso ? new Date(iso).toLocaleDateString() : empty);
 
 function CreateTokenDialog({ onClose }: { onClose: () => void }) {
@@ -122,6 +126,7 @@ export default function TokensPage() {
                   <th className="px-3 py-2 font-normal">Name</th>
                   <th className="px-3 py-2 font-normal">Token</th>
                   <th className="px-3 py-2 font-normal">Scopes</th>
+                  <th className="px-3 py-2 font-normal">Agents</th>
                   <th className="px-3 py-2 font-normal">Last used</th>
                   <th className="px-3 py-2 font-normal">Expires</th>
                   <th className="px-3 py-2" />
@@ -139,6 +144,9 @@ export default function TokensPage() {
                         ))}
                       </span>
                     </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {t.agents.length ? t.agents.map((a) => a.name).join(", ") : "—"}
+                    </td>
                     <td className="px-3 py-2 text-muted-foreground">{when(t.last_used_at, "Never")}</td>
                     <td className="px-3 py-2 text-muted-foreground">{when(t.expires_at, "Never")}</td>
                     <td className="px-3 py-2 text-right">
@@ -146,7 +154,7 @@ export default function TokensPage() {
                         variant="danger"
                         aria-label={`Revoke ${t.name}`}
                         onClick={async () => {
-                          if (!(await ask({ tone: "danger", icon: KeyRound, title: `Revoke ${t.name}?`, text: "Anything using it stops working.", ok: "Revoke" }))) return;
+                          if (!(await ask({ tone: "danger", icon: KeyRound, title: `Revoke ${t.name}?`, text: `Anything using it stops working.${unlinkWarning(t.agents.length)}`, ok: "Revoke" }))) return;
                           try {
                             await api(`/api/tokens/${t.id}`, { method: "DELETE" });
                             await client.invalidateQueries({ queryKey: qk.tokens() });
@@ -161,7 +169,7 @@ export default function TokensPage() {
                   </tr>
                 ))}
                 {tokens.data && active.length === 0 && (
-                  <tr><td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">No tokens yet.</td></tr>
+                  <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">No tokens yet.</td></tr>
                 )}
               </tbody>
             </table>
