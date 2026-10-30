@@ -12,6 +12,7 @@ const CHROME_WINDOWS = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/53
 const IPHONE_SAFARI = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
 
 type Env = {
+  oldKey?: boolean;
   devices?: object[];
   permission?: NotificationPermission;
   grant?: NotificationPermission;
@@ -21,7 +22,7 @@ type Env = {
 };
 
 /** A browser with (or without) push support, and the server's list of this person's devices. */
-function setup({ devices = [], permission = "default", grant = "granted", subscribed = false, push = true, userAgent = CHROME_WINDOWS }: Env = {}) {
+function setup({ oldKey = false, devices = [], permission = "default", grant = "granted", subscribed = false, push = true, userAgent = CHROME_WINDOWS }: Env = {}) {
   const calls: { method: string; url: string; body?: unknown }[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     calls.push({ method: init?.method ?? "GET", url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
@@ -30,14 +31,21 @@ function setup({ devices = [], permission = "default", grant = "granted", subscr
     if (url === "/api/push/subscriptions") return new Response(JSON.stringify({ id: "s1", endpoint: THIS, name: "Chrome on Windows", created_at: "2026-10-30T10:00:00Z" }), { status: 201 });
     return new Response(null, { status: 204 });
   }));
-  const subscription = { endpoint: THIS, unsubscribe: vi.fn(async () => true), toJSON: () => ({ endpoint: THIS, keys: { p256dh: "p", auth: "a" } }) };
+  const subscription = {
+    endpoint: THIS,
+    // made with the server's current key, or (oldKey) with one the server no longer has
+    options: { applicationServerKey: base64UrlToBytes(oldKey ? "OLDKEY" : "BKey").buffer },
+    unsubscribe: vi.fn(async () => true),
+    toJSON: () => ({ endpoint: THIS, keys: { p256dh: "p", auth: "a" } }),
+  };
   const subscribe = vi.fn(async () => subscription);
   const requestPermission = vi.fn(async () => grant);
   vi.stubGlobal("navigator", { ...navigator, userAgent, maxTouchPoints: 0 });
   if (push) {
+    const registration = { pushManager: { getSubscription: async () => (subscribed ? subscription : null), subscribe } };
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
-      value: { ready: Promise.resolve({ pushManager: { getSubscription: async () => (subscribed ? subscription : null), subscribe } }) },
+      value: { ready: Promise.resolve(registration), getRegistration: async () => registration },
     });
     vi.stubGlobal("PushManager", function PushManager() {});
     vi.stubGlobal("Notification", { permission, requestPermission });
@@ -80,6 +88,21 @@ describe("PushDevices", () => {
     setup({ grant: "denied" });
     await userEvent.click(await screen.findByRole("button", { name: "Turn on" }));
     expect(await screen.findByText("Your browser blocks notifications from MegooColab. Allow them in this site's settings, then reload the page.")).toBeTruthy();
+  });
+
+  it("keeps Turn on when the permission prompt is just dismissed", async () => {
+    setup({ grant: "default" });
+    await userEvent.click(await screen.findByRole("button", { name: "Turn on" }));
+    expect(await screen.findByRole("button", { name: "Turn on" })).toBeTruthy();
+    expect(screen.getByText("Push is off on this device")).toBeTruthy();
+    expect(screen.queryByText(/Your browser blocks notifications/)).toBeNull();
+  });
+
+  it("replaces a subscription made with an old server key", async () => {
+    const { subscribe, subscription } = setup({ subscribed: true, oldKey: true, permission: "granted" });
+    await userEvent.click(await screen.findByRole("button", { name: "Turn on" }));
+    await vi.waitFor(() => expect(subscribe).toHaveBeenCalled());
+    expect(subscription.unsubscribe).toHaveBeenCalled();
   });
 
   it("shows on, and turns off", async () => {

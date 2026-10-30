@@ -182,14 +182,53 @@ async def test_deliver_encrypts_and_signs_with_the_server_key(db, monkeypatch):
         text = ""
         headers: dict = {}
 
-    def post(url, data=None, headers=None, timeout=None, **kw):
+    def request(self, method, url, data=None, headers=None, **kw):
         seen.update(url=url, headers=headers, body=data)
         return Response()
 
-    monkeypatch.setattr(pywebpush.requests, "post", post)
+    monkeypatch.setattr(pywebpush.requests.Session, "request", request)
     assert await push_jobs.deliver(sub, json.dumps({"title": "t", "body": "b", "link": "/"}), keys) == 201
     assert seen["url"] == "https://push.example.com/abc"
     assert {k.lower(): v for k, v in seen["headers"].items()}["ttl"] == str(push_jobs.TTL_SECONDS)
     assert seen["headers"]["Authorization"].startswith("vapid t=")  # RFC 8292, signed with our key
     assert seen["headers"]["Authorization"].endswith(f"k={keys.public_key}")
     assert seen["body"] and b"PAY" not in seen["body"] and b'"title"' not in seen["body"]  # encrypted
+
+
+async def test_deliver_never_follows_redirects(db, monkeypatch):
+    """Final review C1: a redirect from a push service must not bounce the worker elsewhere."""
+    import base64
+
+    import requests
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    from app.push.keys import vapid_keys
+
+    browser = ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(
+        serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    b64 = lambda raw: base64.urlsafe_b64encode(raw).rstrip(b"=").decode()  # noqa: E731
+    sub = PushSubscription(user_id=(await make_user(db)).id, endpoint="https://fcm.googleapis.com/fcm/send/x",
+                           p256dh=b64(browser), auth=b64(b"0123456789abcdef"), name="Chrome on Windows")
+    keys = await vapid_keys(db)
+    await db.commit()
+    seen = {}
+
+    class Response:
+        status_code = 302
+        reason = "Found"
+        text = ""
+        content = b""
+        headers: dict = {}
+
+    def request(self, method, url, **kw):
+        seen.update(kw)
+        return Response()
+
+    def post(*a, **kw):
+        raise AssertionError("must send through the no-redirect session")
+
+    monkeypatch.setattr(requests.Session, "request", request)
+    monkeypatch.setattr(requests, "post", post)
+    assert await push_jobs.deliver(sub, "{}", keys) == 302
+    assert seen.get("allow_redirects") is False

@@ -48,7 +48,7 @@ async def test_register_moves_endpoint_to_new_user(client, client_factory, db):
     await login(client, a)
     other = client_factory()
     await login(other, b)
-    endpoint = f"https://push.example.com/{uuid.uuid4()}"
+    endpoint = f"https://fcm.googleapis.com/fcm/send/{uuid.uuid4()}"
     assert (await client.post(URL, json=_body(endpoint))).status_code == 201
     r = await other.post(URL, json=_body(endpoint, p256dh="BNew", auth="auth2"))
     assert r.status_code == 201
@@ -121,3 +121,36 @@ async def test_deactivation_deletes_subscriptions(client, client_factory, db):
 ])
 def test_device_names(ua, name):
     assert device_name(ua) == name
+
+
+@pytest.mark.parametrize("endpoint", [
+    "https://attacker.example.com/push",
+    "https://10.0.0.5/internal",
+    "https://fcm.googleapis.com.evil.io/x",
+    "https://user@fcm.googleapis.com/x",
+])
+async def test_rejects_endpoints_outside_the_push_services(client, db, endpoint):
+    """Final review C1: the worker POSTs to whatever is registered, so only the browsers' push services are allowed."""
+    await login(client, await make_user(db))
+    r = await client.post(URL, json=_body(endpoint))
+    assert r.status_code == 422 and r.json()["detail"] == "invalid_push_endpoint"
+
+
+@pytest.mark.parametrize("endpoint", [
+    "https://fcm.googleapis.com/fcm/send/abc",
+    "https://updates.push.services.mozilla.com/wpush/v2/abc",
+    "https://web.push.apple.com/QAbc",
+    "https://wns2-par02p.notify.windows.com/w/?token=abc",
+])
+async def test_accepts_the_browsers_push_services(client, db, endpoint):
+    await login(client, await make_user(db))
+    assert (await client.post(URL, json=_body(endpoint))).status_code == 201
+
+
+async def test_a_person_has_at_most_ten_devices(client, db):
+    """Final review C1: registering an eleventh device drops the one registered first."""
+    me = await make_user(db)
+    await login(client, me)
+    ids = [(await client.post(URL, json=_body())).json()["id"] for _ in range(11)]
+    left = {d["id"] for d in (await client.get(URL)).json()}
+    assert len(left) == 10 and ids[0] not in left and ids[-1] in left

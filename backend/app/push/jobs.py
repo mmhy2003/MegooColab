@@ -7,6 +7,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+import requests
 from py_vapid import Vapid02
 from pywebpush import WebPushException, webpush
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,14 @@ TIMEOUT_SECONDS = 10
 GONE = {403, 404, 410}  # uninstalled, data cleared, permission revoked, or subscribed with another key
 
 
+class _NoRedirects(requests.Session):
+    """A push service answers itself; a redirect is never followed (it could point anywhere, inside the network too)."""
+
+    def request(self, method, url, *args, **kwargs):
+        kwargs["allow_redirects"] = False
+        return super().request(method, url, *args, **kwargs)
+
+
 class PushRetry(Exception):
     """The push service is busy or failing: try this device again later."""
 
@@ -30,6 +39,7 @@ class PushRetry(Exception):
 async def deliver(sub: PushSubscription, payload: str, keys: VapidKeys) -> int:
     """POST one encrypted message to the device's push service; its HTTP status. A network error raises."""
     def send() -> int:
+        session = _NoRedirects()
         try:
             response = webpush(
                 subscription_info={"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth}},
@@ -38,11 +48,14 @@ async def deliver(sub: PushSubscription, payload: str, keys: VapidKeys) -> int:
                 vapid_claims={"sub": keys.subject},  # webpush adds aud and exp to the dict it is given
                 ttl=TTL_SECONDS,
                 timeout=TIMEOUT_SECONDS,
+                requests_session=session,
             )
         except WebPushException as exc:
             if exc.status_code is None:
                 raise
             return exc.status_code
+        finally:
+            session.close()
         return response.status_code
 
     return await asyncio.to_thread(send)

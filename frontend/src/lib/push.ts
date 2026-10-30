@@ -37,24 +37,42 @@ export function pushSupport(): "supported" | "unsupported" | "ios-install" {
   return supported ? "supported" : "unsupported";
 }
 
-async function currentSubscription(): Promise<PushSubscription | null> {
+/** The service worker's registration, if there is one (`ready` would wait for ever: it registers only in production,
+ * and a failed registration is silent). */
+async function registration(): Promise<ServiceWorkerRegistration | null> {
   if (pushSupport() !== "supported") return null;
-  const registration = await navigator.serviceWorker.ready;
-  return registration.pushManager.getSubscription();
+  return (await navigator.serviceWorker.getRegistration()) ?? null;
+}
+
+async function currentSubscription(): Promise<PushSubscription | null> {
+  return (await (await registration())?.pushManager.getSubscription()) ?? null;
+}
+
+function sameKey(subscription: PushSubscription, key: Uint8Array<ArrayBuffer>): boolean {
+  const used = subscription.options?.applicationServerKey;
+  if (!used) return false;
+  const bytes = new Uint8Array(used);
+  return bytes.length === key.length && bytes.every((b, i) => b === key[i]);
 }
 
 export async function thisDeviceEndpoint(): Promise<string | null> {
   return (await currentSubscription())?.endpoint ?? null;
 }
 
-/** Asks the browser (only now, after the click), subscribes with the server's key and registers this device. */
-export async function turnOnPush(): Promise<"on" | "blocked"> {
-  if ((await Notification.requestPermission()) !== "granted") return "blocked";
-  const { public_key } = await api<{ public_key: string }>("/api/push/key");
-  const registration = await navigator.serviceWorker.ready;
-  const subscription =
-    (await registration.pushManager.getSubscription())
-    ?? (await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(public_key) }));
+/** Asks the browser (only now, after the click), subscribes with the server's key and registers this device.
+ * "off": the prompt was dismissed, so it can be asked again. */
+export async function turnOnPush(): Promise<"on" | "off" | "blocked"> {
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return permission === "denied" ? "blocked" : "off";
+  const worker = await registration();
+  if (!worker) throw new Error("Push isn't ready in this browser yet. Reload the page and try again.");
+  const key = base64UrlToBytes((await api<{ public_key: string }>("/api/push/key")).public_key);
+  let subscription = await worker.pushManager.getSubscription();
+  if (subscription && !sameKey(subscription, key)) {
+    await subscription.unsubscribe(); // made with a key the server no longer has (SECRET_KEY changed): never delivered
+    subscription = null;
+  }
+  subscription ??= await worker.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
   const { endpoint, keys } = subscription.toJSON() as { endpoint: string; keys: { p256dh: string; auth: string } };
   await api("/api/push/subscriptions", { method: "POST", json: { endpoint, keys } });
   return "on";
@@ -70,8 +88,12 @@ export async function turnOffPush(id: string): Promise<void> {
 export async function forgetThisDevice(): Promise<void> {
   const subscription = await currentSubscription();
   if (!subscription) return;
-  const devices = await api<PushDevice[]>("/api/push/subscriptions");
-  const mine = devices.find((d) => d.endpoint === subscription.endpoint);
-  if (mine) await api(`/api/push/subscriptions/${mine.id}`, { method: "DELETE" });
-  await subscription.unsubscribe();
+  try {
+    const devices = await api<PushDevice[]>("/api/push/subscriptions");
+    const mine = devices.find((d) => d.endpoint === subscription.endpoint);
+    if (mine) await api(`/api/push/subscriptions/${mine.id}`, { method: "DELETE" });
+  } finally {
+    // even when the server can't be asked: an unsubscribed endpoint answers 410, and the server drops the row
+    await subscription.unsubscribe();
+  }
 }

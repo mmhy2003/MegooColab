@@ -1,5 +1,6 @@
 import re
 import uuid
+from urllib.parse import urlsplit
 
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,25 @@ _BROWSERS = (("Edge", r"Edg(e|A|iOS)?/"), ("Firefox", r"Firefox/|FxiOS/"), ("Chr
              ("Safari", r"Safari/"))
 _SYSTEMS = (("iPhone", r"iPhone"), ("iPad", r"iPad"), ("Android", r"Android"), ("Windows", r"Windows"),
             ("macOS", r"Mac OS X|Macintosh"), ("Linux", r"Linux|X11"))
+
+
+# the browsers' push services: the worker POSTs to a registered endpoint, so nothing else may be registered
+_PUSH_HOSTS = ("fcm.googleapis.com", "web.push.apple.com")  # Chrome, Edge (Android), Brave, Samsung...; Safari
+_PUSH_SUFFIXES = (".push.services.mozilla.com", ".push.apple.com", ".notify.windows.com")  # Firefox; Safari; Edge
+MAX_DEVICES = 10
+
+
+def is_push_service(endpoint: str) -> bool:
+    try:
+        url = urlsplit(endpoint)
+        port = url.port
+    except ValueError:
+        return False
+    host = (url.hostname or "").lower()
+    return (
+        url.scheme == "https" and url.username is None and port in (None, 443)
+        and (host in _PUSH_HOSTS or host.endswith(_PUSH_SUFFIXES))
+    )
 
 
 def device_name(user_agent: str | None) -> str:
