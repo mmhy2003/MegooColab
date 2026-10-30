@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, func
+from sqlalchemy import DateTime, ForeignKey, Index, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, IdMixin
@@ -18,8 +18,8 @@ class Kind(StrEnum):
     question_waiting = "question_waiting"
 
 
-# (in_app, email) when a user has not chosen
-DEFAULT_PREFS: dict[Kind, tuple[bool, bool]] = {k: (True, k != Kind.question_waiting) for k in Kind}
+# (in_app, email, push) when a user has not chosen; push stays off until the person ticks it
+DEFAULT_PREFS: dict[Kind, tuple[bool, bool, bool]] = {k: (True, k != Kind.question_waiting, False) for k in Kind}
 
 
 class Notification(IdMixin, Base):
@@ -44,3 +44,4 @@ class NotificationPref(Base):
     kind: Mapped[Kind] = mapped_column(String(30), primary_key=True)
     in_app: Mapped[bool]
     email: Mapped[bool]
+    push: Mapped[bool] = mapped_column(default=False, server_default=false())

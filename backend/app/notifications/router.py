@@ -61,9 +61,10 @@ async def mark_all_read(user: AuthedUser, db: DbSession) -> Response:
 
 
 async def _prefs_out(db, user_id: uuid.UUID) -> list[NotificationPrefIO]:
-    chosen = {p.kind: (p.in_app, p.email) for p in (await db.execute(
+    chosen = {p.kind: (p.in_app, p.email, p.push) for p in (await db.execute(
         select(NotificationPref).where(NotificationPref.user_id == user_id))).scalars()}
-    return [NotificationPrefIO(kind=k, in_app=v[0], email=v[1]) for k in Kind for v in [chosen.get(k, DEFAULT_PREFS[k])]]
+    return [NotificationPrefIO(kind=k, in_app=v[0], email=v[1], push=v[2])
+            for k in Kind for v in [chosen.get(k, DEFAULT_PREFS[k])]]
 
 
 @router.get("/api/me/notification-preferences")
@@ -75,11 +76,12 @@ async def get_preferences(user: AuthedUser, db: DbSession) -> list[NotificationP
 async def put_preferences(body: list[NotificationPrefIO], user: AuthedUser, db: DbSession) -> list[NotificationPrefIO]:
     """Kinds left out keep what they had."""
     for p in body:
-        stmt = insert(NotificationPref).values(user_id=user.id, kind=p.kind, in_app=p.in_app, email=p.email)
+        stmt = insert(NotificationPref).values(user_id=user.id, kind=p.kind, in_app=p.in_app, email=p.email,
+                                               push=p.push)
         await db.execute(stmt.on_conflict_do_update(index_elements=["user_id", "kind"],
-                                                    set_={"in_app": p.in_app, "email": p.email}))
+                                                    set_={"in_app": p.in_app, "email": p.email, "push": p.push}))
     if body:
         await audit.record(db, "notification.preferences_changed", actor_id=user.id, target_type="user",
-                           target_id=user.id, data={p.kind.value: {"in_app": p.in_app, "email": p.email} for p in body})
+                           target_id=user.id, data={p.kind.value: {"in_app": p.in_app, "email": p.email, "push": p.push} for p in body})
     await db.commit()
     return await _prefs_out(db, user.id)

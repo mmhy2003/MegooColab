@@ -43,9 +43,12 @@ async def readable_by(db: AsyncSession, user: User, *, task_id: uuid.UUID | None
     return allowed is None or project_id in allowed
 
 
-async def preferences(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind) -> dict[uuid.UUID, tuple[bool, bool]]:
+async def preferences(
+    db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind
+) -> dict[uuid.UUID, tuple[bool, bool, bool]]:
+    """(in_app, email, push) per user for this kind."""
     ids = list(user_ids)
-    chosen = {p.user_id: (p.in_app, p.email) for p in (await db.execute(
+    chosen = {p.user_id: (p.in_app, p.email, p.push) for p in (await db.execute(
         select(NotificationPref).where(NotificationPref.user_id.in_(ids), NotificationPref.kind == kind))).scalars()}
     return {uid: chosen.get(uid, DEFAULT_PREFS[kind]) for uid in ids}
 
@@ -81,7 +84,7 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
     mail = await get_mailer(db) is not None
     created = 0
     for user in recipients:
-        in_app, email = prefs[user.id]
+        in_app, email, _push = prefs[user.id]
         if in_app:
             db.add(Notification(user_id=user.id, kind=kind, title=title, body=body, link=link, task_id=task_id,
                                 project_id=project_id))
