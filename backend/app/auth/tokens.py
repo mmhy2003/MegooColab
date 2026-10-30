@@ -69,8 +69,11 @@ async def resolve_bearer(
 
 
 async def revoke_token(db: AsyncSession, token: PersonalAccessToken) -> None:
+    from app.agents.service import unlink_tokens  # local: the agents service imports far more than auth may
+
     if token.revoked_at is None:
         token.revoked_at = now()
+    await unlink_tokens(db, token.user_id, [token.id])
     # open runner sockets re-check their token
     await publish(db, Event(type="tokens.revoked", user_id=token.user_id))
 
@@ -81,4 +84,7 @@ async def revoke_user_tokens(db: AsyncSession, user_id: uuid.UUID) -> None:
         .where(PersonalAccessToken.user_id == user_id, PersonalAccessToken.revoked_at.is_(None))
         .values(revoked_at=now())
     )
+    from app.agents.service import unlink_tokens  # local, as in revoke_token
+
+    await unlink_tokens(db, user_id, None)
     await publish(db, Event(type="tokens.revoked", user_id=user_id))

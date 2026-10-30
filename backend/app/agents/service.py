@@ -3,13 +3,14 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import ColumnElement, or_, select
+from sqlalchemy import ColumnElement, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agents.models import Agent, AgentBinding, AgentProgram
-from app.agents.schemas import AdminAgentOut, AgentOut, BindingOut, ProjectAgentOut, RunnerInfo
-from app.auth.models import Role, User
+from app.agents.schemas import AdminAgentOut, AgentOut, BindingOut, MachineOut, ProjectAgentOut, RunnerInfo
+from app.auth.models import PersonalAccessToken, Role, TokenScope, User
+from app.auth.service import now
 from app.auth.schemas import UserOut
 from app.core.events import Event, publish
 from app.projects.access import (
@@ -91,6 +92,44 @@ async def has_active_runs(db: AsyncSession, agent_id: uuid.UUID) -> bool:
             select(AgentRun.id).where(AgentRun.agent_id == agent_id, AgentRun.status.in_(ACTIVE_STATUSES)).limit(1)
         )
     ) is not None
+
+
+async def has_running_runs(db: AsyncSession, agent_id: uuid.UUID) -> bool:
+    """True if the agent has a running run: it is at work on its machine right now."""
+    return (
+        await db.scalar(
+            select(AgentRun.id).where(AgentRun.agent_id == agent_id, AgentRun.status == RunStatus.running).limit(1)
+        )
+    ) is not None
+
+
+async def check_runner_token(db: AsyncSession, owner_id: uuid.UUID, token_id: uuid.UUID) -> None:
+    """An agent may be linked only to its owner's own live runner token."""
+    token = await db.get(PersonalAccessToken, token_id)
+    if (
+        token is None
+        or token.user_id != owner_id
+        or str(TokenScope.runner) not in token.scopes
+        or token.revoked_at is not None
+        or (token.expires_at is not None and token.expires_at <= now())
+    ):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "runner_token_invalid")
+
+
+async def unlink_tokens(db: AsyncSession, owner_id: uuid.UUID, token_ids: list[uuid.UUID] | None) -> None:
+    """Revoked tokens: their agents become unlinked (None: every token of the owner)."""
+    linked = Agent.runner_token_id.in_(token_ids) if token_ids is not None else Agent.runner_token_id.is_not(None)
+    agent_ids = (
+        await db.execute(
+            update(Agent).where(Agent.owner_id == owner_id, linked).values(runner_token_id=None).returning(Agent.id)
+        )
+    ).scalars().all()
+    if not agent_ids:
+        return
+    projects: set[uuid.UUID] = set()
+    for agent_id in agent_ids:
+        projects |= await bound_project_ids(db, agent_id)
+    await publish_agents_updated(db, owner_id, projects)
 
 
 async def has_active_workflows(db: AsyncSession, agent_id: uuid.UUID) -> bool:
@@ -177,6 +216,12 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
         ).scalars()
     }
     owner_of = {a.id: a.owner_id for a in agents}
+    token_ids = {a.runner_token_id for a in agents if a.runner_token_id is not None}
+    tokens = (
+        {t.id: t for t in (await db.execute(select(PersonalAccessToken).where(PersonalAccessToken.id.in_(token_ids)))).scalars()}
+        if token_ids
+        else {}
+    )
     statuses = await agent_statuses(db, list(owner_of.items()))
     allowed = await accessible_project_ids(db, viewer)
     rows = await db.execute(
@@ -208,9 +253,18 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "problems": agent_problems(a.id, a.owner_id, viewer),
             "bindings": bindings.get(a.id, []),
             "runner": runner_info(a.owner_id),
+            "machine": _machine(tokens.get(a.runner_token_id), a.owner_id, viewer),
         }
         for a in agents
     ]
+
+
+def _machine(token: PersonalAccessToken | None, owner_id: uuid.UUID, viewer: User) -> MachineOut | None:
+    if token is None or (viewer.id != owner_id and viewer.role != Role.admin):
+        return None
+    return MachineOut(
+        token_id=token.id, name=token.name, expired=token.expires_at is not None and token.expires_at <= now()
+    )
 
 
 async def agents_out(db: AsyncSession, agents: list[Agent], viewer: User) -> list[AgentOut]:

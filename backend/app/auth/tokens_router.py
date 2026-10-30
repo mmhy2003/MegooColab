@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
+from app.agents.models import Agent
 from app.audit import service as audit
 from app.auth import tokens
 from app.auth.deps import AuthedUser, bearer_token, current_session
@@ -34,6 +35,11 @@ async def token_self(request: Request, db: DbSession) -> TokenSelfOut:
     return TokenSelfOut(scopes=[TokenScope(s) for s in resolved[1].scopes])
 
 
+class TokenAgentOut(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
 class TokenOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,6 +51,7 @@ class TokenOut(BaseModel):
     last_used_at: datetime | None
     created_at: datetime
     revoked_at: datetime | None
+    agents: list[TokenAgentOut] = []  # the agents linked to it (their machine's token)
 
 
 class CreateTokenIn(BaseModel):
@@ -66,8 +73,15 @@ async def list_tokens(user: AuthedUser, db: DbSession) -> list[TokenOut]:
             .where(PersonalAccessToken.user_id == user.id)
             .order_by(PersonalAccessToken.created_at.desc())
         )
-    ).scalars()
-    return [TokenOut.model_validate(r) for r in rows]
+    ).scalars().all()
+    linked: dict[uuid.UUID, list[TokenAgentOut]] = {}
+    for agent_id, name, token_id in await db.execute(
+        select(Agent.id, Agent.name, Agent.runner_token_id)
+        .where(Agent.owner_id == user.id, Agent.runner_token_id.is_not(None))
+        .order_by(Agent.name)
+    ):
+        linked.setdefault(token_id, []).append(TokenAgentOut(id=agent_id, name=name))
+    return [TokenOut.model_validate(r).model_copy(update={"agents": linked.get(r.id, [])}) for r in rows]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

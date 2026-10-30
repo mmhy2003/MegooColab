@@ -24,6 +24,10 @@ project_agents_router = APIRouter(prefix="/api/projects", tags=["agents"])
 admin_router = APIRouter(prefix="/api/admin/agents", tags=["agents"])
 
 
+def _str(value: uuid.UUID | None) -> str | None:
+    return str(value) if value is not None else None
+
+
 async def _flush_unique_name(db: DbSession) -> None:
     try:
         await db.flush()
@@ -42,15 +46,18 @@ async def my_agents(user: AuthedUser, db: DbSession) -> list[AgentOut]:
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_agent(body: AgentIn, user: AuthedUser, db: DbSession) -> AgentOut:
     name = (body.name or "").strip() or service.default_agent_name(user, body.program)
+    if body.runner_token_id is not None:
+        await service.check_runner_token(db, user.id, body.runner_token_id)
     agent = Agent(
         owner_id=user.id, name=name, program=body.program,
         answer_mode=body.answer_mode, max_concurrent_runs=body.max_concurrent_runs,
+        runner_token_id=body.runner_token_id,
     )
     db.add(agent)
     await _flush_unique_name(db)
     await audit.record(
         db, "agent.created", actor_id=user.id, target_type="agent", target_id=agent.id,
-        data={"name": agent.name, "program": agent.program},
+        data={"name": agent.name, "program": agent.program, "runner_token_id": _str(agent.runner_token_id)},
     )
     await service.publish_agents_updated(db, user.id, set())
     return (await service.agents_out(db, [agent], user))[0]
@@ -68,6 +75,17 @@ async def update_agent(agent_id: uuid.UUID, body: AgentPatch, user: AuthedUser, 
         agent.answer_mode = body.answer_mode
     if body.max_concurrent_runs is not None:
         agent.max_concurrent_runs = body.max_concurrent_runs
+    if "runner_token_id" in body.model_fields_set and body.runner_token_id != agent.runner_token_id:
+        # a running run belongs to the machine it was sent to: moving the agent would orphan it
+        if await service.has_running_runs(db, agent.id):
+            raise HTTPException(status.HTTP_409_CONFLICT, "agent_running")
+        if body.runner_token_id is not None:
+            await service.check_runner_token(db, user.id, body.runner_token_id)
+        agent.runner_token_id = body.runner_token_id
+        await audit.record(
+            db, "agent.machine_changed", actor_id=user.id, target_type="agent", target_id=agent.id,
+            data={"runner_token_id": _str(agent.runner_token_id)},
+        )
     await _flush_unique_name(db)
     await service.publish_agents_updated(db, user.id, await service.bound_project_ids(db, agent.id))
     return (await service.agents_out(db, [agent], user))[0]
