@@ -88,3 +88,70 @@ describe("Header", () => {
     expect(bell).toHaveFocus();
   });
 });
+
+describe("Header sign-out", () => {
+  it("forgets this device's push subscription before signing out", async () => {
+    const endpoint = "https://fcm.googleapis.com/fcm/send/this-device";
+    const unsubscribe = vi.fn(async () => true);
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: { getRegistration: async () => ({ pushManager: { getSubscription: async () => ({ endpoint, unsubscribe }) } }) },
+    });
+    vi.stubGlobal("PushManager", function PushManager() {});
+    vi.stubGlobal("Notification", { permission: "granted" });
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(`${init?.method ?? "GET"} ${url}`);
+      if (url === "/api/push/subscriptions" && !init?.method) {
+        return new Response(JSON.stringify([{ id: "s1", endpoint, name: "Chrome on Windows", created_at: "2026-10-30T10:00:00Z" }]), { status: 200 });
+      }
+      return new Response(JSON.stringify(url.includes("unread-count") ? { count: 0 } : []), { status: 200 });
+    }));
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    renderHeader();
+    await userEvent.click(screen.getByRole("button", { name: /Ahmed/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /Sign out/ }));
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/login"));
+    expect(calls.indexOf("DELETE /api/push/subscriptions/s1")).toBeGreaterThan(-1);
+    expect(calls.indexOf("DELETE /api/push/subscriptions/s1")).toBeLessThan(calls.indexOf("POST /api/auth/logout"));
+    expect(unsubscribe).toHaveBeenCalled();
+    Reflect.deleteProperty(navigator, "serviceWorker");
+  });
+});
+
+describe("Header sign-out without push", () => {
+  function signOutWith(serviceWorker: object, list: () => Response) {
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: serviceWorker });
+    vi.stubGlobal("PushManager", function PushManager() {});
+    vi.stubGlobal("Notification", { permission: "granted" });
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) =>
+      url === "/api/push/subscriptions" && !init?.method
+        ? list()
+        : new Response(JSON.stringify(url.includes("unread-count") ? { count: 0 } : []), { status: 200 })));
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    return assign;
+  }
+
+  afterEach(() => Reflect.deleteProperty(navigator, "serviceWorker"));
+
+  it("signs out when no service worker is registered (its ready never settles)", async () => {
+    const assign = signOutWith({ getRegistration: async () => undefined, ready: new Promise(() => {}) }, () => new Response("[]"));
+    renderHeader();
+    await userEvent.click(screen.getByRole("button", { name: /Ahmed/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /Sign out/ }));
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/login"));
+  });
+
+  it("still unsubscribes this device when the server can't be asked", async () => {
+    const unsubscribe = vi.fn(async () => true);
+    const registration = { pushManager: { getSubscription: async () => ({ endpoint: "https://fcm.googleapis.com/x", unsubscribe }) } };
+    const assign = signOutWith({ getRegistration: async () => registration }, () => new Response("down", { status: 500 }));
+    renderHeader();
+    await userEvent.click(screen.getByRole("button", { name: /Ahmed/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /Sign out/ }));
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/login"));
+    expect(unsubscribe).toHaveBeenCalled();
+  });
+});

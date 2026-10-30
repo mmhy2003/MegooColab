@@ -21,8 +21,7 @@ async def test_agents_are_ordered_working_idle_offline(client, db, world, monkey
     await db.commit()
     task = await add_task(db, world.pay)
     await add_run(db, world.agent, task=task, status="running", started_at=datetime.now(UTC))
-    monkeypatch.setattr(registry, "available_agents",
-                        lambda owner: {idle.id} if owner == world.pay_manager.id else set())
+    monkeypatch.setattr(registry, "is_available", lambda agent_id: agent_id == idle.id)
     await login(client, world.viewer)
     body = await dash(client)
     assert [(a["name"], a["status"], a["runs_today"]) for a in body["agents"]] == [
@@ -108,7 +107,7 @@ async def test_an_agent_busy_only_outside_the_scope_is_working_elsewhere(client,
     db.add(AgentBinding(agent_id=world.agent.id, project_id=world.web.id, local_path="/w/web"))
     await db.commit()
     await add_run(db, world.agent, task=await add_task(db, world.web), started_at=datetime.now(UTC))
-    monkeypatch.setattr(registry, "available_agents", lambda owner: set())
+    monkeypatch.setattr(registry, "is_available", lambda agent_id: False)
     await login(client, world.viewer)
     body = await dash(client)
     [row] = [a for a in body["agents"] if a["name"] == "Viewer bot"]

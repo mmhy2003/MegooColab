@@ -21,6 +21,7 @@ from app.tasks.models import Task
 from app.workflow.models import DocKind, DocStatus, WorkflowDocument
 from tests.agent_runs.test_dispatch import (
     _avail,
+    _fake_conn,
     _FakeSocket,
     _offline_runs,
     _setup,
@@ -258,10 +259,7 @@ async def _dispatch_one(client, db, role: str, *, commit_docs: bool = False) -> 
         await db.execute(update(Project).values(commit_docs_to_repo=True))
         await db.commit()
     sock = _FakeSocket()
-    conn = RunnerConn(me.id, sock)
-    conn.set_availability(uuid.UUID(agent["id"]), True, [])
-    conn.capabilities = {"workflow/1", "branch/1"}
-    registry._conns[me.id] = conn
+    await _fake_conn(me, agent, sock)  # a current runner, its machine linked to the agent
     try:
         async with SessionLocal() as s:
             await dispatch_pending(s, me.id)
@@ -301,10 +299,7 @@ async def test_finish_run_with_commit_docs_gets_repo_files(client, db):
 async def test_failed_send_requeues_and_clears_token(client, db):
     me, agent, runs = await _offline_runs(client, db)
     await _make_workflow(db, runs[0]["id"])
-    conn = RunnerConn(me.id, _FakeSocket(fail=True))
-    conn.set_availability(uuid.UUID(agent["id"]), True, [])
-    conn.capabilities = {"workflow/1", "branch/1"}
-    registry._conns[me.id] = conn
+    await _fake_conn(me, agent, _FakeSocket(fail=True))
     try:
         async with SessionLocal() as s:
             await dispatch_pending(s, me.id)
@@ -320,10 +315,7 @@ async def test_oversized_documents_fail_the_run_without_a_token(client, db):
     await _make_workflow(db, runs[0]["id"])
     await _docs(db, 1, [("design", 1, "approved", "é" * 600_000), ("plan", 1, "approved", "é" * 600_000)])
     sock = _FakeSocket()
-    conn = RunnerConn(me.id, sock)
-    conn.set_availability(uuid.UUID(agent["id"]), True, [])
-    conn.capabilities = {"workflow/1", "branch/1"}
-    registry._conns[me.id] = conn
+    await _fake_conn(me, agent, sock)  # a current runner, its machine linked to the agent
     try:
         async with SessionLocal() as s:
             await dispatch_pending(s, me.id)
@@ -458,7 +450,8 @@ async def test_runner_problems_visible_to_owner_and_admins_only(db):
 
     owner, admin, other = await make_user(db), await make_user(db, role=Role.admin), await make_user(db)
     agent_id = uuid.uuid4()
-    conn = RunnerConn(owner.id, _FakeSocket())
+    conn = RunnerConn(owner.id, owner.id, _FakeSocket())
+    conn.owned_agents.add(agent_id)
     conn.set_availability(agent_id, False, ["claude not installed"])
     registry._conns[owner.id] = conn
     try:

@@ -2,6 +2,8 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { expect, type APIRequestContext } from "@playwright/test";
+
 const WIN = process.platform === "win32";
 const EXE = WIN ? ".exe" : "";
 const REPO_ROOT = resolve(__dirname, "..", "..", "..");
@@ -122,4 +124,15 @@ export function readReports(dir: string): FakeAgentReport[] {
     // by the start time in ns (too big for a Number): as equal-length strings
     .sort((a, b) => (a.split("-")[1].padStart(24, "0") < b.split("-")[1].padStart(24, "0") ? -1 : 1))
     .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as FakeAgentReport);
+}
+
+/** A runner token whose runner runs the agent: an agent works only on the machine of the token it is linked to. */
+export async function mintLinkedRunnerToken(request: APIRequestContext, agentId: string, name: string): Promise<string> {
+  const headers = { "X-Megoo-Client": "web" };
+  const minted = await request.post("/api/tokens", { data: { name, scopes: ["runner"] }, headers });
+  expect(minted.ok(), await minted.text()).toBeTruthy();
+  const { token, secret } = (await minted.json()) as { token: { id: string }; secret: string };
+  const linked = await request.patch(`/api/agents/${agentId}`, { data: { runner_token_id: token.id }, headers });
+  expect(linked.ok(), await linked.text()).toBeTruthy();
+  return secret;
 }

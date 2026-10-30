@@ -87,7 +87,7 @@ async def test_routing_does_not_double_book_a_slot(client, db):
     agent = await _agent(client, m1, max_runs=1)
     q1 = await _ask_in_own_session(asker, body="First?")  # no runner yet: both stay queued
     q2 = await _ask_in_own_session(asker, body="Second?")
-    _online(m1, agent)
+    await _online(m1, agent)
     try:
         async with SessionLocal() as first, SessionLocal() as second:
             assert await routing.route_question(first, q1) is not None  # the slot, not yet committed

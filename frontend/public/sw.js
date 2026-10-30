@@ -46,3 +46,24 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+// web push: a MegooColab notification, shown with its title and text; repeats about the same page replace each other
+self.addEventListener("push", (event) => {
+  const { title, body, link } = event.data ? event.data.json() : { title: "MegooColab", body: "", link: "/" };
+  event.waitUntil(
+    self.registration.showNotification(title, { body, icon: "/icons/icon-192.png", tag: link, data: { link } }),
+  );
+});
+
+// tapping it opens its page: in a MegooColab window already open, or a new one
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const link = (event.notification.data && event.notification.data.link) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      const open = windows.find((w) => w.url.startsWith(self.location.origin));
+      if (open) return open.navigate(self.location.origin + link).then(() => open.focus());
+      return self.clients.openWindow(link);
+    }),
+  );
+});

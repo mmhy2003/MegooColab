@@ -29,6 +29,10 @@ class Agent(IdMixin, Base):
     program: Mapped[AgentProgram] = mapped_column(String(20))
     answer_mode: Mapped[AnswerMode] = mapped_column(String(20), default=AnswerMode.manual)
     max_concurrent_runs: Mapped[int] = mapped_column(default=1)
+    # the token of the machine whose runner runs this agent; None: unlinked, so no runner takes it
+    runner_token_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("personal_access_tokens.id", ondelete="SET NULL"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

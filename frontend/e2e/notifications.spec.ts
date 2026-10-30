@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
-import { buildBinaries, mcp, onPrompt, startRunner, type RunnerHandle } from "./helpers/runner";
+import { buildBinaries, mcp, onPrompt, mintLinkedRunnerToken, startRunner, type RunnerHandle } from "./helpers/runner";
 import { pickAssignee } from "./helpers/assignee";
 
 /**
@@ -144,7 +144,7 @@ test("notifications reach the right people", async ({ browser }) => {
     headers: WEB,
   });
   expect(bound.ok(), await bound.text()).toBeTruthy();
-  const token = (await post<{ secret: string }>(request, "/api/tokens", { name: "Notify runner", scopes: ["runner"] })).secret;
+  const token = await mintLinkedRunnerToken(request, agent.id, "Notify runner");
   leftovers.runner = startRunner({
     url: BASE,
     token,

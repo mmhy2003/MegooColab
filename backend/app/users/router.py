@@ -18,6 +18,7 @@ from app.core.email import Mailer, get_mailer
 from app.core.events import Event, publish
 from app.core.security import hash_password
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
+from app.push.service import delete_user_subscriptions
 from app.users import service as users_service
 from app.users.schemas import (
     CreateUserIn,
@@ -140,6 +141,7 @@ async def deactivate_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -
     user.status = UserStatus.deactivated
     await auth_service.revoke_user_sessions(db, user.id)
     await auth_tokens.revoke_user_tokens(db, user.id)
+    await delete_user_subscriptions(db, user.id)
     await cancel_user_runs(db, user.id)
     await audit.record(db, "user.deactivated", actor_id=admin.id, target_type="user", target_id=user.id)
     await publish(db, Event(type="user.deactivated", user_id=user.id))

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
-import { buildBinaries, mcp, onPrompt, startRunner, type RunnerHandle } from "./helpers/runner";
+import { buildBinaries, mcp, onPrompt, mintLinkedRunnerToken, startRunner, type RunnerHandle } from "./helpers/runner";
 
 /**
  * End-to-end test of Plan 6, agent-to-agent questions: QAA-1 asks project QBB about its code with no runner
@@ -134,7 +134,7 @@ test("a question answered across projects", async ({ browser }) => {
     headers: WEB,
   });
   expect(bound.ok(), await bound.text()).toBeTruthy();
-  const runnerToken = (await post<{ secret: string }>(request, "/api/tokens", { name: "Questions runner", scopes: ["runner"] })).secret;
+  const runnerToken = await mintLinkedRunnerToken(request, agent.id, "Questions runner");
 
   // 1. no runner: asked from QAA-1 in the UI, the question waits, and QAA-1 waits on QBB
   await page.goto("/projects/QAA/board?task=QAA-1");

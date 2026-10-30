@@ -72,6 +72,6 @@ async def test_an_agent_carries_its_runners_version(client, db, monkeypatch):
 
     assert await views() == [None] * 3  # offline
     live = SimpleNamespace(version="0.1.0", os="windows", problems={}, capabilities={"workflow/1", "branch/1"})
-    monkeypatch.setattr(registry, "conn_for_user", lambda user_id: live if user_id == me.id else None)
-    monkeypatch.setattr(registry, "available_agents", lambda user_id: set())
+    monkeypatch.setattr(registry, "conn_for_agent", lambda agent_id: live if str(agent_id) == agent["id"] else None)
+    monkeypatch.setattr(registry, "is_available", lambda agent_id: False)
     assert await views() == [{"version": "0.1.0", "os": "windows"}] * 3

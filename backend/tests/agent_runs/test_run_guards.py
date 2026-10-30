@@ -198,7 +198,7 @@ async def test_queued_run_of_an_ex_member_fails_instead_of_being_sent(client, db
     me, agent, runs = await _offline_runs(client, db)
     await _drop_from_teams(db, me)
     sock = _FakeSocket()
-    _fake_conn(me, agent, sock)
+    await _fake_conn(me, agent, sock)
     try:
         await _dispatch_in_own_session(me.id)
     finally:
@@ -250,7 +250,7 @@ async def test_dispatch_skips_a_queued_run_whose_task_is_already_running(client,
                     requested_by=row.requested_by, policy="read_only", prompt="again"))
     await db.commit()
     sock = _FakeSocket()
-    _fake_conn(me, agent, sock)
+    await _fake_conn(me, agent, sock)
     try:
         await _dispatch_in_own_session(me.id)
     finally:
@@ -266,7 +266,7 @@ async def test_dispatch_skips_a_queued_run_whose_task_is_already_running(client,
 
 async def test_every_agent_run_event_carries_the_agent_id(client, db):
     me, agent, runs = await _offline_runs(client, db, n=3, max_runs=3)
-    conn = _fake_conn(me, agent, _FakeSocket())
+    conn = await _fake_conn(me, agent, _FakeSocket())
     try:
         await _dispatch_in_own_session(me.id)  # started x3
         registry._conns.pop(me.id, None)

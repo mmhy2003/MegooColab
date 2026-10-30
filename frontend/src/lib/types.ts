@@ -31,6 +31,7 @@ export type AuditEntry = S["AuditOut"];
 export type AdminSettings = S["AdminSettingsOut"];
 export type Agent = S["AgentOut"];
 export type RunnerInfo = S["RunnerInfo"];
+export type Machine = S["MachineOut"];
 export type Updates = S["UpdatesOut"];
 export type AgentProgram = S["AgentProgram"];
 export type AnswerMode = S["AnswerMode"];

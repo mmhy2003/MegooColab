@@ -143,7 +143,9 @@ async def _lock_question_of(db: AsyncSession, question_id: uuid.UUID | None) -> 
         await db.execute(select(Question.id).where(Question.id == question_id).with_for_update())
 
 
-async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> AgentRun | None:
+async def _claim_next(
+    db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID, token_id: uuid.UUID
+) -> AgentRun | None:
     """Under the agent lock, mark its oldest queued run running and COMMIT, if a slot is free.
 
     The agent row is locked FOR NO KEY UPDATE (serialises concurrent dispatches so max_concurrent_runs
@@ -153,7 +155,9 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
     agent = (
         await db.execute(
             select(Agent)
-            .where(Agent.id == agent_id, Agent.owner_id == owner_id)
+            # the agent's link decides, under its lock: a machine whose welcome still lists an agent that was
+            # just linked elsewhere must not be given its run
+            .where(Agent.id == agent_id, Agent.owner_id == owner_id, Agent.runner_token_id == token_id)
             .with_for_update(key_share=True)
             .execution_options(populate_existing=True)
         )
@@ -170,8 +174,8 @@ async def _claim_next(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID
     if agent.max_concurrent_runs > (running or 0):
         # a runner without workflow/1 leaves workflow and answering runs queued (they need the MCP run token); one
         # without branch/1 leaves every task run queued (it would start the task's branch from whatever is checked out)
-        workflow = registry.supports(owner_id, WORKFLOW_CAPABILITY)
-        branch = registry.supports(owner_id, BRANCH_CAPABILITY)
+        workflow = registry.agent_supports(agent.id, WORKFLOW_CAPABILITY)
+        branch = registry.agent_supports(agent.id, BRANCH_CAPABILITY)
         task_run = AgentRun.question_id.is_(None)
         runnable = and_(
             true() if workflow else and_(AgentRun.workflow_role.is_(None), task_run),
@@ -383,8 +387,7 @@ async def dispatch_pending(db: AsyncSession, owner_id: uuid.UUID) -> None:
 
     Commits the session it is given (claim, then send, then record), so call it with a session of its own.
     """
-    conn = registry.conn_for_user(owner_id)
-    if conn is not None:
+    for conn in registry.conns_for_user(owner_id):  # each of the owner's machines
         await _send_pending(db, conn, owner_id)
     # a run that could not be started ends here, and its question may have gone to another owner's agent
     from app.workflow import engine  # local: the engine imports this module
@@ -395,7 +398,7 @@ async def dispatch_pending(db: AsyncSession, owner_id: uuid.UUID) -> None:
 async def _send_pending(db: AsyncSession, conn: RunnerConn, owner_id: uuid.UUID) -> None:
     for agent_id in sorted(conn.available):
         while True:
-            run = await _claim_next(db, agent_id, owner_id)
+            run = await _claim_next(db, agent_id, owner_id, conn.token_id)
             if run is None:
                 break
             if not await _send_start(db, conn, agent_id, run):
@@ -433,8 +436,8 @@ async def cancel_run(db: AsyncSession, user: User, run: AgentRun) -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, "run_not_active")
     run.cancelled_by = user.id  # the actor of the cancelled event, whenever the run is closed
     if run.status == RunStatus.running:
-        conn = registry.conn_for_user(agent.owner_id)
-        if conn is not None and run.id in conn.run_ids:
+        conn = registry.conn_for_run(run.id)
+        if conn is not None:
             try:
                 await conn.send(RunCancel(run_id=run.id))
                 return
@@ -473,8 +476,12 @@ async def fail_disconnected_runs(db: AsyncSession, conn: RunnerConn) -> None:
     """The runner is gone: its running runs fail with runner_disconnected, or, if the server closed the
     socket because the token or user was revoked (4401), are cancelled with runner_unauthorized. If a newer
     connection already took over, only the runs this connection was given are touched."""
-    superseded = registry.conn_for_user(conn.user_id) is not None
-    async for run, owner_id in _lock_runs_one_by_one(db, (RunStatus.running,), Agent.owner_id == conn.user_id):
+    superseded = registry.conn_for_token(conn.token_id) is not None
+    # this machine's runs: its agents', and the ones it was given (a revoke unlinks the agents before the close)
+    mine = or_(Agent.runner_token_id == conn.token_id, AgentRun.id.in_(conn.run_ids))
+    async for run, owner_id in _lock_runs_one_by_one(
+        db, (RunStatus.running,), Agent.owner_id == conn.user_id, mine
+    ):
         if superseded and run.id not in conn.run_ids:
             continue
         if run.cancelled_by is not None:  # a user asked for the cancel: the runner going away completes it
@@ -508,19 +515,33 @@ async def _notify_offline(db: AsyncSession, run: AgentRun) -> None:
 
 
 async def fail_unclaimed_runs(db: AsyncSession, conn: RunnerConn) -> None:
-    """On hello: running runs of this user that this connection was not given (left over from a server
-    restart or an earlier connection) can never finish, so they fail with runner_disconnected."""
-    async for run, owner_id in _lock_runs_one_by_one(db, (RunStatus.running,), Agent.owner_id == conn.user_id):
+    """On hello: running runs of this machine's agents that this connection was not given (left over from a
+    server restart or an earlier connection) can never finish, so they fail with runner_disconnected."""
+    async for run, owner_id in _lock_runs_one_by_one(
+        db, (RunStatus.running,), Agent.owner_id == conn.user_id, Agent.runner_token_id == conn.token_id
+    ):
         if run.id in conn.run_ids:
             continue
-        if run.cancelled_by is not None:
-            await _transition(
-                db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, actor_id=run.cancelled_by
-            )
-        else:
-            await _transition(
-                db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
-            )
+        await _end_lost_run(db, run, owner_id)
+
+
+async def fail_orphaned_runs(db: AsyncSession) -> None:
+    """At startup: running runs of unlinked agents (left over from before agents had machines) can never be
+    claimed by a runner, so they fail with runner_disconnected."""
+    async for run, owner_id in _lock_runs_one_by_one(db, (RunStatus.running,), Agent.runner_token_id.is_(None)):
+        await _end_lost_run(db, run, owner_id)
+
+
+async def _end_lost_run(db: AsyncSession, run: AgentRun, owner_id: uuid.UUID) -> None:
+    """A running run no runner holds: a requested cancel completes, anything else fails."""
+    if run.cancelled_by is not None:
+        await _transition(
+            db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, actor_id=run.cancelled_by
+        )
+    else:
+        await _transition(
+            db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
+        )
 
 
 async def stop_runs_before_delete(db: AsyncSession, task_ids, question_ids=()) -> None:
@@ -562,8 +583,8 @@ async def stop_runs_before_delete(db: AsyncSession, task_ids, question_ids=()) -
         affected.setdefault(owner_id, set()).add(project_id)
         if run.status != RunStatus.running:
             continue
-        conn = registry.conn_for_user(owner_id)
-        if conn is not None and run.id in conn.run_ids:
+        conn = registry.conn_for_run(run.id)
+        if conn is not None:
             try:
                 await conn.send(RunCancel(run_id=run.id))
             except RunnerClosed:
@@ -583,11 +604,11 @@ async def cancel_user_runs(db: AsyncSession, user_id: uuid.UUID) -> None:
     theirs = (Agent.owner_id == user_id) | (AgentRun.requested_by == user_id)
     async for run, owner_id in _lock_runs_one_by_one(db, ACTIVE_STATUSES, theirs):
         if run.status == RunStatus.running:
-            conn = registry.conn_for_user(owner_id)
+            conn = registry.conn_for_run(run.id)
             if conn is not None:
                 try:
                     await conn.send(RunCancel(run_id=run.id))
-                    if owner_id != user_id and run.id in conn.run_ids:
+                    if owner_id != user_id:
                         continue
                 except RunnerClosed:
                     pass

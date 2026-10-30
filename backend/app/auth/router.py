@@ -13,6 +13,7 @@ from app.core.db import DbSession
 from app.core.email import Mailer, get_mailer
 from app.core.events import Event, publish
 from app.core.security import DUMMY_HASH, hash_password, verify_password
+from app.push.service import delete_user_subscriptions
 from app.ratelimit import guards
 from app.ratelimit.clientip import client_ip
 
@@ -171,6 +172,7 @@ async def reset_password(body: TokenPasswordIn, request: Request, db: DbSession)
     # whoever knew the old password may have made tokens: recovering the account ends them too (the runner signs
     # in again)
     await tokens.revoke_user_tokens(db, user.id)
+    await delete_user_subscriptions(db, user.id)  # and its devices stop getting this account's notifications
     await audit.record(db, "auth.password_reset", actor_id=user.id)
 
 

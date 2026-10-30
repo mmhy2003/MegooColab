@@ -16,6 +16,7 @@ from app.agent_runs.service import (
     fail_unclaimed_runs,
     finish_run,
 )
+from app.agent_runs.models import AgentRun
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import bound_project_ids, publish_agents_updated
 from app.auth.models import TokenScope
@@ -55,20 +56,27 @@ def _bearer(websocket: WebSocket) -> str | None:
     return value.strip() if scheme.lower() == "bearer" and value.strip() else None
 
 
-async def _authorize(raw: str | None) -> uuid.UUID | None:
-    """User id behind a live runner-scoped token, else None."""
+async def _authorize(raw: str | None) -> tuple[uuid.UUID, uuid.UUID] | None:
+    """(user id, token id) behind a live runner-scoped token, else None."""
     if raw is None:
         return None
     async with SessionLocal() as db:
         resolved = await resolve_bearer(db, raw, scope=TokenScope.runner)
         await db.commit()  # persists last_used_at
-        return resolved[0].id if resolved else None
+        return (resolved[0].id, resolved[1].id) if resolved else None
 
 
-async def build_welcome(user_id: uuid.UUID) -> Welcome:
+async def build_welcome(user_id: uuid.UUID, token_id: uuid.UUID) -> Welcome:
+    """The agents linked to this runner's token, with their bindings."""
     async with SessionLocal() as db:
         agents = (
-            (await db.execute(select(Agent).where(Agent.owner_id == user_id).order_by(Agent.created_at, Agent.id)))
+            (
+                await db.execute(
+                    select(Agent)
+                    .where(Agent.owner_id == user_id, Agent.runner_token_id == token_id)
+                    .order_by(Agent.created_at, Agent.id)
+                )
+            )
             .scalars()
             .all()
         )
@@ -109,7 +117,7 @@ async def _publish_availability(user_id: uuid.UUID, agent_ids: set[uuid.UUID]) -
 
 
 async def _apply_reports(conn: RunnerConn, reports: list[AgentReport | AgentStatus]) -> None:
-    """Record availability for the user's own agents only; publish if anything changed."""
+    """Record availability for this machine's own agents only; publish if anything changed."""
     owned = set(conn.owned_agents)
     changed: set[uuid.UUID] = set()
     for r in reports:
@@ -166,7 +174,7 @@ async def _run_message(handler, *args) -> None:
 
 
 async def _send_welcome(conn: RunnerConn, *, announce_change: bool) -> None:
-    welcome = await build_welcome(conn.user_id)
+    welcome = await build_welcome(conn.user_id, conn.token_id)
     payload = welcome.model_dump(mode="json")
     conn.owned_agents = {a.agent_id for a in welcome.agents}
     conn.retain_agents(conn.owned_agents)
@@ -193,12 +201,26 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
     elif isinstance(msg, AgentStatus):
         await _apply_reports(conn, [msg])
     elif isinstance(msg, RunUpdate):
-        await _run_message(apply_update, conn.user_id, msg.run_id, msg.seq, msg.kind, msg.data)
+        if await _on_this_machine(conn, msg.run_id):
+            await _run_message(apply_update, conn.user_id, msg.run_id, msg.seq, msg.kind, msg.data)
     elif isinstance(msg, RunFinished):
-        await _run_message(finish_run, conn.user_id, msg.run_id, msg.outcome, msg.summary, msg.error, msg)
+        if await _on_this_machine(conn, msg.run_id):
+            await _run_message(finish_run, conn.user_id, msg.run_id, msg.outcome, msg.summary, msg.error, msg)
         conn.run_ids.discard(msg.run_id)
     # Heartbeat only refreshes last_seen
     return True
+
+
+async def _on_this_machine(conn: RunnerConn, run_id: uuid.UUID) -> bool:
+    """Run messages count only from the machine the run belongs to: one it was sent over, or one whose
+    agent is linked to this connection's token. Another machine of the same person is ignored."""
+    if run_id in conn.run_ids:
+        return True
+    async with SessionLocal() as db:
+        token_id = await db.scalar(
+            select(Agent.runner_token_id).join(AgentRun, AgentRun.agent_id == Agent.id).where(AgentRun.id == run_id)
+        )
+    return token_id == conn.token_id
 
 
 async def _cancel(*tasks: asyncio.Task) -> None:
@@ -219,12 +241,13 @@ async def runner_socket(websocket: WebSocket) -> None:
     conn: RunnerConn | None = None
     raw = _bearer(websocket)
     try:
-        user_id = await _authorize(raw)
+        who = await _authorize(raw)
         await websocket.accept()
-        if user_id is None:
+        if who is None:
             await websocket.close(code=CLOSE_UNAUTHORIZED)
             return
-        conn = await registry.connect(user_id, websocket)
+        user_id, token_id = who
+        conn = await registry.connect(token_id, user_id, websocket)
         await _send_welcome(conn, announce_change=False)
         await _serve(conn, queue, raw)
     except (WebSocketDisconnect, RunnerClosed):  # the runner went away

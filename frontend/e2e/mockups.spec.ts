@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
-import { buildBinaries, mcp, onPrompt, startRunner, type RunnerHandle } from "./helpers/runner";
+import { buildBinaries, mcp, onPrompt, mintLinkedRunnerToken, startRunner, type RunnerHandle } from "./helpers/runner";
 
 /**
  * End-to-end test of Plan 8: the agent shows two mockup versions while it brainstorms and the open task follows
@@ -115,7 +115,7 @@ test("live mockups, decisions and test runs reach the task", async ({ browser })
     headers: WEB,
   });
   expect(bound.ok(), await bound.text()).toBeTruthy();
-  const token = (await post<{ secret: string }>(request, "/api/tokens", { name: "Mockups", scopes: ["runner"] })).secret;
+  const token = await mintLinkedRunnerToken(request, agent.id, "Mockups");
   leftovers.runner = startRunner({
     url: BASE,
     token,

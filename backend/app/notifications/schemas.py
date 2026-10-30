@@ -28,3 +28,4 @@ class NotificationPrefIO(BaseModel):
     kind: Kind
     in_app: bool
     email: bool
+    push: bool = False

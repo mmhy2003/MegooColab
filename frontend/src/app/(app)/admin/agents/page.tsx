@@ -38,6 +38,7 @@ function AdminAgentsPageContent() {
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center gap-1.5">
                     <AgentStatusDot status={a.status} />
+                    {a.machine && <span className="text-xs text-muted-foreground">on {a.machine.name}</span>}
                     <RunnerUpdateArrow runner={a.runner} ownerId={a.owner.id} />
                   </span>
                 </td>

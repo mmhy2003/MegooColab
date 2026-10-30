@@ -14,6 +14,7 @@ from app.core.email import get_mailer
 from app.core.events import Event, publish
 from app.jobs import queue
 from app.notifications.models import DEFAULT_PREFS, Kind, Notification, NotificationPref
+from app.push.models import PushSubscription
 from app.projects.access import accessible_project_ids
 
 DEDUPE_WINDOW = timedelta(minutes=10)
@@ -43,9 +44,12 @@ async def readable_by(db: AsyncSession, user: User, *, task_id: uuid.UUID | None
     return allowed is None or project_id in allowed
 
 
-async def preferences(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind) -> dict[uuid.UUID, tuple[bool, bool]]:
+async def preferences(
+    db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind
+) -> dict[uuid.UUID, tuple[bool, bool, bool]]:
+    """(in_app, email, push) per user for this kind."""
     ids = list(user_ids)
-    chosen = {p.user_id: (p.in_app, p.email) for p in (await db.execute(
+    chosen = {p.user_id: (p.in_app, p.email, p.push) for p in (await db.execute(
         select(NotificationPref).where(NotificationPref.user_id.in_(ids), NotificationPref.kind == kind))).scalars()}
     return {uid: chosen.get(uid, DEFAULT_PREFS[kind]) for uid in ids}
 
@@ -81,7 +85,7 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
     mail = await get_mailer(db) is not None
     created = 0
     for user in recipients:
-        in_app, email = prefs[user.id]
+        in_app, email, push = prefs[user.id]
         if in_app:
             db.add(Notification(user_id=user.id, kind=kind, title=title, body=body, link=link, task_id=task_id,
                                 project_id=project_id))
@@ -91,6 +95,12 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
         if email and mail:
             await queue.enqueue(db, "notify.email", {"user_id": str(user.id), "title": title, "body": body,
                                                      "link": link})
+        if push:
+            # one job per device: a retry resends only to the device that failed
+            for sub_id in (await db.execute(
+                    select(PushSubscription.id).where(PushSubscription.user_id == user.id))).scalars():
+                await queue.enqueue(db, "notify.push", {"subscription_id": str(sub_id), "title": title, "body": body,
+                                                        "link": link})
     await db.flush()
     return created
 

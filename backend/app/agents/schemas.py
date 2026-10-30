@@ -15,12 +15,14 @@ class AgentIn(BaseModel):
     name: NoNulStr | None = Field(default=None, max_length=200)
     answer_mode: AnswerMode = AnswerMode.manual
     max_concurrent_runs: MaxRuns = 1
+    runner_token_id: uuid.UUID | None = None
 
 
 class AgentPatch(BaseModel):
     name: NoNulStr | None = Field(default=None, min_length=1, max_length=200)
     answer_mode: AnswerMode | None = None
     max_concurrent_runs: MaxRuns | None = None
+    runner_token_id: uuid.UUID | None = None  # only when sent: null unlinks
 
 
 class BindingIn(BaseModel):
@@ -45,6 +47,14 @@ class RunnerInfo(BaseModel):
     os: str
 
 
+class MachineOut(BaseModel):
+    """The runner token an agent is linked to (shown to its owner and admins)."""
+
+    token_id: uuid.UUID
+    name: str
+    expired: bool
+
+
 class AgentOut(BaseModel):
     id: uuid.UUID
     name: str
@@ -56,6 +66,7 @@ class AgentOut(BaseModel):
     problems: list[str] = []
     bindings: list[BindingOut]
     runner: RunnerInfo | None = None  # None while the owner's runner is offline
+    machine: MachineOut | None = None  # owner and admins only; None when unlinked
 
 
 class ProjectAgentOut(AgentOut):

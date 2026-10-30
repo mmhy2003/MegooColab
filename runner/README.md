@@ -46,7 +46,9 @@ megoocolab-runner run        # connect and wait for work (Ctrl+C to stop)
 ```
 
 `login` writes `runner.json` (URL and token, mode 0600) to your user config directory.
-Only one runner connection per user is live; starting a second one replaces the first.
+Use one token per computer: an agent runs only on the runner signed in with the token it is linked to (My agents →
+Machine). Each computer's runner can be online at the same time; a second runner signing in with the same token
+replaces the first.
 
 ### Run in the background
 
@@ -64,7 +66,7 @@ The service runs as you, because the adapters need your agent logins and reposit
 - **Linux:** a systemd user unit, enabled for `default.target`, so it starts when your user
   manager does. Run `loginctl enable-linger $USER` once to keep it running when you are
   logged out. When the server ends the session for good (the token was revoked, or another
-  runner signed in with your account) the runner exits with status 78 and systemd does not
+  runner signed in with the same token) the runner exits with status 78 and systemd does not
   restart it: run `login` again, then `service start`.
 - **macOS:** a LaunchAgent in `~/Library/LaunchAgents`, loaded at login.
 - **Windows:** an `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry that starts `megoocolab-runner run --background`

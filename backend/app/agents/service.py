@@ -3,13 +3,14 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import ColumnElement, or_, select
+from sqlalchemy import ColumnElement, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agents.models import Agent, AgentBinding, AgentProgram
-from app.agents.schemas import AdminAgentOut, AgentOut, BindingOut, ProjectAgentOut, RunnerInfo
-from app.auth.models import Role, User
+from app.agents.schemas import AdminAgentOut, AgentOut, BindingOut, MachineOut, ProjectAgentOut, RunnerInfo
+from app.auth.models import PersonalAccessToken, Role, TokenScope, User
+from app.auth.service import now
 from app.auth.schemas import UserOut
 from app.core.events import Event, publish
 from app.projects.access import (
@@ -38,10 +39,10 @@ def is_absolute_path(path: str) -> bool:
     return bool(_ABSOLUTE_PATH.match(path))
 
 
-async def agent_statuses(db: AsyncSession, agents: list[tuple[uuid.UUID, uuid.UUID]]) -> dict[uuid.UUID, str]:
-    """online | busy | offline for (agent_id, owner_id) pairs. busy: it has a running run;
-    online: the owner's live runner reports it available."""
-    ids = {agent_id for agent_id, _ in agents}
+async def agent_statuses(db: AsyncSession, agent_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """online | busy | offline per agent. busy: it has a running run; online: its machine's live runner
+    reports it available."""
+    ids = set(agent_ids)
     busy: set[uuid.UUID] = set()
     if ids:
         rows = await db.execute(
@@ -52,23 +53,24 @@ async def agent_statuses(db: AsyncSession, agents: list[tuple[uuid.UUID, uuid.UU
         agent_id: "busy"
         if agent_id in busy
         else "online"
-        if agent_id in registry.available_agents(owner_id)
+        if registry.is_available(agent_id)
         else "offline"
-        for agent_id, owner_id in agents
+        for agent_id in agent_ids
     }
 
 
-def runner_info(owner_id: uuid.UUID) -> RunnerInfo | None:
-    conn = registry.conn_for_user(owner_id)
+def runner_info(agent_id: uuid.UUID) -> RunnerInfo | None:
+    """The live runner of the agent's machine, as its hello said."""
+    conn = registry.conn_for_agent(agent_id)
     if conn is None or not conn.version:
         return None
     return RunnerInfo(version=conn.version, os=conn.os or "")
 
 
 def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User) -> list[str]:
-    """What the owner's live runner reports as wrong with the agent (shown to the owner and admins only),
+    """What its machine's live runner reports as wrong with the agent (shown to the owner and admins only),
     plus the server's own too-old-runner notice (shown to everyone who can see the agent)."""
-    conn = registry.conn_for_user(owner_id)
+    conn = registry.conn_for_agent(agent_id)
     if conn is None:
         return []
     private = viewer.id == owner_id or viewer.role == Role.admin
@@ -80,8 +82,8 @@ def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User) -> li
     return problems
 
 
-async def agent_status(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> str:
-    return (await agent_statuses(db, [(agent_id, owner_id)]))[agent_id]
+async def agent_status(db: AsyncSession, agent_id: uuid.UUID) -> str:
+    return (await agent_statuses(db, [agent_id]))[agent_id]
 
 
 async def has_active_runs(db: AsyncSession, agent_id: uuid.UUID) -> bool:
@@ -91,6 +93,44 @@ async def has_active_runs(db: AsyncSession, agent_id: uuid.UUID) -> bool:
             select(AgentRun.id).where(AgentRun.agent_id == agent_id, AgentRun.status.in_(ACTIVE_STATUSES)).limit(1)
         )
     ) is not None
+
+
+async def has_running_runs(db: AsyncSession, agent_id: uuid.UUID) -> bool:
+    """True if the agent has a running run: it is at work on its machine right now."""
+    return (
+        await db.scalar(
+            select(AgentRun.id).where(AgentRun.agent_id == agent_id, AgentRun.status == RunStatus.running).limit(1)
+        )
+    ) is not None
+
+
+async def check_runner_token(db: AsyncSession, owner_id: uuid.UUID, token_id: uuid.UUID) -> None:
+    """An agent may be linked only to its owner's own live runner token."""
+    token = await db.get(PersonalAccessToken, token_id)
+    if (
+        token is None
+        or token.user_id != owner_id
+        or str(TokenScope.runner) not in token.scopes
+        or token.revoked_at is not None
+        or (token.expires_at is not None and token.expires_at <= now())
+    ):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "runner_token_invalid")
+
+
+async def unlink_tokens(db: AsyncSession, owner_id: uuid.UUID, token_ids: list[uuid.UUID] | None) -> None:
+    """Revoked tokens: their agents become unlinked (None: every token of the owner)."""
+    linked = Agent.runner_token_id.in_(token_ids) if token_ids is not None else Agent.runner_token_id.is_not(None)
+    agent_ids = (
+        await db.execute(
+            update(Agent).where(Agent.owner_id == owner_id, linked).values(runner_token_id=None).returning(Agent.id)
+        )
+    ).scalars().all()
+    if not agent_ids:
+        return
+    projects: set[uuid.UUID] = set()
+    for agent_id in agent_ids:
+        projects |= await bound_project_ids(db, agent_id)
+    await publish_agents_updated(db, owner_id, projects)
 
 
 async def has_active_workflows(db: AsyncSession, agent_id: uuid.UUID) -> bool:
@@ -177,7 +217,13 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
         ).scalars()
     }
     owner_of = {a.id: a.owner_id for a in agents}
-    statuses = await agent_statuses(db, list(owner_of.items()))
+    token_ids = {a.runner_token_id for a in agents if a.runner_token_id is not None}
+    tokens = (
+        {t.id: t for t in (await db.execute(select(PersonalAccessToken).where(PersonalAccessToken.id.in_(token_ids)))).scalars()}
+        if token_ids
+        else {}
+    )
+    statuses = await agent_statuses(db, list(owner_of))
     allowed = await accessible_project_ids(db, viewer)
     rows = await db.execute(
         select(AgentBinding, Project.key)
@@ -207,10 +253,19 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "status": statuses[a.id],
             "problems": agent_problems(a.id, a.owner_id, viewer),
             "bindings": bindings.get(a.id, []),
-            "runner": runner_info(a.owner_id),
+            "runner": runner_info(a.id),
+            "machine": _machine(tokens.get(a.runner_token_id), a.owner_id, viewer),
         }
         for a in agents
     ]
+
+
+def _machine(token: PersonalAccessToken | None, owner_id: uuid.UUID, viewer: User) -> MachineOut | None:
+    if token is None or (viewer.id != owner_id and viewer.role != Role.admin):
+        return None
+    return MachineOut(
+        token_id=token.id, name=token.name, expired=token.expires_at is not None and token.expires_at <= now()
+    )
 
 
 async def agents_out(db: AsyncSession, agents: list[Agent], viewer: User) -> list[AgentOut]:

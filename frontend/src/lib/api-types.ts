@@ -278,6 +278,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/push/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Push Key */
+        get: operations["push_key_api_push_key_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/subscriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Subscriptions */
+        get: operations["list_subscriptions_api_push_subscriptions_get"];
+        put?: never;
+        /** Add Subscription */
+        post: operations["add_subscription_api_push_subscriptions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/subscriptions/{subscription_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Subscription */
+        delete: operations["remove_subscription_api_push_subscriptions__subscription_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users/invite": {
         parameters: {
             query?: never;
@@ -2640,6 +2692,7 @@ export interface components {
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
+            machine?: components["schemas"]["MachineOut"] | null;
             /** Current Run */
             current_run?: {
                 [key: string]: unknown;
@@ -2673,6 +2726,8 @@ export interface components {
              * @default 1
              */
             max_concurrent_runs: number;
+            /** Runner Token Id */
+            runner_token_id?: string | null;
         };
         /** AgentItem */
         AgentItem: {
@@ -2721,6 +2776,7 @@ export interface components {
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
+            machine?: components["schemas"]["MachineOut"] | null;
         };
         /** AgentPatch */
         AgentPatch: {
@@ -2729,6 +2785,8 @@ export interface components {
             answer_mode?: components["schemas"]["AnswerMode"] | null;
             /** Max Concurrent Runs */
             max_concurrent_runs?: number | null;
+            /** Runner Token Id */
+            runner_token_id?: string | null;
         };
         /**
          * AgentProgram
@@ -3717,6 +3775,21 @@ export interface components {
             /** Totp Code */
             totp_code?: string | null;
         };
+        /**
+         * MachineOut
+         * @description The runner token an agent is linked to (shown to its owner and admins).
+         */
+        MachineOut: {
+            /**
+             * Token Id
+             * Format: uuid
+             */
+            token_id: string;
+            /** Name */
+            name: string;
+            /** Expired */
+            expired: boolean;
+        };
         /** ManualWorkflowIn */
         ManualWorkflowIn: {
             /**
@@ -3970,6 +4043,11 @@ export interface components {
             in_app: boolean;
             /** Email */
             email: boolean;
+            /**
+             * Push
+             * @default false
+             */
+            push: boolean;
         };
         /** Numbers */
         Numbers: {
@@ -4114,6 +4192,7 @@ export interface components {
             /** Bindings */
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
+            machine?: components["schemas"]["MachineOut"] | null;
             /** Can Use */
             can_use: boolean;
         };
@@ -4295,6 +4374,37 @@ export interface components {
             review: string;
             /** Tracked */
             tracked: boolean;
+        };
+        /** PushKeyOut */
+        PushKeyOut: {
+            /** Public Key */
+            public_key: string;
+        };
+        /**
+         * PushSubscriptionIn
+         * @description What the browser's PushSubscription.toJSON() gives.
+         */
+        PushSubscriptionIn: {
+            /** Endpoint */
+            endpoint: string;
+            keys: components["schemas"]["SubscriptionKeys"];
+        };
+        /** PushSubscriptionOut */
+        PushSubscriptionOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Endpoint */
+            endpoint: string;
+            /** Name */
+            name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** QuestionOut */
         QuestionOut: {
@@ -4859,6 +4969,13 @@ export interface components {
              */
             done_30d: number;
         };
+        /** SubscriptionKeys */
+        SubscriptionKeys: {
+            /** P256Dh */
+            p256dh: string;
+            /** Auth */
+            auth: string;
+        };
         /** SuggestIn */
         SuggestIn: {
             /** Project Key */
@@ -5246,6 +5363,16 @@ export interface components {
              */
             created_at: string;
         };
+        /** TokenAgentOut */
+        TokenAgentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** TokenOut */
         TokenOut: {
             /**
@@ -5270,6 +5397,11 @@ export interface components {
             created_at: string;
             /** Revoked At */
             revoked_at: string | null;
+            /**
+             * Agents
+             * @default []
+             */
+            agents: components["schemas"]["TokenAgentOut"][];
         };
         /** TokenPasswordIn */
         TokenPasswordIn: {
@@ -6035,6 +6167,108 @@ export interface operations {
             header?: never;
             path: {
                 token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    push_key_api_push_key_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushKeyOut"];
+                };
+            };
+        };
+    };
+    list_subscriptions_api_push_subscriptions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSubscriptionOut"][];
+                };
+            };
+        };
+    };
+    add_subscription_api_push_subscriptions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscriptionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSubscriptionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_subscription_api_push_subscriptions__subscription_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_id: string;
             };
             cookie?: never;
         };

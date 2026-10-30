@@ -29,6 +29,9 @@ class OrgSettings(TimestampMixin, Base):
     latest_app_url: Mapped[str | None] = mapped_column(String(500))
     latest_runner_version: Mapped[str | None] = mapped_column(String(50))
     latest_runner_url: Mapped[str | None] = mapped_column(String(500))
+    # web push: the server's VAPID key pair, made on first need (public: base64url point; private: PEM, encrypted)
+    vapid_public_key: Mapped[str | None] = mapped_column(String(100))
+    vapid_private_key_enc: Mapped[str | None]
     updates_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # ADM-1: what a new project starts with
     default_finishing_option: Mapped[str] = mapped_column(String(20), default="pull_request",

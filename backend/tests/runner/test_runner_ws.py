@@ -18,14 +18,19 @@ def _login(tc: TestClient, user) -> None:
     assert r.status_code == 200, r.text
 
 
-def _mint(tc: TestClient, scopes=("runner",)) -> dict:
-    r = tc.post("/api/tokens", json={"name": "laptop", "scopes": list(scopes)})
+def _mint(tc: TestClient, scopes=("runner",), name: str = "laptop") -> dict:
+    """A token; a runner one is also remembered on `tc`, and _agent links new agents to it."""
+    r = tc.post("/api/tokens", json={"name": name, "scopes": list(scopes)})
     assert r.status_code == 201, r.text
+    if "runner" in scopes:
+        tc.runner_token_id = r.json()["token"]["id"]
     return {"id": r.json()["token"]["id"], "headers": {"Authorization": f"Bearer {r.json()['secret']}"}}
 
 
 def _agent(tc: TestClient, **body) -> dict:
+    """An agent, linked to the runner token last minted on `tc` unless runner_token_id is given."""
     body.setdefault("program", "claude_code")
+    body.setdefault("runner_token_id", getattr(tc, "runner_token_id", None))
     r = tc.post("/api/agents", json=body)
     assert r.status_code == 201, r.text
     return r.json()
@@ -335,7 +340,7 @@ async def test_failed_welcome_send_ends_serve_quietly(db):
     from app.runner.router import _serve
 
     user = await make_user(db)
-    conn = RunnerConn(user.id, _GoneSocket())
+    conn = RunnerConn(user.id, user.id, _GoneSocket())
     queue: asyncio.Queue = asyncio.Queue()
     queue.put_nowait(Event(type="agents.updated", user_id=user.id))
     await asyncio.wait_for(_serve(conn, queue, None), 5)
