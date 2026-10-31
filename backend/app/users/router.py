@@ -10,6 +10,7 @@ from app.agent_runs.service import cancel_user_runs
 from app.audit import service as audit
 from app.auth import service as auth_service
 from app.auth import tokens as auth_tokens
+from app.auth import two_factor
 from app.auth.deps import AdminUser, AuthedUser
 from app.auth.models import Role, TokenPurpose, User, UserStatus
 from app.auth.schemas import UserEnvelope, UserOut
@@ -96,6 +97,23 @@ async def create_user(body: CreateUserIn, admin: AdminUser, db: DbSession) -> Us
         data={"email": user.email, "role": user.role},
     )
     return UserEnvelope(user=UserOut.model_validate(user))
+
+
+@admin_router.get("/two-factor")
+async def two_factor_users(admin: AdminUser, db: DbSession) -> dict[str, list[uuid.UUID]]:
+    """Who has two-factor sign-in on (Admin › Users offers to turn it off for them)."""
+    return {"user_ids": await two_factor.two_factor_user_ids(db)}
+
+
+@admin_router.post("/{user_id}/reset-two-factor", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_two_factor(
+    user_id: uuid.UUID, admin: AdminUser, db: DbSession, mailer: Annotated[Mailer | None, Depends(get_mailer)]
+) -> None:
+    """Someone who lost every second factor gets back in with the password alone."""
+    if user_id == admin.id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "cannot_reset_own_two_factor")
+    user = await users_service.get_user_or_404(db, user_id)
+    await two_factor.reset_two_factor(db, user, actor=admin, via="admin", mailer=mailer)
 
 
 @admin_router.post("/{user_id}/reset-link", status_code=status.HTTP_201_CREATED)

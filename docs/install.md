@@ -136,6 +136,11 @@ set `PUBLIC_URL` to the public `https://` address and `COOKIE_SECURE=true`.
 
 Certificates live in the `caddy_data` volume; keep it to avoid asking Let's Encrypt for new ones.
 
+**Passkeys belong to the address.** People's passkeys (Profile → Two-factor sign-in) work only on the host name in
+`PUBLIC_URL`, and only over HTTPS (or on `localhost`). If you move MegooColab to another host name, every passkey
+stops working: people who also have an authenticator app use their code; for the others, an admin turns off their
+two-factor sign-in under **Admin → Users** (or use the server command in section 14), and they add a new passkey.
+
 ### Install as an app
 
 On a phone or desktop, MegooColab can be installed like an app (a PWA): Chrome and Edge offer **Install app**,
@@ -344,6 +349,10 @@ Then rebuild search from the restored data: Admin → Settings → Search → **
   working, without rate limits, until it is back.
 - **Everyone behind one proxy gets "Too many attempts" together:** the backend sees the proxy's address for all of
   them; set `CLIENT_IP_HEADER` to the header the proxy fills with the visitor's address (see section 3).
+- **Locked out of two-factor sign-in** (a lost phone or security key, or passkeys after a change of host name): an
+  admin turns it off under **Admin → Users → Turn off two-factor sign-in**; the person then signs in with their
+  password and can set it up again. If that person is the only admin, run on the server
+  `docker compose exec backend python -m app.cli reset-two-factor <their email>`.
 - **Emails do not arrive:** use **Send test** under Admin → Settings; the error shown comes from the mail server.
 - **The agent stays Offline:** check, under My agents, that its **Machine** is the token the runner on that
   computer signed in with (revoking a token unlinks its agents). Then run `megoocolab-runner doctor` on that computer;
