@@ -440,7 +440,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/users/two-factor": {
+    "/api/admin/users/details": {
         parameters: {
             query?: never;
             header?: never;
@@ -448,10 +448,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Two Factor Users
-         * @description Who has two-factor sign-in on (Admin › Users offers to turn it off for them).
+         * User Details
+         * @description What only admins see of each person: how their two-factor sign-in is set up, and when they last signed in.
          */
-        get: operations["two_factor_users_api_admin_users_two_factor_get"];
+        get: operations["user_details_api_admin_users_details_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -507,7 +507,12 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete User
+         * @description What is theirs goes (account, agents, tokens, notifications, team places, personal memory); the team's work
+         *     stays, without their name. First everything deactivating does, so nothing of theirs is left running.
+         */
+        delete: operations["delete_user_api_admin_users__user_id__delete"];
         options?: never;
         head?: never;
         /** Update User */
@@ -2838,6 +2843,23 @@ export interface components {
             smtp: components["schemas"]["SmtpOut"];
             dreaming: components["schemas"]["Dreaming"];
             project_defaults: components["schemas"]["ProjectDefaults"];
+        };
+        /**
+         * AdminUserDetailsOut
+         * @description What only admins see of a person, beside the shared UserOut.
+         */
+        AdminUserDetailsOut: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Totp */
+            totp: boolean;
+            /** Passkeys */
+            passkeys: number;
+            /** Last Login At */
+            last_login_at: string | null;
         };
         /** AgentIn */
         AgentIn: {
@@ -6717,7 +6739,7 @@ export interface operations {
             };
         };
     };
-    two_factor_users_api_admin_users_two_factor_get: {
+    user_details_api_admin_users_details_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -6732,9 +6754,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string[];
-                    };
+                    "application/json": components["schemas"]["AdminUserDetailsOut"][];
                 };
             };
         };
@@ -6787,6 +6807,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ResetLinkOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_admin_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

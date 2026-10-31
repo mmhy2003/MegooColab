@@ -23,7 +23,7 @@ test("foundation smoke", async ({ browser }) => {
 
   // 2. invite a member (no SMTP configured → copy the link)
   await admin.goto("/admin/users");
-  await admin.getByRole("button", { name: "Invite" }).click();
+  await admin.getByRole("button", { name: "Invite", exact: true }).click();
   await admin.getByLabel("Email").fill(MEMBER.email);
   await admin.getByLabel("Name").fill(MEMBER.name);
   await admin.getByRole("button", { name: "Send invite" }).click();

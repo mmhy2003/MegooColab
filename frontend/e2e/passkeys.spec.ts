@@ -64,9 +64,12 @@ test("a passkey from adding it to signing in with it, then an admin turns two-fa
 
   // 3. an admin turns off the member's two-factor sign-in
   await admin.goto("/admin/users");
-  await admin.getByRole("button", { name: `Turn off two-factor sign-in for ${MEMBER.name}` }).click();
+  const row = admin.getByRole("row").filter({ hasText: MEMBER.email });
+  await expect(row).toContainText("1 passkey");
+  await row.getByRole("button", { name: `Actions for ${MEMBER.name}` }).click();
+  await admin.getByRole("menuitem", { name: "Turn off two-factor sign-in" }).click();
   await admin.getByRole("alertdialog").getByRole("button", { name: "Turn off" }).click();
-  await expect(admin.getByRole("button", { name: `Turn off two-factor sign-in for ${MEMBER.name}` })).toHaveCount(0);
+  await expect(row).toContainText("Off");
 
   // 4. the password alone signs them in now (their account is remembered on this browser)
   await signOut(page);
