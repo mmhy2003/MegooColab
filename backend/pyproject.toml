@@ -1,6 +1,6 @@
 [project]
 name = "megoocolab-backend"
-version = "0.3.0"
+version = "0.4.0"
 description = "MegooColab API server"
 authors = [
     { name = "Mohamed H. Youssef", email = "mohamed.magdy@slnee.com" }
