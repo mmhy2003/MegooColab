@@ -6,8 +6,10 @@ import { useState } from "react";
 
 import { NewPasswordForm } from "@/components/auth/NewPasswordForm";
 import { api } from "@/lib/api";
+import { usePageTitle } from "@/lib/title";
 
 export default function ResetPage() {
+  usePageTitle("Reset password");
   const { token } = useParams<{ token: string }>();
   const [done, setDone] = useState(false);
 

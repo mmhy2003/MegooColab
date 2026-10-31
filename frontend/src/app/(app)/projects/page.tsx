@@ -9,8 +9,10 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { canManage, useMe } from "@/lib/me";
 import { useProjects } from "@/lib/project";
 import { readShowArchived, STATUS_LABEL, writeShowArchived } from "@/lib/projectStatus";
+import { usePageTitle } from "@/lib/title";
 
 export default function ProjectsPage() {
+  usePageTitle("Projects");
   const { data: me } = useMe();
   const projects = useProjects();
   const [showArchived, setShowArchived] = useState(readShowArchived);

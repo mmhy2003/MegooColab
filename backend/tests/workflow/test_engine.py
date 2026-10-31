@@ -516,7 +516,7 @@ async def test_old_runner_without_capability_keeps_run_queued(db, tc_factory):
     b, run = await _started(db, tc)
     with tc.websocket_connect(URL, headers=b.token["headers"]) as ws:
         ws.receive_json()
-        ws.send_json(_hello([_avail(b.agent)], capabilities=["branch/1"]))  # a runner without workflow/1
+        ws.send_json(_hello([_avail(b.agent)], capabilities=["branch/1", "model/1"]))  # a runner without workflow/1
         _wait_status(tc, b.agent["id"], "online")
         mine = next(a for a in tc.get("/api/agents/mine").json() if a["id"] == b.agent["id"])
         assert mine["problems"] == [WORKFLOW_PROBLEM]

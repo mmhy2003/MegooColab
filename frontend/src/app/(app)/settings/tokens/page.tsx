@@ -17,6 +17,7 @@ import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AccessToken, CreatedToken, TokenScope } from "@/lib/types";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { usePageTitle } from "@/lib/title";
 
 const SCOPE_LABEL: Record<TokenScope, string> = { mcp: "MCP", runner: "Runner" };
 const EXPIRY = [
@@ -102,6 +103,7 @@ function CreateTokenDialog({ onClose }: { onClose: () => void }) {
 }
 
 export default function TokensPage() {
+  usePageTitle("Access tokens");
   const { ask, dialog } = useConfirm();
   const client = useQueryClient();
   const [creating, setCreating] = useState(false);

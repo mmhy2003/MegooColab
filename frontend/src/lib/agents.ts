@@ -11,6 +11,28 @@ export const PROGRAM_LABEL: Record<AgentProgram, string> = {
   codex: "Codex",
 };
 
+/** The model a new agent starts on (the server's DEFAULT_MODELS); its owner can pick another or none. */
+export const DEFAULT_MODEL: Record<AgentProgram, string> = {
+  claude_code: "Opus 5.5",
+  codex: "GPT-6.1 Sol",
+};
+
+/** A model name as an id, as the runner compares them: "GPT-6.1 Sol" and "gpt-6.1-sol" are the same model. */
+export function modelKey(name: string): string {
+  return name.toLowerCase().trim().split(/\s+/).join("-");
+}
+
+/** The effort levels to offer for a model whose own levels aren't known yet (before the agent's first run). */
+export const COMMON_EFFORTS = ["low", "medium", "high", "xhigh", "max"].map((value) => ({ value, name: effortName(value) }));
+
+/** "high" as "High", "extra_high" as "Extra High", as the agents name their levels. */
+export function effortName(value: string): string {
+  return value
+    .split(/[_\s-]+/)
+    .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .join(" ");
+}
+
 export const ANSWER_MODE_HELP: Record<AnswerMode, string> = {
   manual: "Manual: you approve each answer before it's sent to another agent",
   auto: "Auto: the agent's answers are sent to other agents without your approval",
@@ -37,6 +59,8 @@ const RUN_REASON: Record<string, string> = {
   start_branch_missing: "the branch to start from doesn't exist",
   start_branch_fetch_failed: "the runner couldn't reach the repository to fetch the branch to start from",
   repository_not_matched: "the agent's folder doesn't match any of the project's repositories",
+  model_unavailable: "the model chosen for this agent isn't available — pick another on My agents",
+  effort_unavailable: "the effort chosen for this agent isn't available for its model — pick another on My agents",
   files_failed: "the runner couldn't write the design and plan files",
   commit_failed: "the runner couldn't commit the design and plan documents",
   adapter_start_failed: "the agent program didn't start",

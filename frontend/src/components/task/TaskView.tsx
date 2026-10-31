@@ -10,9 +10,10 @@ import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { canDeleteTask, projectRights } from "@/lib/rights";
 import { useMe } from "@/lib/me";
-import { useColumns, useLabels, useProject, useRepos, useSprints, useTasks, useUsers } from "@/lib/project";
+import { useColumns, useLabels, useProject, useRepos, useSprints, useTask, useTasks, useUsers } from "@/lib/project";
 import { qk } from "@/lib/queries";
-import type { ActivityItem, Attachment, Task } from "@/lib/types";
+import { useRecordTitle } from "@/lib/title";
+import type { ActivityItem, Attachment } from "@/lib/types";
 
 import { DocumentView } from "@/components/workflow/DocumentView";
 import { Decisions } from "@/components/workflow/Decisions";
@@ -60,7 +61,9 @@ export function TaskView({
   const projectKey = taskKey.split("-")[0].toUpperCase();
   const client = useQueryClient();
   const { data: me } = useMe();
-  const task = useQuery({ queryKey: qk.task(taskKey), queryFn: () => api<Task>(`/api/tasks/${taskKey}`) });
+  const task = useTask(taskKey);
+  // the task names the tab, on its own page and in the drawer over the board
+  useRecordTitle(task.data ? `${task.data.key} ${task.data.title}` : taskKey);
   const activity = useQuery({
     queryKey: qk.activity(taskKey),
     queryFn: () => api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?limit=${ACTIVITY_PAGE}`),

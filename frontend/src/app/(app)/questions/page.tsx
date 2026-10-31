@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/Select";
 import { useMe } from "@/lib/me";
 import { useProjects } from "@/lib/project";
 import { QUESTION_STATUSES, useQuestions } from "@/lib/questions";
+import { usePageTitle } from "@/lib/title";
 
 type Tab = "ask" | "mine" | "incoming";
 const TABS: { value: Tab; label: string }[] = [
@@ -54,6 +55,7 @@ function Mine() {
 }
 
 export default function QuestionsPage() {
+  usePageTitle("Questions");
   return (
     <Suspense>
       <Questions />

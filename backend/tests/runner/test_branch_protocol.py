@@ -10,7 +10,7 @@ from sqlalchemy import select, update
 
 from app.agent_runs.models import AgentRun
 from app.core.db import SessionLocal
-from app.runner.registry import BRANCH_PROBLEM, WORKFLOW_PROBLEM
+from app.runner.registry import BRANCH_PROBLEM, MODEL_PROBLEM, WORKFLOW_PROBLEM
 from app.tasks.models import Task, TaskEvent
 from tests.agent_runs.test_dispatch import _avail, _setup, _start, _wait_run
 from tests.runner.test_runner_ws import URL, _hello, _manager_with_project, _wait_status
@@ -132,21 +132,21 @@ async def test_runner_without_branch_capability_leaves_task_runs_queued(db, tc_f
     run = _start(tc, task, prompt="Go")
     with tc.websocket_connect(URL, headers=token["headers"]) as ws:
         ws.receive_json()
-        ws.send_json(_hello([_avail(agent)], capabilities=["workflow/1"]))
+        ws.send_json(_hello([_avail(agent)], capabilities=["workflow/1", "model/1"]))
         _wait_status(tc, agent["id"], "online")
         mine = next(a for a in tc.get("/api/agents/mine").json() if a["id"] == agent["id"])
         assert mine["problems"] == [BRANCH_PROBLEM]
         assert BRANCH_PROBLEM == "runner too old to choose the start branch — update megoocolab-runner"
         async with SessionLocal() as s:
             assert (await s.get(AgentRun, uuid.UUID(run["id"]))).status == "queued"
-        ws.send_json(_hello([_avail(agent)], capabilities=["workflow/1", "branch/1"]))
+        ws.send_json(_hello([_avail(agent)], capabilities=["workflow/1", "branch/1", "model/1"]))
         assert ws.receive_json()["run_id"] == run["id"]
     with tc.websocket_connect(URL, headers=token["headers"]) as ws:  # a v1 runner: both notices
         ws.receive_json()
         ws.send_json(_hello([_avail(agent)], capabilities=None))
         _wait_status(tc, agent["id"], "online")
         mine = next(a for a in tc.get("/api/agents/mine").json() if a["id"] == agent["id"])
-        assert mine["problems"] == [WORKFLOW_PROBLEM, BRANCH_PROBLEM]
+        assert mine["problems"] == [WORKFLOW_PROBLEM, BRANCH_PROBLEM, MODEL_PROBLEM]
 
 
 @pytest.mark.parametrize("code", ["start_branch_missing", "repository_not_matched", "start_branch_fetch_failed"])

@@ -18,6 +18,9 @@ WORKFLOW_PROBLEM = "runner too old for workflows — update megoocolab-runner"
 # the runner starts task branches from run_start.branch and reports where it started (Branch from)
 BRANCH_CAPABILITY = "branch/1"
 BRANCH_PROBLEM = "runner too old to choose the start branch — update megoocolab-runner"
+# the runner starts the session on the agent's chosen model, or fails the run rather than use another
+MODEL_CAPABILITY = "model/1"
+MODEL_PROBLEM = "runner too old to choose the model — update megoocolab-runner"
 
 
 class RunnerClosed(Exception):

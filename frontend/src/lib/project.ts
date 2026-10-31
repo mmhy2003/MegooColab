@@ -14,6 +14,10 @@ export function useProject(key: string) {
   return useQuery({ queryKey: qk.project(key), queryFn: () => api<Project>(`/api/projects/${key}`) });
 }
 
+export function useTask(key: string) {
+  return useQuery({ queryKey: qk.task(key), queryFn: () => api<Task>(`/api/tasks/${key}`) });
+}
+
 export function useColumns(key: string) {
   return useQuery({ queryKey: qk.columns(key), queryFn: () => api<Column[]>(`/api/projects/${key}/columns`) });
 }

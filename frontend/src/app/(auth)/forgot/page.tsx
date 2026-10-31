@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { usePageTitle } from "@/lib/title";
 
 export default function ForgotPage() {
+  usePageTitle("Forgot password");
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -6,10 +6,12 @@ import { useParams } from "next/navigation";
 import { QuestionView } from "@/components/questions/QuestionView";
 import { errorMessage } from "@/lib/errors";
 import { useQuestion } from "@/lib/questions";
+import { usePageTitle } from "@/lib/title";
 
 export default function QuestionPage() {
   const { id } = useParams<{ id: string }>();
   const question = useQuestion(id);
+  usePageTitle(question.data && `${question.data.ref} ${question.data.title}`, "Questions");
 
   if (question.error) {
     return (

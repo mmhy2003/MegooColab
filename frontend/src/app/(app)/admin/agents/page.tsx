@@ -7,10 +7,11 @@ import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
-import { PROGRAM_LABEL } from "@/lib/agents";
+import { effortName, PROGRAM_LABEL } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AdminAgent } from "@/lib/types";
+import { usePageTitle } from "@/lib/title";
 
 function AdminAgentsPageContent() {
   const agents = useQuery({ queryKey: qk.adminAgents(), queryFn: () => api<AdminAgent[]>("/api/admin/agents") });
@@ -34,7 +35,11 @@ function AdminAgentsPageContent() {
               <tr key={a.id} className="border-b border-line last:border-0">
                 <td className="px-3 py-2">{a.owner.name}</td>
                 <td className="px-3 py-2">{a.name}</td>
-                <td className="px-3 py-2 text-muted-foreground">{PROGRAM_LABEL[a.program]}</td>
+                <td className="px-3 py-2 text-muted-foreground">
+                  {PROGRAM_LABEL[a.program]}
+                  {a.model && <span className="font-mono text-xs"> · {a.model}</span>}
+                  {a.effort && <span className="font-mono text-xs"> · {effortName(a.effort)}</span>}
+                </td>
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center gap-1.5">
                     <AgentStatusDot status={a.status} />
@@ -61,6 +66,7 @@ function runLabel(run: AdminAgent["current_run"]): string {
 }
 
 export default function AdminAgentsPage() {
+  usePageTitle("Agents", "Admin");
   return (
     <AdminOnly>
       <AdminAgentsPageContent />

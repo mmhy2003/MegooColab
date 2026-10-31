@@ -7,8 +7,10 @@ import { useState } from "react";
 import { DocEditor } from "@/components/kb/DocEditor";
 import { DocView } from "@/components/kb/DocView";
 import { RevisionHistory } from "@/components/kb/RevisionHistory";
-import { errorMessage } from "@/lib/errors";
+import { NotFoundView } from "@/components/shell/NotFound";
+import { errorMessage, isNotFound } from "@/lib/errors";
 import { useKbDocument } from "@/lib/kb";
+import { usePageTitle } from "@/lib/title";
 
 export default function KbDocumentPage() {
   const { docId } = useParams<{ docId: string }>();
@@ -16,11 +18,13 @@ export default function KbDocumentPage() {
   const search = useSearchParams();
   const editing = search.get("edit") === "1";
   const doc = useKbDocument(docId);
+  usePageTitle(doc.data?.title, "Knowledge Base");
   const [tab, setTab] = useState<"document" | "history">("document");
   const setEditing = (on: boolean) => router.replace(on ? `/kb/doc/${docId}?edit=1` : `/kb/doc/${docId}`);
 
   // a failed refetch keeps the last data: an open editor (and its draft) must stay
   if (doc.isError && !doc.data) {
+    if (isNotFound(doc.error)) return <NotFoundView />;
     return (
       <div className="card mx-auto mt-10 max-w-md p-6 text-center">
         <p className="text-pink">{errorMessage(doc.error)}</p>

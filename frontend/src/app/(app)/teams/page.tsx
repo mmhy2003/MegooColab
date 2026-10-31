@@ -15,6 +15,7 @@ import { errorMessage } from "@/lib/errors";
 import { canManage, useMe } from "@/lib/me";
 import { qk } from "@/lib/queries";
 import type { Team } from "@/lib/types";
+import { usePageTitle } from "@/lib/title";
 
 function NewTeamDialog({ onClose }: { onClose: () => void }) {
   const router = useRouter();
@@ -47,6 +48,7 @@ function NewTeamDialog({ onClose }: { onClose: () => void }) {
 }
 
 export default function TeamsPage() {
+  usePageTitle("Teams");
   const { data: me } = useMe();
   const [creating, setCreating] = useState(false);
   const teams = useQuery({ queryKey: qk.teams(), queryFn: () => api<Team[]>("/api/teams") });

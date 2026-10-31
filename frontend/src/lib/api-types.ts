@@ -2693,6 +2693,15 @@ export interface components {
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
             machine?: components["schemas"]["MachineOut"] | null;
+            /** Model */
+            model?: string | null;
+            /** Effort */
+            effort?: string | null;
+            /**
+             * Known Models
+             * @default []
+             */
+            known_models: components["schemas"]["ModelOption"][];
             /** Current Run */
             current_run?: {
                 [key: string]: unknown;
@@ -2728,6 +2737,10 @@ export interface components {
             max_concurrent_runs: number;
             /** Runner Token Id */
             runner_token_id?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Effort */
+            effort?: string | null;
         };
         /** AgentItem */
         AgentItem: {
@@ -2777,6 +2790,15 @@ export interface components {
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
             machine?: components["schemas"]["MachineOut"] | null;
+            /** Model */
+            model?: string | null;
+            /** Effort */
+            effort?: string | null;
+            /**
+             * Known Models
+             * @default []
+             */
+            known_models: components["schemas"]["ModelOption"][];
         };
         /** AgentPatch */
         AgentPatch: {
@@ -2787,6 +2809,10 @@ export interface components {
             max_concurrent_runs?: number | null;
             /** Runner Token Id */
             runner_token_id?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Effort */
+            effort?: string | null;
         };
         /**
          * AgentProgram
@@ -3394,6 +3420,13 @@ export interface components {
          * @enum {string}
          */
         Driver: "runner" | "connect_only" | "manual";
+        /** EffortOption */
+        EffortOption: {
+            /** Value */
+            value: string;
+            /** Name */
+            name: string;
+        };
         /**
          * Enforcement
          * @enum {string}
@@ -3931,6 +3964,22 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * ModelOption
+         * @description A model the agent's program offered, as its runner reported it, with its effort levels (none: the model
+         *     has no effort setting).
+         */
+        ModelOption: {
+            /** Value */
+            value: string;
+            /** Name */
+            name: string;
+            /**
+             * Efforts
+             * @default []
+             */
+            efforts: components["schemas"]["EffortOption"][];
+        };
         /** MoveIn */
         MoveIn: {
             /**
@@ -4193,6 +4242,15 @@ export interface components {
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
             machine?: components["schemas"]["MachineOut"] | null;
+            /** Model */
+            model?: string | null;
+            /** Effort */
+            effort?: string | null;
+            /**
+             * Known Models
+             * @default []
+             */
+            known_models: components["schemas"]["ModelOption"][];
             /** Can Use */
             can_use: boolean;
         };

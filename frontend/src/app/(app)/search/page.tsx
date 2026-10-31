@@ -6,6 +6,7 @@ import { Suspense, useState } from "react";
 import { SearchResults } from "@/components/search/SearchResults";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { paramsFromUrl } from "@/lib/search";
+import { usePageTitle } from "@/lib/title";
 
 function SearchPageBody() {
   const router = useRouter();
@@ -30,6 +31,7 @@ function SearchPageKeyed() {
 }
 
 export default function SearchPage() {
+  usePageTitle("Search");
   return (
     <div className="space-y-4">
       <PageHeader title="Search" subtitle="Everything you can open: tasks, documents, projects, teams, people, agents and questions." />

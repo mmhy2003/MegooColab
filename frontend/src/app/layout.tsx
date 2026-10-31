@@ -15,7 +15,8 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 const orbitron = Orbitron({ variable: "--font-orbitron", subsets: ["latin"], weight: ["700"] });
 
 export const metadata: Metadata = {
-  title: "MegooColab",
+  // a page's own title comes first: "Projects · MegooColab" (client pages set it with usePageTitle, lib/title.ts)
+  title: { default: "MegooColab", template: "%s · MegooColab" },
   description: "Project management for humans and coding agents",
   appleWebApp: { capable: true, title: "MegooColab", statusBarStyle: "black-translucent" },
 };

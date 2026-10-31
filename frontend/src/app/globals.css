@@ -243,8 +243,11 @@ html {
   box-shadow: var(--glow-box);
 }
 
-a {
-  color: var(--cyan-ink);
+/* In the base layer, so a link's own colour class (a muted menu item, a white card title) wins over it */
+@layer base {
+  a {
+    color: var(--cyan-ink);
+  }
 }
 
 /* ---- utilities ----------------------------------------------------------- */

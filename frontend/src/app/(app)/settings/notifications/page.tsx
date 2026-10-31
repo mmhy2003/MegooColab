@@ -3,8 +3,10 @@
 import { NotificationPrefs } from "@/components/notifications/NotificationPrefs";
 import { PushDevices } from "@/components/notifications/PushDevices";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { usePageTitle } from "@/lib/title";
 
 export default function NotificationSettingsPage() {
+  usePageTitle("Notification settings");
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader

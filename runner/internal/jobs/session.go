@@ -31,9 +31,10 @@ func mcpServers(a *protocol.McpAccess) []acp.McpServer {
 
 // openedSession is the session a run prompts, and what to prompt it with.
 type openedSession struct {
-	id     acp.SessionId
-	modes  *acp.SessionModeState
-	prompt string
+	id      acp.SessionId
+	modes   *acp.SessionModeState
+	options []acp.SessionConfigOption // its configuration, the model selector among them
+	prompt  string
 }
 
 // sessionRequest is what opening a session needs.
@@ -71,7 +72,7 @@ func openSession(ctx context.Context, q sessionRequest) (openedSession, error) {
 	if err != nil {
 		return openedSession{}, err
 	}
-	return openedSession{id: resp.SessionId, modes: resp.Modes, prompt: prompt}, nil
+	return openedSession{id: resp.SessionId, modes: resp.Modes, options: resp.ConfigOptions, prompt: prompt}, nil
 }
 
 // resumeSession continues the stored session (session/resume, else session/load).
@@ -87,7 +88,7 @@ func resumeSession(ctx context.Context, q sessionRequest) (openedSession, error)
 		if err != nil {
 			return openedSession{}, fmt.Errorf("session/resume: %w", err)
 		}
-		return openedSession{id: id, modes: resp.Modes, prompt: prompt}, nil
+		return openedSession{id: id, modes: resp.Modes, options: resp.ConfigOptions, prompt: prompt}, nil
 	case q.caps.LoadSession:
 		// The agent replays the old conversation as updates while it loads;
 		// none of it is a run update.
@@ -97,7 +98,7 @@ func resumeSession(ctx context.Context, q sessionRequest) (openedSession, error)
 		if err != nil {
 			return openedSession{}, fmt.Errorf("session/load: %w", err)
 		}
-		return openedSession{id: id, modes: resp.Modes, prompt: prompt}, nil
+		return openedSession{id: id, modes: resp.Modes, options: resp.ConfigOptions, prompt: prompt}, nil
 	}
 	return openedSession{}, errors.New("the agent supports neither session/resume nor session/load")
 }

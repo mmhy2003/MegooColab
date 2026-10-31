@@ -32,6 +32,8 @@ type fakeAgent struct {
 	history    []histMsg
 	mcp        []acp.McpServer
 	mode       string   // the session mode set by the client ("default" until then)
+	model      string   // the session's model, with $FAKEAGENT_MODELS ("default" until set)
+	effort     string   // the model's effort, with $FAKEAGENT_EFFORTS ("default" until set, and on a model change)
 	allowed    []string // Claude Code allowedTools from the session _meta
 }
 
@@ -68,6 +70,8 @@ func (a *fakeAgent) begin(event string, id acp.SessionId, cwd string, meta map[s
 	a.history = history
 	a.mcp = servers
 	a.mode = "default"
+	a.model = "default"
+	a.effort = "default"
 	a.allowed = allowedTools(meta)
 	a.report.Cwd = cwd
 	if meta != nil {
@@ -99,7 +103,7 @@ func (a *fakeAgent) NewSession(_ context.Context, p acp.NewSessionRequest) (acp.
 	id := acp.SessionId(newSessionID())
 	a.begin("new", id, p.Cwd, p.Meta, p.McpServers, nil)
 	saveHistory(string(id), nil)
-	return acp.NewSessionResponse{SessionId: id, Modes: fakeModes()}, nil
+	return acp.NewSessionResponse{SessionId: id, Modes: fakeModes(), ConfigOptions: a.configOptions()}, nil
 }
 
 // LoadSession replays the stored history as session/update before returning,
@@ -124,7 +128,9 @@ func (a *fakeAgent) LoadSession(ctx context.Context, p acp.LoadSessionRequest) (
 		a.report.Replayed++
 		a.mu.Unlock()
 	}
-	return acp.LoadSessionResponse{Modes: fakeModes()}, nil
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return acp.LoadSessionResponse{Modes: fakeModes(), ConfigOptions: a.configOptions()}, nil
 }
 
 // ResumeSession continues a stored session without replaying it.
@@ -136,7 +142,7 @@ func (a *fakeAgent) ResumeSession(_ context.Context, p acp.ResumeSessionRequest)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.begin("resume", p.SessionId, p.Cwd, p.Meta, p.McpServers, h)
-	return acp.ResumeSessionResponse{Modes: fakeModes()}, nil
+	return acp.ResumeSessionResponse{Modes: fakeModes(), ConfigOptions: a.configOptions()}, nil
 }
 
 func (a *fakeAgent) SetSessionMode(_ context.Context, p acp.SetSessionModeRequest) (acp.SetSessionModeResponse, error) {
@@ -174,6 +180,9 @@ func (a *fakeAgent) Prompt(_ context.Context, p acp.PromptRequest) (acp.PromptRe
 		}
 	}
 	a.mu.Lock()
+	if len(a.report.Prompts) == 0 {
+		a.report.PromptModel, a.report.PromptEffort = a.model, a.effort
+	}
 	a.report.Prompts = append(a.report.Prompts, text.String())
 	a.history = append(a.history, histMsg{Role: "user", Text: text.String()})
 	a.mu.Unlock()
@@ -516,8 +525,112 @@ func (a *fakeAgent) CloseSession(context.Context, acp.CloseSessionRequest) (acp.
 func (a *fakeAgent) ListSessions(context.Context, acp.ListSessionsRequest) (acp.ListSessionsResponse, error) {
 	return acp.ListSessionsResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionList)
 }
-func (a *fakeAgent) SetSessionConfigOption(context.Context, acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
-	return acp.SetSessionConfigOptionResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionSetConfigOption)
+
+// SetSessionConfigOption sets the model, with $FAKEAGENT_MODELS: a value the
+// agent offers, or one of their names in any case (as real adapters resolve
+// aliases); anything else is refused.
+func (a *fakeAgent) SetSessionConfigOption(_ context.Context, p acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
+	models := fakeModels()
+	if models == nil || p.ValueId == nil {
+		return acp.SetSessionConfigOptionResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionSetConfigOption)
+	}
+	want := string(p.ValueId.Value)
+	if p.ValueId.ConfigId == "effort" {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		for _, e := range fakeEfforts(a.model) {
+			if string(e.Value) == want {
+				a.effort = want
+				a.report.EffortsSet = append(a.report.EffortsSet, want)
+				return acp.SetSessionConfigOptionResponse{ConfigOptions: a.configOptions()}, nil
+			}
+		}
+		return acp.SetSessionConfigOptionResponse{}, acp.NewInvalidParams(map[string]any{"error": "unknown effort " + want})
+	}
+	if p.ValueId.ConfigId != "model" {
+		return acp.SetSessionConfigOptionResponse{}, acp.NewMethodNotFound(acp.AgentMethodSessionSetConfigOption)
+	}
+	for _, m := range models {
+		if string(m.Value) == want || strings.EqualFold(m.Name, want) {
+			a.mu.Lock()
+			defer a.mu.Unlock()
+			a.model, a.effort = string(m.Value), "default"
+			a.report.ModelsSet = append(a.report.ModelsSet, a.model)
+			return acp.SetSessionConfigOptionResponse{ConfigOptions: a.configOptions()}, nil
+		}
+	}
+	if os.Getenv("FAKEAGENT_MODELS_ANY") == "1" { // as Codex does: an unknown name is a model of its own
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.model = want
+		a.report.ModelsSet = append(a.report.ModelsSet, want)
+		return acp.SetSessionConfigOptionResponse{ConfigOptions: a.configOptions()}, nil
+	}
+	return acp.SetSessionConfigOptionResponse{}, acp.NewInvalidParams(map[string]any{"error": "unknown model " + want})
+}
+
+// fakeModels is $FAKEAGENT_MODELS ("value=Name,..."), or nil when unset: then
+// the agent offers no model choice.
+func fakeModels() []acp.SessionConfigSelectOption {
+	spec := os.Getenv("FAKEAGENT_MODELS")
+	if spec == "" {
+		return nil
+	}
+	var out []acp.SessionConfigSelectOption
+	for _, item := range strings.Split(spec, ",") {
+		value, name, _ := strings.Cut(item, "=")
+		out = append(out, acp.SessionConfigSelectOption{Value: acp.SessionConfigValueId(value), Name: name})
+	}
+	return out
+}
+
+// fakeEfforts are the effort levels of a model, with $FAKEAGENT_EFFORTS
+// ("model=low|high;..."), "default" first as real adapters list it; nil: the
+// model has no effort setting.
+func fakeEfforts(model string) []acp.SessionConfigSelectOption {
+	for _, item := range strings.Split(os.Getenv("FAKEAGENT_EFFORTS"), ";") {
+		m, levels, ok := strings.Cut(item, "=")
+		if !ok || m != model {
+			continue
+		}
+		out := []acp.SessionConfigSelectOption{{Value: "default", Name: "Default"}}
+		for _, l := range strings.Split(levels, "|") {
+			out = append(out, acp.SessionConfigSelectOption{Value: acp.SessionConfigValueId(l), Name: strings.ToUpper(l[:1]) + l[1:]})
+		}
+		return out
+	}
+	return nil
+}
+
+// configOptions is the session's model selector, at its current model, and
+// that model's effort selector if it has one; mu is held.
+func (a *fakeAgent) configOptions() []acp.SessionConfigOption {
+	models := fakeModels()
+	if models == nil {
+		return nil
+	}
+	cat := acp.SessionConfigOptionCategoryModel
+	listed := false
+	for _, m := range models {
+		listed = listed || string(m.Value) == a.model
+	}
+	if !listed { // as Codex does: the current model leads the list
+		models = append([]acp.SessionConfigSelectOption{{Value: acp.SessionConfigValueId(a.model), Name: a.model}}, models...)
+	}
+	list := acp.SessionConfigSelectOptionsUngrouped(models)
+	out := []acp.SessionConfigOption{{Select: &acp.SessionConfigOptionSelect{
+		Id: "model", Name: "Model", Category: &cat, Type: "select", CurrentValue: acp.SessionConfigValueId(a.model),
+		Options: acp.SessionConfigSelectOptions{Ungrouped: &list},
+	}}}
+	if efforts := fakeEfforts(a.model); efforts != nil {
+		thought := acp.SessionConfigOptionCategoryThoughtLevel
+		levels := acp.SessionConfigSelectOptionsUngrouped(efforts)
+		out = append(out, acp.SessionConfigOption{Select: &acp.SessionConfigOptionSelect{
+			Id: "effort", Name: "Effort", Category: &thought, Type: "select", CurrentValue: acp.SessionConfigValueId(a.effort),
+			Options: acp.SessionConfigSelectOptions{Ungrouped: &levels},
+		}})
+	}
+	return out
 }
 
 func main() {

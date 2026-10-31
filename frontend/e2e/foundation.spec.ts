@@ -110,7 +110,8 @@ test("foundation smoke", async ({ browser }) => {
   });
   expect(removed.ok()).toBeTruthy();
   await member.goto("/projects/PAY/board");
-  await expect(member.getByText("Project not found.")).toBeVisible();
+  // a project they can't see is one that doesn't exist for them: the not-found page
+  await expect(member.getByRole("heading", { name: "This page doesn't exist" })).toBeVisible();
 
   await adminCtx.close();
   await memberCtx.close();

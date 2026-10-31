@@ -20,6 +20,7 @@ import { useMe } from "@/lib/me";
 import { qk } from "@/lib/queries";
 import type { TeamDetail, User } from "@/lib/types";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { usePageTitle } from "@/lib/title";
 
 export default function TeamPage() {
   const { ask, dialog } = useConfirm();
@@ -30,6 +31,7 @@ export default function TeamPage() {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const team = useQuery({ queryKey: qk.team(id), queryFn: () => api<TeamDetail>(`/api/teams/${id}`) });
+  usePageTitle(team.data?.name, "Teams");
   const users = useQuery({ queryKey: qk.users(), queryFn: () => api<User[]>("/api/users"), enabled: editing });
 
   if (team.error) return <p className="text-sm text-pink">{errorMessage(team.error)}</p>;

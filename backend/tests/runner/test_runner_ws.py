@@ -48,7 +48,7 @@ def _wait_status(tc: TestClient, agent_id: str, expected: str) -> None:
         time.sleep(0.02)
 
 
-CURRENT_CAPABILITIES = ("workflow/1", "branch/1")
+CURRENT_CAPABILITIES = ("workflow/1", "branch/1", "model/1")
 
 
 def _hello(agents: list[dict], capabilities=CURRENT_CAPABILITIES) -> dict:
@@ -122,6 +122,8 @@ async def test_welcome_lists_agents_and_bindings(db, tc_factory):
                     "program": "claude_code",
                     "max_concurrent_runs": 2,
                     "bindings": [{"project_key": "PAY", "local_path": "/home/me/pay"}],
+                    "model": "Opus 5.5",
+                    "effort": None,
                 }
             ],
         }

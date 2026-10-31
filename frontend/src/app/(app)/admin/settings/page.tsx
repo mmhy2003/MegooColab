@@ -16,6 +16,7 @@ import { saveAdminSettings, type SettingsPatch, useAdminSettings } from "@/lib/a
 import { errorMessage } from "@/lib/errors";
 import type { AdminSettings } from "@/lib/types";
 import { FINISHING_LABEL, type FinishingOption } from "@/lib/workflow";
+import { usePageTitle } from "@/lib/title";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -205,6 +206,7 @@ function AdminSettingsPageContent() {
 }
 
 export default function AdminSettingsPage() {
+  usePageTitle("Settings", "Admin");
   return (
     <AdminOnly>
       <AdminSettingsPageContent />

@@ -13,6 +13,7 @@ import { errorMessage } from "@/lib/errors";
 import { canManage, useMe } from "@/lib/me";
 import { ENTITY_GROUPS, memKeys, useMemEntity } from "@/lib/memory";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { usePageTitle } from "@/lib/title";
 
 export default function MemoryEntityPage() {
   const { ask, dialog } = useConfirm();
@@ -21,6 +22,7 @@ export default function MemoryEntityPage() {
   const client = useQueryClient();
   const { data: me } = useMe();
   const detail = useMemEntity(id);
+  usePageTitle(detail.data?.entity.name, "Memory");
 
   if (detail.error) {
     return (

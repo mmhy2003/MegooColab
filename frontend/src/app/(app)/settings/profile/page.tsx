@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useMe } from "@/lib/me";
 import { qk } from "@/lib/queries";
+import { usePageTitle } from "@/lib/title";
 
 const TABS = [
   { id: "name", label: "Name" },
@@ -132,6 +133,7 @@ function NameForm({ initial }: { initial: string }) {
 }
 
 export default function ProfilePage() {
+  usePageTitle("Profile");
   return (
     <Suspense>
       <Profile />

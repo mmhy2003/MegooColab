@@ -113,6 +113,8 @@ class WelcomeAgent(BaseModel):
     program: str
     max_concurrent_runs: int
     bindings: list[WelcomeBinding]
+    model: str | None = None  # None: the program's own default
+    effort: str | None = None  # None: the model's own default
 
 
 class Welcome(BaseModel):

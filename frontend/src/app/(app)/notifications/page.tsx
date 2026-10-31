@@ -4,8 +4,10 @@ import Link from "next/link";
 
 import { NotificationList } from "@/components/notifications/NotificationList";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { usePageTitle } from "@/lib/title";
 
 export default function NotificationsPage() {
+  usePageTitle("Notifications");
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader

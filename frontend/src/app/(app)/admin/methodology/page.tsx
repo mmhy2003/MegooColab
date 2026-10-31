@@ -6,8 +6,10 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { useTabParam } from "@/components/ui/Tabs";
 import { METHODOLOGY_STAGES, MethodologyEditor } from "@/components/workflow/MethodologyEditor";
 import { useMe } from "@/lib/me";
+import { usePageTitle } from "@/lib/title";
 
 export default function AdminMethodologyPage() {
+  usePageTitle("Methodology", "Admin");
   const { data: me } = useMe();
   if (!me) return null;
   if (me.role !== "admin") {
