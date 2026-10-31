@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Sidebar } from "@/components/shell/Sidebar";
 import type { User } from "@/lib/types";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+let pathname = "/";
+vi.mock("next/navigation", () => ({ usePathname: () => pathname }));
 
 const member = { id: "u1", name: "Mona", email: "m@x.io", role: "member" } as User;
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
@@ -25,6 +26,7 @@ function wrap(ui: ReactNode) {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  pathname = "/";
 });
 
 describe("Sidebar", () => {
@@ -42,5 +44,17 @@ describe("Sidebar", () => {
     wrap(<Sidebar user={member} />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/dashboard/count", expect.anything()));
     expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument(); // no badge in the name
+  });
+
+  it("marks only the page's own item as active, with the accent bar", () => {
+    pathname = "/projects/PAY/board";
+    mockFetch(() => undefined);
+    wrap(<Sidebar user={{ ...member, role: "admin" } as User} />);
+    const links = within(screen.getByRole("navigation", { name: "Main" })).getAllByRole("link").slice(1);
+    const active = links.filter((l) => l.getAttribute("aria-current") === "page");
+    expect(active.map((l) => l.textContent)).toEqual(["Projects"]);
+    for (const link of links) {
+      expect(link.querySelector("[data-accent]") !== null).toBe(link === active[0]);
+    }
   });
 });

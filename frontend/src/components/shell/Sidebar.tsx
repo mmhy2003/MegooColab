@@ -52,10 +52,12 @@ function NavLink({
       href={item.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-2 rounded px-3 py-2 text-sm whitespace-nowrap no-underline ${
-        active ? "bg-surface-2 text-cyan-ink glow-cyan" : "text-muted-foreground hover:bg-surface-2 hover:text-fg"
+      className={`relative flex items-center gap-2 rounded px-3 py-2 text-sm whitespace-nowrap no-underline ${
+        active ? "bg-cyan/10 font-semibold text-cyan-ink" : "text-muted-foreground hover:bg-surface hover:text-fg"
       }`}
     >
+      {/* the active item's bar, on the sidebar's left edge (the nav's p-2), the collapsed rail's too */}
+      {active && <span data-accent aria-hidden className="absolute inset-y-1.5 -left-2 w-[3px] rounded-r bg-cyan shadow-[var(--glow-cyan)]" />}
       <span className="relative shrink-0">
         <Icon size={16} aria-hidden />
         {/* on the collapsed rail the count sits on the icon's corner, like the bell's */}
