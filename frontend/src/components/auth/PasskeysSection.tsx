@@ -48,7 +48,7 @@ function RemoveDialog({ passkey, totpEnabled, onClose, onRemoved }: { passkey: P
     try {
       await fn();
     } catch (err) {
-      setError(isDismissed(err) ? "The passkey wasn't used. Try again." : errorMessage(err));
+      setError(isDismissed(err) ? "The passkey wasn't used. Try again." : (passkeyProblem(err) ?? errorMessage(err)));
     } finally {
       setBusy(false);
     }

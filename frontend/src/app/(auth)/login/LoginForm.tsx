@@ -11,10 +11,13 @@ import { Input } from "@/components/ui/Input";
 import { forgetAccount, rememberAccount, useRememberedAccounts, type RememberedAccount } from "@/lib/accounts";
 import { ApiError, api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-import { getPasskey, isDismissed } from "@/lib/passkeys";
+import { getPasskey, isDismissed, passkeyProblem } from "@/lib/passkeys";
 
-/** After the right password, an account with passkeys confirms with one (or, with an app, a code). */
-type SecondStep = { methods: string[]; options: unknown | null; useCode: boolean };
+/** After the right password, an account with passkeys confirms with one (or, with an app, a code). `options` are
+ * the server's for one prompt (null once used), `at` when they came: the challenge lasts 5 minutes. */
+type SecondStep = { methods: string[]; options: unknown | null; at: number; useCode: boolean };
+
+const OPTIONS_FRESH_MS = 4.5 * 60_000;
 
 function secondStepOf(err: unknown): { methods: string[]; options: unknown } | null {
   if (!(err instanceof ApiError) || err.detail !== "second_factor_required") return null;
@@ -104,30 +107,37 @@ export function LoginForm() {
     setBusy(true);
     setError(null);
     setNotUsed(null);
+    let current = step;
     try {
-      let options = step.options;
-      if (options === null) {
+      if (current.options === null || Date.now() - current.at > OPTIONS_FRESH_MS) {
         try {
           await finish({});
+          return; // signed in without a second step: it was turned off meanwhile
         } catch (err) {
           const fresh = secondStepOf(err);
           if (!fresh) throw err;
-          options = fresh.options;
+          current = { ...current, options: fresh.options, at: Date.now() };
         }
       }
-      const credential = await getPasskey(options);
-      setSecond({ ...step, options: null });
-      await finish({ passkey: credential });
+      const credential = await getPasskey(current.options);
+      setSecond((prev) => prev && { ...prev, options: null });
+      try {
+        await finish({ passkey: credential });
+      } catch (err) {
+        // the password was right: a refusal here is the passkey's, not the password's
+        throw err instanceof ApiError && err.detail === "invalid_credentials" ? new ApiError(err.status, "passkey_invalid") : err;
+      }
     } catch (err) {
       if (isDismissed(err)) {
-        setSecond({ ...step, options: step.options });
+        const kept = current;
+        setSecond((prev) => prev && { ...prev, options: kept.options, at: kept.at });
         setNotUsed(
           step.methods.includes("totp")
             ? "The passkey wasn't used. Try again, or use your authenticator code."
             : "The passkey wasn't used. Try again.",
         );
       } else {
-        setError(errorMessage(err));
+        setError(passkeyProblem(err) ?? errorMessage(err));
       }
     } finally {
       setBusy(false);
@@ -145,7 +155,7 @@ export function LoginForm() {
       if (err instanceof ApiError && err.detail === "totp_required") {
         setNeedCode(true);
       } else if (step) {
-        const next = { ...step, useCode: false };
+        const next = { ...step, at: Date.now(), useCode: false };
         setSecond(next);
         setBusy(false);
         void confirmWithPasskey(next); // the prompt opens by itself

@@ -14,6 +14,7 @@ const getPasskey = vi.fn();
 vi.mock("@/lib/passkeys", () => ({
   getPasskey: (options: unknown) => getPasskey(options),
   isDismissed: (err: unknown) => (err as { name?: string })?.name === "NotAllowedError",
+  passkeyProblem: (err: unknown) => ((err as { name?: string })?.name === "SecurityError" ? "Passkeys work only at this server's own address, over HTTPS." : null),
 }));
 
 import { LoginForm, safeNext } from "@/app/(auth)/login/LoginForm";
@@ -266,13 +267,36 @@ describe("LoginForm second step with a passkey", () => {
     expect(await screen.findByText("The passkey wasn't used. Try again.")).toBeInTheDocument();
   });
 
-  it("a passkey the server refuses says so and can retry", async () => {
+  it("a passkey the server refuses says so (not that the password is wrong) and can retry", async () => {
     routeFetch([SECOND(["passkey"]), json(401, { detail: "invalid_credentials" })]);
     getPasskey.mockResolvedValue({ id: "k" });
     render(<LoginForm />);
     await submit();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Wrong email or password.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("That passkey couldn't be checked. Try again.");
     expect(screen.getByRole("button", { name: "Use passkey" })).toBeInTheDocument();
+  });
+
+  it("asks for fresh options when the kept ones are old, before the prompt", async () => {
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    routeFetch([SECOND(["passkey"]), json(401, { detail: "second_factor_required", methods: ["passkey"], passkey_options: { challenge: "fresh" } }), json(200, { user: { id: "1" } })]);
+    getPasskey.mockRejectedValueOnce(Object.assign(new Error("x"), { name: "NotAllowedError" })).mockResolvedValueOnce({ id: "k" });
+    render(<LoginForm />);
+    await submit();
+    await screen.findByText("The passkey wasn't used. Try again.");
+    now += 5 * 60_000; // the challenge has expired on the server
+    fireEvent.click(screen.getByRole("button", { name: "Use passkey" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(getPasskey).toHaveBeenLastCalledWith({ challenge: "fresh" });
+    clock.mockRestore();
+  });
+
+  it("a passkey the browser can't use here says why, not a connection problem", async () => {
+    routeFetch([SECOND(["passkey"])]);
+    getPasskey.mockRejectedValue(Object.assign(new Error("x"), { name: "SecurityError" }));
+    render(<LoginForm />);
+    await submit();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Passkeys work only at this server's own address, over HTTPS.");
   });
 
   it("switches to the code", async () => {

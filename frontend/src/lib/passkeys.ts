@@ -24,10 +24,16 @@ export function isDismissed(err: unknown): boolean {
   return cause.name === "NotAllowedError" || cause.name === "AbortError";
 }
 
-/** A browser-side problem worth saying in words; null when there is nothing specific to say. */
+const ADDRESS = "Passkeys work only at this server's own address, over HTTPS.";
+
+/** A browser-side problem worth saying in words; null when there is nothing specific to say (never "check your
+ * connection": these never reached the server). */
 export function passkeyProblem(err: unknown): string | null {
-  const code = ((err ?? {}) as WebAuthnLike).code;
-  if (code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED") return "This device already has a passkey for your account.";
+  const e = (err ?? {}) as WebAuthnLike & { message?: unknown };
+  if (e.code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED") return "This device already has a passkey for your account.";
+  // opened at another address than PUBLIC_URL's host (a LAN IP), or over plain HTTP
+  if (e.code === "ERROR_INVALID_DOMAIN" || e.code === "ERROR_INVALID_RP_ID" || e.name === "SecurityError") return ADDRESS;
+  if (typeof e.message === "string" && e.message.includes("WebAuthn is not supported")) return ADDRESS;
   return null;
 }
 

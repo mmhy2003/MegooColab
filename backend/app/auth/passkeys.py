@@ -14,7 +14,7 @@ from webauthn import (
 )
 from webauthn.helpers import options_to_json_dict, parse_authentication_credential_json, parse_authenticator_data
 from webauthn.helpers.cose import COSEAlgorithmIdentifier
-from webauthn.helpers.exceptions import InvalidAuthenticationResponse, InvalidRegistrationResponse
+from webauthn.helpers.exceptions import WebAuthnException
 from webauthn.helpers.structs import (
     AttestationConveyancePreference,
     AuthenticatorSelectionCriteria,
@@ -44,12 +44,16 @@ class PasskeyError(Exception):
 
 def rp_id() -> str:
     """The server's host name: passkeys belong to it (a new address makes them stop working)."""
-    return urlsplit(get_settings().public_url).hostname or "localhost"
+    return urlsplit(get_settings().public_url).hostname or "localhost"  # hostname is lowercased
 
 
 def expected_origin() -> str:
+    """PUBLIC_URL's origin as a browser writes it: lowercase host, no default port."""
     parts = urlsplit(get_settings().public_url)
-    return f"{parts.scheme}://{parts.netloc}"
+    scheme = parts.scheme.lower()
+    port = parts.port
+    default = (scheme == "https" and port == 443) or (scheme == "http" and port == 80)
+    return f"{scheme}://{rp_id()}" + (f":{port}" if port and not default else "")
 
 
 async def new_challenge(db: AsyncSession, user_id: uuid.UUID, purpose: ChallengePurpose) -> bytes:
@@ -137,7 +141,7 @@ async def register(db: AsyncSession, user: User, name: str, credential: dict) ->
             credential=credential, expected_challenge=challenge, expected_rp_id=rp_id(),
             expected_origin=expected_origin(), supported_pub_key_algs=ALGORITHMS,
         )
-    except (InvalidRegistrationResponse, ValueError, KeyError, TypeError) as err:
+    except (WebAuthnException, ValueError, KeyError, TypeError) as err:  # garbled JSON included: refused, not a crash
         raise PasskeyError("passkey_invalid") from err
     if await db.scalar(select(Passkey.id).where(Passkey.credential_id == verified.credential_id)) is not None:
         raise PasskeyError("passkey_exists")
@@ -195,7 +199,7 @@ async def verify_assertion(
             expected_origin=expected_origin(), credential_public_key=passkey.public_key,
             credential_current_sign_count=passkey.sign_count,
         )
-    except (InvalidAuthenticationResponse, ValueError, KeyError, TypeError):
+    except (WebAuthnException, ValueError, KeyError, TypeError):  # garbled JSON included: a failure, not a crash
         return None
     passkey.sign_count = verified.new_sign_count
     passkey.last_used_at = now()

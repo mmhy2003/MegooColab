@@ -142,3 +142,24 @@ async def test_removing_the_last_passkey_turns_two_factor_off(client, client_fac
     await _remove(client, pid, password=DEFAULT_PASSWORD, passkey=key.sign(await _remove_options(client, pid)))
     r = await client_factory().post("/api/auth/login", json={"email": user.email, "password": DEFAULT_PASSWORD})
     assert r.status_code == 200
+
+
+async def test_a_garbled_registration_is_refused_not_a_crash(client, db):
+    await login(client, await make_user(db))
+    await client.post("/api/auth/passkeys/options")
+    r = await client.post("/api/auth/passkeys", json={"name": "A", "credential": {"id": "x"}})
+    assert r.status_code == 400 and r.json()["detail"] == "passkey_invalid"
+
+
+def test_the_origin_is_the_browsers_spelling_of_public_url(monkeypatch):
+    from app.auth import passkeys
+    from app.core.config import get_settings
+
+    for url, origin, rp in [
+        ("https://MegooColab.Example.com/", "https://megoocolab.example.com", "megoocolab.example.com"),
+        ("https://megoo.example.com:443", "https://megoo.example.com", "megoo.example.com"),
+        ("http://localhost:80", "http://localhost", "localhost"),
+        ("http://localhost:8080", "http://localhost:8080", "localhost"),
+    ]:
+        monkeypatch.setattr(get_settings(), "public_url", url)
+        assert (passkeys.expected_origin(), passkeys.rp_id()) == (origin, rp)

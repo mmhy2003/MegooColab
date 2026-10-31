@@ -27,4 +27,12 @@ describe("passkeys", () => {
     );
     expect(passkeyProblem(new Error("x"))).toBeNull();
   });
+
+  it("says a passkey works only at the server's own address, for the address and support errors", () => {
+    const ADDRESS = "Passkeys work only at this server's own address, over HTTPS.";
+    expect(passkeyProblem(Object.assign(new Error("x"), { code: "ERROR_INVALID_DOMAIN" }))).toBe(ADDRESS);
+    expect(passkeyProblem(Object.assign(new Error("x"), { code: "ERROR_INVALID_RP_ID" }))).toBe(ADDRESS);
+    expect(passkeyProblem(new DOMException("x", "SecurityError"))).toBe(ADDRESS);
+    expect(passkeyProblem(new Error("WebAuthn is not supported in this browser"))).toBe(ADDRESS);
+  });
 });

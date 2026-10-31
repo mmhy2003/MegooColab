@@ -8,7 +8,7 @@ vi.mock("@/lib/passkeys", () => ({
   createPasskey: (o: unknown) => createPasskey(o),
   getPasskey: (o: unknown) => getPasskey(o),
   isDismissed: (err: unknown) => (err as { name?: string })?.name === "NotAllowedError",
-  passkeyProblem: () => null,
+  passkeyProblem: (err: unknown) => ((err as { name?: string })?.name === "SecurityError" ? "Passkeys work only at this server's own address, over HTTPS." : null),
   guessPasskeyName: () => "Windows",
 }));
 
@@ -75,6 +75,13 @@ describe("PasskeysSection", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Add a passkey" }));
     expect(await screen.findByText("The passkey wasn't added.")).toBeInTheDocument();
     expect(calls("POST", "/api/auth/passkeys")).toHaveLength(0);
+  });
+
+  it("a browser that can't use passkeys here says why", async () => {
+    createPasskey.mockRejectedValue(Object.assign(new Error("x"), { name: "SecurityError" }));
+    show(<PasskeysSection totpEnabled={false} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add a passkey" }));
+    expect(await screen.findByText("Passkeys work only at this server's own address, over HTTPS.")).toBeInTheDocument();
   });
 
   it("removes one with the password and a passkey", async () => {

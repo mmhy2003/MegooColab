@@ -126,3 +126,17 @@ async def test_deactivated_account_gets_no_second_step(client, client_factory, d
     r = await _sign_in(fresh, user.email)
     assert r.status_code == 401 and r.json() == {"detail": "invalid_credentials"}
     assert (await db.execute(select(WebauthnChallenge))).scalars().all() == []
+
+
+async def test_a_garbled_passkey_is_a_failed_sign_in_not_a_crash(client, client_factory, db):
+    user, key, _, fresh = await passkey_user(client, client_factory, db)
+    await _sign_in(fresh, user.email)
+    r = await _sign_in(fresh, user.email, passkey={"id": "x"})  # no rawId, no response
+    assert r.status_code == 401 and r.json()["detail"] == "invalid_credentials"
+    options = (await _sign_in(fresh, user.email)).json()["passkey_options"]
+    short = key.sign(options)
+    short["response"]["authenticatorData"] = "AAAA"  # under 37 bytes
+    assert (await _sign_in(fresh, user.email, passkey=short)).status_code == 401
+    row = (await db.execute(select(User).where(User.id == user.id).execution_options(populate_existing=True))).scalar_one()
+    assert row.failed_logins == 2
+    assert (await db.execute(select(WebauthnChallenge).execution_options(populate_existing=True))).scalars().all() == []
