@@ -1,11 +1,9 @@
 """Two-factor sign-in as a whole: an authenticator app, passkeys, or both; and the way back in when every second
 factor is lost (an admin, or the server command, turns it off)."""
 
-import logging
-import uuid
 from typing import Literal
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import service as audit
@@ -13,23 +11,6 @@ from app.auth.models import Passkey, User, WebauthnChallenge
 from app.auth.service import try_send
 from app.core.email import Mailer
 
-log = logging.getLogger(__name__)
-
-
-async def has_two_factor(db: AsyncSession, user: User) -> bool:
-    if user.totp_enabled:
-        return True
-    return await db.scalar(select(Passkey.id).where(Passkey.user_id == user.id).limit(1)) is not None
-
-
-async def two_factor_user_ids(db: AsyncSession) -> list[uuid.UUID]:
-    """Everyone with two-factor sign-in on."""
-    rows = await db.execute(
-        select(User.id)
-        .where(or_(User.totp_enabled.is_(True), User.id.in_(select(Passkey.user_id))))
-        .order_by(User.name)
-    )
-    return [uid for (uid,) in rows.all()]
 
 
 async def reset_two_factor(

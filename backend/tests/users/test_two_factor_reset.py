@@ -46,9 +46,13 @@ async def test_admin_turns_off_someones_two_factor(client, client_factory, db, o
 async def test_listed_until_reset(client, client_factory, db):
     member, _ = await _member_with_both(client_factory, db)
     await _admin(client, db)
-    assert (await client.get("/api/admin/users/two-factor")).json() == {"user_ids": [str(member.id)]}
+
+    async def row():
+        return next(r for r in (await client.get("/api/admin/users/details")).json() if r["user_id"] == str(member.id))
+
+    assert (await row())["totp"] is True and (await row())["passkeys"] == 1
     await client.post(f"/api/admin/users/{member.id}/reset-two-factor")
-    assert (await client.get("/api/admin/users/two-factor")).json() == {"user_ids": []}
+    assert ((await row())["totp"], (await row())["passkeys"]) == (False, 0)
 
 
 async def test_not_on_oneself(client, db):
@@ -61,7 +65,7 @@ async def test_only_admins(client, client_factory, db):
     member, _ = await _member_with_both(client_factory, db)
     await login(client, await make_user(db, role=Role.manager))
     assert (await client.post(f"/api/admin/users/{member.id}/reset-two-factor")).status_code == 403
-    assert (await client.get("/api/admin/users/two-factor")).status_code == 403
+    assert (await client.get("/api/admin/users/details")).status_code == 403
 
 
 async def test_unknown_person(client, db):

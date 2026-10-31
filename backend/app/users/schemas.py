@@ -1,3 +1,6 @@
+import uuid
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from app.auth.models import Role
@@ -30,3 +33,12 @@ class ResetLinkOut(BaseModel):
 class UpdateUserIn(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     role: Role | None = None
+
+
+class AdminUserDetailsOut(BaseModel):
+    """What only admins see of a person, beside the shared UserOut."""
+
+    user_id: uuid.UUID
+    totp: bool
+    passkeys: int
+    last_login_at: datetime | None

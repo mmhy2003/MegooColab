@@ -4,7 +4,8 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.models import Role, User, UserStatus
+from app.auth.models import Passkey, Role, User, UserStatus
+from app.users.schemas import AdminUserDetailsOut
 
 
 async def get_user_or_404(db: AsyncSession, user_id: uuid.UUID) -> User:
@@ -27,3 +28,17 @@ async def active_admin_count(db: AsyncSession) -> int:
 async def ensure_not_last_admin(db: AsyncSession, user: User) -> None:
     if user.role == Role.admin and user.status == UserStatus.active and await active_admin_count(db) <= 1:
         raise HTTPException(status.HTTP_409_CONFLICT, "last_admin")
+
+
+async def admin_details(db: AsyncSession) -> list[AdminUserDetailsOut]:
+    passkeys = (
+        select(Passkey.user_id, func.count().label("n")).group_by(Passkey.user_id).subquery()
+    )
+    rows = await db.execute(
+        select(User.id, User.totp_enabled, func.coalesce(passkeys.c.n, 0), User.last_login_at)
+        .outerjoin(passkeys, passkeys.c.user_id == User.id)
+        .order_by(User.name)
+    )
+    return [
+        AdminUserDetailsOut(user_id=uid, totp=totp, passkeys=n, last_login_at=last) for uid, totp, n, last in rows.all()
+    ]
