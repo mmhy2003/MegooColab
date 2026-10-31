@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link2, UserPlus, UserRoundPlus, UserX } from "lucide-react";
+import { Link2, ShieldOff, UserPlus, UserRoundPlus, UserX } from "lucide-react";
 import { useState } from "react";
 
 import { AdminOnly } from "@/components/admin/AdminOnly";
@@ -96,6 +96,12 @@ function AdminUsersPageContent() {
   const [resetLink, setResetLink] = useState<{ name: string; url: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const users = useQuery({ queryKey: qk.users(), queryFn: () => api<User[]>("/api/users") });
+  // under ["users"], so every change here refetches it too
+  const twoFactor = useQuery({
+    queryKey: ["users", "two-factor"],
+    queryFn: () => api<{ user_ids: string[] }>("/api/admin/users/two-factor"),
+  });
+  const withTwoFactor = new Set(Array.isArray(twoFactor.data?.user_ids) ? twoFactor.data.user_ids : []);
 
   const act = useMutation({
     mutationFn: (fn: () => Promise<unknown>) => fn(),
@@ -177,6 +183,27 @@ function AdminUsersPageContent() {
                         <Link2 size={14} aria-hidden />
                       </button>
                     </Hint>
+                    {u.id !== me?.id && withTwoFactor.has(u.id) && (
+                      <Hint label="Turn off two-factor sign-in (a lost phone or passkey)">
+                        <button
+                          type="button"
+                          className="icon-btn hover:text-pink"
+                          aria-label={`Turn off two-factor sign-in for ${u.name}`}
+                          onClick={async () => {
+                            const sure = await ask({
+                              tone: "danger",
+                              icon: ShieldOff,
+                              title: `Turn off two-factor sign-in for ${u.name}?`,
+                              text: "Their authenticator app and all their passkeys are removed. They sign in with their password alone and can set two-factor sign-in up again from their profile.",
+                              ok: "Turn off",
+                            });
+                            if (sure) act.mutate(() => api(`/api/admin/users/${u.id}/reset-two-factor`, { method: "POST" }));
+                          }}
+                        >
+                          <ShieldOff size={14} aria-hidden />
+                        </button>
+                      </Hint>
+                    )}
                     {u.id !== me?.id &&
                       (u.status === "deactivated" ? (
                         <Button variant="ghost" className="ml-2" onClick={() => act.mutate(() => api(`/api/admin/users/${u.id}/reactivate`, { method: "POST" }))}>
