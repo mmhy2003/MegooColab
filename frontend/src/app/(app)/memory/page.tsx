@@ -6,8 +6,10 @@ import { ProductEditor } from "@/components/memory/ProductEditor";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { canManage, useMe } from "@/lib/me";
 import { useMemEntities } from "@/lib/memory";
+import { usePageTitle } from "@/lib/title";
 
 export default function MemoryPage() {
+  usePageTitle("Memory");
   const { data: me } = useMe();
   const entities = useMemEntities();
   return (

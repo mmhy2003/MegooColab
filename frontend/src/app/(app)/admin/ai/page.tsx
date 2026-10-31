@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { TabPanel, Tabs, useTabParam } from "@/components/ui/Tabs";
 import { useAdminSettings } from "@/lib/adminSettings";
 import { useMe } from "@/lib/me";
+import { usePageTitle } from "@/lib/title";
 
 const TABS = [
   { id: "providers", label: "Providers" },
@@ -44,6 +45,7 @@ function AiTabs() {
 }
 
 export default function AdminAiPage() {
+  usePageTitle("AI", "Admin");
   const { data: me } = useMe();
   if (!me) return null;
   if (me.role !== "admin") {

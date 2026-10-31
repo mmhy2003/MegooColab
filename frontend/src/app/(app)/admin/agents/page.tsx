@@ -11,6 +11,7 @@ import { effortName, PROGRAM_LABEL } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AdminAgent } from "@/lib/types";
+import { usePageTitle } from "@/lib/title";
 
 function AdminAgentsPageContent() {
   const agents = useQuery({ queryKey: qk.adminAgents(), queryFn: () => api<AdminAgent[]>("/api/admin/agents") });
@@ -65,6 +66,7 @@ function runLabel(run: AdminAgent["current_run"]): string {
 }
 
 export default function AdminAgentsPage() {
+  usePageTitle("Agents", "Admin");
   return (
     <AdminOnly>
       <AdminAgentsPageContent />

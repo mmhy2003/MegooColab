@@ -14,8 +14,10 @@ import { useTeams } from "@/lib/project";
 import { qk } from "@/lib/queries";
 import { teamChoices } from "@/lib/rights";
 import type { Project } from "@/lib/types";
+import { usePageTitle } from "@/lib/title";
 
 export default function NewProjectPage() {
+  usePageTitle("New project");
   const router = useRouter();
   const client = useQueryClient();
   const teams = useTeams();

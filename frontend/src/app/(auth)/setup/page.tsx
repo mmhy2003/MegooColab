@@ -6,8 +6,10 @@ import { useEffect, useState } from "react";
 import { NewPasswordForm } from "@/components/auth/NewPasswordForm";
 import { Input } from "@/components/ui/Input";
 import { api } from "@/lib/api";
+import { usePageTitle } from "@/lib/title";
 
 export default function SetupPage() {
+  usePageTitle("Set up");
   const router = useRouter();
   const [org, setOrg] = useState("");
   const [name, setName] = useState("");

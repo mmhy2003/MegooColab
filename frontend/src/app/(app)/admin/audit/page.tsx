@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queries";
 import type { AuditEntry, User } from "@/lib/types";
+import { usePageTitle } from "@/lib/title";
 
 function AuditPageContent() {
   const [action, setAction] = useState("");
@@ -63,6 +64,7 @@ function AuditPageContent() {
 }
 
 export default function AuditPage() {
+  usePageTitle("Audit log", "Admin");
   return (
     <AdminOnly>
       <AuditPageContent />

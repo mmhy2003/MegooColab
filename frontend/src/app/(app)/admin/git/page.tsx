@@ -3,8 +3,10 @@
 import { GitConnections } from "@/components/git/GitConnections";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { useMe } from "@/lib/me";
+import { usePageTitle } from "@/lib/title";
 
 export default function AdminGitPage() {
+  usePageTitle("Git", "Admin");
   const { data: me } = useMe();
   if (!me) return null;
   if (me.role !== "admin") {

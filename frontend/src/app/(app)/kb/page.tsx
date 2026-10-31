@@ -8,10 +8,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SPACE_GROUPS, useKbSpaces } from "@/lib/kb";
+import { usePageTitle } from "@/lib/title";
 
 const ICONS = { org: Building2, team: UsersRound, project: FolderKanban };
 
 export default function KnowledgeBasePage() {
+  usePageTitle("Knowledge Base");
   const spaces = useKbSpaces();
   const router = useRouter();
   const [q, setQ] = useState("");

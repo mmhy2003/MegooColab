@@ -4,8 +4,10 @@ import { useRouter } from "next/navigation";
 
 import { NewPasswordForm } from "@/components/auth/NewPasswordForm";
 import { api } from "@/lib/api";
+import { usePageTitle } from "@/lib/title";
 
 export default function ChangePasswordPage() {
+  usePageTitle("Change password");
   const router = useRouter();
   return (
     <NewPasswordForm

@@ -20,6 +20,7 @@ import { qk } from "@/lib/queries";
 import type { Role, User } from "@/lib/types";
 import { Hint } from "@/components/ui/Hint";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { usePageTitle } from "@/lib/title";
 
 const ROLES: Role[] = ["admin", "manager", "member", "viewer"];
 const STATUS_TONE = { active: "green", invited: "amber", deactivated: "muted" } as const;
@@ -213,6 +214,7 @@ function AdminUsersPageContent() {
 }
 
 export default function AdminUsersPage() {
+  usePageTitle("Users", "Admin");
   return (
     <AdminOnly>
       <AdminUsersPageContent />

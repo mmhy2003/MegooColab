@@ -9,6 +9,7 @@ import { errorMessage, isNotFound } from "@/lib/errors";
 import { canManage, useMe } from "@/lib/me";
 import { useProject } from "@/lib/project";
 import { useQuestions } from "@/lib/questions";
+import { usePageTitle } from "@/lib/title";
 
 /** Questions other projects asked this one that need a person to answer. */
 function IncomingQuestions({ projectKey }: { projectKey: string }) {
@@ -25,11 +26,16 @@ function IncomingQuestions({ projectKey }: { projectKey: string }) {
   );
 }
 
+const TAB_TITLES: Record<string, string> = { board: "Board", backlog: "Backlog", reports: "Reports", settings: "Settings" };
+
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   const { key } = useParams<{ key: string }>();
   const pathname = usePathname();
   const project = useProject(key);
   const { data: me } = useMe();
+  // "PAY Board"; a task page's own title (the task) is set over it by TaskView
+  const tab = TAB_TITLES[pathname.split("/")[3] ?? ""];
+  usePageTitle([project.data?.key ?? key.toUpperCase(), tab].filter(Boolean).join(" "));
 
   if (isNotFound(project.error)) return <NotFoundView />;
   if (project.error) {

@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
 import { errorMessage, isNotFound } from "@/lib/errors";
 import { useKbSpaces, useKbTree, type KbDocument } from "@/lib/kb";
+import { usePageTitle } from "@/lib/title";
 
 export default function KbSpacePage() {
   const { spaceId } = useParams<{ spaceId: string }>();
@@ -23,6 +24,7 @@ export default function KbSpacePage() {
   const spaces = useKbSpaces();
   const tree = useKbTree(spaceId);
   const space = spaces.data?.find((s) => s.id === spaceId);
+  usePageTitle(space?.name, "Knowledge Base");
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);

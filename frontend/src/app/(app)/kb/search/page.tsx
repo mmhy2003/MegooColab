@@ -10,8 +10,10 @@ import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { errorMessage } from "@/lib/errors";
 import { useKbSearch, useKbSpaces } from "@/lib/kb";
+import { usePageTitle } from "@/lib/title";
 
 export default function KbSearchPage() {
+  usePageTitle("Search", "Knowledge Base");
   return (
     <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
       <KbSearch />

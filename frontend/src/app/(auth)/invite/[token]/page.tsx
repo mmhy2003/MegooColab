@@ -4,8 +4,10 @@ import { useParams, useRouter } from "next/navigation";
 
 import { NewPasswordForm } from "@/components/auth/NewPasswordForm";
 import { api } from "@/lib/api";
+import { usePageTitle } from "@/lib/title";
 
 export default function InvitePage() {
+  usePageTitle("Accept invitation");
   const { token } = useParams<{ token: string }>();
   const router = useRouter();
   return (

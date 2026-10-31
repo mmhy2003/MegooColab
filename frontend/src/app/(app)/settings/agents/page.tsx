@@ -21,6 +21,7 @@ import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AccessToken, Agent, AgentProgram, AnswerMode, Project } from "@/lib/types";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { usePageTitle } from "@/lib/title";
 
 function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[]; onClose: () => void; onCreated: () => void }) {
   const [program, setProgram] = useState<AgentProgram>("claude_code");
@@ -175,6 +176,7 @@ function AgentCard({
 }
 
 export default function AgentsPage() {
+  usePageTitle("My agents");
   const client = useQueryClient();
   const [adding, setAdding] = useState(false);
   const agents = useQuery({ queryKey: qk.agents(), queryFn: () => api<Agent[]>("/api/agents/mine") });
