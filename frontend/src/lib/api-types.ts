@@ -226,6 +226,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Passkeys */
+        get: operations["list_passkeys_api_auth_passkeys_get"];
+        put?: never;
+        /** Add Passkey */
+        post: operations["add_passkey_api_auth_passkeys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/passkeys/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Registration Options */
+        post: operations["registration_options_api_auth_passkeys_options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/passkeys/{passkey_id}/remove-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Options
+         * @description For the removal dialog's passkey prompt: any of the person's passkeys confirms it.
+         */
+        post: operations["remove_options_api_auth_passkeys__passkey_id__remove_options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/passkeys/{passkey_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Passkey
+         * @description The password and a second factor (a passkey or the authenticator code), as turning off the app asks: so
+         *     removing the last passkey never turns two-factor sign-in off with only a session and a password.
+         */
+        delete: operations["remove_passkey_api_auth_passkeys__passkey_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tokens/self": {
         parameters: {
             query?: never;
@@ -358,6 +434,46 @@ export interface paths {
         put?: never;
         /** Create User */
         post: operations["create_user_api_admin_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/two-factor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Two Factor Users
+         * @description Who has two-factor sign-in on (Admin › Users offers to turn it off for them).
+         */
+        get: operations["two_factor_users_api_admin_users_two_factor_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{user_id}/reset-two-factor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Two Factor
+         * @description Someone who lost every second factor gets back in with the password alone.
+         */
+        post: operations["reset_two_factor_api_admin_users__user_id__reset_two_factor_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3807,6 +3923,10 @@ export interface components {
             password: string;
             /** Totp Code */
             totp_code?: string | null;
+            /** Passkey */
+            passkey?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * MachineOut
@@ -4177,6 +4297,46 @@ export interface components {
         OrgOut: {
             /** Name */
             name: string;
+        };
+        /** PasskeyCreateIn */
+        PasskeyCreateIn: {
+            /** Name */
+            name: string;
+            /** Credential */
+            credential: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * PasskeyOut
+         * @description A passkey as its owner sees it: never any key material.
+         */
+        PasskeyOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Used At */
+            last_used_at: string | null;
+        };
+        /** PasskeyRemoveIn */
+        PasskeyRemoveIn: {
+            /** Password */
+            password: string;
+            /** Passkey */
+            passkey?: {
+                [key: string]: unknown;
+            } | null;
+            /** Totp Code */
+            totp_code?: string | null;
         };
         /** PinIn */
         PinIn: {
@@ -6146,6 +6306,147 @@ export interface operations {
             };
         };
     };
+    list_passkeys_api_auth_passkeys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyOut"][];
+                };
+            };
+        };
+    };
+    add_passkey_api_auth_passkeys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyCreateIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    registration_options_api_auth_passkeys_options_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    remove_options_api_auth_passkeys__passkey_id__remove_options_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                passkey_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_passkey_api_auth_passkeys__passkey_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                passkey_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyRemoveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     token_self_api_tokens_self_get: {
         parameters: {
             query?: never;
@@ -6404,6 +6705,57 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UserEnvelope"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    two_factor_users_api_admin_users_two_factor_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string[];
+                    };
+                };
+            };
+        };
+    };
+    reset_two_factor_api_admin_users__user_id__reset_two_factor_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -4,6 +4,8 @@ export class ApiError extends Error {
     public detail: string,
     /** Seconds until a rate limit lets the call through again (429 only). */
     public retryAfter: number | null = null,
+    /** The whole answer, for errors that carry more than a detail (a sign-in's second step). */
+    public body: unknown = undefined,
   ) {
     super(`${status} ${detail}`);
     this.name = "ApiError";
@@ -54,7 +56,7 @@ export async function api<T = unknown>(
       window.location.assign("/change-password");
     }
   }
-  throw new ApiError(res.status, detail, retryAfterOf(data));
+  throw new ApiError(res.status, detail, retryAfterOf(data), data);
 }
 
 function retryAfterOf(body: unknown): number | null {

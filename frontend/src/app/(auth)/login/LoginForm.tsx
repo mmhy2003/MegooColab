@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { KeyRound, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -11,6 +11,16 @@ import { Input } from "@/components/ui/Input";
 import { forgetAccount, rememberAccount, useRememberedAccounts, type RememberedAccount } from "@/lib/accounts";
 import { ApiError, api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { getPasskey, isDismissed } from "@/lib/passkeys";
+
+/** After the right password, an account with passkeys confirms with one (or, with an app, a code). */
+type SecondStep = { methods: string[]; options: unknown | null; useCode: boolean };
+
+function secondStepOf(err: unknown): { methods: string[]; options: unknown } | null {
+  if (!(err instanceof ApiError) || err.detail !== "second_factor_required") return null;
+  const body = (err.body ?? {}) as { methods?: unknown; passkey_options?: unknown };
+  return { methods: Array.isArray(body.methods) ? body.methods.map(String) : ["passkey"], options: body.passkey_options };
+}
 
 /** Only same-site paths are honoured, so a crafted link can't bounce users off-site. */
 export function safeNext(next: string | null): string {
@@ -54,6 +64,8 @@ export function LoginForm() {
   const [needCode, setNeedCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [second, setSecond] = useState<SecondStep | null>(null);
+  const [notUsed, setNotUsed] = useState<string | null>(null);
 
   useEffect(() => {
     api<{ needs_setup: boolean }>("/api/setup/status")
@@ -66,33 +78,147 @@ export function LoginForm() {
     setCode("");
     setNeedCode(false);
     setError(null);
+    setSecond(null);
+    setNotUsed(null);
   };
   const pick = (account: RememberedAccount | null) => {
     reset();
     setPicked(account);
   };
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const signInAs = picked?.email ?? email;
+
+  /** Signs in with the password and the second factor in `extra`; remembers the account. */
+  async function finish(extra: Record<string, unknown>) {
+    const { user } = await api<{ user: { email?: string; name?: string } }>("/api/auth/login", {
+      method: "POST",
+      json: { email: signInAs, password, ...extra },
+    });
+    rememberAccount({ email: user.email ?? signInAs, name: user.name ?? signInAs });
+    router.push(safeNext(params.get("next")));
+  }
+
+  /** The browser's passkey prompt, then the sign-in. A used challenge (the server answered) needs fresh options,
+   * which the password alone fetches again; a dismissed prompt can retry with the same ones. */
+  async function confirmWithPasskey(step: SecondStep) {
     setBusy(true);
     setError(null);
-    const signInAs = picked?.email ?? email;
+    setNotUsed(null);
     try {
-      const { user } = await api<{ user: { email?: string; name?: string } }>("/api/auth/login", {
-        method: "POST",
-        json: { email: signInAs, password, totp_code: needCode ? code : undefined },
-      });
-      rememberAccount({ email: user.email ?? signInAs, name: user.name ?? signInAs });
-      router.push(safeNext(params.get("next")));
+      let options = step.options;
+      if (options === null) {
+        try {
+          await finish({});
+        } catch (err) {
+          const fresh = secondStepOf(err);
+          if (!fresh) throw err;
+          options = fresh.options;
+        }
+      }
+      const credential = await getPasskey(options);
+      setSecond({ ...step, options: null });
+      await finish({ passkey: credential });
     } catch (err) {
-      if (err instanceof ApiError && err.detail === "totp_required") {
-        setNeedCode(true);
+      if (isDismissed(err)) {
+        setSecond({ ...step, options: step.options });
+        setNotUsed(
+          step.methods.includes("totp")
+            ? "The passkey wasn't used. Try again, or use your authenticator code."
+            : "The passkey wasn't used. Try again.",
+        );
       } else {
         setError(errorMessage(err));
       }
     } finally {
       setBusy(false);
     }
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await finish({ totp_code: needCode || second?.useCode ? code : undefined });
+    } catch (err) {
+      const step = secondStepOf(err);
+      if (err instanceof ApiError && err.detail === "totp_required") {
+        setNeedCode(true);
+      } else if (step) {
+        const next = { ...step, useCode: false };
+        setSecond(next);
+        setBusy(false);
+        void confirmWithPasskey(next); // the prompt opens by itself
+        return;
+      } else {
+        setError(errorMessage(err));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (second) {
+    const header = picked ?? { name: signInAs, email: signInAs };
+    return (
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div className="flex items-center gap-3 border-b border-line pb-3">
+          <Avatar name={header.name} size={30} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold">{header.name}</span>
+            {picked && <span className="block truncate text-xs text-muted-foreground">{header.email}</span>}
+          </span>
+        </div>
+        {!second.useCode && (
+          <div aria-hidden className="mx-auto grid size-14 place-items-center rounded-full border border-cyan glow-box text-cyan-ink">
+            <KeyRound size={24} />
+          </div>
+        )}
+        <h1 className="text-center text-sm font-semibold">Confirm it&apos;s you</h1>
+        {second.useCode ? (
+          <Input
+            label="Authenticator code"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            autoFocus
+            required
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
+        ) : (
+          <p className="text-center text-xs text-muted-foreground">
+            Your browser asks for your passkey: fingerprint, face, PIN or security key.
+          </p>
+        )}
+        {notUsed && !second.useCode && <p className="text-center text-sm text-amber">{notUsed}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-pink">
+            {error}
+          </p>
+        )}
+        {second.useCode ? (
+          <Button type="submit" className="w-full" disabled={busy}>
+            Confirm
+          </Button>
+        ) : (
+          <Button className="w-full" disabled={busy} onClick={() => void confirmWithPasskey(second)}>
+            Use passkey
+          </Button>
+        )}
+        {second.methods.includes("totp") && (
+          <button
+            type="button"
+            className="block w-full text-center text-xs text-cyan-ink hover:underline"
+            onClick={() => {
+              setError(null);
+              setSecond({ ...second, useCode: !second.useCode });
+            }}
+          >
+            {second.useCode ? "Use passkey instead" : "Use an authenticator code instead"}
+          </button>
+        )}
+      </form>
+    );
   }
 
   if (!picked && accounts.length > 0 && !another) {

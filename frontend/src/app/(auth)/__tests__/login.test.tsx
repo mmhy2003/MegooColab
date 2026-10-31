@@ -10,6 +10,12 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => search,
 }));
 
+const getPasskey = vi.fn();
+vi.mock("@/lib/passkeys", () => ({
+  getPasskey: (options: unknown) => getPasskey(options),
+  isDismissed: (err: unknown) => (err as { name?: string })?.name === "NotAllowedError",
+}));
+
 import { LoginForm, safeNext } from "@/app/(auth)/login/LoginForm";
 import { readAccounts, rememberAccount } from "@/lib/accounts";
 
@@ -200,6 +206,86 @@ describe("LoginForm with remembered accounts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Forget mo@acme.io on this browser" }));
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     expect(readAccounts()).toEqual([]);
+  });
+});
+
+describe("LoginForm second step with a passkey", () => {
+  const SECOND = (methods: string[]) => json(401, { detail: "second_factor_required", methods, passkey_options: { challenge: "c" } });
+  const bodies = () =>
+    vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/api/auth/login")).map(([, init]) => JSON.parse(String(init!.body)));
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    search = new URLSearchParams();
+    getPasskey.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    push.mockReset();
+    localStorage.clear();
+  });
+
+  it("after the password, asks for the passkey and signs in with it", async () => {
+    routeFetch([SECOND(["passkey"]), json(200, { user: { id: "1", email: "a@x.io", name: "A" } })]);
+    getPasskey.mockResolvedValue({ id: "k" });
+    render(<LoginForm />);
+    await submit();
+    expect(await screen.findByRole("heading", { name: "Confirm it's you" })).toBeInTheDocument();
+    expect(screen.getByText("Your browser asks for your passkey: fingerprint, face, PIN or security key.")).toBeInTheDocument();
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(getPasskey).toHaveBeenCalledWith({ challenge: "c" });
+    expect(bodies()[1]).toMatchObject({ email: "a@x.io", password: "correct-horse-1", passkey: { id: "k" } });
+  });
+
+  it("offers the code only to someone with an authenticator app", async () => {
+    routeFetch([SECOND(["passkey"])]);
+    getPasskey.mockReturnValue(new Promise(() => {}));
+    render(<LoginForm />);
+    await submit();
+    await screen.findByRole("heading", { name: "Confirm it's you" });
+    expect(screen.queryByRole("button", { name: "Use an authenticator code instead" })).not.toBeInTheDocument();
+  });
+
+  it("dismissed prompt shows the message and can retry", async () => {
+    routeFetch([SECOND(["passkey", "totp"]), json(200, { user: { id: "1" } })]);
+    getPasskey.mockRejectedValueOnce(Object.assign(new Error("x"), { name: "NotAllowedError" })).mockResolvedValueOnce({ id: "k" });
+    render(<LoginForm />);
+    await submit();
+    expect(await screen.findByText("The passkey wasn't used. Try again, or use your authenticator code.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use passkey" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(getPasskey).toHaveBeenCalledTimes(2);
+  });
+
+  it("without an app, a dismissed prompt only says try again", async () => {
+    routeFetch([SECOND(["passkey"])]);
+    getPasskey.mockRejectedValue(Object.assign(new Error("x"), { name: "NotAllowedError" }));
+    render(<LoginForm />);
+    await submit();
+    expect(await screen.findByText("The passkey wasn't used. Try again.")).toBeInTheDocument();
+  });
+
+  it("a passkey the server refuses says so and can retry", async () => {
+    routeFetch([SECOND(["passkey"]), json(401, { detail: "invalid_credentials" })]);
+    getPasskey.mockResolvedValue({ id: "k" });
+    render(<LoginForm />);
+    await submit();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Wrong email or password.");
+    expect(screen.getByRole("button", { name: "Use passkey" })).toBeInTheDocument();
+  });
+
+  it("switches to the code", async () => {
+    routeFetch([SECOND(["passkey", "totp"]), json(200, { user: { id: "1" } })]);
+    getPasskey.mockReturnValue(new Promise(() => {}));
+    render(<LoginForm />);
+    await submit();
+    fireEvent.click(await screen.findByRole("button", { name: "Use an authenticator code instead" }));
+    fireEvent.change(screen.getByLabelText(/authenticator code/i), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(bodies()[1]).toMatchObject({ totp_code: "123456" });
+    expect(bodies()[1].passkey).toBeUndefined();
   });
 });
 
