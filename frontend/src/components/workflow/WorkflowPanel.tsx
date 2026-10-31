@@ -123,8 +123,9 @@ export function WorkflowPanel({
       )}
       {!(status === "idle" && !agent) && <p className="text-xs text-muted-foreground">{ENFORCEMENT_TEXT[wf.enforcement]}</p>}
 
+      {/* data-waiting: the task's "waiting on you" button jumps here (JumpButtons) */}
       {escalating && (
-        <div className="space-y-2 rounded border border-pink/60 p-2">
+        <div data-waiting={canDecide ? "escalation" : undefined} className="space-y-2 rounded border border-pink/60 p-2">
           <p>{escalationReasonText(wf.escalation_reason)}</p>
           {canDecide ? (
             <div className="flex flex-wrap gap-2">
@@ -159,7 +160,9 @@ export function WorkflowPanel({
       )}
 
       {status === "waiting_human" && wf.needs === "human_code_review" && canDecide && (
-        <Button disabled={busy} onClick={() => void post("human-review", { approved: true })}>Mark merged</Button>
+        <div data-waiting="code_review" className="w-fit rounded">
+          <Button disabled={busy} onClick={() => void post("human-review", { approved: true })}>Mark merged</Button>
+        </div>
       )}
 
       {agentDriven && (

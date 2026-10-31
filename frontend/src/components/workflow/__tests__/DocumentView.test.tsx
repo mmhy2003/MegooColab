@@ -114,6 +114,16 @@ describe("DocumentView", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("The workflow isn't waiting for that decision right now.");
   });
 
+  it("marks itself as waiting on the person while they can decide it, and not on a read-only view", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "Second design" });
+    expect(document.body.querySelector('[data-waiting="design"]')).toContainElement(screen.getByRole("button", { name: "Approve" }));
+    cleanup();
+    setup({ disabled: true });
+    await screen.findByRole("heading", { name: "Second design" });
+    expect(document.body.querySelector("[data-waiting]")).toBeNull();
+  });
+
   it("shows no decision buttons on a read-only view", async () => {
     setup({ disabled: true });
     await screen.findByRole("heading", { name: "Second design" });
