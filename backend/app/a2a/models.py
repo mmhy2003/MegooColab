@@ -47,6 +47,11 @@ class Question(IdMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     asked_by_agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"))
+    # who the asker wants to answer: one agent, or a program's agents (neither: any free agent), and whether the
+    # question waits for them (prefer_only) or lets another agent answer when they're busy or offline
+    prefer_agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"))
+    prefer_program: Mapped[str | None] = mapped_column(String(20))
+    prefer_only: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
     title: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text)
     context: Mapped[str] = mapped_column(Text, default="")

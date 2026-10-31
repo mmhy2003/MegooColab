@@ -1,8 +1,10 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.agents.models import AgentProgram
 from app.core.text import NoNulStr
 
 BODY_MAX = 4000
@@ -17,6 +19,20 @@ class AskIn(BaseModel):
     title: NoNulStr | None = Field(default=None, max_length=TITLE_MAX)
     context: NoNulStr = Field(default="", max_length=CONTEXT_MAX)
     task_key: str | None = Field(default=None, max_length=30)
+    # who answers: one of the project's agents, or its agents of one program; neither is any free agent
+    prefer_agent_id: uuid.UUID | None = None
+    prefer_program: AgentProgram | None = None
+    # when they're busy or offline: wait for them, or let another agent of the project answer
+    if_busy: Literal["wait", "another"] = "wait"
+
+
+class TargetAgent(BaseModel):
+    """One of a project's agents as anyone asking it sees it: no owner, no machine."""
+
+    id: uuid.UUID
+    name: str
+    program: AgentProgram
+    state: Literal["free", "busy", "offline"]
 
 
 class SuggestIn(BaseModel):
@@ -40,6 +56,14 @@ class Target(BaseModel):
 class Ref(BaseModel):
     id: uuid.UUID
     name: str
+
+
+class Preference(BaseModel):
+    """Who the asker wants to answer; with if_busy "wait" the question waits for them."""
+
+    program: AgentProgram | None
+    agent: Ref | None
+    if_busy: Literal["wait", "another"]
 
 
 class Who(BaseModel):
@@ -83,6 +107,7 @@ class QuestionOut(BaseModel):
     attempts: int
     from_task: TaskRef | None
     asked_by: Who
+    preference: Preference | None  # None: any free agent
     kb_document_id: uuid.UUID | None
     kb_document_readable: bool  # the Q&A document lives in the target project's space
     created_at: datetime
