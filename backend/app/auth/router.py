@@ -1,13 +1,14 @@
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from app.audit import service as audit
-from app.auth import service, tokens, totp
+from app.auth import passkeys, service, tokens, totp
 from app.auth.deps import CurrentUser, CurrentUserOrToken, current_session
-from app.auth.models import Session, TokenPurpose, User, UserStatus
+from app.auth.models import ChallengePurpose, Session, TokenPurpose, User, UserStatus
 from app.auth.schemas import LowerEmail, Password, UserEnvelope, UserOut
 from app.core.db import DbSession
 from app.core.email import Mailer, get_mailer
@@ -24,6 +25,7 @@ class LoginIn(BaseModel):
     email: LowerEmail
     password: str
     totp_code: str | None = None
+    passkey: dict | None = None  # the browser's assertion for the passkey_options of a second_factor_required
 
 
 @router.post("/login")
@@ -42,17 +44,41 @@ async def login(body: LoginIn, request: Request, response: Response, db: DbSessi
     if service.is_locked(user):
         raise HTTPException(status.HTTP_423_LOCKED, "locked")
     password_ok = verify_password(body.password, user.password_hash)
-    if password_ok and user.status == UserStatus.active and user.totp_enabled and not body.totp_code:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "totp_required")
-    # code guesses count against the account only behind the right password: an email alone cannot use them up
-    code_counts = password_ok and user.totp_enabled
+    active = user.status == UserStatus.active
+    # behind the right password only: before it nothing says whether the account has passkeys
+    has_passkeys = password_ok and active and bool(await passkeys.list_passkeys(db, user.id))
+    two_factor = user.totp_enabled or has_passkeys
+    if password_ok and active and two_factor and not body.totp_code and not body.passkey:
+        if not has_passkeys:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "totp_required")  # as before passkeys
+        options = await passkeys.authentication_options(db, user, ChallengePurpose.login)
+        await db.commit()  # the challenge must outlive this answer
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={
+                "detail": "second_factor_required",
+                "methods": ["passkey", "totp"] if user.totp_enabled else ["passkey"],
+                "passkey_options": options,
+            },
+        )
+    # second-factor guesses count against the account only behind the right password: an email alone cannot use
+    # them up. A failed passkey counts like a wrong code.
+    code_counts = password_ok and two_factor
     if code_counts:
         # no actor on the audit row: it is written in its own transaction, and this one holds the user's row lock
         await guards.check("totp_account", str(user.id), request)
-    totp_ok = not user.totp_enabled or totp.verify(user, body.totp_code)
-    if not (password_ok and totp_ok) or user.status != UserStatus.active:
+    second_factor: str | None = None
+    if not two_factor:
+        factor_ok = True
+    elif body.passkey and has_passkeys:
+        factor_ok = await passkeys.verify_assertion(db, user, body.passkey, ChallengePurpose.login) is not None
+        second_factor = "passkey"
+    else:
+        factor_ok = user.totp_enabled and totp.verify(user, body.totp_code)
+        second_factor = "totp"
+    if not (password_ok and factor_ok) or not active:
         await guards.count("login_ip", ip)
-        if code_counts and not totp_ok:
+        if code_counts and not factor_ok:
             await guards.count("totp_account", str(user.id))
         locked = service.register_failed_login(user)
         await audit.record(db, "auth.login_failed", target_type="user", target_id=user.id)
@@ -64,7 +90,7 @@ async def login(body: LoginIn, request: Request, response: Response, db: DbSessi
 
     service.register_successful_login(user)
     token = await service.create_session(db, user, request.headers.get("user-agent"))
-    await audit.record(db, "auth.login", actor_id=user.id)
+    await audit.record(db, "auth.login", actor_id=user.id, data={"second_factor": second_factor} if second_factor else None)
     service.set_session_cookie(response, token)
     return UserEnvelope(user=UserOut.model_validate(user))
 

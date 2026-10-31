@@ -176,3 +176,22 @@ async def test_blocks_are_audited_once(client, db, limits):
         _429(await _sign_in(client, "nobody@x.io", "x"))
     rows = (await db.execute(select(AuditLog).where(AuditLog.action == "rate_limit.blocked"))).scalars().all()
     assert len(rows) == 1 and rows[0].data["limit"] == "login_ip"
+
+
+async def test_failed_passkeys_count_like_wrong_codes(client, client_factory, db, limits):
+    from tests.auth.test_passkey_login import passkey_user
+
+    user, key, _, fresh = await passkey_user(client, client_factory, db)
+    limits(totp_per_account=2)
+    good = key.origin
+    for _ in range(2):
+        options = (await _sign_in(fresh, user.email, DEFAULT_PASSWORD)).json()["passkey_options"]
+        key.origin = "http://evil.example"
+        r = await fresh.post("/api/auth/login", json={"email": user.email, "password": DEFAULT_PASSWORD,
+                                                      "passkey": key.sign(options)})
+        assert r.status_code == 401
+        key.origin = good
+    # asking for the passkey is not a failure; the next passkey, even a good one, is refused
+    options = (await _sign_in(fresh, user.email, DEFAULT_PASSWORD)).json()["passkey_options"]
+    _429(await fresh.post("/api/auth/login", json={"email": user.email, "password": DEFAULT_PASSWORD,
+                                                   "passkey": key.sign(options)}))
