@@ -44,8 +44,9 @@ func (e *env) failsWith(runID, code string) {
 	if rf := e.finished(runID); rf.Outcome != "failed" || rf.Error == nil || *rf.Error != code {
 		e.t.Fatalf("finished = %+v", rf)
 	}
-	if got := e.readReport().Prompts; len(got) != 0 {
-		e.t.Fatalf("the agent was prompted: %v", got)
+	// the scenario says "ok" when prompted; the agent is killed on a failed run, so it may write no report
+	if said := updatesOf(e.updates(runID), "message"); len(said) != 0 {
+		e.t.Fatalf("the agent was prompted: %+v", said)
 	}
 }
 
