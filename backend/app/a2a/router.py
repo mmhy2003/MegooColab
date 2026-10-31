@@ -16,7 +16,10 @@ from app.a2a.schemas import (
     SuggestIn,
     Suggestion,
     Target,
+    TargetAgent,
 )
+from app.a2a import routing
+from app.runner.registry import WORKFLOW_CAPABILITY, registry
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
 from app.projects.access import accessible_project_ids, get_project_for
@@ -39,6 +42,19 @@ async def targets(_user: AuthedUser, db: DbSession) -> list[Target]:
     return [Target(key=k, name=n) for k, n in rows]
 
 
+@router.get("/api/questions/targets/{key}/agents")
+async def target_agents(key: str, _user: AuthedUser, db: DbSession) -> list[TargetAgent]:
+    """The agents that can answer the project's questions, for the asker to choose from: free, busy or offline."""
+    project = await service.project_by_key(db, key)
+    out = []
+    for a in await service.project_agents(db, project.id):
+        online = registry.is_available(a.id) and registry.agent_supports(a.id, WORKFLOW_CAPABILITY)
+        busy = online and await routing.active_runs(db, a.id) >= a.max_concurrent_runs
+        out.append(TargetAgent(id=a.id, name=a.name, program=a.program,
+                               state="offline" if not online else "busy" if busy else "free"))
+    return out
+
+
 @router.post("/api/questions/suggest")
 async def suggest(body: SuggestIn, request: Request, user: AuthedUser, db: DbSession) -> list[Suggestion]:
     await check_ai(request)  # suggestions embed the question
@@ -51,7 +67,8 @@ async def ask(body: AskIn, request: Request, user: AuthedUser, db: DbSession) ->
     await check_ai(request)  # asking looks for existing answers first, which embeds the question
     q, suggestions = await service.ask(
         db, user, project_key=body.project_key, body=body.body, title=body.title, context=body.context,
-        task_key=body.task_key,
+        task_key=body.task_key, prefer_agent_id=body.prefer_agent_id, prefer_program=body.prefer_program,
+        if_busy=body.if_busy,
     )
     out = AskQuestionOut(question=await service.question_out(db, user, q), suggestions=suggestions)
     await engine.dispatch_queued(db)  # an answering run may have been queued on a live runner

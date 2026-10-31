@@ -39,9 +39,19 @@ class NotSupported(Exception):
     """The run cannot be started (its question or binding is gone)."""
 
 
+def preferred(q: Question, agent: Agent) -> bool:
+    """The asker's choice: the agent they picked, or their program's agents; with no choice, any agent."""
+    if q.prefer_agent_id is not None:
+        return agent.id == q.prefer_agent_id
+    if q.prefer_program is not None:
+        return agent.program == q.prefer_program
+    return True
+
+
 async def candidates(db: AsyncSession, q: Question) -> list[Agent]:
     """Bound agents of the target project's members, on a live runner that can run answering sessions, with a
-    free slot, not tried for this question; the least busy first."""
+    free slot, not tried for this question; the asker's choice first (only it, when the question waits for it),
+    then the least busy."""
     tried = {uuid.UUID(t) for t in q.tried_agent_ids or []}
     agents = (
         await db.execute(
@@ -54,16 +64,18 @@ async def candidates(db: AsyncSession, q: Question) -> list[Agent]:
     for a in agents:
         if a.id in tried or not registry.is_available(a.id):
             continue
+        if q.prefer_only and not preferred(q, a):
+            continue
         if not registry.agent_supports(a.id, WORKFLOW_CAPABILITY):
             continue
-        running = await _active_runs(db, a.id)
+        running = await active_runs(db, a.id)
         if running >= a.max_concurrent_runs:
             continue
-        out.append((running, a.id, a))
-    return [a for _, _, a in sorted(out, key=lambda t: (t[0], str(t[1])))]
+        out.append((not preferred(q, a), running, a.id, a))
+    return [a for *_, a in sorted(out, key=lambda t: (t[0], t[1], str(t[2])))]
 
 
-async def _active_runs(db: AsyncSession, agent_id: uuid.UUID) -> int:
+async def active_runs(db: AsyncSession, agent_id: uuid.UUID) -> int:
     return await db.scalar(
         select(func.count()).select_from(AgentRun).where(AgentRun.agent_id == agent_id,
                                                          AgentRun.status.in_(ACTIVE_STATUSES))
@@ -76,22 +88,23 @@ async def _claim_slot(db: AsyncSession, found: list[Agent]) -> Agent | None:
     for a in found:
         # NO KEY UPDATE: route passes queue behind each other, run inserts (a key share on the agent) do not
         await db.execute(select(Agent.id).where(Agent.id == a.id).with_for_update(key_share=True))
-        if await _active_runs(db, a.id) < a.max_concurrent_runs:
+        if await active_runs(db, a.id) < a.max_concurrent_runs:
             return a
     return None
 
 
 async def _untried_bound(db: AsyncSession, q: Question) -> bool:
-    """Is any agent bound to the project, whatever its state, still untried for this question?"""
+    """Is any agent bound to the project, whatever its state, still untried for this question? Only the asker's
+    choice counts when the question waits for it."""
     tried = {uuid.UUID(t) for t in q.tried_agent_ids or []}
-    ids = (
+    agents = (
         await db.execute(
-            select(Agent.id)
+            select(Agent)
             .join(AgentBinding, AgentBinding.agent_id == Agent.id)
             .where(AgentBinding.project_id == q.target_project_id, owner_can_access(q.target_project_id))
         )
     ).scalars().all()
-    return any(i not in tried for i in ids)
+    return any(a.id not in tried and (not q.prefer_only or preferred(q, a)) for a in agents)
 
 
 async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun | None:

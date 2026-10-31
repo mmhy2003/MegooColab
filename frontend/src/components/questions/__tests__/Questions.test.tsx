@@ -45,6 +45,7 @@ const Q: Question = {
   attempts: 0,
   from_task: null,
   asked_by: { user: { id: "u1", name: "Ann" }, agent: null },
+  preference: null,
   kb_document_id: null,
   kb_document_readable: false,
   created_at: "2026-10-26T10:00:00Z",
@@ -113,7 +114,85 @@ describe("AskQuestion", () => {
   });
 });
 
+describe("AskQuestion: who answers", () => {
+  const AGENTS = [
+    { id: "a1", name: "Mona's Claude Code", program: "claude_code", state: "free" },
+    { id: "a2", name: "Sam's Claude Code", program: "claude_code", state: "busy" },
+    { id: "a3", name: "Mona's Codex", program: "codex", state: "free" },
+    { id: "a4", name: "Lee's Codex", program: "codex", state: "offline" },
+  ];
+
+  function setup() {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/questions/targets") return json([{ key: "PAY", name: "Payments" }]);
+      if (url === "/api/questions/targets/PAY/agents") return json(AGENTS);
+      if (url === "/api/questions/suggest") return json([]);
+      if (url === "/api/questions" && init?.method === "POST") return json({ question: Q, suggestions: [] }, 201);
+      return json([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    wrap(<AskQuestion />);
+    return fetchMock;
+  }
+
+  async function ask(fetchMock: ReturnType<typeof setup>) {
+    fireEvent.change(screen.getByLabelText("Question"), { target: { value: "Signed how?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check for existing answers" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Ask anyway" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u, i]) => u === "/api/questions" && i?.method === "POST")).toBe(true));
+    const [, init] = fetchMock.mock.calls.find(([u, i]) => u === "/api/questions" && i?.method === "POST")!;
+    return JSON.parse(String(init!.body));
+  }
+
+  it("lists any free agent, each program, and each agent with whether it's free", async () => {
+    setup();
+    await screen.findByRole("option", { name: "PAY — Payments" });
+    fireEvent.change(screen.getByLabelText("Project"), { target: { value: "PAY" } });
+    await screen.findByRole("option", { name: /Mona's Codex/ });
+    const options = [...(screen.getByLabelText("Answered by") as HTMLSelectElement).options].map((o) => o.textContent);
+    expect(options).toEqual([
+      "Any free agent",
+      "Any Claude Code agent",
+      "Any Codex agent",
+      "Mona's Claude Code · free",
+      "Sam's Claude Code · busy",
+      "Mona's Codex · free",
+      "Lee's Codex · offline",
+    ]);
+    expect(screen.queryByRole("radio", { name: /Wait for them/ })).toBeNull(); // any free agent: no second choice
+  });
+
+  it("asks for a program's agents, waiting for them by default", async () => {
+    const fetchMock = setup();
+    await screen.findByRole("option", { name: "PAY — Payments" });
+    fireEvent.change(screen.getByLabelText("Project"), { target: { value: "PAY" } });
+    await screen.findByRole("option", { name: /Mona's Codex/ });
+    fireEvent.change(screen.getByLabelText("Answered by"), { target: { value: "program:claude_code" } });
+    expect(screen.getByText("2 of PAY's agents · 1 free now")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Wait for them/ })).toBeChecked();
+    expect(await ask(fetchMock)).toMatchObject({ prefer_program: "claude_code", if_busy: "wait" });
+  });
+
+  it("asks one agent, letting another answer when it's busy", async () => {
+    const fetchMock = setup();
+    await screen.findByRole("option", { name: "PAY — Payments" });
+    fireEvent.change(screen.getByLabelText("Project"), { target: { value: "PAY" } });
+    await screen.findByRole("option", { name: /Sam's Claude Code/ });
+    fireEvent.change(screen.getByLabelText("Answered by"), { target: { value: "agent:a2" } });
+    fireEvent.click(screen.getByRole("radio", { name: /Let another agent answer/ }));
+    expect(await ask(fetchMock)).toMatchObject({ prefer_agent_id: "a2", if_busy: "another" });
+  });
+});
+
 describe("QuestionView", () => {
+  it("shows who the asker wanted to answer", () => {
+    wrap(<QuestionView question={{ ...Q, preference: { program: "claude_code", agent: null, if_busy: "wait" } }} />);
+    expect(screen.getByText("For: Claude Code agents · waits if busy")).toBeInTheDocument();
+    cleanup();
+    wrap(<QuestionView question={{ ...Q, preference: { program: null, agent: { id: "a1", name: "Mona's Codex" }, if_busy: "another" } }} />);
+    expect(screen.getByText("For: Mona's Codex · another agent if busy")).toBeInTheDocument();
+  });
+
   it("status lines for every status", () => {
     const cases: [Partial<Question>, string][] = [
       [{ status: "queued" }, "Waiting for a runner of PAY"],

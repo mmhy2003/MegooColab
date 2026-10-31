@@ -20,6 +20,7 @@ from app.a2a.schemas import (
     CONTEXT_MAX,
     Citation,
     Draft,
+    Preference,
     QuestionOut,
     Ref,
     Suggestion,
@@ -28,7 +29,7 @@ from app.a2a.schemas import (
     Who,
 )
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
-from app.agents.models import Agent
+from app.agents.models import Agent, AgentBinding
 from app.audit import service as audit
 from app.auth.models import Role, User
 from app.core.events import Event, publish
@@ -149,6 +150,9 @@ async def ask(
     context: str = "",
     task_key: str | None = None,
     agent_id: uuid.UUID | None = None,
+    prefer_agent_id: uuid.UUID | None = None,
+    prefer_program: str | None = None,
+    if_busy: str = "wait",
 ) -> tuple[Question, list[Suggestion]]:
     if user.role == Role.viewer:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
@@ -167,6 +171,10 @@ async def ask(
     if project.status == ProjectStatus.archived:
         # questions already sent carry on; an archived project takes no new ones
         raise HTTPException(status.HTTP_409_CONFLICT, "project_closed")
+    if prefer_agent_id is not None and prefer_program is not None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_preference")
+    if prefer_agent_id is not None and prefer_agent_id not in {a.id for a in await project_agents(db, project.id)}:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agent_not_available")
     # before any lock: the search can be slow, and the question's number locks the project row until commit
     suggestions = await suggest(db, user, project.id, f"{title}\n{body}")
     # one ask at a time per user, so concurrent asks cannot all pass the cap
@@ -182,6 +190,8 @@ async def ask(
     q = Question(
         target_project_id=project.id, number=number, from_task_id=task.id if task else None,
         asked_by_user_id=user.id, asked_by_agent_id=agent_id, title=title, body=body, context=context,
+        prefer_agent_id=prefer_agent_id, prefer_program=prefer_program,
+        prefer_only=if_busy == "wait" and (prefer_agent_id is not None or prefer_program is not None),
     )
     db.add(q)
     await db.flush()
@@ -299,6 +309,27 @@ async def _kb_document_readable(db: AsyncSession, user: User, q: Question) -> bo
     return space is not None and await kb_access.can_read(db, user, space)
 
 
+async def project_agents(db: AsyncSession, project_id: uuid.UUID) -> list[Agent]:
+    """The agents that can answer the project's questions: bound to it, their owner still in it."""
+    from app.agents.service import owner_can_access
+
+    rows = await db.execute(
+        select(Agent).join(AgentBinding, AgentBinding.agent_id == Agent.id)
+        .where(AgentBinding.project_id == project_id, owner_can_access(project_id)).order_by(Agent.name)
+    )
+    return list(rows.scalars())
+
+
+async def _preference(db: AsyncSession, q: Question) -> Preference | None:
+    if q.prefer_agent_id is None and q.prefer_program is None:
+        return None
+    agent = await db.get(Agent, q.prefer_agent_id) if q.prefer_agent_id else None
+    return Preference(
+        program=q.prefer_program, agent=Ref(id=agent.id, name=agent.name) if agent else None,
+        if_busy="wait" if q.prefer_only else "another",
+    )
+
+
 async def question_out(db: AsyncSession, user: User, q: Question) -> QuestionOut:
     project = await db.get(Project, q.target_project_id)
     task = await db.get(Task, q.from_task_id) if q.from_task_id else None
@@ -320,7 +351,8 @@ async def question_out(db: AsyncSession, user: User, q: Question) -> QuestionOut
         answered_by=await _who(db, q.answered_by_user_id, q.answered_by_agent_id),
         answering=await _answering(db, q), draft=draft,
         reject_reason=q.reject_reason, redacted=q.redacted, attempts=q.attempts, from_task=task_ref,
-        asked_by=await _who(db, q.asked_by_user_id, q.asked_by_agent_id), kb_document_id=q.kb_document_id,
+        asked_by=await _who(db, q.asked_by_user_id, q.asked_by_agent_id), preference=await _preference(db, q),
+        kb_document_id=q.kb_document_id,
         kb_document_readable=await _kb_document_readable(db, user, q), created_at=q.created_at, answered_at=q.answered_at,
         can_answer=is_open and await can_answer_question(db, user, q), can_approve=approver,
         can_withdraw=is_open and (q.asked_by_user_id == user.id or user.role == Role.admin),
