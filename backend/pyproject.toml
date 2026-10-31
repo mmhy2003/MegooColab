@@ -25,6 +25,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2",
     "tzdata>=2026.6",
     "valkey>=6.2.0",
+    "webauthn==3.0.1",
 ]
 
 
