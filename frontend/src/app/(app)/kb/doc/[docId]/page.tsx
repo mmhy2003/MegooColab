@@ -7,7 +7,8 @@ import { useState } from "react";
 import { DocEditor } from "@/components/kb/DocEditor";
 import { DocView } from "@/components/kb/DocView";
 import { RevisionHistory } from "@/components/kb/RevisionHistory";
-import { errorMessage } from "@/lib/errors";
+import { NotFoundView } from "@/components/shell/NotFound";
+import { errorMessage, isNotFound } from "@/lib/errors";
 import { useKbDocument } from "@/lib/kb";
 
 export default function KbDocumentPage() {
@@ -21,6 +22,7 @@ export default function KbDocumentPage() {
 
   // a failed refetch keeps the last data: an open editor (and its draft) must stay
   if (doc.isError && !doc.data) {
+    if (isNotFound(doc.error)) return <NotFoundView />;
     return (
       <div className="card mx-auto mt-10 max-w-md p-6 text-center">
         <p className="text-pink">{errorMessage(doc.error)}</p>

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 
 import { StatusBanner } from "@/components/project/StatusBanner";
-import { errorMessage } from "@/lib/errors";
+import { NotFoundView } from "@/components/shell/NotFound";
+import { errorMessage, isNotFound } from "@/lib/errors";
 import { canManage, useMe } from "@/lib/me";
 import { useProject } from "@/lib/project";
 import { useQuestions } from "@/lib/questions";
@@ -30,6 +31,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const project = useProject(key);
   const { data: me } = useMe();
 
+  if (isNotFound(project.error)) return <NotFoundView />;
   if (project.error) {
     return (
       <div className="card mx-auto mt-10 max-w-md p-6 text-center">

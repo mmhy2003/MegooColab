@@ -120,3 +120,8 @@ export function errorMessage(err: unknown): string {
   }
   return "Couldn't reach the server. Check your connection.";
 }
+
+/** The server has no such thing (or hides it from this person): the page shows the not-found page. */
+export function isNotFound(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404;
+}

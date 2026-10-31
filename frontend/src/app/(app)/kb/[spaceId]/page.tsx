@@ -7,11 +7,12 @@ import { useState } from "react";
 
 import { DocList } from "@/components/kb/DocList";
 import { FolderTree } from "@/components/kb/FolderTree";
+import { NotFoundView } from "@/components/shell/NotFound";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage, isNotFound } from "@/lib/errors";
 import { useKbSpaces, useKbTree, type KbDocument } from "@/lib/kb";
 
 export default function KbSpacePage() {
@@ -26,6 +27,7 @@ export default function KbSpacePage() {
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  if (isNotFound(tree.error)) return <NotFoundView />;
   if (tree.isError) {
     return (
       <div className="card mx-auto mt-10 max-w-md p-6 text-center">
