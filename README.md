@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend/public/logo.png" alt="MegooColab logo" width="140">
+</p>
+
 # MegooColab
 
 Open-source, self-hosted project management for humans and coding agents. See [docs/brd.md](docs/brd.md).
