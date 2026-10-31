@@ -2693,6 +2693,13 @@ export interface components {
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
             machine?: components["schemas"]["MachineOut"] | null;
+            /** Model */
+            model?: string | null;
+            /**
+             * Known Models
+             * @default []
+             */
+            known_models: components["schemas"]["ModelOption"][];
             /** Current Run */
             current_run?: {
                 [key: string]: unknown;
@@ -2728,6 +2735,8 @@ export interface components {
             max_concurrent_runs: number;
             /** Runner Token Id */
             runner_token_id?: string | null;
+            /** Model */
+            model?: string | null;
         };
         /** AgentItem */
         AgentItem: {
@@ -2777,6 +2786,13 @@ export interface components {
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
             machine?: components["schemas"]["MachineOut"] | null;
+            /** Model */
+            model?: string | null;
+            /**
+             * Known Models
+             * @default []
+             */
+            known_models: components["schemas"]["ModelOption"][];
         };
         /** AgentPatch */
         AgentPatch: {
@@ -2787,6 +2803,8 @@ export interface components {
             max_concurrent_runs?: number | null;
             /** Runner Token Id */
             runner_token_id?: string | null;
+            /** Model */
+            model?: string | null;
         };
         /**
          * AgentProgram
@@ -3931,6 +3949,16 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * ModelOption
+         * @description A model the agent's program offered, as its runner reported it.
+         */
+        ModelOption: {
+            /** Value */
+            value: string;
+            /** Name */
+            name: string;
+        };
         /** MoveIn */
         MoveIn: {
             /**
@@ -4193,6 +4221,13 @@ export interface components {
             bindings: components["schemas"]["BindingOut"][];
             runner?: components["schemas"]["RunnerInfo"] | null;
             machine?: components["schemas"]["MachineOut"] | null;
+            /** Model */
+            model?: string | null;
+            /**
+             * Known Models
+             * @default []
+             */
+            known_models: components["schemas"]["ModelOption"][];
             /** Can Use */
             can_use: boolean;
         };

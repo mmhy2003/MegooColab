@@ -40,7 +40,14 @@ from app.runner.protocol import (
     RunStart,
     RunTask,
 )
-from app.runner.registry import BRANCH_CAPABILITY, WORKFLOW_CAPABILITY, RunnerClosed, RunnerConn, registry
+from app.runner.registry import (
+    BRANCH_CAPABILITY,
+    MODEL_CAPABILITY,
+    WORKFLOW_CAPABILITY,
+    RunnerClosed,
+    RunnerConn,
+    registry,
+)
 from app.tasks.branches import valid_branch_name
 from app.tasks.models import Task, task_watchers
 from app.tasks.service import record_event
@@ -60,7 +67,7 @@ DOC_ROLES = {
 RUNNER_FAILURE_CODES = frozenset({
     "mcp_http_unsupported", "worktree_failed", "not_bound", "files_failed", "commit_failed", "adapter_start_failed",
     "initialize_failed", "session_failed", "prompt_failed", "invalid_run_files", "busy", "git_state_unreadable",
-    "start_branch_missing", "repository_not_matched", "start_branch_fetch_failed",
+    "start_branch_missing", "repository_not_matched", "start_branch_fetch_failed", "model_unavailable",
 })
 
 log = logging.getLogger(__name__)
@@ -171,7 +178,9 @@ async def _claim_next(
         )
     )
     run = None
-    if agent.max_concurrent_runs > (running or 0):
+    # a runner without model/1 would start an agent with a chosen model on the program's default: its runs wait
+    model_ok = not agent.model or registry.agent_supports(agent.id, MODEL_CAPABILITY)
+    if model_ok and agent.max_concurrent_runs > (running or 0):
         # a runner without workflow/1 leaves workflow and answering runs queued (they need the MCP run token); one
         # without branch/1 leaves every task run queued (it would start the task's branch from whatever is checked out)
         workflow = registry.agent_supports(agent.id, WORKFLOW_CAPABILITY)
@@ -665,6 +674,8 @@ _DRIVE = re.compile(r"^[A-Za-z]:")
 
 
 MAX_REPOSITORY_URL = 1000
+MAX_MODELS = 50
+MAX_MODEL = 100
 
 
 def _branch(value) -> str | None:
@@ -719,6 +730,17 @@ def _plan_entries(value) -> list[dict] | None:
     ]
 
 
+def _model_options(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    options = (
+        {"value": _text(o.get("value"), MAX_MODEL), "name": _text(o.get("name"), MAX_MODEL)}
+        for o in value
+        if isinstance(o, dict)
+    )
+    return [o for o in options if o["value"]][:MAX_MODELS]
+
+
 def sanitize_update(kind: str, data: dict) -> dict | None:
     """Keep only the metadata fields allowed for this kind, within their limits. None for unknown kinds."""
     g = data.get
@@ -747,6 +769,10 @@ def sanitize_update(kind: str, data: dict) -> dict | None:
                 "default_branch": _branch(g("default_branch")),
                 "repository_url": _text(g("repository_url"), MAX_REPOSITORY_URL),
             })
+        case "model":
+            return _pick({"value": _text(g("value"), MAX_MODEL), "name": _text(g("name"), MAX_MODEL)})
+        case "model_options":
+            return {"options": _model_options(g("options"))}
         case "permission":
             return _pick({
                 "tool_kind": _choice(g("tool_kind"), _TOOL_KINDS),
@@ -797,7 +823,14 @@ async def apply_update(
             .returning(AgentRun.task_id, AgentRun.agent_id)
         )
     ).first()
-    if claimed is None or claimed.task_id is None:
+    if claimed is None:
+        return
+    if kind == "model_options":  # not progress to show: what the owner can pick from on My agents
+        await db.execute(update(Agent).where(Agent.id == claimed.agent_id).values(known_models=clean["options"]))
+        agent = await db.get(Agent, claimed.agent_id)
+        await publish(db, Event(type="agents.updated", user_id=agent.owner_id))
+        return
+    if claimed.task_id is None:
         return  # an answering run's progress is not stored: its answer is what counts
     task = await db.get(Task, claimed.task_id)
     if kind == "branch":  # not progress to show: where the task's branch started, recorded once

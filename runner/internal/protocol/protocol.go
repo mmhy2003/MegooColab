@@ -54,6 +54,11 @@ const CapabilityWorkflow = "workflow/1"
 // branch from run_start.branch and reports where it started (kind "branch").
 const CapabilityBranch = "branch/1"
 
+// CapabilityModel is advertised in every hello: the runner starts a session on
+// the agent's chosen model, or fails the run (model_unavailable) rather than
+// use another, and reports the models the agent offers.
+const CapabilityModel = "model/1"
+
 // Heartbeat is sent every 15 s.
 type Heartbeat struct {
 	Type string `json:"type"`
@@ -112,6 +117,9 @@ type WelcomeAgent struct {
 	Program           string           `json:"program"`
 	MaxConcurrentRuns int              `json:"max_concurrent_runs"`
 	Bindings          []WelcomeBinding `json:"bindings"`
+	// Model is the model its sessions start on, as its owner named it; "" is
+	// the program's own default.
+	Model string `json:"model,omitempty"`
 }
 
 // Welcome is the server's reply to hello.
@@ -201,7 +209,7 @@ func NewHello(version, os, arch string, agents []AgentAvailability) Hello {
 		}
 		out[i] = a
 	}
-	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch}}
+	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel}}
 }
 
 // NewHeartbeat builds a heartbeat.

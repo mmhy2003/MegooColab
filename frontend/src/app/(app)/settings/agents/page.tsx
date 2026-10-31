@@ -7,6 +7,7 @@ import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { BindingEditor } from "@/components/agents/BindingEditor";
 import { MachineField } from "@/components/agents/MachineField";
+import { ModelField } from "@/components/agents/ModelField";
 import { RunnerSetup } from "@/components/agents/RunnerSetup";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -15,7 +16,7 @@ import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
-import { ANSWER_MODE_HELP, PROGRAM_LABEL } from "@/lib/agents";
+import { ANSWER_MODE_HELP, DEFAULT_MODEL, PROGRAM_LABEL } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AccessToken, Agent, AgentProgram, AnswerMode, Project } from "@/lib/types";
@@ -26,6 +27,7 @@ function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[];
   const [machine, setMachine] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [answerMode, setAnswerMode] = useState<AnswerMode>("manual");
+  const [model, setModel] = useState(DEFAULT_MODEL.claude_code);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -40,7 +42,10 @@ function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[];
           try {
             await api("/api/agents", {
               method: "POST",
-              json: { program, name: name.trim() || null, answer_mode: answerMode, runner_token_id: machine },
+              json: {
+                program, name: name.trim() || null, answer_mode: answerMode, runner_token_id: machine,
+                model: model.trim() || null,
+              },
             });
             onCreated();
           } catch (err) {
@@ -50,12 +55,24 @@ function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[];
           }
         }}
       >
-        <Select label="Program" value={program} onChange={(e) => setProgram(e.target.value as AgentProgram)}>
+        <Select
+          label="Program"
+          value={program}
+          onChange={(e) => {
+            const next = e.target.value as AgentProgram;
+            setProgram(next);
+            setModel(DEFAULT_MODEL[next]);
+          }}
+        >
           <option value="claude_code">{PROGRAM_LABEL.claude_code}</option>
           <option value="codex">{PROGRAM_LABEL.codex}</option>
         </Select>
         <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Leave blank for a default name" maxLength={200} />
         <MachineField machine={null} tokens={tokens} value={machine} onChange={setMachine} />
+        <div>
+          <Input label="Model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Program default" maxLength={100} />
+          <p className="mt-1 text-xs text-muted-foreground">Leave it empty to use the program&apos;s own default. You can change it later.</p>
+        </div>
         <div>
           <Select label="Answer mode" value={answerMode} onChange={(e) => setAnswerMode(e.target.value as AnswerMode)}>
             <option value="manual">Manual</option>
@@ -119,6 +136,19 @@ function AgentCard({
             setError(null);
             try {
               await api(`/api/agents/${agent.id}`, { method: "PATCH", json: { runner_token_id: tokenId } });
+              onChanged();
+            } catch (err) {
+              setError(errorMessage(err));
+            }
+          }}
+        />
+        <ModelField
+          model={agent.model ?? null}
+          knownModels={agent.known_models}
+          onSave={async (model) => {
+            setError(null);
+            try {
+              await api(`/api/agents/${agent.id}`, { method: "PATCH", json: { model } });
               onChanged();
             } catch (err) {
               setError(errorMessage(err));

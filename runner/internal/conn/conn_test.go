@@ -68,7 +68,7 @@ func TestHelloAdvertisesWorkflowCapability(t *testing.T) {
 	if err := json.Unmarshal(s.WaitFrame(t, "hello").Raw, &hello); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(hello.Capabilities, ",") != "workflow/1,branch/1" {
+	if strings.Join(hello.Capabilities, ",") != "workflow/1,branch/1,model/1" {
 		t.Fatalf("capabilities = %v", hello.Capabilities)
 	}
 }

@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, IdMixin
@@ -33,6 +34,10 @@ class Agent(IdMixin, Base):
     runner_token_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("personal_access_tokens.id", ondelete="SET NULL"), index=True
     )
+    # the model its sessions start on, as the owner typed or picked it; None: the program's own default
+    model: Mapped[str | None] = mapped_column(String(100))
+    # the models its program offered on its last run ([{value, name}]), for the owner to pick from
+    known_models: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

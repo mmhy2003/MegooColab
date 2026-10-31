@@ -34,7 +34,10 @@ function AdminAgentsPageContent() {
               <tr key={a.id} className="border-b border-line last:border-0">
                 <td className="px-3 py-2">{a.owner.name}</td>
                 <td className="px-3 py-2">{a.name}</td>
-                <td className="px-3 py-2 text-muted-foreground">{PROGRAM_LABEL[a.program]}</td>
+                <td className="px-3 py-2 text-muted-foreground">
+                  {PROGRAM_LABEL[a.program]}
+                  {a.model && <span className="font-mono text-xs"> · {a.model}</span>}
+                </td>
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center gap-1.5">
                     <AgentStatusDot status={a.status} />

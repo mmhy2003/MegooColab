@@ -98,6 +98,7 @@ async def build_welcome(user_id: uuid.UUID, token_id: uuid.UUID) -> Welcome:
                     program=a.program,
                     max_concurrent_runs=a.max_concurrent_runs,
                     bindings=bindings.get(a.id, []),
+                    model=a.model,
                 )
                 for a in agents
             ],

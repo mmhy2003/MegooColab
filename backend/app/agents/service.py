@@ -19,13 +19,23 @@ from app.projects.access import (
     project_team_ids,
 )
 from app.projects.models import Project, ProjectTeam
-from app.runner.registry import BRANCH_CAPABILITY, BRANCH_PROBLEM, WORKFLOW_CAPABILITY, WORKFLOW_PROBLEM, registry
+from app.runner.registry import (
+    BRANCH_CAPABILITY,
+    BRANCH_PROBLEM,
+    MODEL_CAPABILITY,
+    MODEL_PROBLEM,
+    WORKFLOW_CAPABILITY,
+    WORKFLOW_PROBLEM,
+    registry,
+)
 from app.tasks.models import Task
 from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
 from app.workflow.models import TaskWorkflow, WorkflowStatus
 
 PROGRAM_LABELS = {AgentProgram.claude_code: "Claude Code", AgentProgram.codex: "Codex"}
+# the model a new agent starts on, unless its owner asks for another (or for the program's own default)
+DEFAULT_MODELS = {AgentProgram.claude_code: "Opus 5.5", AgentProgram.codex: "GPT-6.1 Sol"}
 
 # Windows drive (C:\ or C:/), UNC (\\server\share) or POSIX (/...)
 _ABSOLUTE_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\[^\\/]|/)")
@@ -67,9 +77,9 @@ def runner_info(agent_id: uuid.UUID) -> RunnerInfo | None:
     return RunnerInfo(version=conn.version, os=conn.os or "")
 
 
-def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User) -> list[str]:
+def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, model: str | None = None) -> list[str]:
     """What its machine's live runner reports as wrong with the agent (shown to the owner and admins only),
-    plus the server's own too-old-runner notice (shown to everyone who can see the agent)."""
+    plus the server's own too-old-runner notices (shown to everyone who can see the agent)."""
     conn = registry.conn_for_agent(agent_id)
     if conn is None:
         return []
@@ -79,6 +89,8 @@ def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User) -> li
         problems.append(WORKFLOW_PROBLEM)
     if BRANCH_CAPABILITY not in conn.capabilities:
         problems.append(BRANCH_PROBLEM)
+    if model and MODEL_CAPABILITY not in conn.capabilities:
+        problems.append(MODEL_PROBLEM)
     return problems
 
 
@@ -251,10 +263,12 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "max_concurrent_runs": a.max_concurrent_runs,
             "owner": UserOut.model_validate(owners[a.owner_id]),
             "status": statuses[a.id],
-            "problems": agent_problems(a.id, a.owner_id, viewer),
+            "problems": agent_problems(a.id, a.owner_id, viewer, a.model),
             "bindings": bindings.get(a.id, []),
             "runner": runner_info(a.id),
             "machine": _machine(tokens.get(a.runner_token_id), a.owner_id, viewer),
+            "model": a.model,
+            "known_models": (a.known_models or []) if a.owner_id == viewer.id else [],
         }
         for a in agents
     ]

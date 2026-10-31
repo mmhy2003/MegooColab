@@ -203,6 +203,8 @@ type agentReport struct {
 	Cwd       string          `json:"cwd"`
 	Meta      json.RawMessage `json:"meta"`
 	ModesSet  []string        `json:"modes_set"`
+	ModelsSet []string        `json:"models_set"`
+	Prompts   []string        `json:"prompts"`
 	Cancelled bool            `json:"cancelled"`
 	Steps     []struct {
 		Type    string `json:"type"`

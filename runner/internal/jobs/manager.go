@@ -771,6 +771,9 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	r.mu.Lock()
 	r.sessionID = string(sess.id)
 	r.mu.Unlock()
+	if err := startModel(r.ctx, ac, sess, agent.Model, r.emit); err != nil {
+		return fail("model_unavailable", err)
+	}
 	var available []string
 	if sess.modes != nil {
 		for _, md := range sess.modes.AvailableModes {

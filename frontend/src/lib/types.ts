@@ -34,6 +34,7 @@ export type RunnerInfo = S["RunnerInfo"];
 export type Machine = S["MachineOut"];
 export type Updates = S["UpdatesOut"];
 export type AgentProgram = S["AgentProgram"];
+export type ModelOption = S["ModelOption"];
 export type AnswerMode = S["AnswerMode"];
 export type AdminAgent = S["AdminAgentOut"];
 export type AccessToken = S["TokenOut"];

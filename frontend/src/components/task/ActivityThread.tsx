@@ -79,6 +79,8 @@ function describeAgentEvent(kind: string, data: Record<string, unknown>, byPerso
       return `changed ${str(data.path) ?? "a file"} (+${num(data.lines_added)} −${num(data.lines_removed)})`;
     case "agent_command":
       return `ran ${str(data.command) ?? "a command"}${data.exit_code == null ? "" : ` → exit ${String(data.exit_code)}`}`;
+    case "agent_model":
+      return `used the model ${str(data.name) ?? str(data.value) ?? "its default"}`;
     case "agent_permission":
       return `was ${data.decision === "allowed" ? "allowed" : "denied"}: ${str(data.title) ?? "a request"}`;
     case "agent_run_completed":

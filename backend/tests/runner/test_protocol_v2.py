@@ -41,7 +41,7 @@ V2_KEYS = {"role", "stage", "step", "resume_session_id", "resume_prompt", "mcp",
 SHA = "a" * 40
 
 
-def _hello_v2(agent, capabilities=("workflow/1", "branch/1")):
+def _hello_v2(agent, capabilities=("workflow/1", "branch/1", "model/1")):
     return _hello([_avail(agent)], capabilities=capabilities)
 
 
@@ -76,7 +76,7 @@ async def test_v1_runner_hello_still_accepted(db, tc_factory):
         ws.send_json(_hello([_avail(agent)], capabilities=None))  # no capabilities field
         _wait_status(tc, agent["id"], "online")  # accepted, but it is sent no task run (no branch/1)
         assert (await _row(db, run["id"])).status == "queued"
-        ws.send_json(_hello([_avail(agent)], capabilities=["branch/1"]))
+        ws.send_json(_hello([_avail(agent)], capabilities=["branch/1", "model/1"]))
         start = ws.receive_json()
         assert start["run_id"] == run["id"]
         assert V2_KEYS.isdisjoint(start)  # a plain run keeps the v1 shape, plus its branch
@@ -105,7 +105,7 @@ async def test_workflow_run_not_dispatched_without_capability_and_problem_shown(
     await _make_workflow(db, run["id"])
     with tc.websocket_connect(URL, headers=token["headers"]) as ws:
         ws.receive_json()
-        ws.send_json(_hello([_avail(agent)], capabilities=["branch/1"]))  # no workflow/1
+        ws.send_json(_hello([_avail(agent)], capabilities=["branch/1", "model/1"]))  # no workflow/1
         _wait_status(tc, agent["id"], "online")
         mine = next(a for a in tc.get("/api/agents/mine").json() if a["id"] == agent["id"])
         assert mine["problems"] == [WORKFLOW_PROBLEM]
@@ -458,7 +458,7 @@ async def test_runner_problems_visible_to_owner_and_admins_only(db):
         assert agent_problems(agent_id, owner.id, owner) == ["claude not installed", WORKFLOW_PROBLEM, BRANCH_PROBLEM]
         assert agent_problems(agent_id, owner.id, admin) == ["claude not installed", WORKFLOW_PROBLEM, BRANCH_PROBLEM]
         assert agent_problems(agent_id, owner.id, other) == [WORKFLOW_PROBLEM, BRANCH_PROBLEM]
-        conn.capabilities = {"workflow/1", "branch/1"}
+        conn.capabilities = {"workflow/1", "branch/1", "model/1"}
         assert agent_problems(agent_id, owner.id, other) == []
     finally:
         registry._conns.pop(owner.id, None)

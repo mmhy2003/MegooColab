@@ -231,7 +231,7 @@ async def _fake_conn(user, agent, socket):
         await s.execute(update(Agent).where(Agent.id == uuid.UUID(agent["id"])).values(runner_token_id=token.id))
         await s.commit()
     conn = RunnerConn(token.id, user.id, socket)
-    conn.capabilities = {"workflow/1", "branch/1"}  # a current runner
+    conn.capabilities = {"workflow/1", "branch/1", "model/1"}  # a current runner
     conn.owned_agents.add(uuid.UUID(agent["id"]))
     conn.set_availability(uuid.UUID(agent["id"]), True, [])
     registry._conns[user.id] = conn

@@ -1,13 +1,15 @@
 import uuid
 from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
 
 from app.agents.models import AgentProgram, AnswerMode
 from app.auth.schemas import UserOut
 from app.core.text import NoNulStr
 
 MaxRuns = Annotated[int, Field(ge=1, le=3)]
+# a model name or alias ("opus", "gpt-5-codex"); blank is no choice: the program's own default
+ModelName = Annotated[NoNulStr, Field(max_length=100), AfterValidator(lambda v: v.strip() or None)]
 
 
 class AgentIn(BaseModel):
@@ -16,6 +18,7 @@ class AgentIn(BaseModel):
     answer_mode: AnswerMode = AnswerMode.manual
     max_concurrent_runs: MaxRuns = 1
     runner_token_id: uuid.UUID | None = None
+    model: ModelName | None = None
 
 
 class AgentPatch(BaseModel):
@@ -23,6 +26,7 @@ class AgentPatch(BaseModel):
     answer_mode: AnswerMode | None = None
     max_concurrent_runs: MaxRuns | None = None
     runner_token_id: uuid.UUID | None = None  # only when sent: null unlinks
+    model: ModelName | None = None  # only when sent: null or blank goes back to the program's default
 
 
 class BindingIn(BaseModel):
@@ -55,6 +59,13 @@ class MachineOut(BaseModel):
     expired: bool
 
 
+class ModelOption(BaseModel):
+    """A model the agent's program offered, as its runner reported it."""
+
+    value: str
+    name: str
+
+
 class AgentOut(BaseModel):
     id: uuid.UUID
     name: str
@@ -67,6 +78,8 @@ class AgentOut(BaseModel):
     bindings: list[BindingOut]
     runner: RunnerInfo | None = None  # None while the owner's runner is offline
     machine: MachineOut | None = None  # owner and admins only; None when unlinked
+    model: str | None = None  # None: the program's own default
+    known_models: list[ModelOption] = []  # owner only
 
 
 class ProjectAgentOut(AgentOut):
