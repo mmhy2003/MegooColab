@@ -77,7 +77,7 @@ def runner_info(agent_id: uuid.UUID) -> RunnerInfo | None:
     return RunnerInfo(version=conn.version, os=conn.os or "")
 
 
-def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, model: str | None = None) -> list[str]:
+def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, chooses: bool = False) -> list[str]:
     """What its machine's live runner reports as wrong with the agent (shown to the owner and admins only),
     plus the server's own too-old-runner notices (shown to everyone who can see the agent)."""
     conn = registry.conn_for_agent(agent_id)
@@ -89,7 +89,7 @@ def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, model
         problems.append(WORKFLOW_PROBLEM)
     if BRANCH_CAPABILITY not in conn.capabilities:
         problems.append(BRANCH_PROBLEM)
-    if model and MODEL_CAPABILITY not in conn.capabilities:
+    if chooses and MODEL_CAPABILITY not in conn.capabilities:  # a model or an effort of its own
         problems.append(MODEL_PROBLEM)
     return problems
 
@@ -263,11 +263,12 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "max_concurrent_runs": a.max_concurrent_runs,
             "owner": UserOut.model_validate(owners[a.owner_id]),
             "status": statuses[a.id],
-            "problems": agent_problems(a.id, a.owner_id, viewer, a.model),
+            "problems": agent_problems(a.id, a.owner_id, viewer, bool(a.model or a.effort)),
             "bindings": bindings.get(a.id, []),
             "runner": runner_info(a.id),
             "machine": _machine(tokens.get(a.runner_token_id), a.owner_id, viewer),
             "model": a.model,
+            "effort": a.effort,
             "known_models": (a.known_models or []) if a.owner_id == viewer.id else [],
         }
         for a in agents

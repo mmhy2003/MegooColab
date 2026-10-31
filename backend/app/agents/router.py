@@ -53,6 +53,7 @@ async def create_agent(body: AgentIn, user: AuthedUser, db: DbSession) -> AgentO
         answer_mode=body.answer_mode, max_concurrent_runs=body.max_concurrent_runs,
         runner_token_id=body.runner_token_id,
         model=body.model if "model" in body.model_fields_set else service.DEFAULT_MODELS[body.program],
+        effort=body.effort,
     )
     db.add(agent)
     await _flush_unique_name(db)
@@ -76,12 +77,14 @@ async def update_agent(agent_id: uuid.UUID, body: AgentPatch, user: AuthedUser, 
         agent.answer_mode = body.answer_mode
     if body.max_concurrent_runs is not None:
         agent.max_concurrent_runs = body.max_concurrent_runs
-    if "model" in body.model_fields_set and body.model != agent.model:
-        # a running run keeps the model it started on; the next one takes this
-        agent.model = body.model
+    model = body.model if "model" in body.model_fields_set else agent.model
+    effort = body.effort if "effort" in body.model_fields_set else agent.effort
+    if (model, effort) != (agent.model, agent.effort):
+        # a running run keeps the model and effort it started on; the next one takes these
+        agent.model, agent.effort = model, effort
         await audit.record(
             db, "agent.model_changed", actor_id=user.id, target_type="agent", target_id=agent.id,
-            data={"model": agent.model},
+            data={"model": agent.model, "effort": agent.effort},
         )
     if "runner_token_id" in body.model_fields_set and body.runner_token_id != agent.runner_token_id:
         # a running run belongs to the machine it was sent to: moving the agent would orphan it. The agent row is

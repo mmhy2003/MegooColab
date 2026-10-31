@@ -200,13 +200,16 @@ type agentReport struct {
 		FSWrite  bool `json:"fs_write"`
 		Terminal bool `json:"terminal"`
 	} `json:"initialize"`
-	Cwd       string          `json:"cwd"`
-	Meta      json.RawMessage `json:"meta"`
-	ModesSet  []string        `json:"modes_set"`
-	ModelsSet []string        `json:"models_set"`
-	Prompts   []string        `json:"prompts"`
-	Cancelled bool            `json:"cancelled"`
-	Steps     []struct {
+	Cwd          string          `json:"cwd"`
+	Meta         json.RawMessage `json:"meta"`
+	ModesSet     []string        `json:"modes_set"`
+	ModelsSet    []string        `json:"models_set"`
+	EffortsSet   []string        `json:"efforts_set"`
+	PromptModel  string          `json:"prompt_model"`
+	PromptEffort string          `json:"prompt_effort"`
+	Prompts      []string        `json:"prompts"`
+	Cancelled    bool            `json:"cancelled"`
+	Steps        []struct {
 		Type    string `json:"type"`
 		Exists  *bool  `json:"exists"`
 		Content string `json:"content"`

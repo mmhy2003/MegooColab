@@ -51,7 +51,7 @@ async def test_the_model_is_set_on_create_changed_and_cleared(client, db):
         await client.patch(f"/api/agents/{agent['id']}", json={"model": "sonnet"})
         assert (await client.patch(f"/api/agents/{agent['id']}", json={"model": cleared})).json()["model"] is None
     entries = (await db.execute(select(AuditLog).where(AuditLog.action == "agent.model_changed"))).scalars().all()
-    assert {"model": "sonnet"} in [e.data for e in entries]
+    assert {"model": "sonnet", "effort": None} in [e.data for e in entries]
 
 
 async def test_a_model_name_too_long_is_refused_and_nul_is_dropped(client, db):
@@ -76,7 +76,7 @@ def test_model_reports_are_cut_to_their_limits():
     options = [{"value": f"m{i}", "name": "N" * 300, "secret": "x"} for i in range(60)] + ["junk", {"name": "no value"}]
     clean = sanitize_update("model_options", {"options": options, "extra": 1})
     assert len(clean["options"]) == 50
-    assert clean["options"][0] == {"value": "m0", "name": "N" * 100}
+    assert clean["options"][0] == {"value": "m0", "name": "N" * 100, "efforts": []}
     assert sanitize_update("model", {"value": "opus", "name": "Opus\x00 4", "x": 1}) == {"value": "opus", "name": "Opus 4"}
 
 
@@ -86,7 +86,7 @@ async def test_the_models_an_agent_offers_are_kept_for_its_owner(client, db):
     await apply_update(db, me.id, run_id, 1, "model_options", {"options": options})
     await db.commit()
     mine = next(a for a in (await client.get("/api/agents/mine")).json() if a["id"] == agent["id"])
-    assert mine["known_models"] == options
+    assert mine["known_models"] == [{**o, "efforts": []} for o in options]
     # not a progress event
     kinds = (await db.execute(select(TaskEvent.kind))).scalars().all()
     assert "agent_model_options" not in kinds
@@ -117,7 +117,7 @@ async def test_an_answering_run_still_reports_the_models(client, db):
         await apply_update(s, me.id, run.id, 1, "model_options", {"options": [{"value": "opus", "name": "Opus"}]})
         await s.commit()
     async with SessionLocal() as s:
-        assert (await s.get(Agent, uuid.UUID(agent["id"]))).known_models == [{"value": "opus", "name": "Opus"}]
+        assert (await s.get(Agent, uuid.UUID(agent["id"]))).known_models == [{"value": "opus", "name": "Opus", "efforts": []}]
 
 
 async def test_a_runner_without_model_support_leaves_runs_of_an_agent_with_a_model_queued(db, tc_factory):
@@ -168,3 +168,71 @@ async def test_model_unavailable_is_kept_as_the_runs_reason(db, tc_factory):
         _wait_run(tc, task, run["id"], "failed")
     async with SessionLocal() as s:
         assert (await s.get(AgentRun, uuid.UUID(run["id"]))).reason == "model_unavailable"
+
+
+async def test_effort_is_set_with_the_model_and_cleared_on_its_own(client, db):
+    await login(client, await make_user(db))
+    agent = await _agent(client, effort=" High ")
+    assert (agent["model"], agent["effort"]) == ("Opus 5.5", "High")
+    assert (await _agent(client, name="N"))["effort"] is None  # the model's own default
+    r = await client.patch(f"/api/agents/{agent['id']}", json={"model": "sonnet", "effort": "low"})
+    assert (r.json()["model"], r.json()["effort"]) == ("sonnet", "low")
+    assert (await client.patch(f"/api/agents/{agent['id']}", json={"effort": ""})).json()["effort"] is None
+    assert (await client.patch(f"/api/agents/{agent['id']}", json={"effort": "x" * 41})).status_code == 422
+    entries = (await db.execute(select(AuditLog).where(AuditLog.action == "agent.model_changed"))).scalars().all()
+    assert {"model": "sonnet", "effort": "low"} in [e.data for e in entries]
+
+
+async def test_the_welcome_carries_the_effort(client, db):
+    me = await make_user(db)
+    await login(client, me)
+    token = (await client.post("/api/tokens", json={"name": "laptop", "scopes": ["runner"]})).json()["token"]
+    await _agent(client, name="A", effort="max", runner_token_id=token["id"])
+    welcome = await build_welcome(me.id, uuid.UUID(token["id"]))
+    assert welcome.model_dump(mode="json")["agents"][0]["effort"] == "max"
+
+
+def test_each_models_effort_levels_are_kept_within_limits():
+    efforts = [{"value": f"e{i}", "name": "E" * 80} for i in range(15)] + ["junk", {"name": "no value"}]
+    clean = sanitize_update("model_options", {"options": [{"value": "opus", "name": "Opus", "efforts": efforts}]})
+    [opus] = clean["options"]
+    assert len(opus["efforts"]) == 10
+    assert opus["efforts"][0] == {"value": "e0", "name": "E" * 40}
+    # a model without effort levels has none
+    assert sanitize_update("model_options", {"options": [{"value": "haiku", "name": "Haiku"}]})["options"] == [
+        {"value": "haiku", "name": "Haiku", "efforts": []}
+    ]
+    used = {"value": "opus", "name": "Opus 5.5", "effort": "high", "effort_name": "High", "x": 1}
+    assert sanitize_update("model", used) == {k: v for k, v in used.items() if k != "x"}
+
+
+async def test_an_effort_alone_also_needs_a_runner_that_can_choose(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    tc.patch(f"/api/agents/{agent['id']}", json={"model": None, "effort": "high"})
+    run = _start(tc, task, prompt="Go")
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello([_avail(agent)], capabilities=["workflow/1", "branch/1"]))
+        _wait_status(tc, agent["id"], "online")
+        mine = next(a for a in tc.get("/api/agents/mine").json() if a["id"] == agent["id"])
+        assert mine["problems"] == [MODEL_PROBLEM]
+        async with SessionLocal() as s:
+            assert (await s.get(AgentRun, uuid.UUID(run["id"]))).status == "queued"
+
+
+async def test_effort_unavailable_is_kept_as_the_runs_reason(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    run = _start(tc, task, prompt="Go")
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello([_avail(agent)]))
+        ws.receive_json()
+        ws.send_json({"type": "run_finished", "run_id": run["id"], "outcome": "failed", "summary": "",
+                      "error": "effort_unavailable"})
+        _wait_run(tc, task, run["id"], "failed")
+    async with SessionLocal() as s:
+        assert (await s.get(AgentRun, uuid.UUID(run["id"]))).reason == "effort_unavailable"

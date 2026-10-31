@@ -2695,6 +2695,8 @@ export interface components {
             machine?: components["schemas"]["MachineOut"] | null;
             /** Model */
             model?: string | null;
+            /** Effort */
+            effort?: string | null;
             /**
              * Known Models
              * @default []
@@ -2737,6 +2739,8 @@ export interface components {
             runner_token_id?: string | null;
             /** Model */
             model?: string | null;
+            /** Effort */
+            effort?: string | null;
         };
         /** AgentItem */
         AgentItem: {
@@ -2788,6 +2792,8 @@ export interface components {
             machine?: components["schemas"]["MachineOut"] | null;
             /** Model */
             model?: string | null;
+            /** Effort */
+            effort?: string | null;
             /**
              * Known Models
              * @default []
@@ -2805,6 +2811,8 @@ export interface components {
             runner_token_id?: string | null;
             /** Model */
             model?: string | null;
+            /** Effort */
+            effort?: string | null;
         };
         /**
          * AgentProgram
@@ -3412,6 +3420,13 @@ export interface components {
          * @enum {string}
          */
         Driver: "runner" | "connect_only" | "manual";
+        /** EffortOption */
+        EffortOption: {
+            /** Value */
+            value: string;
+            /** Name */
+            name: string;
+        };
         /**
          * Enforcement
          * @enum {string}
@@ -3951,13 +3966,19 @@ export interface components {
         };
         /**
          * ModelOption
-         * @description A model the agent's program offered, as its runner reported it.
+         * @description A model the agent's program offered, as its runner reported it, with its effort levels (none: the model
+         *     has no effort setting).
          */
         ModelOption: {
             /** Value */
             value: string;
             /** Name */
             name: string;
+            /**
+             * Efforts
+             * @default []
+             */
+            efforts: components["schemas"]["EffortOption"][];
         };
         /** MoveIn */
         MoveIn: {
@@ -4223,6 +4244,8 @@ export interface components {
             machine?: components["schemas"]["MachineOut"] | null;
             /** Model */
             model?: string | null;
+            /** Effort */
+            effort?: string | null;
             /**
              * Known Models
              * @default []

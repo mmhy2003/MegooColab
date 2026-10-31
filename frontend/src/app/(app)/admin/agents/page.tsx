@@ -7,7 +7,7 @@ import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
-import { PROGRAM_LABEL } from "@/lib/agents";
+import { effortName, PROGRAM_LABEL } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AdminAgent } from "@/lib/types";
@@ -37,6 +37,7 @@ function AdminAgentsPageContent() {
                 <td className="px-3 py-2 text-muted-foreground">
                   {PROGRAM_LABEL[a.program]}
                   {a.model && <span className="font-mono text-xs"> · {a.model}</span>}
+                  {a.effort && <span className="font-mono text-xs"> · {effortName(a.effort)}</span>}
                 </td>
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center gap-1.5">

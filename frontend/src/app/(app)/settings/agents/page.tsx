@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
-import { ANSWER_MODE_HELP, DEFAULT_MODEL, PROGRAM_LABEL } from "@/lib/agents";
+import { ANSWER_MODE_HELP, COMMON_EFFORTS, DEFAULT_MODEL, PROGRAM_LABEL } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AccessToken, Agent, AgentProgram, AnswerMode, Project } from "@/lib/types";
@@ -28,6 +28,7 @@ function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[];
   const [name, setName] = useState("");
   const [answerMode, setAnswerMode] = useState<AnswerMode>("manual");
   const [model, setModel] = useState(DEFAULT_MODEL.claude_code);
+  const [effort, setEffort] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -44,7 +45,7 @@ function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[];
               method: "POST",
               json: {
                 program, name: name.trim() || null, answer_mode: answerMode, runner_token_id: machine,
-                model: model.trim() || null,
+                model: model.trim() || null, effort: effort || null,
               },
             });
             onCreated();
@@ -72,6 +73,15 @@ function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[];
         <div>
           <Input label="Model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Program default" maxLength={100} />
           <p className="mt-1 text-xs text-muted-foreground">Leave it empty to use the program&apos;s own default. You can change it later.</p>
+        </div>
+        <div>
+          <Select label="Effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
+            <option value="">Model default</option>
+            {COMMON_EFFORTS.map((l) => (
+              <option key={l.value} value={l.value}>{l.name}</option>
+            ))}
+          </Select>
+          <p className="mt-1 text-xs text-muted-foreground">The levels each model supports are listed after the agent&apos;s first run.</p>
         </div>
         <div>
           <Select label="Answer mode" value={answerMode} onChange={(e) => setAnswerMode(e.target.value as AnswerMode)}>
@@ -144,11 +154,12 @@ function AgentCard({
         />
         <ModelField
           model={agent.model ?? null}
+          effort={agent.effort ?? null}
           knownModels={agent.known_models}
-          onSave={async (model) => {
+          onSave={async (choice) => {
             setError(null);
             try {
-              await api(`/api/agents/${agent.id}`, { method: "PATCH", json: { model } });
+              await api(`/api/agents/${agent.id}`, { method: "PATCH", json: choice });
               onChanged();
             } catch (err) {
               setError(errorMessage(err));

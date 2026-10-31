@@ -68,6 +68,7 @@ RUNNER_FAILURE_CODES = frozenset({
     "mcp_http_unsupported", "worktree_failed", "not_bound", "files_failed", "commit_failed", "adapter_start_failed",
     "initialize_failed", "session_failed", "prompt_failed", "invalid_run_files", "busy", "git_state_unreadable",
     "start_branch_missing", "repository_not_matched", "start_branch_fetch_failed", "model_unavailable",
+    "effort_unavailable",
 })
 
 log = logging.getLogger(__name__)
@@ -178,8 +179,8 @@ async def _claim_next(
         )
     )
     run = None
-    # a runner without model/1 would start an agent with a chosen model on the program's default: its runs wait
-    model_ok = not agent.model or registry.agent_supports(agent.id, MODEL_CAPABILITY)
+    # a runner without model/1 would start an agent with a chosen model or effort on the defaults: its runs wait
+    model_ok = not (agent.model or agent.effort) or registry.agent_supports(agent.id, MODEL_CAPABILITY)
     if model_ok and agent.max_concurrent_runs > (running or 0):
         # a runner without workflow/1 leaves workflow and answering runs queued (they need the MCP run token); one
         # without branch/1 leaves every task run queued (it would start the task's branch from whatever is checked out)
@@ -676,6 +677,8 @@ _DRIVE = re.compile(r"^[A-Za-z]:")
 MAX_REPOSITORY_URL = 1000
 MAX_MODELS = 50
 MAX_MODEL = 100
+MAX_EFFORTS = 10
+MAX_EFFORT = 40
 
 
 def _branch(value) -> str | None:
@@ -730,15 +733,22 @@ def _plan_entries(value) -> list[dict] | None:
     ]
 
 
-def _model_options(value) -> list[dict]:
+def _choices(value, limit: int, length: int) -> list[dict]:
     if not isinstance(value, list):
         return []
-    options = (
-        {"value": _text(o.get("value"), MAX_MODEL), "name": _text(o.get("name"), MAX_MODEL)}
+    choices = (
+        {"value": _text(o.get("value"), length), "name": _text(o.get("name"), length)}
         for o in value
         if isinstance(o, dict)
     )
-    return [o for o in options if o["value"]][:MAX_MODELS]
+    return [c for c in choices if c["value"]][:limit]
+
+
+def _model_options(value) -> list[dict]:
+    """The models offered, each with its effort levels."""
+    models = _choices(value, MAX_MODELS, MAX_MODEL)
+    efforts = {o.get("value"): o.get("efforts") for o in value if isinstance(o, dict)} if models else {}
+    return [{**m, "efforts": _choices(efforts.get(m["value"]), MAX_EFFORTS, MAX_EFFORT)} for m in models]
 
 
 def sanitize_update(kind: str, data: dict) -> dict | None:
@@ -770,7 +780,10 @@ def sanitize_update(kind: str, data: dict) -> dict | None:
                 "repository_url": _text(g("repository_url"), MAX_REPOSITORY_URL),
             })
         case "model":
-            return _pick({"value": _text(g("value"), MAX_MODEL), "name": _text(g("name"), MAX_MODEL)})
+            return _pick({
+                "value": _text(g("value"), MAX_MODEL), "name": _text(g("name"), MAX_MODEL),
+                "effort": _text(g("effort"), MAX_EFFORT), "effort_name": _text(g("effort_name"), MAX_EFFORT),
+            })
         case "model_options":
             return {"options": _model_options(g("options"))}
         case "permission":

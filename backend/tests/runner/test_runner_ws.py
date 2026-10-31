@@ -123,6 +123,7 @@ async def test_welcome_lists_agents_and_bindings(db, tc_factory):
                     "max_concurrent_runs": 2,
                     "bindings": [{"project_key": "PAY", "local_path": "/home/me/pay"}],
                     "model": "Opus 5.5",
+                    "effort": None,
                 }
             ],
         }

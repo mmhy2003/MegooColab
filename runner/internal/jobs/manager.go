@@ -62,6 +62,7 @@ type Manager struct {
 	runs     map[string]*run
 	early    []string // run ids cancelled before they started, oldest first
 	reported map[string]string
+	efforts  efforts // each program's models' effort levels, learned on its first run
 	closed   bool
 	gen      int // connection generation; bumped by StopAll
 	ended    int // highest connection number known to be lost
@@ -771,8 +772,10 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	r.mu.Lock()
 	r.sessionID = string(sess.id)
 	r.mu.Unlock()
-	if err := startModel(r.ctx, ac, sess, agent.Model, r.emit); err != nil {
-		return fail("model_unavailable", err)
+	if code, err := startModel(r.ctx, ac, sess, choice{
+		model: agent.Model, effort: agent.Effort, program: agent.Program, efforts: &m.efforts,
+	}, r.emit); err != nil {
+		return fail(code, err)
 	}
 	var available []string
 	if sess.modes != nil {

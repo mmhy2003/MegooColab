@@ -26,12 +26,14 @@ describe("Add agent", () => {
     expect(model).toHaveValue("Opus 5.5");
     await userEvent.selectOptions(screen.getByLabelText("Program"), "codex");
     expect(model).toHaveValue("GPT-6.1 Sol");
+    expect(screen.getByLabelText("Effort")).toHaveValue("");
+    await userEvent.selectOptions(screen.getByLabelText("Effort"), "high");
     await userEvent.clear(model);
     await userEvent.type(model, "gpt-6.1-sol-mini");
     await userEvent.click(screen.getAllByRole("button", { name: "Add agent" }).at(-1)!);
     await waitFor(() => {
       const post = fetchMock.mock.calls.find(([u, init]) => u === "/api/agents" && init?.method === "POST");
-      expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ program: "codex", model: "gpt-6.1-sol-mini" });
+      expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ program: "codex", model: "gpt-6.1-sol-mini", effort: "high" });
     });
   });
 
@@ -48,7 +50,7 @@ describe("Add agent", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Add agent" }).at(-1)!);
     await waitFor(() => {
       const post = fetchMock.mock.calls.find(([u, init]) => u === "/api/agents" && init?.method === "POST");
-      expect(JSON.parse(String(post?.[1]?.body)).model).toBeNull();
+      expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ model: null, effort: null });
     });
   });
 });

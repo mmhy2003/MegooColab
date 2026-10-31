@@ -141,8 +141,12 @@ type Report struct {
 	Meta       json.RawMessage `json:"meta"`
 	ModesSet   []string        `json:"modes_set"`
 	ModelsSet  []string        `json:"models_set"`
-	Steps      []StepResult    `json:"steps"`
-	Cancelled  bool            `json:"cancelled"`
+	EffortsSet []string        `json:"efforts_set"`
+	// the model and effort the first turn was prompted on
+	PromptModel  string       `json:"prompt_model,omitempty"`
+	PromptEffort string       `json:"prompt_effort,omitempty"`
+	Steps        []StepResult `json:"steps"`
+	Cancelled    bool         `json:"cancelled"`
 
 	Prompts       []string        `json:"prompts"`        // the text of every turn
 	SessionEvents []string        `json:"session_events"` // new:<id> | load:<id> | resume:<id>

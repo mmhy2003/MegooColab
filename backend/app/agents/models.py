@@ -36,7 +36,10 @@ class Agent(IdMixin, Base):
     )
     # the model its sessions start on, as the owner typed or picked it; None: the program's own default
     model: Mapped[str | None] = mapped_column(String(100))
-    # the models its program offered on its last run ([{value, name}]), for the owner to pick from
+    # its thinking effort ("high"); None: the model's own default
+    effort: Mapped[str | None] = mapped_column(String(40))
+    # the models its program offered on its last run, each with its effort levels
+    # ([{value, name, efforts: [{value, name}]}]), for the owner to pick from
     known_models: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

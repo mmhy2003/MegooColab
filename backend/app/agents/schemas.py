@@ -10,6 +10,8 @@ from app.core.text import NoNulStr
 MaxRuns = Annotated[int, Field(ge=1, le=3)]
 # a model name or alias ("opus", "gpt-5-codex"); blank is no choice: the program's own default
 ModelName = Annotated[NoNulStr, Field(max_length=100), AfterValidator(lambda v: v.strip() or None)]
+# a thinking effort ("high"); blank is the model's own default
+EffortName = Annotated[NoNulStr, Field(max_length=40), AfterValidator(lambda v: v.strip() or None)]
 
 
 class AgentIn(BaseModel):
@@ -19,6 +21,7 @@ class AgentIn(BaseModel):
     max_concurrent_runs: MaxRuns = 1
     runner_token_id: uuid.UUID | None = None
     model: ModelName | None = None
+    effort: EffortName | None = None
 
 
 class AgentPatch(BaseModel):
@@ -27,6 +30,7 @@ class AgentPatch(BaseModel):
     max_concurrent_runs: MaxRuns | None = None
     runner_token_id: uuid.UUID | None = None  # only when sent: null unlinks
     model: ModelName | None = None  # only when sent: null or blank goes back to the program's default
+    effort: EffortName | None = None  # only when sent: null or blank goes back to the model's default
 
 
 class BindingIn(BaseModel):
@@ -59,11 +63,18 @@ class MachineOut(BaseModel):
     expired: bool
 
 
+class EffortOption(BaseModel):
+    value: str
+    name: str
+
+
 class ModelOption(BaseModel):
-    """A model the agent's program offered, as its runner reported it."""
+    """A model the agent's program offered, as its runner reported it, with its effort levels (none: the model
+    has no effort setting)."""
 
     value: str
     name: str
+    efforts: list[EffortOption] = []
 
 
 class AgentOut(BaseModel):
@@ -79,6 +90,7 @@ class AgentOut(BaseModel):
     runner: RunnerInfo | None = None  # None while the owner's runner is offline
     machine: MachineOut | None = None  # owner and admins only; None when unlinked
     model: str | None = None  # None: the program's own default
+    effort: str | None = None  # None: the model's own default
     known_models: list[ModelOption] = []  # owner only
 
 
