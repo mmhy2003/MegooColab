@@ -10,6 +10,7 @@ from app.agent_runs.service import cancel_user_runs
 from app.audit import service as audit
 from app.auth import service as auth_service
 from app.auth import tokens as auth_tokens
+from app.auth import two_factor
 from app.auth.deps import AdminUser, AuthedUser
 from app.auth.models import Role, TokenPurpose, User, UserStatus
 from app.auth.schemas import UserEnvelope, UserOut
@@ -25,6 +26,7 @@ from app.users.schemas import (
     InviteIn,
     InviteOut,
     ResetLinkOut,
+    AdminUserDetailsOut,
     UpdateUserIn,
 )
 from app.workflow import engine
@@ -98,6 +100,23 @@ async def create_user(body: CreateUserIn, admin: AdminUser, db: DbSession) -> Us
     return UserEnvelope(user=UserOut.model_validate(user))
 
 
+@admin_router.get("/details")
+async def user_details(admin: AdminUser, db: DbSession) -> list[AdminUserDetailsOut]:
+    """What only admins see of each person: how their two-factor sign-in is set up, and when they last signed in."""
+    return await users_service.admin_details(db)
+
+
+@admin_router.post("/{user_id}/reset-two-factor", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_two_factor(
+    user_id: uuid.UUID, admin: AdminUser, db: DbSession, mailer: Annotated[Mailer | None, Depends(get_mailer)]
+) -> None:
+    """Someone who lost every second factor gets back in with the password alone."""
+    if user_id == admin.id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "cannot_reset_own_two_factor")
+    user = await users_service.get_user_or_404(db, user_id)
+    await two_factor.reset_two_factor(db, user, actor=admin, via="admin", mailer=mailer)
+
+
 @admin_router.post("/{user_id}/reset-link", status_code=status.HTTP_201_CREATED)
 async def reset_link(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> ResetLinkOut:
     user = await db.get(User, user_id)
@@ -130,6 +149,26 @@ async def update_user(
         # access is role-dependent (admins see every project): open sockets must recompute it
         await publish(db, Event(type="membership.changed", user_id=user.id))
     return UserEnvelope(user=UserOut.model_validate(user))
+
+
+@admin_router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(user_id: uuid.UUID, admin: AdminUser, db: DbSession) -> None:
+    """What is theirs goes (account, agents, tokens, notifications, team places, personal memory); the team's work
+    stays, without their name. First everything deactivating does, so nothing of theirs is left running."""
+    user = await users_service.get_user_or_404(db, user_id)
+    if user.id == admin.id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "cannot_delete_self")
+    await users_service.ensure_not_last_admin(db, user)
+    await auth_service.revoke_user_sessions(db, user.id)
+    await auth_tokens.revoke_user_tokens(db, user.id)
+    await delete_user_subscriptions(db, user.id)
+    await cancel_user_runs(db, user.id)
+    await audit.record(
+        db, "user.deleted", actor_id=admin.id, target_type="user", target_id=user.id,
+        data={"email": user.email, "name": user.name},
+    )
+    await publish(db, Event(type="user.deactivated", user_id=user.id))
+    await db.delete(user)
 
 
 @admin_router.post("/{user_id}/deactivate", status_code=status.HTTP_204_NO_CONTENT)

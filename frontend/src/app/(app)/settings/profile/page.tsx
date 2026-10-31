@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 import { Suspense, useState } from "react";
 
 import { NewPasswordForm } from "@/components/auth/NewPasswordForm";
+import { PasskeysSection, TwoFactorStatus } from "@/components/auth/PasskeysSection";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -42,14 +43,14 @@ function TwoFactor({ enabled }: { enabled: boolean }) {
           e.preventDefault();
           try {
             await api("/api/auth/totp/disable", { method: "POST", json: { password, code } });
-            setMsg({ ok: true, text: "Two-factor sign-in turned off." });
+            setMsg({ ok: true, text: "Authenticator app turned off." });
             await refresh();
           } catch (err) {
             setMsg({ ok: false, text: errorMessage(err) });
           }
         }}
       >
-        <p className="text-sm text-green-ink">Two-factor sign-in is on.</p>
+        <p className="text-sm text-green-ink">The authenticator app is on.</p>
         <Input label="Password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
         <Input label="Authenticator code" inputMode="numeric" required value={code} onChange={(e) => setCode(e.target.value)} />
         {msg && <p className={`text-sm ${msg.ok ? "text-green-ink" : "text-pink"}`}>{msg.text}</p>}
@@ -87,7 +88,7 @@ function TwoFactor({ enabled }: { enabled: boolean }) {
           await api("/api/auth/totp/enable", { method: "POST", json: { code } });
           setSetup(null);
           setCode("");
-          setMsg({ ok: true, text: "Two-factor sign-in is on." });
+          setMsg({ ok: true, text: "Authenticator app turned on." });
           await refresh();
         } catch (err) {
           setMsg({ ok: false, text: errorMessage(err) });
@@ -173,9 +174,16 @@ function Profile() {
         </Section>
       </TabPanel>
       <TabPanel id="two-factor" active={tab === "two-factor"}>
-        <Section>
-          <TwoFactor enabled={me.totp_enabled} />
-        </Section>
+        <div className="space-y-4">
+          <TwoFactorStatus totpEnabled={me.totp_enabled} />
+          <Section>
+            <h3 className="text-sm font-bold">Authenticator app</h3>
+            <TwoFactor enabled={me.totp_enabled} />
+          </Section>
+          <Section>
+            <PasskeysSection totpEnabled={me.totp_enabled} />
+          </Section>
+        </div>
       </TabPanel>
     </div>
   );

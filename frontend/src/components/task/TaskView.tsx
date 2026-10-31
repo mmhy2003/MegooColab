@@ -181,8 +181,9 @@ export function TaskView({
         </header>
         {error && <p role="alert" className="px-4 pt-2 text-sm text-pink">{error}</p>}
         <div className="relative flex min-h-0 flex-1 flex-col">
-          {/* pb-20: the last content scrolls clear of the corner buttons */}
-          <div ref={scrollRef} className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto p-4 pb-20 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          {/* pb-20: the last content scrolls clear of the corner buttons. relative: what is positioned inside (screen
+              reader text) is held in it too; otherwise it would stretch the page under a task's own page */}
+          <div ref={scrollRef} className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto p-4 pb-20 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <div className="min-w-0 space-y-6">
               <Section title="Description">
                 <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />

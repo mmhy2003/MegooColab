@@ -10,7 +10,15 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => search,
 }));
 
+const getPasskey = vi.fn();
+vi.mock("@/lib/passkeys", () => ({
+  getPasskey: (options: unknown) => getPasskey(options),
+  isDismissed: (err: unknown) => (err as { name?: string })?.name === "NotAllowedError",
+  passkeyProblem: (err: unknown) => ((err as { name?: string })?.name === "SecurityError" ? "Passkeys work only at this server's own address, over HTTPS." : null),
+}));
+
 import { LoginForm, safeNext } from "@/app/(auth)/login/LoginForm";
+import { readAccounts, rememberAccount } from "@/lib/accounts";
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -45,6 +53,7 @@ describe("LoginForm", () => {
     vi.unstubAllGlobals();
     push.mockReset();
     replace.mockReset();
+    localStorage.clear();
   });
 
   it("shows the code field after totp_required and sends the code", async () => {
@@ -100,6 +109,207 @@ describe("LoginForm", () => {
     vi.mocked(fetch).mockResolvedValue(json(200, { needs_setup: true }));
     render(<LoginForm />);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/setup"));
+  });
+});
+
+describe("LoginForm with remembered accounts", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    search = new URLSearchParams();
+    rememberAccount({ email: "mo@acme.io", name: "Mohamed Youssef" });
+    rememberAccount({ email: "admin@acme.io", name: "Mohamed (admin)" });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    push.mockReset();
+    localStorage.clear();
+  });
+
+  const loginBodies = () =>
+    vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/api/auth/login")).map(([, init]) => JSON.parse(String(init!.body)));
+
+  it("lists the accounts, the latest first, instead of the form", () => {
+    routeFetch([]);
+    render(<LoginForm />);
+    expect(screen.getByRole("heading", { name: "Choose an account" })).toBeInTheDocument();
+    const accounts = screen.getAllByRole("button", { name: /^Mohamed/ });
+    expect(accounts.map((b) => b.textContent)).toEqual([
+      expect.stringContaining("Mohamed (admin)admin@acme.io"),
+      expect.stringContaining("Mohamed Youssefmo@acme.io"),
+    ]);
+    expect(screen.queryByLabelText(/email/i)).not.toBeInTheDocument();
+  });
+
+  it("asks only for the password of the account picked, and signs it in", async () => {
+    routeFetch([json(200, { user: { id: "1", email: "mo@acme.io", name: "Mohamed Youssef" } })]);
+    render(<LoginForm />);
+    fireEvent.click(screen.getByRole("button", { name: /^Mohamed Youssef/ }));
+    expect(screen.getByText("mo@acme.io")).toBeInTheDocument();
+    const password = screen.getByLabelText(/^password/i);
+    expect(password).toHaveFocus();
+    // the email goes along unseen, so a password manager fills this account's password
+    expect(screen.getByDisplayValue("mo@acme.io")).toHaveAttribute("autocomplete", "username");
+    fireEvent.change(password, { target: { value: "correct-horse-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(loginBodies()[0]).toMatchObject({ email: "mo@acme.io", password: "correct-horse-1" });
+    expect(readAccounts()[0].email).toBe("mo@acme.io"); // used last: first now
+  });
+
+  it("keeps the account on a wrong password, and Switch goes back to the list", async () => {
+    routeFetch([json(401, { detail: "invalid_credentials" })]);
+    render(<LoginForm />);
+    fireEvent.click(screen.getByRole("button", { name: /^Mohamed Youssef/ }));
+    fireEvent.change(screen.getByLabelText(/^password/i), { target: { value: "nope-nope-nope" } });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    expect(await screen.findByText("Wrong email or password.")).toBeInTheDocument();
+    expect(screen.getByText("mo@acme.io")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Switch" }));
+    expect(screen.getByRole("heading", { name: "Choose an account" })).toBeInTheDocument();
+  });
+
+  it("asks for the authenticator code after the password of a picked account", async () => {
+    routeFetch([json(401, { detail: "totp_required" }), json(200, { user: { id: "1", email: "mo@acme.io", name: "Mo" } })]);
+    render(<LoginForm />);
+    fireEvent.click(screen.getByRole("button", { name: /^Mohamed Youssef/ }));
+    fireEvent.change(screen.getByLabelText(/^password/i), { target: { value: "correct-horse-1" } });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    fireEvent.change(await screen.findByLabelText(/authenticator code/i), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(loginBodies()[1]).toMatchObject({ email: "mo@acme.io", totp_code: "123456" });
+  });
+
+  it("offers the reset with the account's email", () => {
+    routeFetch([]);
+    render(<LoginForm />);
+    fireEvent.click(screen.getByRole("button", { name: /^Mohamed Youssef/ }));
+    expect(screen.getByRole("link", { name: "Forgot your password?" })).toHaveAttribute("href", "/forgot?email=mo%40acme.io");
+  });
+
+  it("uses another account with the form, and goes back to the list", async () => {
+    routeFetch([json(200, { user: { id: "2", email: "new@x.io", name: "New Person" } })]);
+    render(<LoginForm />);
+    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    fireEvent.click(screen.getByRole("button", { name: "← Back to my accounts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use another account" }));
+    await submit("new@x.io");
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(readAccounts()[0]).toMatchObject({ email: "new@x.io", name: "New Person" });
+  });
+
+  it("forgets an account with ×, and shows the form when none are left", () => {
+    routeFetch([]);
+    render(<LoginForm />);
+    fireEvent.click(screen.getByRole("button", { name: "Forget admin@acme.io on this browser" }));
+    expect(screen.queryByRole("button", { name: /^Mohamed \(admin\)/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Forget mo@acme.io on this browser" }));
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    expect(readAccounts()).toEqual([]);
+  });
+});
+
+describe("LoginForm second step with a passkey", () => {
+  const SECOND = (methods: string[]) => json(401, { detail: "second_factor_required", methods, passkey_options: { challenge: "c" } });
+  const bodies = () =>
+    vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/api/auth/login")).map(([, init]) => JSON.parse(String(init!.body)));
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    search = new URLSearchParams();
+    getPasskey.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    push.mockReset();
+    localStorage.clear();
+  });
+
+  it("after the password, asks for the passkey and signs in with it", async () => {
+    routeFetch([SECOND(["passkey"]), json(200, { user: { id: "1", email: "a@x.io", name: "A" } })]);
+    getPasskey.mockResolvedValue({ id: "k" });
+    render(<LoginForm />);
+    await submit();
+    expect(await screen.findByRole("heading", { name: "Confirm it's you" })).toBeInTheDocument();
+    expect(screen.getByText("Your browser asks for your passkey: fingerprint, face, PIN or security key.")).toBeInTheDocument();
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(getPasskey).toHaveBeenCalledWith({ challenge: "c" });
+    expect(bodies()[1]).toMatchObject({ email: "a@x.io", password: "correct-horse-1", passkey: { id: "k" } });
+  });
+
+  it("offers the code only to someone with an authenticator app", async () => {
+    routeFetch([SECOND(["passkey"])]);
+    getPasskey.mockReturnValue(new Promise(() => {}));
+    render(<LoginForm />);
+    await submit();
+    await screen.findByRole("heading", { name: "Confirm it's you" });
+    expect(screen.queryByRole("button", { name: "Use an authenticator code instead" })).not.toBeInTheDocument();
+  });
+
+  it("dismissed prompt shows the message and can retry", async () => {
+    routeFetch([SECOND(["passkey", "totp"]), json(200, { user: { id: "1" } })]);
+    getPasskey.mockRejectedValueOnce(Object.assign(new Error("x"), { name: "NotAllowedError" })).mockResolvedValueOnce({ id: "k" });
+    render(<LoginForm />);
+    await submit();
+    expect(await screen.findByText("The passkey wasn't used. Try again, or use your authenticator code.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Use passkey" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(getPasskey).toHaveBeenCalledTimes(2);
+  });
+
+  it("without an app, a dismissed prompt only says try again", async () => {
+    routeFetch([SECOND(["passkey"])]);
+    getPasskey.mockRejectedValue(Object.assign(new Error("x"), { name: "NotAllowedError" }));
+    render(<LoginForm />);
+    await submit();
+    expect(await screen.findByText("The passkey wasn't used. Try again.")).toBeInTheDocument();
+  });
+
+  it("a passkey the server refuses says so (not that the password is wrong) and can retry", async () => {
+    routeFetch([SECOND(["passkey"]), json(401, { detail: "invalid_credentials" })]);
+    getPasskey.mockResolvedValue({ id: "k" });
+    render(<LoginForm />);
+    await submit();
+    expect(await screen.findByRole("alert")).toHaveTextContent("That passkey couldn't be checked. Try again.");
+    expect(screen.getByRole("button", { name: "Use passkey" })).toBeInTheDocument();
+  });
+
+  it("asks for fresh options when the kept ones are old, before the prompt", async () => {
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    routeFetch([SECOND(["passkey"]), json(401, { detail: "second_factor_required", methods: ["passkey"], passkey_options: { challenge: "fresh" } }), json(200, { user: { id: "1" } })]);
+    getPasskey.mockRejectedValueOnce(Object.assign(new Error("x"), { name: "NotAllowedError" })).mockResolvedValueOnce({ id: "k" });
+    render(<LoginForm />);
+    await submit();
+    await screen.findByText("The passkey wasn't used. Try again.");
+    now += 5 * 60_000; // the challenge has expired on the server
+    fireEvent.click(screen.getByRole("button", { name: "Use passkey" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(getPasskey).toHaveBeenLastCalledWith({ challenge: "fresh" });
+    clock.mockRestore();
+  });
+
+  it("a passkey the browser can't use here says why, not a connection problem", async () => {
+    routeFetch([SECOND(["passkey"])]);
+    getPasskey.mockRejectedValue(Object.assign(new Error("x"), { name: "SecurityError" }));
+    render(<LoginForm />);
+    await submit();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Passkeys work only at this server's own address, over HTTPS.");
+  });
+
+  it("switches to the code", async () => {
+    routeFetch([SECOND(["passkey", "totp"]), json(200, { user: { id: "1" } })]);
+    getPasskey.mockReturnValue(new Promise(() => {}));
+    render(<LoginForm />);
+    await submit();
+    fireEvent.click(await screen.findByRole("button", { name: "Use an authenticator code instead" }));
+    fireEvent.change(screen.getByLabelText(/authenticator code/i), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/"));
+    expect(bodies()[1]).toMatchObject({ totp_code: "123456" });
+    expect(bodies()[1].passkey).toBeUndefined();
   });
 });
 

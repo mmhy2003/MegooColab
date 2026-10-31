@@ -39,7 +39,8 @@ class AgentRun(IdMixin, Base):
         ForeignKey("a2a_questions.id", ondelete="CASCADE"), index=True
     )
     agent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"))
-    requested_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # None once the person who started it was deleted: the run stays in the task's history
+    requested_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     policy: Mapped[RunPolicy] = mapped_column(String(20))
     prompt: Mapped[str] = mapped_column(Text)
     status: Mapped[RunStatus] = mapped_column(String(20), default=RunStatus.queued)
