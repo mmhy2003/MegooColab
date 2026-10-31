@@ -1,6 +1,7 @@
 /** Query-key factory: one place that names every cached query, so live updates can invalidate them. */
 export const qk = {
   me: () => ["me"] as const,
+  passkeys: () => ["passkeys"] as const,
   org: () => ["org"] as const,
   users: (q?: string) => ["users", q ?? ""] as const,
   projects: () => ["projects"] as const,

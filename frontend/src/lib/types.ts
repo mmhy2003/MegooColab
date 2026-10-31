@@ -35,6 +35,7 @@ export type Machine = S["MachineOut"];
 export type Updates = S["UpdatesOut"];
 export type AgentProgram = S["AgentProgram"];
 export type ModelOption = S["ModelOption"];
+export type Passkey = S["PasskeyOut"];
 export type AnswerMode = S["AnswerMode"];
 export type AdminAgent = S["AdminAgentOut"];
 export type AccessToken = S["TokenOut"];
