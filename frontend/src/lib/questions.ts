@@ -11,6 +11,7 @@ export type Question = S["QuestionOut"];
 export type QuestionSuggestion = S["Suggestion"];
 export type QuestionTarget = S["Target"];
 export type AskQuestionOut = S["AskQuestionOut"];
+export type TargetAgent = S["TargetAgent"];
 export type QuestionStatus = "queued" | "routed" | "draft" | "needs_human" | "answered" | "withdrawn";
 export type QuestionBox = "mine" | "incoming";
 
@@ -30,6 +31,7 @@ export const questionKeys = {
   one: (id: string) => ["questions", "one", id] as const,
   task: (key: string) => ["questions", "task", key] as const,
   targets: () => ["questions", "targets"] as const,
+  targetAgents: (key: string) => ["questions", "targets", key, "agents"] as const,
 };
 
 export function useQuestions(box: QuestionBox, project = "", status = "") {
@@ -55,6 +57,24 @@ export function useTaskQuestions(taskKey: string) {
 
 export function useQuestionTargets() {
   return useQuery({ queryKey: questionKeys.targets(), queryFn: () => api<QuestionTarget[]>("/api/questions/targets") });
+}
+
+/** The agents that can answer a project's questions, free, busy or offline now (none while no project is chosen). */
+export function useTargetAgents(key: string) {
+  return useQuery({
+    queryKey: questionKeys.targetAgents(key),
+    queryFn: () => api<TargetAgent[]>(`/api/questions/targets/${key}/agents`),
+    enabled: key !== "",
+  });
+}
+
+const PROGRAM_NAME: Record<string, string> = { claude_code: "Claude Code", codex: "Codex" };
+
+/** "For: Claude Code agents · waits if busy"; null for any free agent. */
+export function preferenceLine(p: Question["preference"]): string | null {
+  if (!p) return null;
+  const who = p.agent ? p.agent.name : p.program ? `${PROGRAM_NAME[p.program] ?? p.program} agents` : "a chosen agent";
+  return `For: ${who} · ${p.if_busy === "wait" ? "waits if busy" : "another agent if busy"}`;
 }
 
 function whoName(who: Question["answered_by"] | null | undefined): string {

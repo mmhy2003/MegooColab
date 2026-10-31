@@ -2254,6 +2254,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/questions/targets/{key}/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Target Agents
+         * @description The agents that can answer the project's questions, for the asker to choose from: free, busy or offline.
+         */
+        get: operations["target_agents_api_questions_targets__key__agents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions/suggest": {
         parameters: {
             query?: never;
@@ -4366,6 +4386,19 @@ export interface components {
             pinned: boolean;
         };
         /**
+         * Preference
+         * @description Who the asker wants to answer; with if_busy "wait" the question waits for them.
+         */
+        Preference: {
+            program: components["schemas"]["AgentProgram"] | null;
+            agent: components["schemas"]["Ref"] | null;
+            /**
+             * If Busy
+             * @enum {string}
+             */
+            if_busy: "wait" | "another";
+        };
+        /**
          * Priority
          * @enum {string}
          */
@@ -4681,6 +4714,7 @@ export interface components {
             attempts: number;
             from_task: components["schemas"]["TaskRef"] | null;
             asked_by: components["schemas"]["Who"];
+            preference: components["schemas"]["Preference"] | null;
             /** Kb Document Id */
             kb_document_id: string | null;
             /** Kb Document Readable */
@@ -5272,6 +5306,25 @@ export interface components {
             key: string;
             /** Name */
             name: string;
+        };
+        /**
+         * TargetAgent
+         * @description One of a project's agents as anyone asking it sees it: no owner, no machine.
+         */
+        TargetAgent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            program: components["schemas"]["AgentProgram"];
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "free" | "busy" | "offline";
         };
         /** TaskCreate */
         TaskCreate: {
@@ -5915,6 +5968,15 @@ export interface components {
             context: string;
             /** Task Key */
             task_key?: string | null;
+            /** Prefer Agent Id */
+            prefer_agent_id?: string | null;
+            prefer_program?: components["schemas"]["AgentProgram"] | null;
+            /**
+             * If Busy
+             * @default wait
+             * @enum {string}
+             */
+            if_busy: "wait" | "another";
         };
         /** AskIn */
         app__memory__schemas__AskIn: {
@@ -10955,6 +11017,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Target"][];
+                };
+            };
+        };
+    };
+    target_agents_api_questions_targets__key__agents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TargetAgent"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

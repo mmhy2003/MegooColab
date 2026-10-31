@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Markdown } from "@/components/ui/Markdown";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-import { citationText, type Question, type QuestionStatus, questionKeys, STATUS_TONE, statusLine } from "@/lib/questions";
+import { citationText, preferenceLine, type Question, type QuestionStatus, questionKeys, STATUS_TONE, statusLine } from "@/lib/questions";
 
 /** A question, where it stands, and its answer with the code it cites. */
 export function QuestionView({ question: q }: { question: Question }) {
@@ -33,6 +33,9 @@ export function QuestionView({ question: q }: { question: Question }) {
             </span>
           )}
           {q.asked_by.user && <span>· asked by {q.asked_by.user.name}{q.asked_by.agent ? ` via ${q.asked_by.agent.name}` : ""}</span>}
+          {preferenceLine(q.preference) && (
+            <span className="rounded border border-line px-1.5 py-0.5">{preferenceLine(q.preference)}</span>
+          )}
         </p>
         <h1 className="text-lg font-bold break-words">{q.title}</h1>
         <p>

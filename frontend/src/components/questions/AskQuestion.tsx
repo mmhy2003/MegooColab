@@ -11,9 +11,16 @@ import { errorMessage } from "@/lib/errors";
 import {
   type AskQuestionOut,
   type QuestionSuggestion,
+  type TargetAgent,
   questionKeys,
   useQuestionTargets,
+  useTargetAgents,
 } from "@/lib/questions";
+
+const PROGRAMS = [
+  { id: "claude_code", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+] as const;
 
 const BODY_MAX = 4000;
 const CONTEXT_MAX = 8000;
@@ -22,11 +29,80 @@ const SUGGESTION_KIND: Record<string, string> = { question: "Earlier answer", kb
 
 const FIELD ="w-full rounded border border-line bg-surface-2 px-3 py-2 text-sm text-fg focus:border-cyan focus:outline-none";
 
+/** Who answers: any free agent, a program's agents, or one agent; and, for a choice, what happens when they're
+ * busy or offline. */
+function AnsweredBy({
+  project,
+  agents,
+  value,
+  onChange,
+  ifBusy,
+  onIfBusy,
+}: {
+  project: string;
+  agents: TargetAgent[];
+  value: string;
+  onChange: (v: string) => void;
+  ifBusy: "wait" | "another";
+  onIfBusy: (v: "wait" | "another") => void;
+}) {
+  const [kind, picked] = value.split(":");
+  const matching = kind === "program" ? agents.filter((a) => a.program === picked) : kind === "agent" ? agents.filter((a) => a.id === picked) : agents;
+  const free = matching.filter((a) => a.state === "free").length;
+  return (
+    <div className="space-y-2">
+      <Select label="Answered by" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="any">Any free agent</option>
+        <optgroup label="By program">
+          {PROGRAMS.map((p) => (
+            <option key={p.id} value={`program:${p.id}`}>Any {p.label} agent</option>
+          ))}
+        </optgroup>
+        {agents.length > 0 && (
+          <optgroup label="A specific agent">
+            {agents.map((a) => (
+              <option key={a.id} value={`agent:${a.id}`}>{a.name} · {a.state}</option>
+            ))}
+          </optgroup>
+        )}
+      </Select>
+      {kind === "program" && (
+        <p className="text-xs text-muted-foreground">
+          {matching.length} of {project}&apos;s agents · {free} free now
+        </p>
+      )}
+      {kind !== "any" && (
+        <fieldset className="space-y-1">
+          <legend className="text-xs tracking-wider text-muted-foreground uppercase">If they&apos;re busy or offline</legend>
+          {(
+            [
+              ["wait", "Wait for them", "The question waits until one of them is free."],
+              ["another", "Let another agent answer", `Any free agent of ${project} answers instead.`],
+            ] as const
+          ).map(([id, label, help]) => (
+            <label key={id} className={`flex cursor-pointer items-start gap-2 rounded border bg-surface-2 px-3 py-2 text-sm ${ifBusy === id ? "border-cyan" : "border-line"}`}>
+              <input type="radio" name="if-busy" className="mt-1 accent-cyan" checked={ifBusy === id} onChange={() => onIfBusy(id)} />
+              <span>
+                {label}
+                <span className="block text-xs text-muted-foreground">{help}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+    </div>
+  );
+}
+
 /** Ask another project (A2A-1): existing answers are offered first (A2A-6), then "Ask anyway". */
 export function AskQuestion({ taskKey, onAsked }: { taskKey?: string; onAsked?: (id: string) => void }) {
   const client = useQueryClient();
   const targets = useQuestionTargets();
   const [project, setProject] = useState("");
+  // "any", "program:<program>" or "agent:<id>"; and when they're busy or offline
+  const [answeredBy, setAnsweredBy] = useState("any");
+  const [ifBusy, setIfBusy] = useState<"wait" | "another">("wait");
+  const agents = useTargetAgents(project);
   const [body, setBody] = useState("");
   const [context, setContext] = useState("");
   const [suggestions, setSuggestions] = useState<QuestionSuggestion[] | null>(null);
@@ -57,9 +133,12 @@ export function AskQuestion({ taskKey, onAsked }: { taskKey?: string; onAsked?: 
 
   const ask = () =>
     attempt(async () => {
+      const [kind, value] = answeredBy.split(":");
+      const choice =
+        kind === "program" ? { prefer_program: value, if_busy: ifBusy } : kind === "agent" ? { prefer_agent_id: value, if_busy: ifBusy } : {};
       const out = await api<AskQuestionOut>("/api/questions", {
         method: "POST",
-        json: { project_key: project, body: body.trim(), context: context.trim(), task_key: taskKey ?? null },
+        json: { project_key: project, body: body.trim(), context: context.trim(), task_key: taskKey ?? null, ...choice },
       });
       await client.invalidateQueries({ queryKey: questionKeys.all });
       setBody("");
@@ -83,6 +162,7 @@ export function AskQuestion({ taskKey, onAsked }: { taskKey?: string; onAsked?: 
           value={project}
           onChange={(e) => {
             setProject(e.target.value);
+            setAnsweredBy("any");
             setSuggestions(null);
           }}
         >
@@ -93,6 +173,16 @@ export function AskQuestion({ taskKey, onAsked }: { taskKey?: string; onAsked?: 
             </option>
           ))}
         </Select>
+        {project && (
+          <AnsweredBy
+            project={project}
+            agents={agents.data ?? []}
+            value={answeredBy}
+            onChange={setAnsweredBy}
+            ifBusy={ifBusy}
+            onIfBusy={setIfBusy}
+          />
+        )}
         <div className="flex flex-col gap-1">
           <label htmlFor="q-body" className="text-xs tracking-wider text-muted-foreground uppercase">
             Question
