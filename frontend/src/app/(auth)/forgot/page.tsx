@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -11,7 +12,16 @@ import { usePageTitle } from "@/lib/title";
 
 export default function ForgotPage() {
   usePageTitle("Forgot password");
-  const [email, setEmail] = useState("");
+  return (
+    <Suspense>
+      <ForgotForm />
+    </Suspense>
+  );
+}
+
+function ForgotForm() {
+  // opened from a remembered account's sign-in: its email is already filled in
+  const [email, setEmail] = useState(useSearchParams().get("email") ?? "");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

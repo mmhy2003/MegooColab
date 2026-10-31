@@ -5,11 +5,13 @@ import { useState } from "react";
 import { DesktopSidebar } from "@/components/shell/DesktopSidebar";
 import { Header } from "@/components/shell/Header";
 import { Sidebar } from "@/components/shell/Sidebar";
+import { useKeepAccountName } from "@/lib/accounts";
 import { useMe } from "@/lib/me";
 import { useRealtime } from "@/lib/realtime";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: user } = useMe();
+  useKeepAccountName(user);
   const [menuOpen, setMenuOpen] = useState(false);
   useRealtime();
 
