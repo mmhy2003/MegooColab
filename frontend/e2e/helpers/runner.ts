@@ -64,6 +64,10 @@ export function startRunner(opts: StartRunnerOptions): RunnerHandle {
     ...isolatedEnv(opts.home),
     MEGOO_ADAPTER_CLAUDE_CODE: `"${opts.adapterOverride}"`,
     FAKEAGENT_SCENARIO: JSON.stringify(opts.scenario),
+    // the models and effort levels the Claude Code adapter offers, so a new agent's default model (Opus 5.5) is
+    // chosen as on a real machine
+    FAKEAGENT_MODELS: "default=Default (recommended),opus=Opus 5.5,sonnet=Sonnet 5.5",
+    FAKEAGENT_EFFORTS: "default=low|medium|high;opus=low|medium|high|xhigh|max;sonnet=low|medium|high",
     ...opts.env,
   };
   execFileSync(opts.runnerBin, ["login", "--url", opts.url, "--token", opts.token], { env, stdio: "pipe" });
