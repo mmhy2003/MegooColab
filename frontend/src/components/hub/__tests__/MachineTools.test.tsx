@@ -55,7 +55,7 @@ describe("MachineTools", () => {
   it("names the machine, its system and its agents, and shows each state in words", () => {
     wrap(MACHINE);
     expect(screen.getByRole("heading", { name: 'Tools on "hammad-desktop"' })).toBeInTheDocument();
-    expect(screen.getByText("Windows · online")).toBeInTheDocument();
+    expect(screen.getByText("Windows · connected")).toBeInTheDocument();
     expect(screen.getByText("Agents here: Builder (Claude Code), Reviewer (Codex)")).toBeInTheDocument();
     const words: [string, string][] = [
       ["ctx", "Claude Code: installed"], ["ctx", "Codex: update ready"], ["mine", "Claude Code: made by hand on this machine"],

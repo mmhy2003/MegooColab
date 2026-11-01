@@ -93,11 +93,13 @@ test("tool hub: push to a machine and see it installed", async ({ page }) => {
   const work = mkdtempSync(join(tmpdir(), "megoo-e2e-hub-"));
   const home = join(work, "home");
   let runner: RunnerHandle | undefined;
+  let agentId: string | undefined;
   try {
     const bins = buildBinaries(join(work, "bin"));
     await setupOrSignIn(page);
     const request = page.request;
     const agent = await post<{ id: string }>(request, "/api/agents", { program: "claude_code", name: "Hub Builder" });
+    agentId = agent.id;
     const token = await mintLinkedRunnerToken(request, agent.id, "hub-e2e-machine");
     const launch = () =>
       startRunner({ url: BASE, token, home, adapterOverride: bins.fakeAgent, scenario: [], runnerBin: bins.runner,
@@ -113,7 +115,7 @@ test("tool hub: push to a machine and see it installed", async ({ page }) => {
     // 1. tick it on the machine and push: the runner installs it into ~/.claude.json
     await page.goto("/settings/agents");
     const panel = page.getByRole("region", { name: 'Tools on "hub-e2e-machine"' });
-    await expect(panel.getByText(/· online$/)).toBeVisible({ timeout: 30_000 });
+    await expect(panel.getByText(/· connected$/)).toBeVisible({ timeout: 30_000 });
     await panel.getByRole("checkbox", { name: "push-e2e" }).check();
     await panel.getByRole("button", { name: "Push 1 change" }).click();
     await expect(panel.getByText("Claude Code: installed")).toBeVisible({ timeout: 15_000 });
@@ -125,7 +127,7 @@ test("tool hub: push to a machine and see it installed", async ({ page }) => {
     written.mcpServers["push-e2e"].url = "https://edited.example.com/mcp";
     writeFileSync(claudeJson, JSON.stringify(written));
     await runner.stop();
-    await expect(panel.getByText(/· offline$/)).toBeVisible({ timeout: 30_000 });
+    await expect(panel.getByText(/· not connected$/)).toBeVisible({ timeout: 30_000 });
     runner = launch();
     await expect(panel.getByText("Claude Code: changed on this machine")).toBeVisible({ timeout: 30_000 });
 
@@ -137,6 +139,12 @@ test("tool hub: push to a machine and see it installed", async ({ page }) => {
     expect(restored.mcpServers["push-e2e"].url).toBe("https://mcp.example.com/mcp");
   } finally {
     await runner?.stop();
+    // later specs expect the admin's agents and machines as they left them
+    if (agentId) await page.request.delete(`/api/agents/${agentId}`, { headers: WEB });
+    const tokens = (await (await page.request.get("/api/tokens")).json()) as { id: string; name: string }[];
+    for (const t of tokens.filter((x) => x.name === "hub-e2e-machine")) {
+      await page.request.delete(`/api/tokens/${t.id}`, { headers: WEB });
+    }
     rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });

@@ -79,7 +79,7 @@ export function MachineTools({ machine }: { machine: HubMachine }) {
       <div className="flex flex-wrap items-baseline gap-2">
         <h3 id={`tools-${machine.token_id}`} className="flex-1 text-sm font-bold">Tools on &quot;{machine.name}&quot;</h3>
         <span className="text-xs text-muted-foreground">
-          {[os, machine.online ? "online" : "offline"].filter(Boolean).join(" · ")}
+          {[os, machine.online ? "connected" : "not connected"].filter(Boolean).join(" · ")}
         </span>
       </div>
       <p className="text-xs text-muted-foreground">
