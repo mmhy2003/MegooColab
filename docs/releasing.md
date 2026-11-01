@@ -68,7 +68,9 @@ On every push to `main`:
 2. If something needs releasing, the whole CI suite runs (`ci.yml`). Nothing is published unless it passes.
 3. **MegooColab**:
    - builds both images and starts the stack from them;
-   - once the backend is healthy, publishes the images for amd64 and arm64;
+   - once the backend is healthy, builds each image again on an amd64 and on an arm64 machine (natively: under
+     emulation the arm64 frontend build crashed with "Illegal instruction" or hung), then tags both as one
+     multi-platform image;
    - creates the `vX.Y.Z` release with its note.
 4. **Runner**:
    - builds the binaries with GoReleaser;

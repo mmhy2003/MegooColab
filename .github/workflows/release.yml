@@ -47,13 +47,7 @@ jobs:
       VERSION: ${{ needs.plan.outputs.app_version }}
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
 
       # first for this machine only, to start the stack from exactly these images before publishing them
       - name: Build for the start-up check
@@ -97,31 +91,88 @@ jobs:
         if: always()
         run: docker compose -p smoke -f deploy/docker-compose.yml --env-file smoke.env down -v
 
-      - name: Publish the backend image
+  # Each platform is built on a machine of its own architecture: under QEMU emulation the arm64 frontend build
+  # crashed (node: "Illegal instruction") or hung. Each build is pushed by digest; publish tags them together.
+  images:
+    needs: [plan, app]
+    if: needs.plan.outputs.app == 'true'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            os: ubuntu-latest
+          - arch: arm64
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    env:
+      VERSION: ${{ needs.plan.outputs.app_version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push the backend (linux/${{ matrix.arch }})
+        id: backend
         uses: docker/build-push-action@v7
         with:
           context: backend
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/megoocolab-backend:${{ env.VERSION }}
-            ${{ env.REGISTRY }}/megoocolab-backend:latest
+          platforms: linux/${{ matrix.arch }}
           build-args: APP_VERSION=${{ env.VERSION }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,scope=backend,mode=max
-      - name: Publish the frontend image
+          outputs: type=image,name=${{ env.REGISTRY }}/megoocolab-backend,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=backend-${{ matrix.arch }}
+          cache-to: type=gha,scope=backend-${{ matrix.arch }},mode=max
+      - name: Build and push the frontend (linux/${{ matrix.arch }})
+        id: frontend
         uses: docker/build-push-action@v7
         with:
           context: frontend
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/megoocolab-frontend:${{ env.VERSION }}
-            ${{ env.REGISTRY }}/megoocolab-frontend:latest
+          platforms: linux/${{ matrix.arch }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,scope=frontend,mode=max
+          outputs: type=image,name=${{ env.REGISTRY }}/megoocolab-frontend,push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=frontend-${{ matrix.arch }}
+          cache-to: type=gha,scope=frontend-${{ matrix.arch }},mode=max
+      - name: Keep the digests
+        run: |
+          mkdir -p digests
+          echo "${{ steps.backend.outputs.digest }}" > digests/backend
+          echo "${{ steps.frontend.outputs.digest }}" > digests/frontend
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.arch }}
+          path: digests/
+          retention-days: 1
+
+  publish:
+    needs: [plan, images]
+    if: needs.plan.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.plan.outputs.app_version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: digests-*
+          path: digests
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag both platforms as one image
+        run: |
+          for image in backend frontend; do
+            name="$REGISTRY/megoocolab-$image"
+            docker buildx imagetools create -t "$name:$VERSION" -t "$name:latest" \
+              "$name@$(cat "digests/digests-amd64/$image")" "$name@$(cat "digests/digests-arm64/$image")"
+            docker buildx imagetools inspect "$name:$VERSION"
+          done
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
