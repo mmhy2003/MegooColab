@@ -166,7 +166,7 @@ exists.
 - A crumb with no page of its own is plain text, never a redirect. Examples: a group like "Projects" under Memory, or
   an intermediate segment.
 - Every other crumb in the table above has a page today. The task page is `/projects/<key>/tasks/<n>`. Chats,
-  Questions, Teams, Projects, Admin and Settings all have list pages.
+  Questions, Teams and Projects have list pages. "Admin" and "Settings" only redirect, so they are plain text.
 - **Where names come from.** Each page already loads the record it shows. A trail needs nothing more than:
   - Knowledge Base: the tree (folder names and parents) and the document's space;
   - project pages: the project (`useProject(key)`);
