@@ -22,6 +22,7 @@ const TABS = [
   { id: "general", label: "General" },
   { id: "email", label: "Email" },
   { id: "new-projects", label: "New projects" },
+  { id: "tool-hub", label: "Tool Hub" },
   { id: "search", label: "Search" },
   { id: "rate-limits", label: "Rate limits" },
 ] as const;
@@ -175,12 +176,35 @@ function DefaultsForm({ settings }: { settings: AdminSettings }) {
   );
 }
 
+function HubForm({ settings }: { settings: AdminSettings }) {
+  const [everyone, setEveryone] = useState(settings.hub.share_everyone);
+  const { status, save } = useSave(settings);
+  return (
+    <form
+      className="card space-y-3 p-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save({ hub: { share_everyone: everyone } });
+      }}
+    >
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={everyone} onChange={(e) => setEveryone(e.target.checked)} /> Let people share tools with everyone
+      </label>
+      <p className="text-xs text-muted-foreground">
+        Turned off, the Everyone shelf is empty and nobody can share with everyone. Tools already shared that way come back if you turn it on again.
+      </p>
+      <StatusLine status={status} />
+      <Button type="submit">Save</Button>
+    </form>
+  );
+}
+
 function SettingsTabs() {
   const settings = useAdminSettings();
   const [tab, setTab] = useTabParam<TabId>(TABS.map((t) => t.id));
   return (
     <div className="max-w-xl">
-      <PageHeader title="Settings" subtitle="Organization name, outgoing email, what new projects start with, search and rate limits." />
+      <PageHeader title="Settings" subtitle="Organization name, outgoing email, what new projects start with, Tool Hub sharing, search and rate limits." />
       <Tabs label="Settings sections" tabs={TABS} value={tab} onChange={setTab} />
       {!settings.data ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -189,6 +213,7 @@ function SettingsTabs() {
           <TabPanel id="general" active={tab === "general"}><GeneralForm settings={settings.data} /></TabPanel>
           <TabPanel id="email" active={tab === "email"}><EmailForm settings={settings.data} /></TabPanel>
           <TabPanel id="new-projects" active={tab === "new-projects"}><DefaultsForm settings={settings.data} /></TabPanel>
+          <TabPanel id="tool-hub" active={tab === "tool-hub"}><HubForm settings={settings.data} /></TabPanel>
           <TabPanel id="search" active={tab === "search"}><SearchAdmin /></TabPanel>
           <TabPanel id="rate-limits" active={tab === "rate-limits"}><RateLimitsAdmin /></TabPanel>
         </>
