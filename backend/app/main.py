@@ -61,6 +61,7 @@ from app.sprints.router import router as sprints_router
 from app.tasks.activity import router as activity_router
 from app.tasks.router import router as tasks_router
 from app.teams.router import router as teams_router
+from app.hub.admin_router import admin_router as admin_hub_router
 from app.hub.router import router as hub_router
 from app.users.router import admin_router as admin_users_router
 from app.users.router import users_router
@@ -167,6 +168,7 @@ def create_app() -> FastAPI:
         audit_router,
         teams_router,
         hub_router,
+        admin_hub_router,
         projects_router,
         agents_router,
         project_agents_router,

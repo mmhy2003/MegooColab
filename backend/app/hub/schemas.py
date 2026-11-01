@@ -141,3 +141,7 @@ class ToolOut(ToolSummary):
     source: ToolSource | None = None
     flagged: list[str] = []
     can_edit: bool
+
+
+class AdminToolOut(ToolSummary):
+    sharing: Sharing
