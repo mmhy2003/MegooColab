@@ -1,14 +1,12 @@
 "use client";
 
-import { RUNNER_INSTALL } from "@/components/agents/RunnerSetup";
+import { RUNNER_UPDATE } from "@/components/agents/RunnerSetup";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/shadcn/popover";
 import { Hint } from "@/components/ui/Hint";
 import { useMe } from "@/lib/me";
 import type { RunnerInfo } from "@/lib/types";
 import { useUpdates } from "@/lib/updates";
 import { isNewer } from "@/lib/versions";
-
-const WINDOWS_UPDATE = "scoop update megoocolab-runner";
 
 /** An amber ↑ next to an agent's status while its runner is older than the latest runner release: the details
  * on hover or focus, and on a click or tap (phones have no hover). Offline agents and local builds get none. */
@@ -19,7 +17,7 @@ export function RunnerUpdateArrow({ runner, ownerId }: { runner?: RunnerInfo | n
   const summary = mine
     ? `Runner update: you have ${runner.version}, ${latest} is out.`
     : `Runner update: this agent's runner is ${runner.version}, ${latest} is out. Its owner can update it.`;
-  const command = runner.os === "windows" ? WINDOWS_UPDATE : RUNNER_INSTALL.unix;
+  const command = RUNNER_UPDATE[runner.os === "windows" ? "windows" : "unix"];
   return (
     <Popover>
       <Hint label={summary}>
