@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -11,7 +12,7 @@ import { DocView } from "@/components/kb/DocView";
 import { RevisionHistory } from "@/components/kb/RevisionHistory";
 import { NotFoundView } from "@/components/shell/NotFound";
 import { errorMessage, isNotFound } from "@/lib/errors";
-import { useKbDocument } from "@/lib/kb";
+import { cachedTreeDoc, useKbDocument } from "@/lib/kb";
 import { usePageTitle } from "@/lib/title";
 
 export default function KbDocumentPage() {
@@ -19,6 +20,7 @@ export default function KbDocumentPage() {
   const router = useRouter();
   const search = useSearchParams();
   const editing = search.get("edit") === "1";
+  const client = useQueryClient();
   const doc = useKbDocument(docId);
   usePageTitle(doc.data?.title, "Knowledge Base");
   const [tab, setTab] = useState<"document" | "history">("document");
@@ -34,7 +36,17 @@ export default function KbDocumentPage() {
       </div>
     );
   }
-  if (!doc.data) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (!doc.data) {
+    // opened from the tree or the pager: the tree stays while the document loads
+    const seen = cachedTreeDoc(client, docId);
+    const loading = <p className="text-sm text-muted-foreground">Loading…</p>;
+    if (!seen) return loading;
+    return (
+      <KbReader spaceId={seen.spaceId} folderId={seen.folderId} docId={docId} docTitle={seen.title}>
+        {loading}
+      </KbReader>
+    );
+  }
   const d = doc.data;
 
   return (

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Header } from "@/components/shell/Header";
+import { TrailNav } from "@/components/shell/TrailNav";
 import { useTrail, type Crumb } from "@/lib/trail";
 import type { User } from "@/lib/types";
 
@@ -133,6 +134,21 @@ describe("Header trail", () => {
     await userEvent.click(within(compact).getByRole("button", { name: "Show full path" }));
     expect(compact.textContent).toContain("Designs & Plans");
     expect(compact.textContent).toContain("PAY-12");
+  });
+});
+
+describe("TrailNav", () => {
+  it("a full path shown on a narrow screen folds again for the next page", async () => {
+    const long = (last: string): Crumb[] => [
+      { label: "Knowledge Base", href: "/kb" },
+      { label: "Payments", href: "/kb/s1" },
+      { label: "Designs & Plans", href: "/kb/s1?folder=f1" },
+      { label: last },
+    ];
+    const { rerender } = render(<TrailNav crumbs={long("Plan")} />);
+    await userEvent.click(screen.getByRole("button", { name: "Show full path" }));
+    rerender(<TrailNav crumbs={long("Design")} />);
+    expect(screen.getByRole("button", { name: "Show full path" })).toBeInTheDocument();
   });
 });
 

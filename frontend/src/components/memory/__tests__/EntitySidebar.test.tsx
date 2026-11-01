@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({
 
 import MemoryEntityPage from "@/app/(app)/memory/entity/[id]/page";
 import { EntityList } from "@/components/memory/EntityList";
-import type { MemEntity } from "@/lib/memory";
+import { memKeys, type MemEntity } from "@/lib/memory";
 import { useShownTrail } from "@/lib/trail";
 
 const ENTS: MemEntity[] = [
@@ -93,5 +93,20 @@ describe("the Memory reader", () => {
     const list = await screen.findByRole("complementary", { name: "Entities" });
     fireEvent.change(within(list).getByLabelText("Filter entities"), { target: { value: "web" } });
     expect(within(list).getByRole("link", { name: /WEB — Web/ })).toBeInTheDocument();
+  });
+
+  it("hopping to another entity keeps the list while it loads", () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Promise<Response>(() => {})));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    client.setQueryData(memKeys.entities("", ""), ENTS);
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryEntityPage />
+        <Probe />
+      </QueryClientProvider>,
+    );
+    const list = screen.getByRole("complementary", { name: "Entities" });
+    expect(within(list).getByRole("link", { name: /PAY — Payments/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("trail")).toHaveTextContent("Memory(/memory) › Projects › PAY — Payments");
   });
 });

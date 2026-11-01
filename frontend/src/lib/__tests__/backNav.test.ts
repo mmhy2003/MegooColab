@@ -76,3 +76,21 @@ describe("a page's name that is still the last page's", () => {
     expect(originFor("kb-read")).toBeNull();
   });
 });
+
+describe("going back to an origin", () => {
+  it("returning to the origin from the area doesn't make the area its origin", () => {
+    recordVisit("/projects/PAY/board", "Board");
+    recordVisit("/kb", "Knowledge Base");
+    recordVisit("/kb/search?q=retry", 'results for "retry"');
+    recordVisit("/kb/doc/d1", "Beta");
+    recordVisit("/kb/search?q=retry", 'results for "retry"'); // ← Back to results
+    expect(originFor("kb-search")).toEqual({ url: "/kb", label: "Knowledge Base" });
+  });
+
+  it("a stored record of another shape is ignored", () => {
+    sessionStorage.setItem("megoo.nav", JSON.stringify("junk"));
+    expect(() => recordVisit("/projects/PAY/board", "Board")).not.toThrow();
+    recordVisit("/kb/doc/d1", "Beta");
+    expect(originFor("kb-read")).toEqual({ url: "/projects/PAY/board", label: "Board" });
+  });
+});

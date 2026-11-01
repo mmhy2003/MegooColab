@@ -33,7 +33,10 @@ function Crumbs({ crumbs }: { crumbs: Crumb[] }) {
 /** The top bar's trail. On a narrow screen a trail of more than three crumbs keeps its first and last, with the
  *  ones between behind "…". */
 export function TrailNav({ crumbs }: { crumbs: Crumb[] }) {
-  const [expanded, setExpanded] = useState(false);
+  // shown in full for this trail only: the next page's long trail folds again
+  const sig = JSON.stringify(crumbs);
+  const [expandedFor, setExpandedFor] = useState<string | null>(null);
+  const expanded = expandedFor === sig;
   const long = crumbs.length > 3;
   return (
     <nav aria-label="Breadcrumb" className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
@@ -48,7 +51,7 @@ export function TrailNav({ crumbs }: { crumbs: Crumb[] }) {
             <>
               <CrumbItem crumb={crumbs[0]} last={false} />
               <span className="mx-1">/</span>
-              <button type="button" aria-label="Show full path" className="hover:text-cyan-ink" onClick={() => setExpanded(true)}>
+              <button type="button" aria-label="Show full path" className="hover:text-cyan-ink" onClick={() => setExpandedFor(sig)}>
                 …
               </button>
               <span className="mx-1">/</span>

@@ -54,9 +54,11 @@ export function FolderTree({ spaceId, folders, documents, selected, currentDocId
     if (missing.length) setStored([...open, ...missing]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per arrival: a folder closed by hand stays closed
   }, [arrival]);
+  // once the path is open, so the item is in the tree
+  const pathOpen = path.every((id) => open.has(id));
   useEffect(() => {
-    currentRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [currentDocId, selected]);
+    if (pathOpen) currentRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [currentDocId, selected, pathOpen]);
   const refresh = () => client.invalidateQueries({ queryKey: kbKeys.tree(spaceId) });
 
   function isEmpty(id: string): boolean {

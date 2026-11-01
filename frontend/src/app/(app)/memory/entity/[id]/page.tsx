@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { canManage, useMe } from "@/lib/me";
-import { ENTITY_GROUPS, memKeys, useMemEntity } from "@/lib/memory";
+import { ENTITY_GROUPS, memKeys, useMemEntities, useMemEntity } from "@/lib/memory";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePageTitle } from "@/lib/title";
 import { useTrail } from "@/lib/trail";
@@ -26,10 +26,20 @@ export default function MemoryEntityPage() {
   const client = useQueryClient();
   const { data: me } = useMe();
   const detail = useMemEntity(id);
-  usePageTitle(detail.data?.entity.name, "Memory");
-  const entityKind = detail.data?.entity.kind;
-  const group = entityKind ? (ENTITY_GROUPS.find((g) => g.kind === entityKind)?.label ?? entityKind) : null;
-  useTrail([{ label: "Memory", href: "/memory" }, { label: group }, { label: detail.data?.entity.name ?? null }]);
+  // the list beside it is loaded already: it names the entity while its own page loads
+  const listed = useMemEntities().data?.find((e) => e.id === id);
+  const known = detail.data?.entity ?? listed;
+  usePageTitle(known?.name, "Memory");
+  const group = known ? (ENTITY_GROUPS.find((g) => g.kind === known.kind)?.label ?? known.kind) : null;
+  useTrail([{ label: "Memory", href: "/memory" }, { label: group }, { label: known?.name ?? null }]);
+  const shell = (content: React.ReactNode) => (
+    <div className="space-y-4">
+      <BackLink area="memory-read" fallback={{ href: "/memory", label: "Memory" }} />
+      <SideListLayout sideLabel="Entities" side={<EntitySidebar currentId={id} />}>
+        {content}
+      </SideListLayout>
+    </div>
+  );
 
   if (detail.error) {
     return (
@@ -39,7 +49,10 @@ export default function MemoryEntityPage() {
       </div>
     );
   }
-  if (!detail.data) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (!detail.data) {
+    const loading = <p className="text-sm text-muted-foreground">Loading…</p>;
+    return listed ? shell(loading) : loading;
+  }
   const { entity, cards } = detail.data;
 
   return (

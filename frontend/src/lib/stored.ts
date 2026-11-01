@@ -29,7 +29,12 @@ export function writeStored(key: string, value: unknown, where: Where): void {
 /** State kept for the tab ("session") or the browser ("local"). Read once when the component mounts: pages in the
  *  app render only on the client, after the signed-in user is known, so there is no server render to mismatch. */
 export function useStoredState<T>(key: string, initial: T, where: Where): [T, (next: T) => void] {
-  const [value, setValue] = useState<T>(() => readStored<T>(key, where) ?? initial);
+  const [value, setValue] = useState<T>(() => {
+    const stored = readStored<T>(key, where);
+    // a value of another shape (an older version, a hand edit) is ignored
+    const same = stored !== null && typeof stored === typeof initial && Array.isArray(stored) === Array.isArray(initial);
+    return same ? stored : initial;
+  });
   const set = useCallback(
     (next: T) => {
       setValue(next);

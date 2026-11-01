@@ -15,6 +15,7 @@ import KbSpacePage from "@/app/(app)/kb/[spaceId]/page";
 import KbDocumentPage from "@/app/(app)/kb/doc/[docId]/page";
 import KbSearchPage from "@/app/(app)/kb/search/page";
 import { recordVisit } from "@/lib/backNav";
+import { kbKeys } from "@/lib/kb";
 import { backNameOf, useShownTrail } from "@/lib/trail";
 
 const SPACE = { id: "s1", kind: "team", name: "Core", can_write: true };
@@ -124,5 +125,24 @@ describe("the Knowledge Base reader", () => {
     expect(screen.getByTestId("trail")).toHaveAttribute("data-back", 'results for "retry"');
     expect(await screen.findByRole("link", { name: "← Back to Board" })).toHaveAttribute("href", "/projects/PAY/board");
     expect(screen.queryByText("Knowledge Base", { selector: "p a" })).toBeNull();
+  });
+
+  it("hopping to another document keeps the tree while it loads", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => (url === "/api/kb/documents/d2" ? new Promise<Response>(() => {}) : new Response("[]"))),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    client.setQueryData(kbKeys.spaces(), [SPACE]);
+    client.setQueryData(kbKeys.tree("s1"), TREE);
+    render(
+      <QueryClientProvider client={client}>
+        <KbDocumentPage />
+        <Probe />
+      </QueryClientProvider>,
+    );
+    const files = screen.getByRole("complementary", { name: "Files" });
+    expect(within(files).getByRole("link", { name: "Beta" })).toHaveAttribute("aria-current", "page");
+    await waitFor(() => expect(screen.getByTestId("trail")).toHaveTextContent("Knowledge Base › Core › Guides › Beta"));
   });
 });

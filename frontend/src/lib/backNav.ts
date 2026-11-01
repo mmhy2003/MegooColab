@@ -27,7 +27,9 @@ export function areaOf(url: string): Area | null {
 }
 
 function load(): NavState {
-  return readStored<NavState>(KEY, "session") ?? { current: null, origins: {} };
+  const s = readStored<NavState>(KEY, "session");
+  // a record of another shape (an older version, a hand edit) starts afresh rather than breaking every page
+  return s && typeof s === "object" && s.origins && typeof s.origins === "object" ? s : { current: null, origins: {} };
 }
 
 /** Called on every address and every change of the page's name: arriving in an area from a page outside it records
@@ -41,7 +43,10 @@ export function recordVisit(url: string, label: string | null): void {
     prev.label = label;
   } else {
     const area = areaOf(url);
-    if (prev && area && area !== areaOf(prev.url) && prev.label) state.origins[area] = { url: prev.url, label: prev.label };
+    const left = prev ? areaOf(prev.url) : null;
+    // going Back from an area to its origin doesn't make the area the origin's origin: no ping-pong
+    const returning = left !== null && state.origins[left]?.url === url;
+    if (prev && area && area !== left && prev.label && !returning) state.origins[area] = { url: prev.url, label: prev.label };
     state.current = { url, label };
   }
   writeStored(KEY, state, "session");

@@ -143,6 +143,22 @@ describe("FolderTree", () => {
     set.mockRestore();
   });
 
+  it("scrolls the current document into view once its folders open", () => {
+    localStorage.clear();
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    wrap(<FolderTree spaceId="s1" folders={FOLDERS} documents={DOCS} selected={null} currentDocId="d1" onSelect={vi.fn()} canWrite={false} />);
+    expect(scroll).toHaveBeenCalled();
+    expect(scroll.mock.contexts.at(-1)).toHaveAttribute("aria-label", "Webhooks");
+    Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  });
+
+  it("a remembered value of another shape is ignored", () => {
+    localStorage.setItem("kb.open.s1", JSON.stringify({ f1: true }));
+    wrap(<FolderTree spaceId="s1" folders={FOLDERS} documents={DOCS} selected={null} onSelect={vi.fn()} canWrite={false} />);
+    expect(screen.getByRole("tree")).toBeInTheDocument();
+  });
+
   it("no write actions without can_write", () => {
     wrap(<FolderTree spaceId="s1" folders={FOLDERS} documents={DOCS} selected={null} onSelect={vi.fn()} canWrite={false} />);
     expect(screen.queryByRole("button", { name: "New folder" })).not.toBeInTheDocument();
