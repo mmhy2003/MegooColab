@@ -9,6 +9,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from app.agent_runs.models import AgentRun
 from app.agent_runs.service import (
     apply_update,
     dispatch_pending,
@@ -16,13 +17,13 @@ from app.agent_runs.service import (
     fail_unclaimed_runs,
     finish_run,
 )
-from app.agent_runs.models import AgentRun
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import bound_project_ids, publish_agents_updated
 from app.auth.models import PersonalAccessToken, TokenScope
 from app.auth.tokens import resolve_bearer
 from app.core.db import SessionLocal
 from app.core.events import Event, hub
+from app.hub import importing as hub_importing
 from app.hub import machines as hub_machines
 from app.projects.models import Project
 from app.ratelimit.ws import CLOSE_RATE_LIMITED, connect_allowed
@@ -38,6 +39,7 @@ from app.runner.protocol import (
     RunSteerResult,
     RunUpdate,
     ToolsDrift,
+    ToolsFound,
     ToolsReport,
     Welcome,
     WelcomeAgent,
@@ -243,9 +245,13 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
         await _hub(conn, lambda db, token: hub_machines.apply_report(db, token, msg))
     elif isinstance(msg, ToolsDrift):
         await _hub(conn, lambda db, token: hub_machines.apply_drift(db, token, msg))
+    elif isinstance(msg, ToolsFound):
+        await _hub(conn, lambda db, token: hub_importing.apply_found(db, token, msg))
     elif isinstance(msg, RunSteerResult):
         if await _on_this_machine(conn, msg.run_id):
-            from app.workflow import instructions  # local: the workflow imports this module's neighbours
+            from app.workflow import (
+                instructions,  # local: the workflow imports this module's neighbours
+            )
 
             await _run_message(instructions.on_steer_result, msg.run_id, msg.message_id, msg.outcome, msg.error)
     # Heartbeat only refreshes last_seen

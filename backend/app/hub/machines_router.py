@@ -1,14 +1,23 @@
 import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import AuthedUser
 from app.auth.models import User
 from app.core.db import DbSession
-from app.hub import machines
+from app.hub import importing, machines
 from app.hub.models import HubPrefs
-from app.hub.schemas import MachineOut, PrefsIn, PrefsOut, PushIn
+from app.hub.schemas import (
+    AcceptIn,
+    MachineOut,
+    PrefsIn,
+    PrefsOut,
+    PushIn,
+    ScanOut,
+    ScanStarted,
+    ToolOut,
+)
 
 machines_router = APIRouter(prefix="/api/hub", tags=["hub"])
 
@@ -50,3 +59,19 @@ async def put_prefs(body: PrefsIn, user: AuthedUser, db: DbSession) -> PrefsOut:
     prefs = await _prefs(db, user)
     prefs.auto_default = body.auto_default
     return PrefsOut(auto_default=prefs.auto_default)
+
+
+@machines_router.post("/machines/{token_id}/scan", status_code=status.HTTP_202_ACCEPTED)
+async def scan_machine(token_id: uuid.UUID, user: AuthedUser, db: DbSession) -> ScanStarted:
+    token = await machines.machine_or_404(db, user, token_id)
+    return ScanStarted(scan_id=await importing.start(db, user, token))
+
+
+@machines_router.get("/scans/{scan_id}")
+async def get_scan(scan_id: uuid.UUID, user: AuthedUser, db: DbSession) -> ScanOut:
+    return await importing.scan_out(db, user, scan_id)
+
+
+@machines_router.post("/scans/{scan_id}/accept")
+async def accept_scan(scan_id: uuid.UUID, body: AcceptIn, user: AuthedUser, db: DbSession) -> list[ToolOut]:
+    return await importing.accept(db, user, scan_id, body.items)

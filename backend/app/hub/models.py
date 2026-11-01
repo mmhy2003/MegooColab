@@ -131,3 +131,16 @@ class HubPrefs(Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     auto_default: Mapped[bool] = mapped_column(default=False, server_default=false())
+
+
+class HubScan(IdMixin, Base):
+    """An import in progress: what a machine's runner found set up by hand, kept encrypted (it holds keys) until
+    the owner takes what they want, and for an hour at most."""
+
+    __tablename__ = "hub_scans"
+
+    token_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("personal_access_tokens.id", ondelete="CASCADE"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(10), default="waiting", server_default="waiting")
+    result_enc: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

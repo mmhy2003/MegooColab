@@ -200,3 +200,49 @@ class PrefsIn(BaseModel):
 
 class PrefsOut(BaseModel):
     auto_default: bool
+
+
+class ImportEntry(BaseModel):
+    name: str
+    value_masked: str
+    suggested_secret: bool
+
+
+class ImportMcp(BaseModel):
+    transport: Literal["http", "stdio"]
+    url: str | None = None
+    command: str | None = None
+    args: list[str] = []
+    headers: list[ImportEntry] = []
+    env: list[ImportEntry] = []
+
+
+class ImportItem(BaseModel):
+    index: int
+    kind: Literal["mcp", "skill"]
+    name: str
+    programs: list[str]
+    problem: str | None = None
+    mcp: ImportMcp | None = None
+    files: list[ToolFileOut] | None = None
+    exists_in_library: bool
+
+
+class ScanOut(BaseModel):
+    status: Literal["waiting", "done"]
+    items: list[ImportItem]
+
+
+class ScanStarted(BaseModel):
+    scan_id: uuid.UUID
+
+
+class AcceptItem(BaseModel):
+    index: int = Field(ge=0)
+    name: str = Field(max_length=64)
+    secret: list[str] = Field(default=[], max_length=100)
+    description: NoNulStr = Field(default="", max_length=2000)
+
+
+class AcceptIn(BaseModel):
+    items: list[AcceptItem] = Field(max_length=500)
