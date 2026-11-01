@@ -115,6 +115,12 @@ class ToolFileOut(BaseModel):
     runs_on: list[str] | None = None
 
 
+class ToolFileText(BaseModel):
+    path: str
+    size: int
+    text: str | None  # None: not UTF-8 text
+
+
 class ToolSource(BaseModel):
     id: uuid.UUID
     name: str

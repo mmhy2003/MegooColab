@@ -2,7 +2,7 @@ import json
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
@@ -91,10 +91,15 @@ def set_spec(tool: HubTool, spec: McpSpec) -> None:
     write_secrets(tool, {k: v for k, v in read_secrets(tool).items() if k in slots})
 
 
+async def replace_files(db: AsyncSession, tool: HubTool, files: list[tuple[str, bytes]]) -> None:
+    await db.execute(delete(HubToolFile).where(HubToolFile.tool_id == tool.id))
+    db.add_all(HubToolFile(tool_id=tool.id, path=p, content=data, size=len(data)) for p, data in files)
+    await db.flush()
+
+
 async def _files(db: AsyncSession, tool: HubTool) -> list[HubToolFile]:
-    return list(
-        (await db.execute(select(HubToolFile).where(HubToolFile.tool_id == tool.id).order_by(HubToolFile.path))).scalars()
-    )
+    rows = (await db.execute(select(HubToolFile).where(HubToolFile.tool_id == tool.id))).scalars()
+    return sorted(rows, key=lambda f: f.path)  # by code point, whatever the database's collation
 
 
 async def summary(db: AsyncSession, user: User, tool: HubTool) -> ToolSummary:
