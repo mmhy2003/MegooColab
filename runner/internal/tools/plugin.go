@@ -24,29 +24,44 @@ func PluginDir(cacheRoot string) string {
 	return dir
 }
 
-// SyncPlugin rebuilds the hub plugin from the Claude Code skills in the manifest, copied from where they are
-// installed. With none, there is no plugin and it returns "".
+// stampFile records which skills a plugin folder was built from.
+const stampFile = ".megoocolab-stamp"
+
+// SyncPlugin makes the hub plugin hold the Claude Code skills in the manifest, copied from where they are
+// installed. Nothing changed: the folder is left alone. Otherwise a new folder is built beside it and swapped
+// in, so a running session never sees half a plugin; when the swap cannot happen (files held open), the old
+// one stays. With no skills there is no plugin and it returns "".
 func SyncPlugin(cacheRoot, home string, m *Manifest) (string, error) {
 	dir := pluginDir(cacheRoot)
-	if err := os.RemoveAll(dir); err != nil {
-		return "", err
-	}
-	var names []string
+	var skills []Entry
 	for _, e := range m.Entries {
 		if e.Program == "claude_code" && e.Kind == "skill" {
-			names = append(names, e.Name)
+			skills = append(skills, e)
 		}
 	}
-	if len(names) == 0 {
+	if len(skills) == 0 {
+		_ = os.RemoveAll(dir)
 		return "", nil
 	}
-	sort.Strings(names)
-	for _, name := range names {
-		files, err := readSkill(filepath.Join(claudeSkills(home), name))
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	stamp := fingerprintJSON(skills)
+	if old, err := os.ReadFile(filepath.Join(dir, stampFile)); err == nil && string(old) == stamp {
+		return dir, nil
+	}
+	if err := os.MkdirAll(cacheRoot, 0o755); err != nil {
+		return "", err
+	}
+	next, err := os.MkdirTemp(cacheRoot, "hub-plugin.new-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(next) // gone after the swap
+	for _, e := range skills {
+		files, err := readSkill(filepath.Join(claudeSkills(home), e.Name))
 		if err != nil {
 			continue // gone or changed by hand: drift reports it
 		}
-		if _, err := installSkillDir(filepath.Join(dir, "skills"), name, files); err != nil {
+		if _, err := installSkillDir(filepath.Join(next, "skills"), e.Name, files); err != nil {
 			return "", err
 		}
 	}
@@ -54,8 +69,27 @@ func SyncPlugin(cacheRoot, home string, m *Manifest) (string, error) {
 		"name":        pluginName,
 		"description": "Skills from your MegooColab Tool Hub",
 	}, "", "  ")
-	if err := WriteFileAtomic(filepath.Join(dir, ".claude-plugin", "plugin.json"), meta, false); err != nil {
+	if err := WriteFileAtomic(filepath.Join(next, ".claude-plugin", "plugin.json"), meta, false); err != nil {
 		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(next, stampFile), []byte(stamp), 0o644); err != nil {
+		return "", err
+	}
+	old := ""
+	if _, err := os.Stat(dir); err == nil {
+		old = next + ".old"
+		if err := os.Rename(dir, old); err != nil {
+			return PluginDir(cacheRoot), nil // in use: keep the plugin sessions already have
+		}
+	}
+	if err := os.Rename(next, dir); err != nil {
+		if old != "" {
+			_ = os.Rename(old, dir)
+		}
+		return PluginDir(cacheRoot), err
+	}
+	if old != "" {
+		_ = os.RemoveAll(old)
 	}
 	return dir, nil
 }

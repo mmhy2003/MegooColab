@@ -38,7 +38,7 @@ export function MachineTools({ machine }: { machine: HubMachine }) {
   const [busy, setBusy] = useState(false);
 
   const os = machine.os ? OS_LABEL[machine.os] ?? machine.os : null;
-  const fixed = (t: HubMachineTool) => !t.tool_id || states(t).includes("removed") || states(t).includes("key_missing");
+  const fixed = (t: HubMachineTool) => !t.tool_id || states(t).includes("removed");
   const sendable = machine.tools.filter((t) => t.tool_id && ticked.has(t.tool_id) && !fixed(t));
   const changes = machine.tools.filter(
     (t) =>

@@ -35,7 +35,7 @@ func (m *Manager) applyPush(p protocol.ToolsPush) {
 		_ = m.send(protocol.NewToolsReport(p.PushID, results))
 		return
 	}
-	results := tools.Apply(home, man, p.Programs, p.Tools, p.TakeOver)
+	results := tools.Apply(home, man, p.Programs, p.Tools, p.TakeOver, p.Keep)
 	_, _ = tools.SyncPlugin(m.cacheRoot, home, man)
 	_ = m.send(protocol.NewToolsReport(p.PushID, results))
 }

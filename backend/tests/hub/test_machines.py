@@ -127,7 +127,11 @@ async def test_push_offline_waits_then_delivers_current_state(client, db, conns)
     assert await _handle(conn, json.dumps(hello))
     [push] = conn.socket.pushes()
     assert push["tools"][0]["rev"] == rev
-    assert (await _machines(client))[0]["pending"] is False
+    m = (await _machines(client))[0]
+    assert m["pending"] is True and _state(m, "ctx") == "will_install"  # delivered, not yet reported
+    await _report(conn, push)
+    m = (await _machines(client))[0]
+    assert m["pending"] is False and _state(m, "ctx") == "installed"
 
 
 async def test_report_marks_installed_then_update_ready_after_edit(client, db, conns):
@@ -200,16 +204,6 @@ async def test_drift_changed(client, db, conns):
     assert _state((await _machines(client))[0], "ctx") == "changed"
     assert await _handle(conn, json.dumps({"type": "tools_drift", "items": []}))
     assert _state((await _machines(client))[0], "ctx") == "installed"
-
-
-async def test_key_missing_409(client, db):
-    await _me(client, db)
-    token = await _machine(client, db)
-    t = await _tool(client)
-    r = await _push(client, token, [t["id"]])
-    assert r.status_code == 409 and r.json()["detail"] == "hub_key_missing"
-    m = (await _machines(client))[0]
-    assert _state(m, "ctx") is None and next(x for x in m["tools"] if x["name"] == "ctx")["ticked"] is False
 
 
 async def test_not_your_machine_404(client, client_factory, db):

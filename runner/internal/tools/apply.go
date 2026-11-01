@@ -44,11 +44,16 @@ func uninstall(tr Translator, home, kind, name string) error {
 // Apply makes each listed program hold exactly the pushed tools that the runner manages: it installs or
 // updates every tool, and removes what it installed before and is no longer pushed. An entry made by hand
 // with a pushed tool's name is left alone (conflict) unless the tool is in takeOver. Programs not listed, and
-// entries the manifest does not name, are never touched. The manifest is saved once, at the end.
-func Apply(home string, m *Manifest, programs []string, tools []Tool, takeOver []string) []protocol.ToolResult {
+// entries the manifest does not name, are never touched; nor are the tools named in keep (still wanted, but not
+// sendable now). The manifest is saved once, at the end.
+func Apply(home string, m *Manifest, programs []string, tools []Tool, takeOver, keep []string) []protocol.ToolResult {
 	takeOK := map[string]bool{}
 	for _, n := range takeOver {
 		takeOK[n] = true
+	}
+	kept := map[string]bool{}
+	for _, n := range keep {
+		kept[n] = true
 	}
 	var results []protocol.ToolResult
 	for _, program := range programs {
@@ -84,7 +89,7 @@ func Apply(home string, m *Manifest, programs []string, tools []Tool, takeOver [
 			continue
 		}
 		for _, e := range append([]Entry(nil), m.Entries...) {
-			if e.Program != program || wanted[e.Kind+"/"+e.Name] {
+			if e.Program != program || wanted[e.Kind+"/"+e.Name] || kept[e.Name] {
 				continue
 			}
 			r := protocol.ToolResult{ToolID: e.ToolID, Name: e.Name, Kind: e.Kind, Program: program}

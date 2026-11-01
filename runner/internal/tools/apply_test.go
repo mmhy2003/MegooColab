@@ -35,7 +35,7 @@ func TestApplyInstallsAndRecords(t *testing.T) {
 		{Path: "SKILL.md", ContentB64: base64.StdEncoding.EncodeToString([]byte("x"))}}}
 	tool := httpTool("ctx", "k")
 	tool.ReadOnlySafe = true
-	results := Apply(home, m, []string{"claude_code", "codex"}, []Tool{tool, skill}, nil)
+	results := Apply(home, m, []string{"claude_code", "codex"}, []Tool{tool, skill}, nil, nil)
 	for _, p := range []string{"claude_code", "codex"} {
 		for _, n := range []string{"ctx", "ui"} {
 			if s := statusOf(results, p, n); s != protocol.ToolInstalled {
@@ -62,14 +62,14 @@ func TestApplyConflictThenTakeOver(t *testing.T) {
 	home := isolate(t)
 	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"mcpServers":{"ctx":{"type":"stdio","command":"mine"}}}`), 0o600)
 	m := manifest(t)
-	results := Apply(home, m, []string{"claude_code"}, []Tool{httpTool("ctx", "k")}, nil)
+	results := Apply(home, m, []string{"claude_code"}, []Tool{httpTool("ctx", "k")}, nil, nil)
 	if s := statusOf(results, "claude_code", "ctx"); s != protocol.ToolConflict {
 		t.Fatalf("status = %q", s)
 	}
 	if fp, _, _ := claude(t).MCPFingerprint(home, "ctx"); fp != fingerprintJSON(map[string]any{"type": "stdio", "command": "mine"}) {
 		t.Fatal("the hand-made entry was touched")
 	}
-	results = Apply(home, m, []string{"claude_code"}, []Tool{httpTool("ctx", "k")}, []string{"ctx"})
+	results = Apply(home, m, []string{"claude_code"}, []Tool{httpTool("ctx", "k")}, []string{"ctx"}, nil)
 	if s := statusOf(results, "claude_code", "ctx"); s != protocol.ToolInstalled {
 		t.Fatalf("take over = %q", s)
 	}
@@ -81,8 +81,8 @@ func TestApplyConflictThenTakeOver(t *testing.T) {
 func TestApplyRemovesUnwanted(t *testing.T) {
 	home := isolate(t)
 	m := manifest(t)
-	Apply(home, m, []string{"claude_code"}, []Tool{httpTool("ctx", "k"), httpTool("two", "k")}, nil)
-	results := Apply(home, m, []string{"claude_code"}, []Tool{httpTool("two", "k")}, nil)
+	Apply(home, m, []string{"claude_code"}, []Tool{httpTool("ctx", "k"), httpTool("two", "k")}, nil, nil)
+	results := Apply(home, m, []string{"claude_code"}, []Tool{httpTool("two", "k")}, nil, nil)
 	if s := statusOf(results, "claude_code", "ctx"); s != protocol.ToolRemoved {
 		t.Fatalf("ctx = %q", s)
 	}
@@ -96,7 +96,7 @@ func TestApplyRemovesUnwanted(t *testing.T) {
 
 func TestApplyOnlyListedPrograms(t *testing.T) {
 	home := isolate(t)
-	Apply(home, manifest(t), []string{"claude_code"}, []Tool{httpTool("ctx", "k")}, nil)
+	Apply(home, manifest(t), []string{"claude_code"}, []Tool{httpTool("ctx", "k")}, nil, nil)
 	if _, err := os.Stat(filepath.Join(home, ".codex", "config.toml")); !os.IsNotExist(err) {
 		t.Fatal("codex config written for a program not listed")
 	}
@@ -104,7 +104,7 @@ func TestApplyOnlyListedPrograms(t *testing.T) {
 
 func TestApplyUnknownProgramNotSupported(t *testing.T) {
 	home := isolate(t)
-	results := Apply(home, manifest(t), []string{"omp"}, []Tool{httpTool("ctx", "k")}, nil)
+	results := Apply(home, manifest(t), []string{"omp"}, []Tool{httpTool("ctx", "k")}, nil, nil)
 	if s := statusOf(results, "omp", "ctx"); s != protocol.ToolNotSupported {
 		t.Fatalf("status = %q", s)
 	}
@@ -113,7 +113,7 @@ func TestApplyUnknownProgramNotSupported(t *testing.T) {
 func TestApplyFailureNeverHoldsValues(t *testing.T) {
 	home := isolate(t)
 	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"mcpServers": {"x": "sk-live-secret-value"`), 0o600)
-	results := Apply(home, manifest(t), []string{"claude_code"}, []Tool{httpTool("ctx", "very-secret-key")}, nil)
+	results := Apply(home, manifest(t), []string{"claude_code"}, []Tool{httpTool("ctx", "very-secret-key")}, nil, nil)
 	r := results[0]
 	if r.Status != protocol.ToolFailed || r.Detail == "" {
 		t.Fatalf("result = %+v", r)
@@ -128,7 +128,7 @@ func TestApplyFailureNeverHoldsValues(t *testing.T) {
 func TestDriftAfterHandEdit(t *testing.T) {
 	home := isolate(t)
 	m := manifest(t)
-	Apply(home, m, []string{"claude_code", "codex"}, []Tool{httpTool("ctx", "k")}, nil)
+	Apply(home, m, []string{"claude_code", "codex"}, []Tool{httpTool("ctx", "k")}, nil, nil)
 	if d := Drift(home, m); len(d) != 0 {
 		t.Fatalf("fresh drift = %+v", d)
 	}
@@ -148,7 +148,7 @@ func TestScanExcludesManaged(t *testing.T) {
 	home := isolate(t)
 	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"mcpServers":{"mine":{"type":"stdio","command":"foo"}}}`), 0o600)
 	m := manifest(t)
-	Apply(home, m, []string{"claude_code"}, []Tool{httpTool("ctx", "k")}, nil)
+	Apply(home, m, []string{"claude_code"}, []Tool{httpTool("ctx", "k")}, nil, nil)
 	found := Scan(home, m)
 	if len(found) != 1 || found[0].Name != "mine" || found[0].Program != "claude_code" {
 		t.Fatalf("found = %+v", found)

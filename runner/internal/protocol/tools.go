@@ -69,6 +69,8 @@ type ToolsPush struct {
 	Programs []string      `json:"programs"`
 	Tools    []ToolPayload `json:"tools"`
 	TakeOver []string      `json:"take_over"`
+	// Keep names tools still wanted that cannot be sent now (a key missing): left as installed, never removed
+	Keep []string `json:"keep,omitempty"`
 }
 
 // ToolsScan asks what MCP servers and skills were set up by hand on this machine.

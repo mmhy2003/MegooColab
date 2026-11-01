@@ -119,10 +119,10 @@ class McpPayload(BaseModel):
 
     transport: Literal["http", "stdio"]
     url: Annotated[str, _trunc(2000)] | None = None
-    headers: dict[str, Annotated[str, _trunc(4000)]] = Field(default={}, max_length=100)
+    headers: dict[str, Annotated[str, _trunc(4000)]] = Field(default={}, max_length=1000)
     command: Annotated[str, _trunc(500)] | None = None
-    args: list[Annotated[str, _trunc(4000)]] = Field(default=[], max_length=100)
-    env: dict[str, Annotated[str, _trunc(4000)]] = Field(default={}, max_length=100)
+    args: list[Annotated[str, _trunc(4000)]] = Field(default=[], max_length=1000)
+    env: dict[str, Annotated[str, _trunc(4000)]] = Field(default={}, max_length=1000)
 
 
 class SkillFile(BaseModel):
@@ -150,6 +150,7 @@ class ToolsPush(BaseModel):
     programs: list[str]
     tools: list[ToolPayload]
     take_over: list[str]  # tool names that may replace an entry made by hand
+    keep: list[str] = []  # tool names still wanted but not sendable now (a key missing): left as installed
 
 
 class ToolsScan(BaseModel):

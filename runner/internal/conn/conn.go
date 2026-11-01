@@ -34,7 +34,7 @@ const (
 	defaultBackoff   = time.Second
 	defaultBackoffMx = 30 * time.Second
 	jitterFraction   = 0.2
-	readLimit        = 4 << 20
+	readLimit        = 64 << 20 // a Tool Hub push carries whole skills
 )
 
 // Client is the runner's connection to the server. Set the exported tuning

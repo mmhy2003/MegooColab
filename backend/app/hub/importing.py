@@ -100,6 +100,14 @@ def _mask(value: str) -> str:
     return "••••" + (value[-4:] if len(value) > 8 else "")
 
 
+def _mask_url(url: str | None) -> str | None:
+    """A web address that holds a key shows only its scheme and host."""
+    if not url or not rules.looks_like_secret(url):
+        return url
+    scheme, _, rest = url.partition("://")
+    return f"{scheme}://{rest.split('/', 1)[0].split('?', 1)[0]}/••••"
+
+
 def _entries(values: dict[str, str]) -> list[ImportEntry]:
     out = []
     for name, value in sorted(values.items()):
@@ -119,7 +127,7 @@ async def scan_out(db: AsyncSession, user: User, scan_id: uuid.UUID) -> ScanOut:
         if g.get("mcp"):
             m = g["mcp"]
             mcp = ImportMcp(
-                transport=m["transport"], url=m.get("url"), command=m.get("command"),
+                transport=m["transport"], url=_mask_url(m.get("url")), command=m.get("command"),
                 args=[_mask(a) if rules.looks_like_secret(a) else a for a in m.get("args", [])],
                 headers=_entries(m.get("headers", {})), env=_entries(m.get("env", {})),
             )

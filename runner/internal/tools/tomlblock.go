@@ -136,13 +136,33 @@ func replaceTable(doc []byte, name string, block []byte) []byte {
 	lines := strings.SplitAfter(string(doc), "\n")
 	var out strings.Builder
 	skipping := false
+	// comments and blank lines after our table's last value: they belong to whatever follows it
+	var held []string
 	for _, line := range lines {
 		if path := headerPath(line); path != nil {
-			skipping = ours(path, name)
+			if ours(path, name) {
+				skipping, held = true, nil
+				continue
+			}
+			if skipping {
+				for len(held) > 0 && strings.TrimSpace(held[0]) == "" && strings.HasSuffix(out.String(), "\n\n") {
+					held = held[1:]
+				}
+				for _, h := range held {
+					out.WriteString(h)
+				}
+			}
+			skipping, held = false, nil
 		}
-		if !skipping {
-			out.WriteString(line)
+		if skipping {
+			if t := strings.TrimSpace(line); t == "" || strings.HasPrefix(t, "#") {
+				held = append(held, line)
+			} else {
+				held = nil
+			}
+			continue
 		}
+		out.WriteString(line)
 	}
 	text := strings.TrimRight(out.String(), "\n")
 	if text != "" {

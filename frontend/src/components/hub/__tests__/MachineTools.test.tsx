@@ -102,6 +102,14 @@ describe("MachineTools", () => {
     expect(screen.getByRole("button", { name: "Push 0 changes" })).toBeDisabled();
   });
 
+  it("a tool waiting for its key stays ticked and is sent, so it is kept where it is installed", async () => {
+    const one = { ...MACHINE, tools: [MACHINE.tools[0], MACHINE.tools[5]] } as HubMachine;
+    wrap(one);
+    expect(screen.getByRole("checkbox", { name: "nokey" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Push 1 change" }));
+    await waitFor(() => expect(pushBody()).toEqual({ tool_ids: ["t1", "t5"], take_over: [] }));
+  });
+
   it("a runner that is too old only says so", () => {
     wrap({ ...MACHINE, supports_tools: false } as HubMachine);
     expect(screen.getByText("Update the runner to use the Tool Hub.")).toBeInTheDocument();

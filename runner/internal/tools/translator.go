@@ -114,6 +114,9 @@ func readSkill(dir string) ([]File, error) {
 		if total += len(data); total > maxSkillBytes {
 			return errTooLarge
 		}
+		if len(files) == maxSkillFiles {
+			return errTooMany
+		}
 		rel, _ := filepath.Rel(dir, path)
 		files = append(files, File{Path: filepath.ToSlash(rel), Content: data})
 		return nil
@@ -121,7 +124,13 @@ func readSkill(dir string) ([]File, error) {
 	return files, err
 }
 
-var errTooLarge = fmt.Errorf("too large")
+var (
+	errTooLarge = fmt.Errorf("too large")
+	errTooMany  = fmt.Errorf("too many files")
+)
+
+// maxSkillFiles is the most files a skill may hold, the hub's own limit.
+const maxSkillFiles = 100
 
 // installSkillDir writes files into <root>/<name> as a whole: into a fresh folder next to it, then swapped in,
 // so a half-written skill is never what the program reads.
@@ -182,7 +191,7 @@ func skillFingerprint(dir string) (string, bool, error) {
 		return "", false, nil
 	}
 	files, err := readSkill(dir)
-	if err == errTooLarge {
+	if err == errTooLarge || err == errTooMany {
 		return "too-large", true, nil
 	}
 	if err != nil {
@@ -215,6 +224,8 @@ func scanSkills(program string, roots ...string) []protocol.FoundTool {
 			switch {
 			case err == errTooLarge:
 				found.Problem = "too large"
+			case err == errTooMany:
+				found.Problem = "too many files"
 			case err != nil:
 				found.Problem = "unreadable"
 			default:

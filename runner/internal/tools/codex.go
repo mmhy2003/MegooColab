@@ -55,13 +55,19 @@ func (c codex) InstallMCP(home string, t Tool) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	want := fingerprintJSON(written[t.Name])
 	err = ReplaceFile(codexConfig(home), func(old []byte) ([]byte, error) {
 		if len(old) > 0 {
 			if _, err := codexServers(old); err != nil {
 				return nil, err // never rewrite a file we cannot read
 			}
 		}
-		return replaceTable(old, t.Name, block), nil
+		next := replaceTable(old, t.Name, block)
+		// a definition we cannot see as a table of its own (inline, dotted keys) would now clash: never write that
+		if got, err := codexServers(next); err != nil || fingerprintJSON(got[t.Name]) != want {
+			return nil, fmt.Errorf("config.toml defines %s in a way the runner cannot replace", t.Name)
+		}
+		return next, nil
 	}, true)
 	if err != nil {
 		return "", err
@@ -74,7 +80,11 @@ func (c codex) RemoveMCP(home, name string) error {
 		return err
 	}
 	return ReplaceFile(codexConfig(home), func(old []byte) ([]byte, error) {
-		return replaceTable(old, name, nil), nil
+		next := replaceTable(old, name, nil)
+		if got, err := codexServers(next); err != nil || got[name] != nil {
+			return nil, fmt.Errorf("config.toml defines %s in a way the runner cannot remove", name)
+		}
+		return next, nil
 	}, true)
 }
 

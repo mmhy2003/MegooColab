@@ -9,7 +9,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.models import Agent
@@ -41,6 +41,8 @@ from app.runner.protocol import (
 from app.runner.registry import RunnerClosed, RunnerConn, registry
 
 TOOLS_CAPABILITY = "tools/1"
+# the runner reads a frame of 64 MiB at most; a push stays well below
+MAX_PUSH_BYTES = 48 << 20
 # reported states that stay what they are until the next report
 _STICKY = {"conflict", "failed", "not_supported", "not_available"}
 # states a push still has to bring about
@@ -132,17 +134,21 @@ async def _wanted(db: AsyncSession, token_id: uuid.UUID) -> list[HubTool]:
 
 
 async def build_push(db: AsyncSession, token: PersonalAccessToken, machine: HubMachine) -> ToolsPush:
-    """The machine's wanted set as it is now. Tools that are removed, miss a key or have no command for the
-    machine's system are left out, so the runner removes them if it installed them before."""
-    tools = []
+    """The machine's wanted set as it is now. Tools that are removed or have no command for the machine's
+    system are left out, so the runner removes them if it installed them before; a tool missing a key is kept as
+    it is installed (keep) until the key is set."""
+    tools, keep = [], []
     for tool in await _wanted(db, token.id):
-        if tool.removed_at is not None or secrets_missing(tool):
+        if tool.removed_at is not None:
+            continue
+        if secrets_missing(tool):
+            keep.append(tool.name)
             continue
         payload = await _payload(db, tool, token.runner_os)
         if payload is not None:
             tools.append(payload)
     return ToolsPush(push_id=str(uuid.uuid4()), programs=await machine_programs(db, token.id), tools=tools,
-                     take_over=list(machine.take_over))
+                     take_over=list(machine.take_over), keep=keep)
 
 
 def _conn(token: PersonalAccessToken) -> RunnerConn | None:
@@ -151,7 +157,8 @@ def _conn(token: PersonalAccessToken) -> RunnerConn | None:
 
 
 async def deliver(db: AsyncSession, token: PersonalAccessToken) -> bool:
-    """Sends a waiting push when the machine's runner is online and takes tools; it stays waiting otherwise."""
+    """Sends a waiting push when the machine's runner is online and takes tools. It stays pending until the runner
+    reports, so a push lost with the connection is sent again when it comes back."""
     machine = await db.get(HubMachine, token.id)
     conn = _conn(token)
     if machine is None or not machine.pending or conn is None or TOOLS_CAPABILITY not in conn.capabilities:
@@ -160,7 +167,7 @@ async def deliver(db: AsyncSession, token: PersonalAccessToken) -> bool:
         await conn.send(await build_push(db, token, machine))
     except RunnerClosed:
         return False
-    machine.pending, machine.take_over, machine.delivered_at = False, [], _now()
+    machine.delivered_at = _now()
     await db.flush()
     return True
 
@@ -173,8 +180,6 @@ async def push(db: AsyncSession, user: User, token: PersonalAccessToken, tool_id
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
     if any(t.removed_at is not None for t in tools):
         raise HTTPException(status.HTTP_409_CONFLICT, "hub_removed")
-    if any(secrets_missing(t) for t in tools):
-        raise HTTPException(status.HTTP_409_CONFLICT, "hub_key_missing")
     conn = _conn(token)
     if conn is not None and TOOLS_CAPABILITY not in conn.capabilities:
         raise HTTPException(status.HTTP_409_CONFLICT, "hub_runner_too_old")
@@ -183,7 +188,7 @@ async def push(db: AsyncSession, user: User, token: PersonalAccessToken, tool_id
     # what a runner said about tools no longer ticked has nothing more to say
     await db.execute(delete(HubInstall).where(
         HubInstall.token_id == token.id, HubInstall.status.in_(_STICKY),
-        HubInstall.tool_id.not_in(ids) if ids else HubInstall.tool_id.is_not(None),
+        or_(HubInstall.tool_id.is_(None), HubInstall.tool_id.not_in(ids)) if ids else true(),
     ))
     machine = await db.get(HubMachine, token.id)
     if machine is None:
@@ -192,6 +197,8 @@ async def push(db: AsyncSession, user: User, token: PersonalAccessToken, tool_id
     machine.pending, machine.requested_at = True, _now()
     machine.take_over = [t.name for t in tools if t.id in set(take_over)]
     await db.flush()
+    if len((await build_push(db, token, machine)).model_dump_json()) > MAX_PUSH_BYTES:
+        raise HTTPException(status.HTTP_409_CONFLICT, "hub_push_too_large")
     await deliver(db, token)
 
 
@@ -239,7 +246,7 @@ async def apply_report(db: AsyncSession, token: PersonalAccessToken, report: Too
         row.tool_id, row.rev, row.status, row.detail = tool_id, r.rev, r.status, r.detail
     machine = await db.get(HubMachine, token.id)
     if machine is not None:
-        machine.reported_at = _now()
+        machine.reported_at, machine.pending, machine.take_over = _now(), False, []
     await publish(db, Event(type="hub.machines", user_id=token.user_id))
 
 
@@ -258,6 +265,8 @@ async def apply_drift(db: AsyncSession, token: PersonalAccessToken, drift: Tools
 
 
 def _state(tool: HubTool | None, inst: HubInstall | None, ticked: bool, os_: str | None) -> str | None:
+    if inst is not None and inst.status == "failed" and (tool is None or tool.removed_at is not None or not ticked):
+        return "failed"  # a removal that did not happen
     if tool is None or tool.removed_at is not None:
         if inst is None:
             return None
@@ -294,7 +303,8 @@ async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) 
             by_tool.setdefault(i.tool_id, {})[i.program] = i
         else:
             orphans.setdefault((i.name, i.kind), {})[i.program] = i
-    waiting = machine is not None and machine.pending
+    # a push that could not be delivered yet: the machine is not connected
+    waiting = machine is not None and machine.pending and conn is None
 
     def states(tool: HubTool | None, mine: dict[str, HubInstall], ticked: bool) -> list[HubProgramState]:
         out = []
@@ -316,7 +326,7 @@ async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) 
                                 programs=states(tool, mine, tool.id in wants)))
     for (name, kind), mine in sorted(orphans.items()):
         rows.append(HubMachineTool(tool_id=None, name=name, kind=kind, ticked=False, programs=states(None, mine, False)))
-    out_of_step = waiting or any(p.state not in (None, "installed") for r in rows for p in r.programs)
+    out_of_step = bool(machine and machine.pending) or any(p.state not in (None, "installed") for r in rows for p in r.programs)
     return HubMachineOut(
         token_id=token.id,
         name=token.name,
@@ -324,7 +334,7 @@ async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) 
         online=conn is not None,
         supports_tools=conn is not None and TOOLS_CAPABILITY in conn.capabilities,
         agents=[HubMachineAgent(id=a.id, name=a.name, program=a.program) for a in agents],
-        pending=bool(waiting),
+        pending=bool(machine and machine.pending),
         reported_at=machine.reported_at if machine else None,
         tools=rows,
         out_of_step=out_of_step,

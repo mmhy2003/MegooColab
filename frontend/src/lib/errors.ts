@@ -26,6 +26,7 @@ const MESSAGES: Record<string, string> = {
   hub_runner_too_old: "Update the runner to use the Tool Hub.",
   hub_scan_expired: "That import has expired. Run it again.",
   hub_bad_item: "One of the chosen items can't be brought in.",
+  hub_push_too_large: "That's too much to push at once. Push fewer skills, then the rest.",
   invalid_credentials: "Wrong email or password.",
   locked: "Too many attempts. Try again in 15 minutes.",
   totp_required: "Enter the code from your authenticator app.",
