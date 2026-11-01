@@ -33,6 +33,19 @@ class MessageOut(BaseModel):
     round_key: str
 
 
+class BoardDefaults(BaseModel):
+    title: str
+    description_md: str
+    column_id: uuid.UUID
+
+
+class BoardIn(BaseModel):
+    add: bool
+    title: NoNulStr | None = Field(default=None, min_length=1, max_length=500)
+    description_md: NoNulStr | None = None
+    column_id: uuid.UUID | None = None
+
+
 class ChatAgentOut(BaseModel):
     id: uuid.UUID
     name: str

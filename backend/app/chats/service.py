@@ -15,9 +15,18 @@ from app.auth.models import Role, User
 from app.auth.schemas import UserOut
 from app.chats.models import Chat, ChatStatus
 from app.git.models import PR_MAIN, TaskPullRequest
-from app.chats.schemas import ChatAgentOut, ChatIn, ChatOut, ChatState, Intent, RoundOut
+from app.chats.schemas import (
+    BoardDefaults,
+    BoardIn,
+    ChatAgentOut,
+    ChatIn,
+    ChatOut,
+    ChatState,
+    Intent,
+    RoundOut,
+)
 from app.projects.access import accessible_project_ids, get_project_for
-from app.projects.models import Project
+from app.projects.models import BoardColumn, ColumnCategory, Project
 from app.runner.registry import registry
 from app.tasks.models import Task, TaskType
 from app.tasks.schemas import TaskCreate
@@ -225,7 +234,7 @@ def _board(task: Task, wf: TaskWorkflow | None, chat: Chat) -> str | None:
     return "pending" if done or chat.status == ChatStatus.ended else None
 
 
-async def chat_out(db: AsyncSession, chat: Chat, viewer: User) -> ChatOut:
+async def chat_out(db: AsyncSession, chat: Chat, viewer: User | None) -> ChatOut:
     from app.workflow import engine
     from app.workflow.rules import can_act
 
@@ -249,7 +258,8 @@ async def chat_out(db: AsyncSession, chat: Chat, viewer: User) -> ChatOut:
         chat, latest_wf, run_queued=run is not None and run.status == RunStatus.queued,
         agent_online=agent is not None and registry.is_available(agent.id),
     )
-    acting = latest is not None and chat.status == ChatStatus.open and can_act(
+    # an ended chat still asks its people about the board; intent() closes the message box
+    acting = viewer is not None and latest is not None and can_act(
         viewer, latest, latest_wf, await engine.manages(db, viewer, project), agent.owner_id if agent else None
     )
     return ChatOut(
@@ -360,3 +370,136 @@ async def send_message(db: AsyncSession, user: User, chat: Chat, body: str) -> t
         task = await start_next_round(db, user, chat, body)
     chat.last_activity_at = _now()
     return what, task, steer
+
+
+# ---- ending, and the board -------------------------------------------------------------------------------------
+
+
+async def end_chat(db: AsyncSession, user: User, chat: Chat) -> Chat:
+    """Ends the chat for good. A round still working stops (its branch keeps what was done); a round in code
+    review keeps waiting, so its pull request is still followed."""
+    from app.workflow import engine
+
+    task = await latest_round(db, chat)
+    if chat.status == ChatStatus.ended:
+        raise HTTPException(status.HTTP_409_CONFLICT, "chat_ended")
+    if task is not None:
+        wf = await engine.lock_task(db, task)
+        await engine.require_actor(db, user, task, wf)
+        if wf is not None and wf.status in engine.ACTIVE and wf.needs != Needs.human_code_review:
+            await engine.pause(db, user, task)
+    chat.status = ChatStatus.ended
+    chat.ended_at = _now()
+    chat.last_activity_at = chat.ended_at
+    return chat
+
+
+async def _round_n(db: AsyncSession, chat: Chat, n: int) -> tuple[Task, TaskWorkflow | None]:
+    task = await db.scalar(select(Task).where(Task.chat_id == chat.id, Task.chat_round == n))
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
+    return task, await db.get(TaskWorkflow, task.id)
+
+
+async def _first_column(db: AsyncSession, project_id: uuid.UUID, category: ColumnCategory) -> BoardColumn | None:
+    return await db.scalar(
+        select(BoardColumn)
+        .where(BoardColumn.project_id == project_id, BoardColumn.category == category)
+        .order_by(BoardColumn.position)
+        .limit(1)
+    )
+
+
+def _board_outcome(wf: TaskWorkflow | None) -> str:
+    from app.chats.context import outcome_line
+
+    if wf is not None and wf.needs == Needs.human_code_review:
+        return f"in code review ({wf.pr_url})" if wf.pr_url else "in code review"
+    return outcome_line(wf)
+
+
+async def board_defaults(db: AsyncSession, chat: Chat, n: int) -> BoardDefaults:
+    """What "Add this to the board?" proposes: the round's title, a description of what was asked and done, and the
+    column that matches where the work is."""
+    task, wf = await _round_n(db, chat, n)
+    if wf is not None and wf.status == WorkflowStatus.finished:
+        column = await _first_column(db, task.project_id, ColumnCategory.done)
+    elif wf is not None and (wf.needs == Needs.human_code_review or wf.stage == Stage.review):
+        column = await _first_column(db, task.project_id, ColumnCategory.review)
+    else:
+        column = None
+    column = column or await _first_column(db, task.project_id, ColumnCategory.before)
+    description = (
+        f"{task.description_md}\n\n**Outcome:** {_board_outcome(wf)}\n\nFrom the chat: {chat_link(chat.id)}"
+    )
+    return BoardDefaults(title=task.title, description_md=description, column_id=column.id)
+
+
+async def _step_cards(db: AsyncSession, user: User, task: Task, wf: TaskWorkflow | None) -> None:
+    """The plan's steps as subtasks, as tasks get them, each in the state its step reached."""
+    from app.tasks.service import create_task, task_changed
+    from app.workflow.documents import MAX_SUBTASK_TITLE
+
+    plan = await db.scalar(
+        select(WorkflowDocument)
+        .where(WorkflowDocument.task_id == task.id, WorkflowDocument.kind == DocKind.plan,
+               WorkflowDocument.status == DocStatus.approved)
+        .order_by(WorkflowDocument.version.desc())
+        .limit(1)
+        .with_for_update()
+    )
+    if plan is None or not plan.steps:
+        return
+    project = await db.get(Project, task.project_id)
+    done = await _first_column(db, task.project_id, ColumnCategory.done)
+    before = await _first_column(db, task.project_id, ColumnCategory.before)
+    finished = wf is not None and wf.status == WorkflowStatus.finished
+    current = (wf.current_step or 1) if wf is not None else 1
+    steps = []
+    for n, step in enumerate(plan.steps, start=1):
+        column = done if finished or n < current else before
+        sub = await create_task(db, user, project, TaskCreate(
+            title=f"Step {n}: {step.get('title', '')}"[:MAX_SUBTASK_TITLE], type=TaskType.subtask,
+            description_md=step.get("detail", ""), column_id=column.id, parent_id=task.id,
+        ))
+        await task_changed(db, sub, "task.created")
+        steps.append({**step, "subtask_id": str(sub.id)})
+    plan.steps = steps  # a new list: edits inside nested dicts are not tracked
+
+
+async def decide_board(db: AsyncSession, user: User, chat: Chat, n: int, data: BoardIn) -> Task:
+    """Adds a finished round (or a round of an ended chat) to the board as an ordinary task, or leaves it out.
+    Decided once."""
+    from app.tasks.service import apply_column, end_position, get_column, task_changed
+    from app.workflow import engine
+
+    task, _ = await _round_n(db, chat, n)
+    wf = await engine.lock_task(db, task)
+    await engine.require_actor(db, user, task, wf)
+    task = await db.get(Task, task.id, populate_existing=True)
+    if task.chat_board:
+        raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")
+    if not ((wf is not None and wf.status == WorkflowStatus.finished) or chat.status == ChatStatus.ended):
+        raise HTTPException(status.HTTP_409_CONFLICT, "round_not_finished")
+    if not data.add:
+        task.chat_board = "declined"
+        return task
+    defaults = await board_defaults(db, chat, n)
+    project = await db.get(Project, task.project_id)
+    column = await get_column(db, project, data.column_id or defaults.column_id)
+    task.in_chat = False
+    task.chat_board = "added"
+    task.title = data.title or defaults.title
+    task.description_md = data.description_md if data.description_md is not None else defaults.description_md
+    if task.column_id != column.id:
+        task.position = await end_position(db, column.id)
+        apply_column(task, column)
+    await db.flush()
+    await _step_cards(db, user, task, wf)
+    await task_changed(db, task, "task.created")
+    return task
+
+
+async def round_out(db: AsyncSession, chat: Chat, task: Task) -> RoundOut:
+    out = await chat_out(db, chat, None)
+    return next(r for r in out.rounds if r.n == task.chat_round)
