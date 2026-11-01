@@ -132,3 +132,16 @@ func TestSteersAreDeliveredInOrder(t *testing.T) {
 		t.Errorf("steers = %q", got)
 	}
 }
+
+// An adapter only counts its turn as running a moment after session/prompt arrives: a held steer handed in at
+// once would miss it (promptRequired) and go to the next run.
+func TestHeldSteerWaitsUntilTheAdapterIsInItsTurn(t *testing.T) {
+	t.Setenv("FAKEAGENT_TURN_START_MS", "700")
+	e := newEnvWithCache(t, steerScenario, 1, t.TempDir())
+	e.startRun("run-w", "MEG-1", "workspace")
+	e.steer("run-w", "m1", steerText)
+	if r := e.steerResult("m1"); r.Outcome != protocol.SteerInjected {
+		t.Fatalf("result = %+v", r)
+	}
+	e.finished("run-w")
+}

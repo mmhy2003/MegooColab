@@ -123,6 +123,7 @@ type run struct {
 
 // emit sends one metadata update with the next seq. The acpclient calls it in order.
 func (r *run) emit(kind string, data map[string]any) {
+	r.turnAlive() // the agent's first update of its turn: it is in its turn, held steers can go in
 	r.emitMu.Lock()
 	defer r.emitMu.Unlock()
 	if r.closed || r.stale() {

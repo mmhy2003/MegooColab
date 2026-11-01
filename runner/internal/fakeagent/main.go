@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -222,6 +223,12 @@ func (a *fakeAgent) Prompt(_ context.Context, p acp.PromptRequest) (acp.PromptRe
 	ctx, cancel := context.WithCancel(context.Background())
 	a.mu.Lock()
 	a.cancelTurn = cancel
+	a.mu.Unlock()
+	// FAKEAGENT_TURN_START_MS: like the real adapters, the turn counts as running only a moment after the prompt
+	if ms, err := strconv.Atoi(os.Getenv("FAKEAGENT_TURN_START_MS")); err == nil {
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+	}
+	a.mu.Lock()
 	a.turnLive = true
 	a.mu.Unlock()
 	defer cancel()
