@@ -11,7 +11,7 @@ import (
 func noEnv(string) string { return "" }
 
 func TestClaudeReadOnlyMetaDisallowsEdits(t *testing.T) {
-	m := SessionMeta("claude_code", policy.ReadOnly)
+	m := SessionMeta("claude_code", policy.ReadOnly, "")
 	opts := m["claudeCode"].(map[string]any)["options"].(map[string]any)
 	if got := opts["disallowedTools"]; !reflect.DeepEqual(got, []string{"Edit", "Write", "MultiEdit", "NotebookEdit"}) {
 		t.Fatalf("disallowedTools = %#v", got)
@@ -22,7 +22,7 @@ func TestClaudeReadOnlyMetaDisallowsEdits(t *testing.T) {
 	if opts["allowDangerouslySkipPermissions"] != false {
 		t.Fatalf("allowDangerouslySkipPermissions = %#v", opts["allowDangerouslySkipPermissions"])
 	}
-	w := SessionMeta("claude_code", policy.Workspace)["claudeCode"].(map[string]any)["options"].(map[string]any)
+	w := SessionMeta("claude_code", policy.Workspace, "")["claudeCode"].(map[string]any)["options"].(map[string]any)
 	if _, ok := w["disallowedTools"]; ok {
 		t.Fatal("workspace must not set disallowedTools")
 	}
@@ -34,7 +34,7 @@ func TestClaudeReadOnlyMetaDisallowsEdits(t *testing.T) {
 			t.Fatalf("allowedTools = %#v", got)
 		}
 	}
-	if SessionMeta("codex", policy.ReadOnly) != nil {
+	if SessionMeta("codex", policy.ReadOnly, "/x") != nil {
 		t.Fatal("codex meta must be nil")
 	}
 }
@@ -140,5 +140,20 @@ func TestWindowsNpxFallback(t *testing.T) {
 	s, err = forOS("windows", "codex", noEnv, lookOnly("npx.exe"))
 	if err != nil || s.Command != "npx" {
 		t.Fatalf("only npx.exe present: %+v %v", s, err)
+	}
+}
+
+func TestSessionMetaPlugins(t *testing.T) {
+	opts := SessionMeta("claude_code", policy.ReadOnly, "/cache/hub-plugin")["claudeCode"].(map[string]any)["options"].(map[string]any)
+	want := []map[string]any{{"type": "local", "path": "/cache/hub-plugin"}}
+	if !reflect.DeepEqual(opts["plugins"], want) {
+		t.Fatalf("plugins = %#v", opts["plugins"])
+	}
+	if src, _ := opts["settingSources"].([]string); src == nil || len(src) != 0 {
+		t.Fatalf("settingSources = %#v", opts["settingSources"])
+	}
+	none := SessionMeta("claude_code", policy.ReadOnly, "")["claudeCode"].(map[string]any)["options"].(map[string]any)
+	if _, ok := none["plugins"]; ok {
+		t.Fatal("plugins without a plugin dir")
 	}
 }

@@ -97,9 +97,10 @@ func splitCommandLine(s string) ([]string, error) {
 const McpServerName = "megoocolab"
 
 // SessionMeta is the _meta sent with session/new. For Claude Code it cuts off
-// the developer's own settings, pre-approves MegooColab's own MCP tools and,
-// read-only, removes the edit tools.
-func SessionMeta(program string, p policy.Kind) map[string]any {
+// the developer's own settings, pre-approves MegooColab's own MCP tools,
+// read-only, removes the edit tools, and with pluginDir hands it the Tool Hub's
+// skills as a local plugin (tools.SyncPlugin).
+func SessionMeta(program string, p policy.Kind, pluginDir string) map[string]any {
 	if program != ClaudeCode {
 		return nil
 	}
@@ -112,6 +113,9 @@ func SessionMeta(program string, p policy.Kind) map[string]any {
 	}
 	if p == policy.ReadOnly {
 		opts["disallowedTools"] = []string{"Edit", "Write", "MultiEdit", "NotebookEdit"}
+	}
+	if pluginDir != "" {
+		opts["plugins"] = []map[string]any{{"type": "local", "path": pluginDir}}
 	}
 	return map[string]any{"claudeCode": map[string]any{"options": opts}}
 }

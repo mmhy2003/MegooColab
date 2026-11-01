@@ -36,6 +36,7 @@ func (m *Manager) applyPush(p protocol.ToolsPush) {
 		return
 	}
 	results := tools.Apply(home, man, p.Programs, p.Tools, p.TakeOver)
+	_, _ = tools.SyncPlugin(m.cacheRoot, home, man)
 	_ = m.send(protocol.NewToolsReport(p.PushID, results))
 }
 
@@ -49,6 +50,7 @@ func (m *Manager) sendDrift() {
 	if err != nil {
 		return
 	}
+	_, _ = tools.SyncPlugin(m.cacheRoot, home, man) // also at each (re)connection: the plugin follows the manifest
 	_ = m.send(protocol.NewToolsDrift(tools.Drift(home, man)))
 }
 

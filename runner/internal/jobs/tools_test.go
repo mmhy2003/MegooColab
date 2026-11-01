@@ -24,7 +24,7 @@ func isolateHome(t *testing.T) string {
 
 func TestToolsPushReportAndDrift(t *testing.T) {
 	home := isolateHome(t)
-	e := newEnvWithCache(t, "ok", 1, t.TempDir())
+	e := newEnvWithCache(t, "[]", 1, t.TempDir())
 	if f := e.srv.WaitFrame(t, protocol.TypeToolsDrift); string(f.Raw) != `{"type":"tools_drift","items":[]}` {
 		t.Fatalf("first drift = %s", f.Raw)
 	}
@@ -67,7 +67,7 @@ func TestToolsPushReportAndDrift(t *testing.T) {
 func TestToolsScanAnswers(t *testing.T) {
 	home := isolateHome(t)
 	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"mcpServers":{"mine":{"type":"stdio","command":"foo"}}}`), 0o600)
-	e := newEnvWithCache(t, "ok", 1, t.TempDir())
+	e := newEnvWithCache(t, "[]", 1, t.TempDir())
 	if err := e.srv.Send(protocol.ToolsScan{Type: protocol.TypeToolsScan, ScanID: "s1"}); err != nil {
 		t.Fatal(err)
 	}
@@ -75,5 +75,39 @@ func TestToolsScanAnswers(t *testing.T) {
 	json.Unmarshal(e.srv.WaitFrame(t, protocol.TypeToolsFound).Raw, &found)
 	if found.ScanID != "s1" || len(found.Items) != 1 || found.Items[0].Name != "mine" {
 		t.Fatalf("found = %+v", found)
+	}
+}
+
+// A Claude Code skill pushed from the hub reaches the agent's sessions as the hub plugin.
+func TestPushedSkillReachesTheSession(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	e := newEnvWithCache(t, "[]", 1, cache)
+	push := protocol.ToolsPush{Type: protocol.TypeToolsPush, PushID: "p1", Programs: []string{"claude_code"}, TakeOver: []string{},
+		Tools: []protocol.ToolPayload{{ToolID: "t2", Name: "ui", Kind: "skill", Rev: 1,
+			Files: []protocol.SkillFile{{Path: "SKILL.md", ContentB64: "eA=="}}}}}
+	if err := e.srv.Send(push); err != nil {
+		t.Fatal(err)
+	}
+	e.srv.WaitFrame(t, protocol.TypeToolsReport)
+	e.startRun("run-1", "MEG-1", "read_only")
+	e.finished("run-1")
+	r := e.readReport()
+	var meta struct {
+		ClaudeCode struct {
+			Options struct {
+				Plugins []map[string]string `json:"plugins"`
+			} `json:"options"`
+		} `json:"claudeCode"`
+	}
+	if err := json.Unmarshal(r.Meta, &meta); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(cache, "hub-plugin")
+	if len(meta.ClaudeCode.Options.Plugins) != 1 || meta.ClaudeCode.Options.Plugins[0]["path"] != want {
+		t.Fatalf("meta = %s", r.Meta)
+	}
+	if _, err := os.Stat(filepath.Join(want, "skills", "ui", "SKILL.md")); err != nil {
+		t.Fatal(err)
 	}
 }
