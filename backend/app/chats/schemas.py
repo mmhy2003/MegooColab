@@ -24,6 +24,15 @@ class ChatIn(BaseModel):
     message: NoNulStr = Field(min_length=1, max_length=MAX_MESSAGE)
 
 
+class MessageIn(BaseModel):
+    body: NoNulStr = Field(min_length=1, max_length=MAX_MESSAGE)
+
+
+class MessageOut(BaseModel):
+    intent: Intent
+    round_key: str
+
+
 class ChatAgentOut(BaseModel):
     id: uuid.UUID
     name: str

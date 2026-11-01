@@ -14,13 +14,23 @@ from app.agents.service import can_use_agent, is_usable_binding, owner_can_acces
 from app.auth.models import Role, User
 from app.auth.schemas import UserOut
 from app.chats.models import Chat, ChatStatus
-from app.chats.schemas import ChatAgentOut, ChatIn, ChatOut, ChatState, RoundOut
+from app.chats.schemas import ChatAgentOut, ChatIn, ChatOut, ChatState, Intent, RoundOut
 from app.projects.access import accessible_project_ids, get_project_for
 from app.projects.models import Project
 from app.runner.registry import registry
 from app.tasks.models import Task, TaskType
 from app.tasks.schemas import TaskCreate
-from app.workflow.models import DocKind, DocStatus, Needs, Stage, TaskWorkflow, WorkflowDocument, WorkflowStatus
+from app.workflow.models import (
+    DocKind,
+    DocStatus,
+    Needs,
+    QuestionStatus,
+    Stage,
+    TaskWorkflow,
+    WorkflowDocument,
+    WorkflowQuestion,
+    WorkflowStatus,
+)
 
 TITLE_CHARS = 120
 NEEDS_STATE: dict[Needs, ChatState] = {
@@ -246,7 +256,7 @@ async def chat_out(db: AsyncSession, chat: Chat, viewer: User) -> ChatOut:
         agent=ChatAgentOut(id=agent.id, name=agent.name, program=agent.program) if agent else None,
         started_by=UserOut.model_validate(starter) if starter else None,
         created_at=chat.created_at, last_activity_at=chat.last_activity_at, state=state, can_act=acting,
-        rounds=out_rounds,
+        intent=await intent(db, chat, latest, latest_wf) if acting else "closed", rounds=out_rounds,
     )
 
 
@@ -257,3 +267,82 @@ async def chats_out(db: AsyncSession, chats: list[Chat], viewer: User) -> list[C
     """Chats waiting on the viewer first, then the most recently active."""
     out = [await chat_out(db, c, viewer) for c in chats]
     return sorted(out, key=lambda c: (not (c.can_act and c.state in WAITING), -c.last_activity_at.timestamp()))
+
+
+# ---- a message typed in the chat ----------------------------------------------------------------------------------
+
+DECIDED_BY_MESSAGE = {Needs.design_approval: DocKind.design, Needs.plan_approval: DocKind.plan}
+
+
+async def intent(db: AsyncSession, chat: Chat, task: Task | None, wf: TaskWorkflow | None) -> Intent:
+    """What a message typed now does: answer the agent's question, ask for changes to the design or plan waiting,
+    tell the working agent, start it again, or start the next round."""
+    from app.workflow import engine
+
+    if chat.status == ChatStatus.ended or task is None or wf is None:
+        return "closed"
+    if wf.status == WorkflowStatus.finished:
+        return "new_round"
+    if wf.needs == Needs.question:
+        return "answer"
+    if wf.needs in DECIDED_BY_MESSAGE:
+        return "changes"
+    if await engine.active_run(db, task.id) is not None:
+        return "tell"
+    if wf.needs is None and wf.status == WorkflowStatus.running:
+        return "restart"
+    return "tell"  # an escalation or a code review waits: the agent gets it at its next run
+
+
+async def latest_round(db: AsyncSession, chat: Chat) -> Task | None:
+    return await db.scalar(select(Task).where(Task.chat_id == chat.id).order_by(Task.chat_round.desc()).limit(1))
+
+
+async def start_next_round(db: AsyncSession, user: User, chat: Chat, message: str) -> Task:
+    raise HTTPException(status.HTTP_409_CONFLICT, "round_not_finished")  # rounds come with the next task
+
+
+async def send_message(db: AsyncSession, user: User, chat: Chat, body: str) -> tuple[Intent, Task, uuid.UUID | None]:
+    """Does what the chat waits for, decided under the round's lock. Returns the intent, the round, and the id of a
+    message for the agent to hand into its running session after the commit."""
+    from app.tasks.activity import create_comment
+    from app.workflow import documents, engine, questions
+
+    task = await latest_round(db, chat)
+    if chat.status == ChatStatus.ended or task is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "chat_ended")
+    wf = await engine.lock_task(db, task)
+    await engine.require_actor(db, user, task, wf)
+    project = await db.get(Project, task.project_id)
+    key = f"{project.key}-{task.number}"
+    what = await intent(db, chat, task, wf)
+    steer = None
+    if what == "answer":
+        qid = await db.scalar(
+            select(WorkflowQuestion.id)
+            .where(WorkflowQuestion.task_id == task.id, WorkflowQuestion.status == QuestionStatus.open)
+            .order_by(WorkflowQuestion.created_at.desc())
+            .limit(1)
+        )
+        await questions.answer(db, user, task, qid, None, body)
+    elif what == "changes":
+        kind = DECIDED_BY_MESSAGE[Needs(wf.needs)]
+        version = await db.scalar(
+            select(WorkflowDocument.version)
+            .where(WorkflowDocument.task_id == task.id, WorkflowDocument.kind == kind,
+                   WorkflowDocument.status == DocStatus.submitted)
+            .order_by(WorkflowDocument.version.desc())
+            .limit(1)
+        )
+        await documents.decide(db, user, task, kind, version, False, body)
+    elif what == "tell":
+        steer = (await create_comment(db, user, key, body, to_agent=True)).id
+    elif what == "restart":
+        await engine.hand_to_agent(
+            db, wf, task, engine.STAGE_ROLE[Stage(wf.stage)], resume_kind="nudge", payload={"text": body},
+            requested_by=user.id,
+        )
+    elif what == "new_round":
+        task = await start_next_round(db, user, chat, body)
+    chat.last_activity_at = _now()
+    return what, task, steer
