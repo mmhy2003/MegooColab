@@ -181,6 +181,7 @@ test("a chat with an agent, from first message to the board and a second round",
   const confirm = ui.getByRole("alertdialog");
   if (await confirm.isVisible().catch(() => false)) await confirm.getByRole("button", { name: "End chat" }).click();
   await ui.getByRole("dialog", { name: "Add this to the board?" }).getByRole("button", { name: "No, just end it" }).click();
+  await expect(ui.getByRole("dialog", { name: "Add this to the board?" })).toBeHidden(); // the decision is saved
   await expect(view.getByText("This chat has ended.")).toBeVisible();
   const chatId = ui.url().split("/").pop()!;
   const r2 = (await get<{ rounds: { key: string; board: string | null }[] }>(request, `/api/chats/${chatId}`)).rounds[1];
