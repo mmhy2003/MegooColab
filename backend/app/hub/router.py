@@ -77,8 +77,13 @@ async def patch_tool(tool_id: uuid.UUID, body: ToolPatch, user: AuthedUser, db: 
     if body.description is not None and body.description != tool.description:
         tool.description, visible = body.description, True
     if body.spec is not None and tool.kind == "mcp":
+        spec = rules.prune_acknowledged(service.spec_of(tool), body.spec)
+        # a tool others already see never takes on a value that looks like a key
+        shared = tool.share_everyone or bool(await service.shares_of(db, tool))
+        if shared and rules.flagged_values(spec):
+            raise HTTPException(status.HTTP_409_CONFLICT, "hub_flagged_values")
         before = tool.spec
-        service.set_spec(tool, body.spec)
+        service.set_spec(tool, spec)
         visible = visible or tool.spec != before
     changed = visible
     if body.read_only_safe is not None and body.read_only_safe != tool.read_only_safe:

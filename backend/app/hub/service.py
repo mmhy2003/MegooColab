@@ -165,6 +165,12 @@ async def take_from(db: AsyncSession, copy: HubTool, src: HubTool) -> None:
     await replace_files(db, copy, [(f.path, f.content) for f in await _files(db, src)])
 
 
+async def _file_index(db: AsyncSession, tool: HubTool) -> list[tuple[str, int]]:
+    """A skill's paths and sizes, without reading the files themselves."""
+    rows = (await db.execute(select(HubToolFile.path, HubToolFile.size).where(HubToolFile.tool_id == tool.id))).all()
+    return sorted((r.path, r.size) for r in rows)
+
+
 async def _files(db: AsyncSession, tool: HubTool) -> list[HubToolFile]:
     rows = (await db.execute(select(HubToolFile).where(HubToolFile.tool_id == tool.id))).scalars()
     return sorted(rows, key=lambda f: f.path)  # by code point, whatever the database's collation
@@ -175,7 +181,7 @@ async def summary(db: AsyncSession, user: User, tool: HubTool) -> ToolSummary:
     mine = tool.owner_id == user.id
     secrets = read_secrets(tool) if mine else {}
     runs_code = tool.kind == "skill" and any(
-        rules.script_systems(f.path) for f in await _files(db, tool)
+        rules.script_systems(path) for path, _ in await _file_index(db, tool)
     )
     return ToolSummary(
         id=tool.id,
@@ -212,7 +218,7 @@ async def tool_out(db: AsyncSession, user: User, tool: HubTool) -> ToolOut:
     spec = spec_of(tool)
     files = None
     if tool.kind == "skill":
-        files = [ToolFileOut(path=f.path, size=f.size, runs_on=rules.script_systems(f.path)) for f in await _files(db, tool)]
+        files = [ToolFileOut(path=p, size=n, runs_on=rules.script_systems(p)) for p, n in await _file_index(db, tool)]
     source = None
     _, src = await source_of(db, await db.get(User, tool.owner_id), tool)
     if src is not None:
