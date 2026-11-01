@@ -39,3 +39,5 @@ class OrgSettings(TimestampMixin, Base):
     default_require_human_code_review: Mapped[bool] = mapped_column(default=False, server_default=false())
     default_sprints_enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
     default_commit_docs_to_repo: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # Tool Hub: whether people may share tools with everyone on this MegooColab
+    hub_share_everyone: Mapped[bool] = mapped_column(default=True, server_default=true())
