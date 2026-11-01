@@ -1,3 +1,4 @@
+import uuid
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
@@ -54,3 +55,77 @@ class McpSpec(BaseModel):
         if any(p not in slots for t in texts for p in placeholders(t)):
             raise ValueError("hub_unknown_placeholder")
         return self
+
+
+class ToolIn(BaseModel):
+    kind: Literal["mcp"]
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    description: NoNulStr = Field(default="", max_length=2000)
+    spec: McpSpec
+    read_only_safe: bool = False
+
+
+class ToolPatch(BaseModel):
+    name: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    description: NoNulStr | None = Field(default=None, max_length=2000)
+    spec: McpSpec | None = None
+    read_only_safe: bool | None = None
+
+
+class SecretsIn(BaseModel):
+    values: dict[str, Annotated[str, Field(max_length=4000)]] = Field(max_length=100)
+
+
+class SecretSlot(BaseModel):
+    name: str
+    set: bool
+
+
+class Named(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class Sharing(BaseModel):
+    teams: list[Named] = []
+    users: list[Named] = []
+    everyone: bool = False
+
+
+class ToolSummary(BaseModel):
+    id: uuid.UUID
+    kind: Literal["mcp", "skill"]
+    name: str
+    description: str
+    version: int
+    rev: int
+    owner: Named
+    is_copy: bool
+    source_state: Literal["ok", "update_available", "no_longer_shared"] | None = None
+    removed: bool
+    secrets_missing: bool  # owner only, else false
+    runs_code: bool
+    read_only_safe: bool
+    sharing: Sharing | None = None  # owner only
+
+
+class ToolFileOut(BaseModel):
+    path: str
+    size: int
+    runs_on: list[str] | None = None
+
+
+class ToolSource(BaseModel):
+    id: uuid.UUID
+    name: str
+    owner_name: str
+    version: int
+
+
+class ToolOut(ToolSummary):
+    spec: McpSpec | None = None
+    secrets: list[SecretSlot] = []
+    files: list[ToolFileOut] | None = None
+    source: ToolSource | None = None
+    flagged: list[str] = []
+    can_edit: bool
