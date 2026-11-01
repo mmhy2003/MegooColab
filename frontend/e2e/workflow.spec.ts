@@ -317,7 +317,7 @@ test("workflow end to end", async ({ browser }) => {
   await page.getByRole("button", { name: "Save bindings" }).click();
   await expect(page.getByLabel("Local path")).toHaveValue(repo);
   // the agent runs on the machine of the token it is linked to
-  await page.getByLabel("Machine").selectOption({ label: "Workflow runner" });
+  await page.getByLabel("Machine", { exact: true }).selectOption({ label: "Workflow runner" });
   await expect(page.getByText("on Workflow runner")).toBeVisible();
   launch(token);
   await expect(page.getByText("Online")).toBeVisible({ timeout: 10_000 });
