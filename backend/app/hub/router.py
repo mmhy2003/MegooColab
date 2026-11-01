@@ -69,7 +69,7 @@ async def patch_tool(tool_id: uuid.UUID, body: ToolPatch, user: AuthedUser, db: 
     tool = await _own(db, user, tool_id)
     service.require_not_removed(tool)
     fields = body.model_fields_set
-    if tool.is_copy and fields - {"read_only_safe"}:
+    if tool.is_copy and fields - {"read_only_safe", "in_default_set"}:
         raise HTTPException(status.HTTP_409_CONFLICT, "hub_copy_read_only")
     visible = False
     if body.name is not None and body.name != tool.name:
@@ -90,6 +90,8 @@ async def patch_tool(tool_id: uuid.UUID, body: ToolPatch, user: AuthedUser, db: 
         tool.read_only_safe, changed = body.read_only_safe, True
     if changed:
         service.bump(tool, version=visible)
+    if body.in_default_set is not None:
+        tool.in_default_set = body.in_default_set  # which machines get it, not the tool: no new rev
     await _flush_unique_name(db)
     return await service.tool_out(db, user, tool)
 

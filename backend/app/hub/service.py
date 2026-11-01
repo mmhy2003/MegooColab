@@ -198,6 +198,7 @@ async def summary(db: AsyncSession, user: User, tool: HubTool) -> ToolSummary:
         runs_code=runs_code,
         read_only_safe=tool.read_only_safe,
         sharing=await sharing_of(db, tool) if mine else None,
+        in_default_set=mine and tool.in_default_set,
     )
 
 

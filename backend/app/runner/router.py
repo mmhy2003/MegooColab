@@ -23,6 +23,7 @@ from app.auth.models import PersonalAccessToken, TokenScope
 from app.auth.tokens import resolve_bearer
 from app.core.db import SessionLocal
 from app.core.events import Event, hub
+from app.hub import machines as hub_machines
 from app.projects.models import Project
 from app.ratelimit.ws import CLOSE_RATE_LIMITED, connect_allowed
 from app.runner.protocol import (
@@ -36,6 +37,8 @@ from app.runner.protocol import (
     RunFinished,
     RunSteerResult,
     RunUpdate,
+    ToolsDrift,
+    ToolsReport,
     Welcome,
     WelcomeAgent,
     WelcomeBinding,
@@ -202,6 +205,16 @@ async def _remember_os(conn: RunnerConn, goos: str) -> None:
             await db.commit()
 
 
+async def _hub(conn: RunnerConn, work) -> None:
+    """Tool Hub work for this connection's machine, in its own transaction."""
+    async with SessionLocal() as db:
+        token = await db.get(PersonalAccessToken, conn.token_id)
+        if token is None or token.user_id != conn.user_id:
+            return
+        await work(db, token)
+        await db.commit()
+
+
 async def _handle(conn: RunnerConn, text: str) -> bool:
     """Process one runner message. False means a protocol error."""
     try:
@@ -213,6 +226,8 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
         conn.capabilities = set(msg.capabilities)
         conn.version, conn.os = msg.runner_version, msg.os
         await _remember_os(conn, msg.os)
+        if "tools/1" in conn.capabilities:
+            await _hub(conn, lambda db, token: hub_machines.deliver(db, token))
         await _fail_unclaimed(conn)
         await _apply_reports(conn, msg.agents)
     elif isinstance(msg, AgentStatus):
@@ -224,6 +239,10 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
         if await _on_this_machine(conn, msg.run_id):
             await _run_message(finish_run, conn.user_id, msg.run_id, msg.outcome, msg.summary, msg.error, msg)
         conn.run_ids.discard(msg.run_id)
+    elif isinstance(msg, ToolsReport):
+        await _hub(conn, lambda db, token: hub_machines.apply_report(db, token, msg))
+    elif isinstance(msg, ToolsDrift):
+        await _hub(conn, lambda db, token: hub_machines.apply_drift(db, token, msg))
     elif isinstance(msg, RunSteerResult):
         if await _on_this_machine(conn, msg.run_id):
             from app.workflow import instructions  # local: the workflow imports this module's neighbours

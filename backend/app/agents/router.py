@@ -17,6 +17,7 @@ from app.agents.schemas import (
 from app.audit import service as audit
 from app.auth.deps import AdminUser, AuthedUser
 from app.core.db import DbSession
+from app.hub import machines as hub_machines
 from app.projects.access import get_project_for
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
@@ -62,6 +63,7 @@ async def create_agent(body: AgentIn, user: AuthedUser, db: DbSession) -> AgentO
         data={"name": agent.name, "program": agent.program, "runner_token_id": _str(agent.runner_token_id)},
     )
     await service.publish_agents_updated(db, user.id, set())
+    await hub_machines.on_agent_linked(db, user, agent.runner_token_id)
     return (await service.agents_out(db, [agent], user))[0]
 
 
@@ -99,6 +101,7 @@ async def update_agent(agent_id: uuid.UUID, body: AgentPatch, user: AuthedUser, 
             db, "agent.machine_changed", actor_id=user.id, target_type="agent", target_id=agent.id,
             data={"runner_token_id": _str(agent.runner_token_id)},
         )
+        await hub_machines.on_agent_linked(db, user, agent.runner_token_id)
     await _flush_unique_name(db)
     await service.publish_agents_updated(db, user.id, await service.bound_project_ids(db, agent.id))
     return (await service.agents_out(db, [agent], user))[0]

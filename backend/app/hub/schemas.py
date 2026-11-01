@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
@@ -70,6 +71,7 @@ class ToolPatch(BaseModel):
     description: NoNulStr | None = Field(default=None, max_length=2000)
     spec: McpSpec | None = None
     read_only_safe: bool | None = None
+    in_default_set: bool | None = None
 
 
 class SecretsIn(BaseModel):
@@ -113,6 +115,7 @@ class ToolSummary(BaseModel):
     runs_code: bool
     read_only_safe: bool
     sharing: Sharing | None = None  # owner only
+    in_default_set: bool = False  # owner only
 
 
 class ToolFileOut(BaseModel):
@@ -145,3 +148,55 @@ class ToolOut(ToolSummary):
 
 class AdminToolOut(ToolSummary):
     sharing: Sharing
+
+
+MachineState = Literal[
+    "installed", "update_ready", "will_install", "will_remove", "changed", "conflict", "key_missing", "removed",
+    "failed", "not_supported", "not_available", "waiting",
+]
+
+
+class ProgramState(BaseModel):
+    program: str
+    state: MachineState | None  # None: not ticked and not installed there
+    detail: str = ""
+
+
+class MachineTool(BaseModel):
+    tool_id: uuid.UUID | None  # None: installed from a tool since deleted
+    name: str
+    kind: Literal["mcp", "skill"]
+    ticked: bool
+    programs: list[ProgramState]
+
+
+class MachineAgent(BaseModel):
+    id: uuid.UUID
+    name: str
+    program: str
+
+
+class MachineOut(BaseModel):
+    token_id: uuid.UUID
+    name: str
+    os: str | None
+    online: bool
+    supports_tools: bool
+    agents: list[MachineAgent]
+    pending: bool
+    reported_at: datetime | None
+    tools: list[MachineTool]
+    out_of_step: bool
+
+
+class PushIn(BaseModel):
+    tool_ids: list[uuid.UUID] = Field(default=[], max_length=500)
+    take_over: list[uuid.UUID] = Field(default=[], max_length=500)
+
+
+class PrefsIn(BaseModel):
+    auto_default: bool
+
+
+class PrefsOut(BaseModel):
+    auto_default: bool
