@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { JumpButtons } from "@/components/task/JumpButtons";
+import { JumpButtons, useLiftAbove } from "@/components/task/JumpButtons";
 
 type Entry = { id: string; at: string };
 const entry = (n: number): Entry => ({ id: `a${n}`, at: new Date(Date.UTC(2026, 9, 31, 10, 0, n)).toISOString() });
@@ -187,5 +187,60 @@ describe("JumpButtons", () => {
     fireEvent.click(screen.getByRole("button", { name: "1 waiting on you" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "question" }).parentElement).toHaveFocus());
     expect(screen.getByRole("button", { name: "1 waiting on you" })).toBeInTheDocument(); // counted once
+  });
+});
+
+describe("JumpButtons and the floating comment box", () => {
+  it("lifts the buttons by the composer's height", () => {
+    const { container } = render(<JumpButtons scrollRef={{ current: null }} activity={[]} lift={{ right: 96, left: 0 }} />);
+    const stack = container.querySelector("[data-jump-buttons]") as HTMLElement;
+    // jsdom may reorder the terms of calc()
+    expect(stack.style.bottom).toMatch(/^calc\((96px \+ 1rem|1rem \+ 96px)\)$/);
+  });
+
+  it("sits in the corner without a composer", () => {
+    const { container } = render(<JumpButtons scrollRef={{ current: null }} activity={[]} />);
+    expect((container.querySelector("[data-jump-buttons]") as HTMLElement).style.bottom).toMatch(/^calc\((0px \+ 1rem|1rem \+ 0px)\)$/);
+  });
+});
+
+describe("useLiftAbove", () => {
+  const rect = (r: Partial<DOMRect>) => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON: () => ({}), ...r }) as DOMRect;
+
+  function Probe({ composer }: { composer: Partial<DOMRect> }) {
+    const scroll = useRef<HTMLDivElement | null>(null);
+    const [box, setBox] = useState<HTMLDivElement | null>(null);
+    const lift = useLiftAbove(scroll, box);
+    return (
+      <div
+        ref={(el) => {
+          scroll.current = el;
+          if (el) el.getBoundingClientRect = () => rect({ top: 0, bottom: 800, left: 0, right: 400 });
+        }}
+      >
+        <div
+          ref={(el) => {
+            if (el) el.getBoundingClientRect = () => rect(composer);
+            if (el !== box) setBox(el);
+          }}
+        />
+        <output>{`${lift.right}/${lift.left}`}</output>
+      </div>
+    );
+  }
+
+  it("is the composer's height in both corners while it floats under them", () => {
+    render(<Probe composer={{ top: 700, bottom: 800, left: 16, right: 384 }} />);
+    expect(screen.getByRole("status").textContent).toBe("100/100");
+  });
+
+  it("is zero when the composer is up the page", () => {
+    render(<Probe composer={{ top: 200, bottom: 300, left: 16, right: 384 }} />);
+    expect(screen.getByRole("status").textContent).toBe("0/0");
+  });
+
+  it("lifts only the left note when the composer is not under the buttons' column", () => {
+    render(<Probe composer={{ top: 700, bottom: 800, left: 16, right: 200 }} />);
+    expect(screen.getByRole("status").textContent).toBe("0/100");
   });
 });
