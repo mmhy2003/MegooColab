@@ -14,6 +14,7 @@ from app.agents.service import can_use_agent, is_usable_binding, owner_can_acces
 from app.auth.models import Role, User
 from app.auth.schemas import UserOut
 from app.chats.models import Chat, ChatStatus
+from app.git.models import PR_MAIN, TaskPullRequest
 from app.chats.schemas import ChatAgentOut, ChatIn, ChatOut, ChatState, Intent, RoundOut
 from app.projects.access import accessible_project_ids, get_project_for
 from app.projects.models import Project
@@ -299,7 +300,20 @@ async def latest_round(db: AsyncSession, chat: Chat) -> Task | None:
 
 
 async def start_next_round(db: AsyncSession, user: User, chat: Chat, message: str) -> Task:
-    raise HTTPException(status.HTTP_409_CONFLICT, "round_not_finished")  # rounds come with the next task
+    """The next round, once the last one finished. It builds on the last round's branch while that round's pull
+    request is still open, so the changes stack; otherwise it starts from the default branch."""
+    prev = await latest_round(db, chat)
+    wf = await db.get(TaskWorkflow, prev.id) if prev is not None else None
+    if wf is None or wf.status != WorkflowStatus.finished:
+        raise HTTPException(status.HTTP_409_CONFLICT, "round_not_finished")
+    branch_from = None
+    if wf.finish_outcome == "pr_opened" and wf.branch:
+        pr_state = await db.scalar(
+            select(TaskPullRequest.state).where(TaskPullRequest.task_id == prev.id, TaskPullRequest.kind == PR_MAIN)
+        )
+        if pr_state != "merged":
+            branch_from = wf.branch
+    return await create_round(db, user, chat, message, branch_from=branch_from)
 
 
 async def send_message(db: AsyncSession, user: User, chat: Chat, body: str) -> tuple[Intent, Task, uuid.UUID | None]:
