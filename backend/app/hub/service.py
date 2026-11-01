@@ -16,6 +16,7 @@ from app.hub.schemas import (
     Sharing,
     ToolFileOut,
     ToolOut,
+    ToolSource,
     ToolSummary,
 )
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
@@ -156,6 +157,14 @@ async def replace_files(db: AsyncSession, tool: HubTool, files: list[tuple[str, 
     await db.flush()
 
 
+async def take_from(db: AsyncSession, copy: HubTool, src: HubTool) -> None:
+    """Makes the copy match its source's setup and files; keeps the copy's secrets for slots still there."""
+    copy.description, copy.source_version, copy.version = src.description, src.version, src.version
+    if src.spec is not None:
+        set_spec(copy, McpSpec.model_validate(src.spec))
+    await replace_files(db, copy, [(f.path, f.content) for f in await _files(db, src)])
+
+
 async def _files(db: AsyncSession, tool: HubTool) -> list[HubToolFile]:
     rows = (await db.execute(select(HubToolFile).where(HubToolFile.tool_id == tool.id))).scalars()
     return sorted(rows, key=lambda f: f.path)  # by code point, whatever the database's collation
@@ -177,12 +186,23 @@ async def summary(db: AsyncSession, user: User, tool: HubTool) -> ToolSummary:
         rev=tool.rev,
         owner=Named(id=owner.id, name=owner.name),
         is_copy=tool.is_copy,
+        source_state=(await source_of(db, owner, tool))[0],
         removed=tool.removed_at is not None,
         secrets_missing=mine and any(s not in secrets for s in slots_of(tool)),
         runs_code=runs_code,
         read_only_safe=tool.read_only_safe,
         sharing=await sharing_of(db, tool) if mine else None,
     )
+
+
+async def source_of(db: AsyncSession, owner: User, tool: HubTool) -> tuple[str | None, HubTool | None]:
+    """A copy's state against what it was copied from, as its owner sees it, and that source while visible."""
+    if not tool.is_copy:
+        return None, None
+    src = await db.get(HubTool, tool.source_id) if tool.source_id else None
+    if src is None or not await can_view(db, owner, src):
+        return "no_longer_shared", None
+    return ("update_available" if src.version > (tool.source_version or 0) else "ok"), src
 
 
 async def tool_out(db: AsyncSession, user: User, tool: HubTool) -> ToolOut:
@@ -193,11 +213,17 @@ async def tool_out(db: AsyncSession, user: User, tool: HubTool) -> ToolOut:
     files = None
     if tool.kind == "skill":
         files = [ToolFileOut(path=f.path, size=f.size, runs_on=rules.script_systems(f.path)) for f in await _files(db, tool)]
+    source = None
+    _, src = await source_of(db, await db.get(User, tool.owner_id), tool)
+    if src is not None:
+        src_owner = await db.get(User, src.owner_id)
+        source = ToolSource(id=src.id, name=src.name, owner_name=src_owner.name, version=src.version)
     return ToolOut(
         **base.model_dump(),
         spec=spec,
         secrets=[SecretSlot(name=s, set=s in secrets) for s in slots_of(tool)],
         files=files,
+        source=source,
         flagged=rules.flagged_values(spec) if spec else [],
         can_edit=mine and not tool.is_copy and tool.removed_at is None,
     )
