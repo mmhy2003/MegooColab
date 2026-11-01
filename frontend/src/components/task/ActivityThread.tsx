@@ -4,6 +4,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Markdown } from "@/components/ui/Markdown";
 import { QuestionCard } from "@/components/workflow/QuestionCard";
 import { ReviewResult } from "@/components/workflow/ReviewFindings";
+import { stateText } from "@/lib/agentMessages";
 import { runReasonText } from "@/lib/agents";
 import type { ActivityItem } from "@/lib/types";
 import { escalationReasonText, FINISHING_LABEL, STAGES, type FinishingOption } from "@/lib/workflow";
@@ -252,12 +253,23 @@ export function ActivityThread({
           );
         }
         if (item.type === "comment") {
+          const toAgent = item.to_agent;
           return (
             <li key={item.id} className="flex gap-2">
               <Avatar name={actor} size={24} />
-              <div className="card min-w-0 flex-1 px-3 py-2">
+              <div
+                data-agent-message={toAgent ? "" : undefined}
+                className={`card min-w-0 flex-1 px-3 py-2 ${toAgent ? "border-l-2 border-l-violet" : ""}`}
+              >
                 <p className="text-xs text-muted-foreground">
-                  <span className="text-fg">{actor}</span> · {when(item.at)}
+                  {toAgent ? (
+                    <span className="text-violet">
+                      {actor} → {toAgent.agent_name}
+                    </span>
+                  ) : (
+                    <span className="text-fg">{actor}</span>
+                  )}
+                  {toAgent && <> · {stateText(toAgent)}</>} · {when(item.at)}
                   {item.edited_at && <span className="ml-1">(edited)</span>}
                 </p>
                 <Markdown>{item.body_md ?? ""}</Markdown>

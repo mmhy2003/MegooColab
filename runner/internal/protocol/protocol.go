@@ -18,15 +18,17 @@ const (
 
 // Message type names.
 const (
-	TypeHello         = "hello"
-	TypeHeartbeat     = "heartbeat"
-	TypeAgentStatus   = "agent_status"
-	TypeRunUpdate     = "run_update"
-	TypeRunFinished   = "run_finished"
-	TypeWelcome       = "welcome"
-	TypeRunStart      = "run_start"
-	TypeRunCancel     = "run_cancel"
-	TypeConfigChanged = "config_changed"
+	TypeHello          = "hello"
+	TypeHeartbeat      = "heartbeat"
+	TypeAgentStatus    = "agent_status"
+	TypeRunUpdate      = "run_update"
+	TypeRunFinished    = "run_finished"
+	TypeWelcome        = "welcome"
+	TypeRunStart       = "run_start"
+	TypeRunCancel      = "run_cancel"
+	TypeConfigChanged  = "config_changed"
+	TypeRunSteer       = "run_steer"
+	TypeRunSteerResult = "run_steer_result"
 )
 
 // AgentAvailability is the server's AgentReport.
@@ -59,6 +61,19 @@ const CapabilityBranch = "branch/1"
 // effort_unavailable) rather than use others, and reports the models the agent
 // offers with their effort levels.
 const CapabilityModel = "model/1"
+
+// CapabilitySteer is advertised in every hello: the runner takes run_steer, a
+// person's message for a running agent, hands it into the running turn (ACP
+// _session/steering) and answers with run_steer_result.
+const CapabilitySteer = "steer/1"
+
+// Outcomes of a run_steer.
+const (
+	SteerInjected    = "injected"    // the agent has it, in its running turn
+	SteerNotRunning  = "not_running" // no turn to hand it into: the server gives it to the next run
+	SteerUnsupported = "unsupported" // the adapter cannot take messages mid-turn
+	SteerFailed      = "failed"
+)
 
 // Heartbeat is sent every 15 s.
 type Heartbeat struct {
@@ -198,6 +213,28 @@ type RunCancel struct {
 	RunID string `json:"run_id"`
 }
 
+// RunSteer is a person's message for a running agent.
+type RunSteer struct {
+	Type      string `json:"type"`
+	RunID     string `json:"run_id"`
+	MessageID string `json:"message_id"`
+	Text      string `json:"text"`
+}
+
+// RunSteerResult answers a RunSteer with one of the Steer* outcomes.
+type RunSteerResult struct {
+	Type      string `json:"type"`
+	RunID     string `json:"run_id"`
+	MessageID string `json:"message_id"`
+	Outcome   string `json:"outcome"`
+	Error     string `json:"error,omitempty"`
+}
+
+// NewRunSteerResult builds a run_steer_result; errMsg is sent only when set.
+func NewRunSteerResult(runID, messageID, outcome, errMsg string) RunSteerResult {
+	return RunSteerResult{Type: TypeRunSteerResult, RunID: runID, MessageID: messageID, Outcome: outcome, Error: errMsg}
+}
+
 // ConfigChanged tells the runner its agent configuration changed on the server.
 type ConfigChanged struct {
 	Type string `json:"type"`
@@ -212,7 +249,7 @@ func NewHello(version, os, arch string, agents []AgentAvailability) Hello {
 		}
 		out[i] = a
 	}
-	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel}}
+	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer}}
 }
 
 // NewHeartbeat builds a heartbeat.

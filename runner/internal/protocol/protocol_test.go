@@ -34,6 +34,9 @@ func TestWireFieldNames(t *testing.T) {
 		{"run task", RunTask{}, []string{"description_md", "key", "project_key", "title"}},
 		{"run_cancel", RunCancel{Type: TypeRunCancel}, []string{"run_id", "type"}},
 		{"config_changed", ConfigChanged{Type: TypeConfigChanged}, []string{"type"}},
+		{"run_steer", RunSteer{Type: TypeRunSteer}, []string{"message_id", "run_id", "text", "type"}},
+		{"run_steer_result", NewRunSteerResult("r", "m", SteerInjected, ""), []string{"message_id", "outcome", "run_id", "type"}},
+		{"run_steer_result error", NewRunSteerResult("r", "m", SteerFailed, "boom"), []string{"error", "message_id", "outcome", "run_id", "type"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -67,7 +70,7 @@ func TestWireFieldNames(t *testing.T) {
 
 func TestListsNeverNull(t *testing.T) {
 	data, _ := json.Marshal(NewHello("1", "linux", "amd64", nil))
-	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1"]}` {
+	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1"]}` {
 		t.Fatalf("hello = %s", data)
 	}
 	data, _ = json.Marshal(NewHello("1", "l", "a", []AgentAvailability{{AgentID: "x"}}))
@@ -102,4 +105,14 @@ func TestNewRunUpdateDefaultsDataToEmptyMap(t *testing.T) {
 	if !strings.Contains(string(data), `"data":{"text":"hi"}`) {
 		t.Fatalf("run_update = %s", data)
 	}
+}
+
+func TestHelloAdvertisesSteer(t *testing.T) {
+	h := NewHello("1", "linux", "amd64", nil)
+	for _, c := range h.Capabilities {
+		if c == "steer/1" {
+			return
+		}
+	}
+	t.Fatalf("capabilities = %v, want steer/1", h.Capabilities)
 }

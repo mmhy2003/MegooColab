@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,10 +32,12 @@ type fakeAgent struct {
 	toolSeq    int
 	history    []histMsg
 	mcp        []acp.McpServer
-	mode       string   // the session mode set by the client ("default" until then)
-	model      string   // the session's model, with $FAKEAGENT_MODELS ("default" until set)
-	effort     string   // the model's effort, with $FAKEAGENT_EFFORTS ("default" until set, and on a model change)
-	allowed    []string // Claude Code allowedTools from the session _meta
+	mode       string      // the session mode set by the client ("default" until then)
+	model      string      // the session's model, with $FAKEAGENT_MODELS ("default" until set)
+	effort     string      // the model's effort, with $FAKEAGENT_EFFORTS ("default" until set, and on a model change)
+	allowed    []string    // Claude Code allowedTools from the session _meta
+	turnLive   bool        // a session/prompt is running: a steer joins it
+	steered    chan string // steers injected into the running turn, for await_steer_ms
 }
 
 var _ acp.Agent = (*fakeAgent)(nil)
@@ -61,7 +64,57 @@ func (a *fakeAgent) Initialize(_ context.Context, p acp.InitializeRequest) (acp.
 	if os.Getenv("FAKEAGENT_RESUME") == "1" && os.Getenv("FAKEAGENT_NO_LOAD") != "1" {
 		caps.SessionCapabilities.Resume = &acp.SessionResumeCapabilities{}
 	}
-	return acp.InitializeResponse{ProtocolVersion: acp.ProtocolVersionNumber, AgentCapabilities: caps}, nil
+	resp := acp.InitializeResponse{ProtocolVersion: acp.ProtocolVersionNumber, AgentCapabilities: caps}
+	// FAKEAGENT_STEERING=off: an adapter without the ACP steering extension
+	if os.Getenv("FAKEAGENT_STEERING") != "off" {
+		resp.Meta = map[string]any{"steering": map[string]any{"supported": true}}
+	}
+	return resp, nil
+}
+
+// HandleExtensionMethod answers _session/steering like the real adapters: a
+// steer joins the running turn ("injected"); with no turn it is
+// "promptRequired" when the client opted into that, else "startedNewTurn".
+// FAKEAGENT_STEER_OUTCOME forces the outcome (no injection).
+func (a *fakeAgent) HandleExtensionMethod(_ context.Context, method string, params json.RawMessage) (any, error) {
+	if method != "_session/steering" || os.Getenv("FAKEAGENT_STEERING") == "off" {
+		return nil, acp.NewMethodNotFound(method)
+	}
+	var p struct {
+		Prompt []acp.ContentBlock `json:"prompt"`
+		Meta   struct {
+			Steering struct {
+				IdleBehavior string `json:"idleBehavior"`
+			} `json:"steering"`
+		} `json:"_meta"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, acp.NewInvalidParams(err.Error())
+	}
+	if forced := os.Getenv("FAKEAGENT_STEER_OUTCOME"); forced != "" {
+		return map[string]any{"outcome": forced}, nil
+	}
+	var text strings.Builder
+	for _, b := range p.Prompt {
+		if b.Text != nil {
+			text.WriteString(b.Text.Text)
+		}
+	}
+	a.mu.Lock()
+	live := a.turnLive
+	if live {
+		a.report.Steers = append(a.report.Steers, text.String())
+		a.history = append(a.history, histMsg{Role: "user", Text: text.String()})
+	}
+	a.mu.Unlock()
+	if live {
+		a.steered <- text.String()
+		return map[string]any{"outcome": "injected"}, nil
+	}
+	if p.Meta.Steering.IdleBehavior == "promptRequired" {
+		return map[string]any{"outcome": "promptRequired"}, nil
+	}
+	return map[string]any{"outcome": "startedNewTurn"}, nil
 }
 
 // begin records a session request (new, load or resume) and makes it current.
@@ -171,7 +224,19 @@ func (a *fakeAgent) Prompt(_ context.Context, p acp.PromptRequest) (acp.PromptRe
 	a.mu.Lock()
 	a.cancelTurn = cancel
 	a.mu.Unlock()
+	// FAKEAGENT_TURN_START_MS: like the real adapters, the turn counts as running only a moment after the prompt
+	if ms, err := strconv.Atoi(os.Getenv("FAKEAGENT_TURN_START_MS")); err == nil {
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+	}
+	a.mu.Lock()
+	a.turnLive = true
+	a.mu.Unlock()
 	defer cancel()
+	defer func() {
+		a.mu.Lock()
+		a.turnLive = false
+		a.mu.Unlock()
+	}()
 
 	var text strings.Builder
 	for _, b := range p.Prompt {
@@ -353,6 +418,22 @@ func (a *fakeAgent) run(ctx context.Context, sid acp.SessionId, st Step) error {
 		res.OK, res.Result = &ok, out
 		if err != nil {
 			res.Error = err.Error()
+		}
+	case st.AwaitSteerMS != nil:
+		select {
+		case text := <-a.steered:
+			last := ""
+			for _, line := range strings.Split(text, "\n") {
+				if strings.TrimSpace(line) != "" {
+					last = strings.TrimPrefix(line, "> ")
+				}
+			}
+			if err := a.update(ctx, sid, acp.UpdateAgentMessageText("steered: "+last)); err != nil {
+				return err
+			}
+		case <-time.After(time.Duration(*st.AwaitSteerMS) * time.Millisecond):
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	case st.SleepMS != nil:
 		select {
@@ -639,7 +720,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "fakeagent:", err)
 		os.Exit(2)
 	}
-	a := &fakeAgent{steps: steps, reportPath: reportFile()}
+	a := &fakeAgent{steps: steps, reportPath: reportFile(), steered: make(chan string, 16)}
 	conn := acp.NewAgentSideConnection(a, os.Stdout, os.Stdin)
 	a.conn = conn
 	<-conn.Done()

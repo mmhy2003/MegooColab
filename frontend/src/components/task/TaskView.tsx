@@ -5,7 +5,8 @@ import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { TYPE_ICON } from "@/components/board/TaskCard";
-import { useProjectAgents } from "@/lib/agents";
+import { agentHint, hintText } from "@/lib/agentMessages";
+import { useAgentRuns, useProjectAgents } from "@/lib/agents";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { canDeleteTask, projectRights } from "@/lib/rights";
@@ -29,7 +30,7 @@ import { ActivityThread } from "./ActivityThread";
 import { Attachments } from "./Attachments";
 import { CommentBox } from "./CommentBox";
 import { Description } from "./Description";
-import { JumpButtons } from "./JumpButtons";
+import { JumpButtons, useLiftAbove } from "./JumpButtons";
 import { Links } from "./Links";
 import { Subtasks } from "./Subtasks";
 import { TaskFields } from "./TaskFields";
@@ -93,6 +94,9 @@ export function TaskView({
   const userNames = useMemo(() => new Map(users.data?.map((u) => [u.id, u.name])), [users.data]);
   const activeUsers = useMemo(() => (users.data ?? []).filter((u) => u.status === "active"), [users.data]);
   const agentNames = useMemo(() => new Map(agents.data?.map((a) => [a.id, a.name])), [agents.data]);
+  const runs = useAgentRuns(taskKey);
+  const [composer, setComposer] = useState<HTMLDivElement | null>(null);
+  const lift = useLiftAbove(scrollRef, composer);
   const columnNames = useMemo(() => new Map(columns.data?.map((c) => [c.id, c.name])), [columns.data]);
 
   if (task.error) return <p className="p-4 text-sm text-pink">{errorMessage(task.error)}</p>;
@@ -101,6 +105,8 @@ export function TaskView({
 
   const rights = projectRights(me, project.data);
   const disabled = !rights.canWrite;
+  const assigned = t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined;
+  const assignedAgent = assigned ? { id: assigned.id, name: assigned.name } : null;
   const refresh = async () => {
     await Promise.all([
       client.invalidateQueries({ queryKey: qk.task(taskKey) }),
@@ -181,10 +187,12 @@ export function TaskView({
         </header>
         {error && <p role="alert" className="px-4 pt-2 text-sm text-pink">{error}</p>}
         <div className="relative flex min-h-0 flex-1 flex-col">
-          {/* pb-20: the last content scrolls clear of the corner buttons. relative: what is positioned inside (screen
-              reader text) is held in it too; otherwise it would stretch the page under a task's own page */}
-          <div ref={scrollRef} className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto p-4 pb-20 lg:grid-cols-[minmax(0,1fr)_20rem]">
-            <div className="min-w-0 space-y-6">
+          {/* No bottom padding: the floating comment box (sticky, the end of the left column) must reach the bottom
+              edge, and the corner buttons rise above it; the aside keeps pb-16 so its end scrolls clear of them.
+              relative: what is positioned inside (screen reader text) is held in it too; otherwise it would stretch
+              the page under a task's own page */}
+          <div ref={scrollRef} className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto px-4 pt-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="min-w-0 space-y-6 pb-4">
               <Section title="Description">
                 <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />
               </Section>
@@ -263,10 +271,22 @@ export function TaskView({
                   hasMore={older.more && (older.items.length > 0 || (activity.data?.length ?? 0) >= ACTIVITY_PAGE)}
                   onLoadEarlier={() => void loadEarlier()}
                 />
-                {!disabled && <CommentBox users={activeUsers} onSubmit={(body_md) => run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md } }))} />}
               </Section>
+              {!disabled && (
+                // a child of the whole column, not of Activity, so it floats at the bottom edge while the person
+                // reads anywhere in the task, and settles at the end of Activity
+                <div ref={setComposer} data-composer className="sticky bottom-0 z-10 !mt-2 bg-linear-to-t from-surface from-80% to-transparent pt-3 pb-2">
+                  <CommentBox
+                    users={activeUsers}
+                    agent={assignedAgent}
+                    canTellAgent={workflow.data?.can_act === true}
+                    hint={assignedAgent ? hintText(agentHint(runs.data ?? [], workflow.data), assignedAgent.name, workflow.data?.stage) : undefined}
+                    onSubmit={(body_md, to_agent) => run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md, to_agent } }))}
+                  />
+                </div>
+              )}
             </div>
-            <aside className="space-y-4">
+            <aside className="space-y-4 pb-16">
               <TaskFields
                 task={t}
                 columns={columns.data}
@@ -304,6 +324,7 @@ export function TaskView({
               activity={activity.data}
               loadEarlier={loadEarlier}
               expectQuestion={workflow.data?.needs === "question" && workflow.data.can_act && !disabled}
+              lift={lift}
             />
           )}
         </div>

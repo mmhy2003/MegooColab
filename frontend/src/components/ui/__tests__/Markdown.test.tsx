@@ -32,4 +32,10 @@ describe("Markdown", () => {
     expect(container.textContent).toBe("Hi @Sara Kim, and x");
     expect(screen.getByText("@Sara Kim").tagName).toBe("SPAN");
   });
+
+  it("renders the task agent's mention as text too", () => {
+    const { container } = render(<Markdown>{"@[laptop-claude](agent:0b5c2f9e-3f1a-4c55-9d1e-2a8f7c6b5d4e) use X"}</Markdown>);
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).toBe("@laptop-claude use X");
+  });
 });
