@@ -50,11 +50,16 @@ class ProjectDefaults(BaseModel):
     commit_docs_to_repo: bool = False
 
 
+class HubSettings(BaseModel):
+    share_everyone: bool = True  # Tool Hub: people may share tools with everyone
+
+
 class AdminSettingsOut(BaseModel):
     name: str
     smtp: SmtpOut
     dreaming: Dreaming
     project_defaults: ProjectDefaults
+    hub: HubSettings
 
 
 class AdminSettingsIn(BaseModel):
@@ -63,6 +68,7 @@ class AdminSettingsIn(BaseModel):
     # absent: keep what is stored
     dreaming: Dreaming | None = None
     project_defaults: ProjectDefaults | None = None
+    hub: HubSettings | None = None
 
 
 class TestEmailIn(BaseModel):
@@ -94,6 +100,7 @@ def _settings_out(org: OrgSettings) -> AdminSettingsOut:
             sprints_enabled=org.default_sprints_enabled,
             commit_docs_to_repo=org.default_commit_docs_to_repo,
         ),
+        hub=HubSettings(share_everyone=org.hub_share_everyone),
     )
 
 
@@ -126,6 +133,8 @@ async def put_settings(body: AdminSettingsIn, admin: AdminUser, db: DbSession) -
         org.default_require_human_code_review = d.require_human_code_review
         org.default_sprints_enabled = d.sprints_enabled
         org.default_commit_docs_to_repo = d.commit_docs_to_repo
+    if body.hub is not None:
+        org.hub_share_everyone = body.hub.share_everyone
     await audit.record(db, "org.settings_changed", actor_id=admin.id)
     return _settings_out(org)
 

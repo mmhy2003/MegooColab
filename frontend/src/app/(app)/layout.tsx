@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
+import { NavRecorder } from "@/components/nav/NavRecorder";
 import { DesktopSidebar } from "@/components/shell/DesktopSidebar";
 import { Header } from "@/components/shell/Header";
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -20,6 +21,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
   return (
     <div className="flex min-h-screen">
+      <Suspense fallback={null}>
+        <NavRecorder />
+      </Suspense>
       <DesktopSidebar user={user} />
       {menuOpen && (
         <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-label="Menu">

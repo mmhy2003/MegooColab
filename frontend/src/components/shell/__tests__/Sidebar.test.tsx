@@ -47,6 +47,21 @@ describe("Sidebar", () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain("/api/chats");
   });
 
+  it("marks Tool Hub when a machine needs a push", async () => {
+    mockFetch((url) => (url === "/api/hub/machines/summary" ? json({ out_of_step: true }) : undefined));
+    wrap(<Sidebar user={member} />);
+    const hub = screen.getByRole("link", { name: /^Tool Hub/ });
+    expect(hub).toHaveAttribute("href", "/hub");
+    expect(await within(hub).findByLabelText("Tool Hub needs a push")).toBeInTheDocument();
+  });
+
+  it("no mark when every machine matches", async () => {
+    const fetchMock = mockFetch((url) => (url === "/api/hub/machines/summary" ? json({ out_of_step: false }) : undefined));
+    wrap(<Sidebar user={member} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/hub/machines/summary", expect.anything()));
+    expect(screen.queryByLabelText("Tool Hub needs a push")).not.toBeInTheDocument();
+  });
+
   it("shows no badge at zero", async () => {
     const fetchMock = mockFetch((url) => (url === "/api/dashboard/count" ? json({ needs_you: 0 }) : undefined));
     wrap(<Sidebar user={member} />);

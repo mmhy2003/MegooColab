@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import type { components } from "@/lib/api-types";
@@ -78,3 +78,38 @@ export const SPACE_GROUPS: { kind: KbSpace["kind"]; label: string }[] = [
   { kind: "team", label: "Teams" },
   { kind: "project", label: "Projects" },
 ];
+
+const byTitle = (a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title);
+
+/** The documents before and after one, in its folder (or the space's top level), in the tree's order. */
+export function kbSiblings(documents: KbTreeDoc[], docId: string): { prev: KbTreeDoc | null; next: KbTreeDoc | null } {
+  const doc = documents.find((d) => d.id === docId);
+  if (!doc) return { prev: null, next: null };
+  const here = documents.filter((d) => (d.folder_id ?? null) === (doc.folder_id ?? null)).sort(byTitle);
+  const i = here.indexOf(doc);
+  return { prev: here[i - 1] ?? null, next: here[i + 1] ?? null };
+}
+
+/** A folder and its parents, from the space's top level down; empty for the top level or an unknown folder. */
+export function folderChain(folders: KbFolder[], folderId: string | null): KbFolder[] {
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const out: KbFolder[] = [];
+  let at = folderId ? byId.get(folderId) : undefined;
+  while (at && !out.includes(at)) {
+    out.unshift(at);
+    at = at.parent_id ? byId.get(at.parent_id) : undefined;
+  }
+  return out;
+}
+
+/** Where a document sits, from a space tree already loaded: lets its page keep the tree while the document loads. */
+export function cachedTreeDoc(
+  client: QueryClient,
+  docId: string,
+): { spaceId: string; folderId: string | null; title: string } | null {
+  for (const [key, tree] of client.getQueriesData<KbTree>({ queryKey: ["kb", "tree"] })) {
+    const doc = tree?.documents?.find((d) => d.id === docId);
+    if (doc) return { spaceId: String(key[2]), folderId: doc.folder_id ?? null, title: doc.title };
+  }
+  return null;
+}

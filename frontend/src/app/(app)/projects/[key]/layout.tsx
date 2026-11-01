@@ -10,6 +10,7 @@ import { canManage, useMe } from "@/lib/me";
 import { useProject } from "@/lib/project";
 import { useQuestions } from "@/lib/questions";
 import { usePageTitle } from "@/lib/title";
+import { useTrail } from "@/lib/trail";
 
 /** Questions other projects asked this one that need a person to answer. */
 function IncomingQuestions({ projectKey }: { projectKey: string }) {
@@ -26,7 +27,7 @@ function IncomingQuestions({ projectKey }: { projectKey: string }) {
   );
 }
 
-const TAB_TITLES: Record<string, string> = { board: "Board", backlog: "Backlog", reports: "Reports", settings: "Settings" };
+const TAB_TITLES: Record<string, string> = { board: "Board", chats: "Chats", backlog: "Backlog", reports: "Reports", settings: "Settings" };
 
 export default function ProjectLayout({ children }: { children: React.ReactNode }) {
   const { key } = useParams<{ key: string }>();
@@ -36,6 +37,12 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   // "PAY Board"; a task page's own title (the task) is set over it by TaskView
   const tab = TAB_TITLES[pathname.split("/")[3] ?? ""];
   usePageTitle([project.data?.key ?? key.toUpperCase(), tab].filter(Boolean).join(" "));
+  // "Projects › Payments › Board"; a task names itself over it (TaskView)
+  useTrail([
+    { label: "Projects", href: "/projects" },
+    { label: project.data?.name ?? null, href: `/projects/${key.toUpperCase()}/board` },
+    ...(tab ? [{ label: tab }] : []),
+  ]);
 
   if (isNotFound(project.error)) return <NotFoundView />;
   if (project.error) {

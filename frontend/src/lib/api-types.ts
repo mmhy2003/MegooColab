@@ -693,6 +693,353 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tools */
+        get: operations["list_tools_api_hub_tools_get"];
+        put?: never;
+        /** Create Tool */
+        post: operations["create_tool_api_hub_tools_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/tools/{tool_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tool */
+        get: operations["get_tool_api_hub_tools__tool_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Tool */
+        delete: operations["delete_tool_api_hub_tools__tool_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Tool */
+        patch: operations["patch_tool_api_hub_tools__tool_id__patch"];
+        trace?: never;
+    };
+    "/api/hub/tools/{tool_id}/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Secrets */
+        put: operations["put_secrets_api_hub_tools__tool_id__secrets_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/tools/{tool_id}/sharing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Sharing */
+        put: operations["put_sharing_api_hub_tools__tool_id__sharing_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/tools/{tool_id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy Tool */
+        post: operations["copy_tool_api_hub_tools__tool_id__copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/tools/{tool_id}/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Take Update */
+        post: operations["take_update_api_hub_tools__tool_id__update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/tools/{tool_id}/own": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make Own */
+        post: operations["make_own_api_hub_tools__tool_id__own_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Skill */
+        post: operations["create_skill_api_hub_skills_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/tools/{tool_id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Files */
+        put: operations["put_files_api_hub_tools__tool_id__files_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/tools/{tool_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read File */
+        get: operations["read_file_api_hub_tools__tool_id__file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/machines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Machines */
+        get: operations["list_machines_api_hub_machines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/machines/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Machines Summary */
+        get: operations["machines_summary_api_hub_machines_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/machines/{token_id}/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Push Machine */
+        post: operations["push_machine_api_hub_machines__token_id__push_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/prefs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prefs */
+        get: operations["get_prefs_api_hub_prefs_get"];
+        /** Put Prefs */
+        put: operations["put_prefs_api_hub_prefs_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/machines/{token_id}/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan Machine */
+        post: operations["scan_machine_api_hub_machines__token_id__scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/scans/{scan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scan */
+        get: operations["get_scan_api_hub_scans__scan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/scans/{scan_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Scan */
+        post: operations["accept_scan_api_hub_scans__scan_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hub/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Shared */
+        get: operations["list_shared_api_admin_hub_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hub/tools/{tool_id}/unshare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unshare */
+        post: operations["unshare_api_admin_hub_tools__tool_id__unshare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/hub/tools/{tool_id}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove
+         * @description Takes the tool off every shelf and marks it and its live copies removed; machines change only on a push.
+         */
+        post: operations["remove_api_admin_hub_tools__tool_id__remove_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -1695,6 +2042,26 @@ export interface paths {
         put?: never;
         /** Start Chat */
         post: operations["start_chat_api_chats_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Waiting Count
+         * @description The sidebar badge: open chats waiting on the viewer.
+         */
+        get: operations["waiting_count_api_chats_count_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2843,6 +3210,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcceptIn */
+        AcceptIn: {
+            /** Items */
+            items: components["schemas"]["AcceptItem"][];
+        };
+        /** AcceptItem */
+        AcceptItem: {
+            /** Index */
+            index: number;
+            /** Name */
+            name: string;
+            /**
+             * Secret
+             * @default []
+             */
+            secret: string[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
         /** ActivityItem */
         ActivityItem: {
             /**
@@ -2950,6 +3339,7 @@ export interface components {
             smtp: components["schemas"]["SmtpIn"];
             dreaming?: components["schemas"]["Dreaming"] | null;
             project_defaults?: components["schemas"]["ProjectDefaults"] | null;
+            hub?: components["schemas"]["HubSettings"] | null;
         };
         /** AdminSettingsOut */
         AdminSettingsOut: {
@@ -2958,6 +3348,47 @@ export interface components {
             smtp: components["schemas"]["SmtpOut"];
             dreaming: components["schemas"]["Dreaming"];
             project_defaults: components["schemas"]["ProjectDefaults"];
+            hub: components["schemas"]["HubSettings"];
+        };
+        /** AdminToolOut */
+        AdminToolOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "mcp" | "skill";
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Version */
+            version: number;
+            /** Rev */
+            rev: number;
+            owner: components["schemas"]["Named"];
+            /** Is Copy */
+            is_copy: boolean;
+            /** Source State */
+            source_state?: ("ok" | "update_available" | "no_longer_shared") | null;
+            /** Removed */
+            removed: boolean;
+            /** Secrets Missing */
+            secrets_missing: boolean;
+            /** Runs Code */
+            runs_code: boolean;
+            /** Read Only Safe */
+            read_only_safe: boolean;
+            sharing: components["schemas"]["Sharing"];
+            /**
+             * In Default Set
+             * @default false
+             */
+            in_default_set: boolean;
         };
         /**
          * AdminUserDetailsOut
@@ -3253,6 +3684,20 @@ export interface components {
             /** Column Id */
             column_id?: string | null;
         };
+        /** Body_create_skill_api_hub_skills_post */
+        Body_create_skill_api_hub_skills_post: {
+            /** File */
+            file?: string | null;
+            /** Files */
+            files?: string[] | null;
+        };
+        /** Body_put_files_api_hub_tools__tool_id__files_put */
+        Body_put_files_api_hub_tools__tool_id__files_put: {
+            /** File */
+            file?: string | null;
+            /** Files */
+            files?: string[] | null;
+        };
         /** Body_upload_attachment_api_tasks__key__attachments_post */
         Body_upload_attachment_api_tasks__key__attachments_post: {
             /** File */
@@ -3424,6 +3869,16 @@ export interface components {
             /** Name */
             name?: string | null;
             category?: components["schemas"]["ColumnCategory"] | null;
+        };
+        /** Command */
+        Command: {
+            /** Command */
+            command: string;
+            /**
+             * Args
+             * @default []
+             */
+            args: string[];
         };
         /** CommentIn */
         CommentIn: {
@@ -3842,6 +4297,24 @@ export interface components {
          * @enum {string}
          */
         EntityKind: "org" | "team" | "project" | "user" | "agent" | "product";
+        /**
+         * Entry
+         * @description A header (web address MCP) or an environment variable (command MCP).
+         */
+        Entry: {
+            /** Name */
+            name: string;
+            /**
+             * Value
+             * @default
+             */
+            value: string;
+            /**
+             * Secret
+             * @default false
+             */
+            secret: boolean;
+        };
         /** EscalationDecisionIn */
         EscalationDecisionIn: {
             /**
@@ -4027,6 +4500,80 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** HubMachineAgent */
+        HubMachineAgent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Program */
+            program: string;
+        };
+        /** HubMachineOut */
+        HubMachineOut: {
+            /**
+             * Token Id
+             * Format: uuid
+             */
+            token_id: string;
+            /** Name */
+            name: string;
+            /** Os */
+            os: string | null;
+            /** Online */
+            online: boolean;
+            /** Supports Tools */
+            supports_tools: boolean;
+            /** Agents */
+            agents: components["schemas"]["HubMachineAgent"][];
+            /** Pending */
+            pending: boolean;
+            /** Reported At */
+            reported_at: string | null;
+            /** Tools */
+            tools: components["schemas"]["HubMachineTool"][];
+            /** Out Of Step */
+            out_of_step: boolean;
+        };
+        /** HubMachineTool */
+        HubMachineTool: {
+            /** Tool Id */
+            tool_id: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "mcp" | "skill";
+            /** Ticked */
+            ticked: boolean;
+            /** Programs */
+            programs: components["schemas"]["HubProgramState"][];
+        };
+        /** HubProgramState */
+        HubProgramState: {
+            /** Program */
+            program: string;
+            /** State */
+            state: ("installed" | "update_ready" | "will_install" | "will_remove" | "changed" | "conflict" | "key_missing" | "removed" | "failed" | "not_supported" | "not_available" | "waiting") | null;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+        };
+        /** HubSettings */
+        HubSettings: {
+            /**
+             * Share Everyone
+             * @default true
+             */
+            share_everyone: boolean;
+        };
         /** HumanReviewIn */
         HumanReviewIn: {
             /**
@@ -4034,6 +4581,63 @@ export interface components {
              * @constant
              */
             approved: true;
+        };
+        /** ImportEntry */
+        ImportEntry: {
+            /** Name */
+            name: string;
+            /** Value Masked */
+            value_masked: string;
+            /** Suggested Secret */
+            suggested_secret: boolean;
+        };
+        /** ImportItem */
+        ImportItem: {
+            /** Index */
+            index: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "mcp" | "skill";
+            /** Name */
+            name: string;
+            /** Programs */
+            programs: string[];
+            /** Problem */
+            problem?: string | null;
+            mcp?: components["schemas"]["ImportMcp"] | null;
+            /** Files */
+            files?: components["schemas"]["ToolFileOut"][] | null;
+            /** Exists In Library */
+            exists_in_library: boolean;
+        };
+        /** ImportMcp */
+        ImportMcp: {
+            /**
+             * Transport
+             * @enum {string}
+             */
+            transport: "http" | "stdio";
+            /** Url */
+            url?: string | null;
+            /** Command */
+            command?: string | null;
+            /**
+             * Args
+             * @default []
+             */
+            args: string[];
+            /**
+             * Headers
+             * @default []
+             */
+            headers: components["schemas"]["ImportEntry"][];
+            /**
+             * Env
+             * @default []
+             */
+            env: components["schemas"]["ImportEntry"][];
         };
         /** InviteIn */
         InviteIn: {
@@ -4240,6 +4844,42 @@ export interface components {
              */
             driver: "manual";
             stage: components["schemas"]["Stage"];
+        };
+        /**
+         * McpSpec
+         * @description An MCP server's setup in the hub's neutral form. Secret values are never kept here.
+         */
+        McpSpec: {
+            /**
+             * Transport
+             * @enum {string}
+             */
+            transport: "http" | "stdio";
+            /** Url */
+            url?: string | null;
+            /**
+             * Headers
+             * @default []
+             */
+            headers: components["schemas"]["Entry"][];
+            command?: components["schemas"]["Command"] | null;
+            /**
+             * Os Commands
+             * @default {}
+             */
+            os_commands: {
+                [key: string]: components["schemas"]["Command"];
+            };
+            /**
+             * Env
+             * @default []
+             */
+            env: components["schemas"]["Entry"][];
+            /**
+             * Acknowledged
+             * @default []
+             */
+            acknowledged: string[];
         };
         /** MemCardOut */
         MemCardOut: {
@@ -4672,6 +5312,16 @@ export interface components {
              */
             if_busy: "wait" | "another";
         };
+        /** PrefsIn */
+        PrefsIn: {
+            /** Auto Default */
+            auto_default: boolean;
+        };
+        /** PrefsOut */
+        PrefsOut: {
+            /** Auto Default */
+            auto_default: boolean;
+        };
         /**
          * Priority
          * @enum {string}
@@ -4921,6 +5571,19 @@ export interface components {
             review: string;
             /** Tracked */
             tracked: boolean;
+        };
+        /** PushIn */
+        PushIn: {
+            /**
+             * Tool Ids
+             * @default []
+             */
+            tool_ids: string[];
+            /**
+             * Take Over
+             * @default []
+             */
+            take_over: string[];
         };
         /** PushKeyOut */
         PushKeyOut: {
@@ -5333,6 +5996,24 @@ export interface components {
             /** Chat Id */
             chat_id?: string | null;
         };
+        /** ScanOut */
+        ScanOut: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "waiting" | "done";
+            /** Items */
+            items: components["schemas"]["ImportItem"][];
+        };
+        /** ScanStarted */
+        ScanStarted: {
+            /**
+             * Scan Id
+             * Format: uuid
+             */
+            scan_id: string;
+        };
         /** SearchAdminOut */
         SearchAdminOut: {
             /** Available */
@@ -5366,6 +6047,20 @@ export interface components {
             /** Results */
             results: components["schemas"]["SearchHit"][];
         };
+        /** SecretSlot */
+        SecretSlot: {
+            /** Name */
+            name: string;
+            /** Set */
+            set: boolean;
+        };
+        /** SecretsIn */
+        SecretsIn: {
+            /** Values */
+            values: {
+                [key: string]: string;
+            };
+        };
         /** SetupIn */
         SetupIn: {
             /** Org Name */
@@ -5379,6 +6074,42 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** Sharing */
+        Sharing: {
+            /**
+             * Teams
+             * @default []
+             */
+            teams: components["schemas"]["Named"][];
+            /**
+             * Users
+             * @default []
+             */
+            users: components["schemas"]["Named"][];
+            /**
+             * Everyone
+             * @default false
+             */
+            everyone: boolean;
+        };
+        /** SharingIn */
+        SharingIn: {
+            /**
+             * Teams
+             * @default []
+             */
+            teams: string[];
+            /**
+             * Users
+             * @default []
+             */
+            users: string[];
+            /**
+             * Everyone
+             * @default false
+             */
+            everyone: boolean;
         };
         /** SmtpIn */
         SmtpIn: {
@@ -6021,6 +6752,167 @@ export interface components {
         TokenSelfOut: {
             /** Scopes */
             scopes: components["schemas"]["TokenScope"][];
+        };
+        /** ToolFileOut */
+        ToolFileOut: {
+            /** Path */
+            path: string;
+            /** Size */
+            size: number;
+            /** Runs On */
+            runs_on?: string[] | null;
+        };
+        /** ToolFileText */
+        ToolFileText: {
+            /** Path */
+            path: string;
+            /** Size */
+            size: number;
+            /** Text */
+            text: string | null;
+        };
+        /** ToolIn */
+        ToolIn: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "mcp";
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            spec: components["schemas"]["McpSpec"];
+            /**
+             * Read Only Safe
+             * @default false
+             */
+            read_only_safe: boolean;
+        };
+        /** ToolOut */
+        ToolOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "mcp" | "skill";
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Version */
+            version: number;
+            /** Rev */
+            rev: number;
+            owner: components["schemas"]["Named"];
+            /** Is Copy */
+            is_copy: boolean;
+            /** Source State */
+            source_state?: ("ok" | "update_available" | "no_longer_shared") | null;
+            /** Removed */
+            removed: boolean;
+            /** Secrets Missing */
+            secrets_missing: boolean;
+            /** Runs Code */
+            runs_code: boolean;
+            /** Read Only Safe */
+            read_only_safe: boolean;
+            sharing?: components["schemas"]["Sharing"] | null;
+            /**
+             * In Default Set
+             * @default false
+             */
+            in_default_set: boolean;
+            spec?: components["schemas"]["McpSpec"] | null;
+            /**
+             * Secrets
+             * @default []
+             */
+            secrets: components["schemas"]["SecretSlot"][];
+            /** Files */
+            files?: components["schemas"]["ToolFileOut"][] | null;
+            source?: components["schemas"]["ToolSource"] | null;
+            /**
+             * Flagged
+             * @default []
+             */
+            flagged: string[];
+            /** Can Edit */
+            can_edit: boolean;
+        };
+        /** ToolPatch */
+        ToolPatch: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            spec?: components["schemas"]["McpSpec"] | null;
+            /** Read Only Safe */
+            read_only_safe?: boolean | null;
+            /** In Default Set */
+            in_default_set?: boolean | null;
+        };
+        /** ToolSource */
+        ToolSource: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Owner Name */
+            owner_name: string;
+            /** Version */
+            version: number;
+        };
+        /** ToolSummary */
+        ToolSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "mcp" | "skill";
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Version */
+            version: number;
+            /** Rev */
+            rev: number;
+            owner: components["schemas"]["Named"];
+            /** Is Copy */
+            is_copy: boolean;
+            /** Source State */
+            source_state?: ("ok" | "update_available" | "no_longer_shared") | null;
+            /** Removed */
+            removed: boolean;
+            /** Secrets Missing */
+            secrets_missing: boolean;
+            /** Runs Code */
+            runs_code: boolean;
+            /** Read Only Safe */
+            read_only_safe: boolean;
+            sharing?: components["schemas"]["Sharing"] | null;
+            /**
+             * In Default Set
+             * @default false
+             */
+            in_default_set: boolean;
         };
         /** TotpCodeIn */
         TotpCodeIn: {
@@ -7653,6 +8545,746 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TeamDetail"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tools_api_hub_tools_get: {
+        parameters: {
+            query?: {
+                shelf?: "mine" | "shared" | "everyone";
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_tool_api_hub_tools_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tool_api_hub_tools__tool_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_tool_api_hub_tools__tool_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_tool_api_hub_tools__tool_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_secrets_api_hub_tools__tool_id__secrets_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_sharing_api_hub_tools__tool_id__sharing_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharingIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_tool_api_hub_tools__tool_id__copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    take_update_api_hub_tools__tool_id__update_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    make_own_api_hub_tools__tool_id__own_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_skill_api_hub_skills_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_create_skill_api_hub_skills_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_files_api_hub_tools__tool_id__files_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_put_files_api_hub_tools__tool_id__files_put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_file_api_hub_tools__tool_id__file_get: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolFileText"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_machines_api_hub_machines_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubMachineOut"][];
+                };
+            };
+        };
+    };
+    machines_summary_api_hub_machines_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+        };
+    };
+    push_machine_api_hub_machines__token_id__push_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubMachineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prefs_api_hub_prefs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrefsOut"];
+                };
+            };
+        };
+    };
+    put_prefs_api_hub_prefs_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrefsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrefsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_machine_api_hub_machines__token_id__scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scan_api_hub_scans__scan_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_scan_api_hub_scans__scan_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_shared_api_admin_hub_tools_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminToolOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unshare_api_admin_hub_tools__tool_id__unshare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_api_admin_hub_tools__tool_id__remove_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10162,6 +11794,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    waiting_count_api_chats_count_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
                 };
             };
         };

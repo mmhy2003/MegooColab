@@ -169,3 +169,24 @@ test("memory: learn, forget, dream, ask, scope and MCP", async ({ page, browser 
   const asked = await tool<{ cited: { text: string }[] }>(request, token.secret, "ask_memory", { question: "How are webhooks signed?", project_key: "MEM" });
   expect(asked.cited.map((c) => c.text)).toContain(SIGNED_FACT);
 });
+
+test("memory: hop between entities and come back", async ({ page }) => {
+  await setupOrSignIn(page);
+  const atlas = await post<Entity>(page.request, "/api/memory/products", { name: "Zephyr Atlas" });
+  const borealis = await post<Entity>(page.request, "/api/memory/products", { name: "Zephyr Borealis" });
+
+  await page.goto("/memory");
+  await page.getByLabel("Filter entities").fill("zephyr");
+  await page.getByRole("link", { name: /Zephyr Atlas/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/memory/entity/${atlas.id}$`));
+
+  const list = page.getByRole("complementary", { name: "Entities" });
+  await list.getByRole("link", { name: /Zephyr Borealis/ }).click();
+  await expect(page).toHaveURL(new RegExp(`/memory/entity/${borealis.id}$`));
+  await expect(page.getByRole("heading", { name: "Zephyr Borealis" })).toBeVisible();
+  await expect(list.getByRole("link", { name: /Zephyr Borealis/ })).toHaveAttribute("aria-current", "page");
+
+  await page.getByRole("link", { name: "← Back to Memory" }).click();
+  await expect(page).toHaveURL(/\/memory$/);
+  await expect(page.getByLabel("Filter entities")).toHaveValue("zephyr");
+});

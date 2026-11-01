@@ -16,6 +16,7 @@ import (
 	"github.com/coder/acp-go-sdk"
 	"github.com/mmhy2003/megoocolab/runner/internal/adapters"
 	"github.com/mmhy2003/megoocolab/runner/internal/policy"
+	"github.com/mmhy2003/megoocolab/runner/internal/tools"
 )
 
 // DefaultFlushInterval is how often buffered agent message text is sent.
@@ -36,6 +37,16 @@ func WithFlushInterval(d time.Duration) Option { return func(c *Client) { c.inte
 // reports, before any cut to a length limit, so a cut can never leave part of it.
 func WithSecret(secret string) Option { return func(c *Client) { c.secret = secret } }
 
+// WithSafeMcpServers allows the tools of these Tool Hub MCP servers in every policy: their owner marked
+// them safe in read-only runs (they only read). Any other MCP tool keeps the policy's decision.
+func WithSafeMcpServers(names []string) Option {
+	return func(c *Client) {
+		for _, n := range names {
+			c.safeMcp = append(c.safeMcp, tools.MCPToolTitle(n))
+		}
+	}
+}
+
 type toolInfo struct {
 	kind    acp.ToolKind
 	command string
@@ -49,6 +60,7 @@ type Client struct {
 	emit     EmitFunc
 	interval time.Duration
 	secret   string
+	safeMcp  []*regexp.Regexp // titles of Tool Hub MCP tools safe in read-only runs
 
 	mu        sync.Mutex // guards everything below and serializes emit
 	msg       strings.Builder
@@ -150,6 +162,24 @@ func megooColabMcpCall(p acp.RequestPermissionRequest, title, command string) bo
 	return flagged && command == "" && megooColabMcpTitle.MatchString(title)
 }
 
+// safeMcpCall: a call of a Tool Hub MCP tool marked safe. Claude Code asks with kind "other" and the tool's
+// name as title; Codex with the flag, no command and "mcp.<server>.<tool>". No shell command can pass for one.
+func (c *Client) safeMcpCall(p acp.RequestPermissionRequest, kind acp.ToolKind, title, command string) bool {
+	if command != "" {
+		return false
+	}
+	flagged, _ := p.Meta["is_mcp_tool_approval"].(bool)
+	for _, re := range c.safeMcp {
+		if !re.MatchString(title) {
+			continue
+		}
+		if strings.HasPrefix(title, "mcp__") && kind == acp.ToolKindOther || strings.HasPrefix(title, "mcp.") && flagged {
+			return true
+		}
+	}
+	return false
+}
+
 // RequestPermission answers by policy: allow_once or reject_once, whichever the
 // agent offers. A standing approval (allow_always) is never given. With no
 // suitable option the outcome is "cancelled", never an approval.
@@ -181,6 +211,8 @@ func (c *Client) RequestPermission(_ context.Context, p acp.RequestPermissionReq
 	d := c.pol.CheckTool(kind, title, locations, command)
 	if megooColabMcpCall(p, title, command) {
 		d = policy.Decision{Allow: true, Reason: "MegooColab's own MCP tool, scoped by the run token"}
+	} else if c.safeMcpCall(p, kind, title, command) {
+		d = policy.Decision{Allow: true, Reason: "Tool Hub MCP marked safe in read-only runs"}
 	}
 	want := acp.PermissionOptionKindRejectOnce
 	if d.Allow {

@@ -89,6 +89,8 @@ class PersonalAccessToken(IdMixin, Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # a runner token's machine: its system as its last hello said ("windows" | "linux" | "macos" | other)
+    runner_os: Mapped[str | None] = mapped_column(String(10))
 
 
 class ChallengePurpose(StrEnum):

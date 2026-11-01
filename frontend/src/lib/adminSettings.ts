@@ -11,6 +11,7 @@ export type SettingsPatch = {
   smtp?: { host: string | null; port: number | null; user: string | null; from: string | null; tls: boolean; password: string | null };
   dreaming?: { enabled: boolean; hour_utc: number | null };
   project_defaults?: AdminSettings["project_defaults"];
+  hub?: AdminSettings["hub"];
 };
 
 export function useAdminSettings() {

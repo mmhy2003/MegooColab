@@ -26,6 +26,7 @@ import (
 	"github.com/mmhy2003/megoocolab/runner/internal/policy"
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
 	"github.com/mmhy2003/megoocolab/runner/internal/startbranch"
+	"github.com/mmhy2003/megoocolab/runner/internal/tools"
 	"github.com/mmhy2003/megoocolab/runner/internal/worktree"
 )
 
@@ -55,6 +56,7 @@ type Manager struct {
 
 	send      func(any) error
 	cacheRoot string
+	toolsMu   sync.Mutex // one Tool Hub job (push, scan, drift check) at a time
 
 	mu       sync.Mutex
 	agents   map[string]protocol.WelcomeAgent
@@ -241,6 +243,17 @@ func (m *Manager) Dispatch(ctx context.Context, env protocol.Envelope) {
 		var w protocol.Welcome
 		if env.Into(&w) == nil {
 			m.HandleWelcome(w)
+			m.toolsJob(m.sendDrift)
+		}
+	case protocol.TypeToolsPush:
+		var p protocol.ToolsPush
+		if env.Into(&p) == nil {
+			m.toolsJob(func() { m.applyPush(p) })
+		}
+	case protocol.TypeToolsScan:
+		var sc protocol.ToolsScan
+		if env.Into(&sc) == nil {
+			m.toolsJob(func() { m.scanTools(sc.ScanID) })
 		}
 	case protocol.TypeRunStart:
 		var rs protocol.RunStart
@@ -759,6 +772,9 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		opts = append(opts, acpclient.WithFlushInterval(m.FlushInterval))
 	}
 	opts = append(opts, acpclient.WithSecret(r.secret))
+	if man, err := tools.LoadManifest(); err == nil {
+		opts = append(opts, acpclient.WithSafeMcpServers(tools.SafeServers(man, agent.Program)))
+	}
 	client := acpclient.New(pol, wt, r.emit, opts...)
 	r.client = client
 	ac := acp.NewClientSideConnection(client, stdin, stdout)
@@ -773,7 +789,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	}
 	sess, err := openSession(r.ctx, sessionRequest{
 		ac: ac, client: client, caps: initResp.AgentCapabilities, rs: rs, cwd: wt,
-		meta: adapters.SessionMeta(agent.Program, kind), servers: mcpServers(rs.Mcp), log: logf,
+		meta: adapters.SessionMeta(agent.Program, kind, tools.PluginDir(m.cacheRoot)), servers: mcpServers(rs.Mcp), log: logf,
 	})
 	if err != nil {
 		return fail("session_failed", err)

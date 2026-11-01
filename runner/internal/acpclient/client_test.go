@@ -670,3 +670,44 @@ func TestMegooColabMcpApprovalAllowedInReadOnly(t *testing.T) {
 		}
 	}
 }
+
+// A Tool Hub MCP marked safe in read-only runs is allowed there, by Claude Code's title (mcp__<server>__<tool>,
+// kind other) or Codex's (mcp.<server>.<tool>, flagged); any other MCP keeps the read-only refusal.
+func TestSafeMcpAllowedInReadOnly(t *testing.T) {
+	root := t.TempDir()
+	pol, _ := policy.New(policy.ReadOnly, root)
+	c := acpclient.New(pol, root, (&recorder{}).emit, acpclient.WithSafeMcpServers([]string{"ctx"}))
+	ctx := context.Background()
+	opts := []acp.PermissionOption{
+		{Kind: acp.PermissionOptionKindAllowOnce, OptionId: "allow_once", Name: "Allow"},
+		{Kind: acp.PermissionOptionKindRejectOnce, OptionId: "reject_once", Name: "Reject"},
+	}
+	ask := func(id, title string, kind acp.ToolKind, flagged bool) string {
+		t.Helper()
+		req := acp.RequestPermissionRequest{SessionId: "s", Options: opts,
+			ToolCall: acp.ToolCallUpdate{ToolCallId: acp.ToolCallId(id), Kind: &kind, Title: &title}}
+		if flagged {
+			req.Meta = map[string]any{"is_mcp_tool_approval": true}
+		}
+		r, err := c.RequestPermission(ctx, req)
+		if err != nil || r.Outcome.Selected == nil {
+			t.Fatalf("%s: %+v %v", id, r, err)
+		}
+		return string(r.Outcome.Selected.OptionId)
+	}
+	if got := ask("a", "mcp__ctx__resolve", acp.ToolKindOther, false); got != "allow_once" {
+		t.Errorf("claude safe = %s", got)
+	}
+	if got := ask("b", "mcp.ctx.resolve", acp.ToolKindExecute, true); got != "allow_once" {
+		t.Errorf("codex safe = %s", got)
+	}
+	if got := ask("c", "mcp__other__write", acp.ToolKindOther, false); got != "reject_once" {
+		t.Errorf("unlisted = %s", got)
+	}
+	if got := ask("d", "mcp.ctx.resolve", acp.ToolKindExecute, false); got != "reject_once" {
+		t.Errorf("codex title without the flag = %s", got)
+	}
+	if got := ask("e", "mcp__ctxevil__x", acp.ToolKindOther, false); got != "reject_once" {
+		t.Errorf("prefix lookalike = %s", got)
+	}
+}

@@ -67,6 +67,28 @@ describe("AskMemory", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("No AI model is set up for answering");
   });
 
+  it("AskMemory shows the last answer again after a remount", async () => {
+    sessionStorage.clear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "/api/projects") return json([{ id: "p1", key: "PAY", name: "Payments" }]);
+        if (url === "/api/memory/ask") return json({ answer_md: "Signed with **HMAC**.", cited: [conclusion()] });
+        return json([]);
+      }),
+    );
+    const first = wrap(<AskMemory />);
+    fireEvent.change(screen.getByLabelText("Question"), { target: { value: "How are webhooks signed?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    expect(await screen.findByText("HMAC", { selector: "strong" })).toBeInTheDocument();
+    first.unmount();
+    wrap(<AskMemory />);
+    expect(screen.getByLabelText("Question")).toHaveValue("How are webhooks signed?");
+    expect(screen.getByText("HMAC", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Sources" })).toBeInTheDocument();
+    sessionStorage.clear();
+  });
+
   it("sends project_key when chosen", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url === "/api/projects") return json([{ id: "p1", key: "PAY", name: "Payments" }]);

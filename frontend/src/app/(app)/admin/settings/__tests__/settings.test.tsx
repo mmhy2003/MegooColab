@@ -16,6 +16,7 @@ const SETTINGS = {
   smtp: { host: "smtp.acme.io", port: 587, user: "megoo", from: "megoo@acme.io", tls: true, password_set: true },
   dreaming: { enabled: true, hour_utc: 3 },
   project_defaults: { finishing_option: "pull_request", require_human_code_review: false, sprints_enabled: true, commit_docs_to_repo: false },
+  hub: { share_everyone: true },
 };
 const KEPT_SMTP = { host: "smtp.acme.io", port: 587, user: "megoo", from: "megoo@acme.io", tls: true, password: null };
 
@@ -47,10 +48,10 @@ const renderPage = () =>
   );
 
 describe("Admin settings in tabs", () => {
-  it("has five tabs, General first, and no dreaming hour", async () => {
+  it("has six tabs, General first, and no dreaming hour", async () => {
     renderPage();
     const tabs = await screen.findAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["General", "Email", "New projects", "Search", "Rate limits"]);
+    expect(tabs.map((t) => t.textContent)).toEqual(["General", "Email", "New projects", "Tool Hub", "Search", "Rate limits"]);
     expect(await screen.findByLabelText("Organization name")).toBeVisible();
     expect(screen.getByLabelText("Host")).not.toBeVisible();
     expect(screen.queryByLabelText("Dreaming hour (UTC)")).toBeNull(); // moved to AI → Dreaming
@@ -90,6 +91,21 @@ describe("Admin settings in tabs", () => {
       name: "Acme",
       smtp: KEPT_SMTP,
       project_defaults: { finishing_option: "keep_branch", require_human_code_review: true, sprints_enabled: false, commit_docs_to_repo: false },
+    });
+  });
+
+  it("Tool Hub saves whether people may share with everyone, and nothing else", async () => {
+    search = "tab=tool-hub";
+    renderPage();
+    const panel = within(await screen.findByRole("tabpanel", { name: "Tool Hub" }));
+    const box = panel.getByRole("checkbox", { name: "Let people share tools with everyone" });
+    expect(box).toBeChecked();
+    fireEvent.click(box);
+    fireEvent.click(panel.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(puts()[0]).toEqual({
+      url: "/api/admin/settings",
+      body: { name: "Acme", smtp: KEPT_SMTP, hub: { share_everyone: false } },
     });
   });
 

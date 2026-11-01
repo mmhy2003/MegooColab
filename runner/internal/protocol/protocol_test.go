@@ -37,6 +37,22 @@ func TestWireFieldNames(t *testing.T) {
 		{"run_steer", RunSteer{Type: TypeRunSteer}, []string{"message_id", "run_id", "text", "type"}},
 		{"run_steer_result", NewRunSteerResult("r", "m", SteerInjected, ""), []string{"message_id", "outcome", "run_id", "type"}},
 		{"run_steer_result error", NewRunSteerResult("r", "m", SteerFailed, "boom"), []string{"error", "message_id", "outcome", "run_id", "type"}},
+		{"tools_push", ToolsPush{Type: TypeToolsPush, Programs: []string{}, Tools: []ToolPayload{}, TakeOver: []string{}},
+			[]string{"programs", "push_id", "take_over", "tools", "type"}},
+		{"tool payload mcp", ToolPayload{Mcp: &McpPayload{Headers: map[string]string{}, Args: []string{}, Env: map[string]string{}}},
+			[]string{"kind", "mcp", "name", "read_only_safe", "rev", "tool_id"}},
+		{"tool payload skill", ToolPayload{Files: []SkillFile{{}}}, []string{"files", "kind", "name", "read_only_safe", "rev", "tool_id"}},
+		{"mcp payload", McpPayload{Transport: "http", URL: "u", Headers: map[string]string{}, Args: []string{}, Env: map[string]string{}},
+			[]string{"args", "env", "headers", "transport", "url"}},
+		{"skill file", SkillFile{}, []string{"content_b64", "path"}},
+		{"tools_scan", ToolsScan{Type: TypeToolsScan}, []string{"scan_id", "type"}},
+		{"tools_report", NewToolsReport("p", nil), []string{"push_id", "results", "type"}},
+		{"tool result", ToolResult{ToolID: "t", Rev: 2}, []string{"detail", "kind", "name", "program", "rev", "status", "tool_id"}},
+		{"tool result removed", ToolResult{}, []string{"detail", "kind", "name", "program", "status"}},
+		{"tools_drift", NewToolsDrift(nil), []string{"items", "type"}},
+		{"tool drift", ToolDrift{}, []string{"kind", "name", "program", "status"}},
+		{"tools_found", NewToolsFound("s", nil), []string{"items", "scan_id", "type"}},
+		{"found tool", FoundTool{Problem: "too large"}, []string{"kind", "name", "problem", "program"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -70,7 +86,7 @@ func TestWireFieldNames(t *testing.T) {
 
 func TestListsNeverNull(t *testing.T) {
 	data, _ := json.Marshal(NewHello("1", "linux", "amd64", nil))
-	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1"]}` {
+	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1"]}` {
 		t.Fatalf("hello = %s", data)
 	}
 	data, _ = json.Marshal(NewHello("1", "l", "a", []AgentAvailability{{AgentID: "x"}}))
@@ -115,4 +131,25 @@ func TestHelloAdvertisesSteer(t *testing.T) {
 		}
 	}
 	t.Fatalf("capabilities = %v, want steer/1", h.Capabilities)
+}
+
+func TestToolsPushRoundTrip(t *testing.T) {
+	in := ToolsPush{Type: TypeToolsPush, PushID: "p1", Programs: []string{"claude_code", "codex"}, TakeOver: []string{"ctx"},
+		Tools: []ToolPayload{
+			{ToolID: "t1", Name: "ctx", Kind: "mcp", Rev: 3, ReadOnlySafe: true,
+				Mcp: &McpPayload{Transport: "http", URL: "https://x/mcp", Headers: map[string]string{"X-Key": "s"}, Args: []string{}, Env: map[string]string{}}},
+			{ToolID: "t2", Name: "ui", Kind: "skill", Rev: 1, Files: []SkillFile{{Path: "SKILL.md", ContentB64: "eA=="}}},
+		}}
+	data, _ := json.Marshal(in)
+	env, err := Decode(data)
+	if err != nil || env.Type != TypeToolsPush {
+		t.Fatalf("decode: %v %q", err, env.Type)
+	}
+	var out ToolsPush
+	if err := env.Into(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(in, out) {
+		t.Fatalf("round trip:\n%+v\n%+v", in, out)
+	}
 }

@@ -68,7 +68,7 @@ func TestHelloAdvertisesWorkflowCapability(t *testing.T) {
 	if err := json.Unmarshal(s.WaitFrame(t, "hello").Raw, &hello); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(hello.Capabilities, ",") != "workflow/1,branch/1,model/1,steer/1" {
+	if strings.Join(hello.Capabilities, ",") != "workflow/1,branch/1,model/1,steer/1,tools/1" {
 		t.Fatalf("capabilities = %v", hello.Capabilities)
 	}
 }
@@ -353,5 +353,28 @@ func nextCancel(t *testing.T, c *Client) protocol.Envelope {
 		case <-time.After(5 * time.Second):
 			t.Fatal("no run_cancel")
 		}
+	}
+}
+
+// A Tool Hub push carries whole skills: a frame of several MiB must arrive, not drop the connection.
+func TestLargeFrameArrives(t *testing.T) {
+	s := testserver.New(t, token)
+	c := newTestClient(t, s, token)
+	start(t, c)
+	s.WaitFrame(t, "hello")
+	big := strings.Repeat("x", 6<<20)
+	if err := s.Send(map[string]any{"type": "tools_scan", "scan_id": big}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case env := <-c.Messages():
+		for env.Type == "welcome" {
+			env = <-c.Messages()
+		}
+		if env.Type != "tools_scan" || len(env.Raw) < 6<<20 {
+			t.Fatalf("got %q (%d bytes)", env.Type, len(env.Raw))
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the large frame never arrived")
 	}
 }

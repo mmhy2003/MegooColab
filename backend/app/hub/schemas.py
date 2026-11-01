@@ -1,0 +1,248 @@
+import uuid
+from datetime import datetime
+from typing import Annotated, Literal
+from urllib.parse import urlparse
+
+from pydantic import BaseModel, Field, model_validator
+
+from app.core.text import NoNulStr
+
+System = Literal["windows", "linux", "macos"]
+
+
+class Entry(BaseModel):
+    """A header (web address MCP) or an environment variable (command MCP)."""
+
+    name: str = Field(pattern=r"^[A-Za-z_][A-Za-z0-9_-]{0,99}$")
+    value: str = Field(default="", max_length=2000)
+    secret: bool = False
+
+
+class Command(BaseModel):
+    command: NoNulStr = Field(min_length=1, max_length=500)
+    args: list[Annotated[str, Field(max_length=2000)]] = Field(default=[], max_length=50)
+
+
+class McpSpec(BaseModel):
+    """An MCP server's setup in the hub's neutral form. Secret values are never kept here."""
+
+    transport: Literal["http", "stdio"]
+    url: str | None = Field(default=None, max_length=2000)
+    headers: list[Entry] = Field(default=[], max_length=50)
+    command: Command | None = None
+    os_commands: dict[System, Command] = {}
+    env: list[Entry] = Field(default=[], max_length=50)
+    # locations (rules.flagged_values) the owner confirmed are not secrets
+    acknowledged: list[Annotated[str, Field(max_length=200)]] = Field(default=[], max_length=100)
+
+    @model_validator(mode="after")
+    def _check(self) -> "McpSpec":
+        from app.hub.rules import placeholders, secret_slots
+
+        if self.transport == "http":
+            if not self.url or urlparse(self.url).scheme not in ("http", "https") or not urlparse(self.url).netloc:
+                raise ValueError("an http MCP needs an http(s) url")
+        elif self.command is None and not self.os_commands:
+            raise ValueError("a stdio MCP needs a command")
+        for entries in (self.headers, self.env):
+            names = [e.name for e in entries]
+            if len(names) != len(set(names)):
+                raise ValueError("duplicate names")
+        slots = set(secret_slots(self))
+        texts = [self.url or ""]
+        for c in [self.command, *self.os_commands.values()]:
+            if c is not None:
+                texts += c.args
+        if any(p not in slots for t in texts for p in placeholders(t)):
+            raise ValueError("hub_unknown_placeholder")
+        return self
+
+
+class ToolIn(BaseModel):
+    kind: Literal["mcp"]
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    description: NoNulStr = Field(default="", max_length=2000)
+    spec: McpSpec
+    read_only_safe: bool = False
+
+
+class ToolPatch(BaseModel):
+    name: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$")
+    description: NoNulStr | None = Field(default=None, max_length=2000)
+    spec: McpSpec | None = None
+    read_only_safe: bool | None = None
+    in_default_set: bool | None = None
+
+
+class SecretsIn(BaseModel):
+    values: dict[str, Annotated[str, Field(max_length=4000)]] = Field(max_length=100)
+
+
+class SecretSlot(BaseModel):
+    name: str
+    set: bool
+
+
+class Named(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class Sharing(BaseModel):
+    teams: list[Named] = []
+    users: list[Named] = []
+    everyone: bool = False
+
+
+class SharingIn(BaseModel):
+    teams: list[uuid.UUID] = Field(default=[], max_length=100)
+    users: list[uuid.UUID] = Field(default=[], max_length=500)
+    everyone: bool = False
+
+
+class ToolSummary(BaseModel):
+    id: uuid.UUID
+    kind: Literal["mcp", "skill"]
+    name: str
+    description: str
+    version: int
+    rev: int
+    owner: Named
+    is_copy: bool
+    source_state: Literal["ok", "update_available", "no_longer_shared"] | None = None
+    removed: bool
+    secrets_missing: bool  # owner only, else false
+    runs_code: bool
+    read_only_safe: bool
+    sharing: Sharing | None = None  # owner only
+    in_default_set: bool = False  # owner only
+
+
+class ToolFileOut(BaseModel):
+    path: str
+    size: int
+    runs_on: list[str] | None = None
+
+
+class ToolFileText(BaseModel):
+    path: str
+    size: int
+    text: str | None  # None: not UTF-8 text
+
+
+class ToolSource(BaseModel):
+    id: uuid.UUID
+    name: str
+    owner_name: str
+    version: int
+
+
+class ToolOut(ToolSummary):
+    spec: McpSpec | None = None
+    secrets: list[SecretSlot] = []
+    files: list[ToolFileOut] | None = None
+    source: ToolSource | None = None
+    flagged: list[str] = []
+    can_edit: bool
+
+
+class AdminToolOut(ToolSummary):
+    sharing: Sharing
+
+
+MachineState = Literal[
+    "installed", "update_ready", "will_install", "will_remove", "changed", "conflict", "key_missing", "removed",
+    "failed", "not_supported", "not_available", "waiting",
+]
+
+
+class HubProgramState(BaseModel):
+    program: str
+    state: MachineState | None  # None: not ticked and not installed there
+    detail: str = ""
+
+
+class HubMachineTool(BaseModel):
+    tool_id: uuid.UUID | None  # None: installed from a tool since deleted
+    name: str
+    kind: Literal["mcp", "skill"]
+    ticked: bool
+    programs: list[HubProgramState]
+
+
+class HubMachineAgent(BaseModel):
+    id: uuid.UUID
+    name: str
+    program: str
+
+
+class HubMachineOut(BaseModel):
+    token_id: uuid.UUID
+    name: str
+    os: str | None
+    online: bool
+    supports_tools: bool
+    agents: list[HubMachineAgent]
+    pending: bool
+    reported_at: datetime | None
+    tools: list[HubMachineTool]
+    out_of_step: bool
+
+
+class PushIn(BaseModel):
+    tool_ids: list[uuid.UUID] = Field(default=[], max_length=500)
+    take_over: list[uuid.UUID] = Field(default=[], max_length=500)
+
+
+class PrefsIn(BaseModel):
+    auto_default: bool
+
+
+class PrefsOut(BaseModel):
+    auto_default: bool
+
+
+class ImportEntry(BaseModel):
+    name: str
+    value_masked: str
+    suggested_secret: bool
+
+
+class ImportMcp(BaseModel):
+    transport: Literal["http", "stdio"]
+    url: str | None = None
+    command: str | None = None
+    args: list[str] = []
+    headers: list[ImportEntry] = []
+    env: list[ImportEntry] = []
+
+
+class ImportItem(BaseModel):
+    index: int
+    kind: Literal["mcp", "skill"]
+    name: str
+    programs: list[str]
+    problem: str | None = None
+    mcp: ImportMcp | None = None
+    files: list[ToolFileOut] | None = None
+    exists_in_library: bool
+
+
+class ScanOut(BaseModel):
+    status: Literal["waiting", "done"]
+    items: list[ImportItem]
+
+
+class ScanStarted(BaseModel):
+    scan_id: uuid.UUID
+
+
+class AcceptItem(BaseModel):
+    index: int = Field(ge=0)
+    name: str = Field(max_length=64)
+    secret: list[str] = Field(default=[], max_length=100)
+    description: NoNulStr = Field(default="", max_length=2000)
+
+
+class AcceptIn(BaseModel):
+    items: list[AcceptItem] = Field(max_length=500)

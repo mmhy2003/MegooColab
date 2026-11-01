@@ -21,6 +21,7 @@ import { qk } from "@/lib/queries";
 import type { TeamDetail, User } from "@/lib/types";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePageTitle } from "@/lib/title";
+import { useTrail } from "@/lib/trail";
 
 export default function TeamPage() {
   const { ask, dialog } = useConfirm();
@@ -32,6 +33,7 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const team = useQuery({ queryKey: qk.team(id), queryFn: () => api<TeamDetail>(`/api/teams/${id}`) });
   usePageTitle(team.data?.name, "Teams");
+  useTrail([{ label: "Teams", href: "/teams" }, { label: team.data?.name ?? null }]);
   const users = useQuery({ queryKey: qk.users(), queryFn: () => api<User[]>("/api/users"), enabled: editing });
 
   if (team.error) return <p className="text-sm text-pink">{errorMessage(team.error)}</p>;

@@ -106,8 +106,104 @@ class RunSteerResult(_FromRunner):
     error: Annotated[str, _trunc(200)] | None = None
 
 
+# Tool Hub (plan 24, capability tools/1). Field names mirror runner/internal/protocol/tools.go.
+
+_Text300 = Annotated[str, _trunc(300)]
+_Name = Annotated[str, _trunc(100)]
+
+
+class McpPayload(BaseModel):
+    """An MCP server ready to write: secrets filled in, the command already the one for the machine's system."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    transport: Literal["http", "stdio"]
+    url: Annotated[str, _trunc(2000)] | None = None
+    headers: dict[str, Annotated[str, _trunc(4000)]] = Field(default={}, max_length=1000)
+    command: Annotated[str, _trunc(500)] | None = None
+    args: list[Annotated[str, _trunc(4000)]] = Field(default=[], max_length=1000)
+    env: dict[str, Annotated[str, _trunc(4000)]] = Field(default={}, max_length=1000)
+
+
+class SkillFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: Annotated[str, _trunc(255)]
+    content_b64: str
+
+
+class ToolPayload(BaseModel):
+    tool_id: str
+    name: str
+    kind: Literal["mcp", "skill"]
+    rev: int
+    read_only_safe: bool
+    mcp: McpPayload | None = None
+    files: list[SkillFile] | None = None
+
+
+class ToolsPush(BaseModel):
+    """The machine's whole wanted set; the runner removes what it installed and is no longer listed."""
+
+    type: Literal["tools_push"] = "tools_push"
+    push_id: str
+    programs: list[str]
+    tools: list[ToolPayload]
+    take_over: list[str]  # tool names that may replace an entry made by hand
+    keep: list[str] = []  # tool names still wanted but not sendable now (a key missing): left as installed
+
+
+class ToolsScan(BaseModel):
+    type: Literal["tools_scan"] = "tools_scan"
+    scan_id: str
+
+
+class ToolResult(_FromRunner):
+    tool_id: _Name | None = None
+    name: _Name
+    kind: Literal["mcp", "skill"]
+    program: _Name
+    rev: int | None = None
+    status: Literal["installed", "removed", "failed", "conflict", "not_supported", "not_available"]
+    detail: _Text300 = ""
+
+
+class ToolsReport(_FromRunner):
+    type: Literal["tools_report"]
+    push_id: _Name
+    results: list[ToolResult] = Field(default=[], max_length=1000)
+
+
+class ToolDrift(_FromRunner):
+    name: _Name
+    kind: Literal["mcp", "skill"]
+    program: _Name
+    status: Literal["changed", "missing"]
+
+
+class ToolsDrift(_FromRunner):
+    type: Literal["tools_drift"]
+    items: list[ToolDrift] = Field(default=[], max_length=1000)
+
+
+class FoundTool(_FromRunner):
+    program: _Name
+    kind: Literal["mcp", "skill"]
+    name: _Name
+    mcp: McpPayload | None = None
+    files: list[SkillFile] | None = Field(default=None, max_length=100)
+    problem: _Text300 | None = None
+
+
+class ToolsFound(_FromRunner):
+    type: Literal["tools_found"]
+    scan_id: _Name
+    items: list[FoundTool] = Field(default=[], max_length=500)
+
+
 RunnerMessage = Annotated[
-    Hello | Heartbeat | AgentStatus | RunUpdate | RunFinished | RunSteerResult, Field(discriminator="type")
+    Hello | Heartbeat | AgentStatus | RunUpdate | RunFinished | RunSteerResult | ToolsReport | ToolsDrift | ToolsFound,
+    Field(discriminator="type"),
 ]
 runner_message = TypeAdapter(RunnerMessage)
 
@@ -256,4 +352,4 @@ class RunSteer(BaseModel):
     text: str
 
 
-ServerMessage = Welcome | RunStart | RunCancel | ConfigChanged | RunSteer
+ServerMessage = Welcome | RunStart | RunCancel | ConfigChanged | RunSteer | ToolsPush | ToolsScan

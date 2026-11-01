@@ -9,15 +9,22 @@ import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { MemAnswer } from "@/lib/memory";
 import { useProjects } from "@/lib/project";
+import { useStoredState } from "@/lib/stored";
 
 const QUESTION_MAX = 1000;
 
 /** Ask the memory (MEM-5): the answer cites the conclusions it used. */
 export function AskMemory() {
   const projects = useProjects();
-  const [question, setQuestion] = useState("");
-  const [project, setProject] = useState("");
-  const [answer, setAnswer] = useState<MemAnswer | null>(null);
+  // the last question and its answer are kept for the tab, for coming back from an entity or a source
+  const [asked, setAsked] = useStoredState<{ question: string; project: string; answer: MemAnswer | null }>(
+    "memory.ask",
+    { question: "", project: "", answer: null },
+    "session",
+  );
+  const { question, project, answer } = asked;
+  const setQuestion = (q: string) => setAsked({ ...asked, question: q });
+  const setProject = (p: string) => setAsked({ ...asked, project: p });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -30,14 +37,13 @@ export function AskMemory() {
           setError(null);
           setBusy(true);
           try {
-            setAnswer(
-              await api<MemAnswer>("/api/memory/ask", {
-                method: "POST",
-                json: { question: question.trim(), project_key: project || null },
-              }),
-            );
+            const got = await api<MemAnswer>("/api/memory/ask", {
+              method: "POST",
+              json: { question: question.trim(), project_key: project || null },
+            });
+            setAsked({ question, project, answer: got });
           } catch (err) {
-            setAnswer(null);
+            setAsked({ question, project, answer: null });
             setError(errorMessage(err));
           } finally {
             setBusy(false);
