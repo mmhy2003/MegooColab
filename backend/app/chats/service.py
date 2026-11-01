@@ -45,6 +45,20 @@ def chat_link(chat_id: uuid.UUID) -> str:
     return f"/chats/{chat_id}"
 
 
+async def touch(db: AsyncSession, chat_id: uuid.UUID) -> None:
+    chat = await db.get(Chat, chat_id)
+    if chat is not None:
+        chat.last_activity_at = _now()
+
+
+async def chat_people(db: AsyncSession, task: Task) -> tuple[list[uuid.UUID | None], str]:
+    """Who hears about a chat round (the person who started the chat and the agent's owner), and the link."""
+    chat = await db.get(Chat, task.chat_id)
+    agent_id = task.assignee_agent_id or (chat.agent_id if chat else None)
+    owner = await db.scalar(select(Agent.owner_id).where(Agent.id == agent_id)) if agent_id else None
+    return [chat.started_by if chat else None, owner], chat_link(task.chat_id)
+
+
 # ---- who sees a chat ---------------------------------------------------------------------------------------------
 
 

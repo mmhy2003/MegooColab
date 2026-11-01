@@ -52,11 +52,15 @@ def frame_instruction(sender: str, at: datetime, body: str) -> str:
 
 
 async def framed_messages(db: AsyncSession, task: Task, states: tuple[Delivery, ...]) -> list[tuple[Comment, str]]:
-    """The task's messages for the agent in these states, oldest first, each with its framed text."""
+    """The task's messages for the agent in these states, oldest first, each with its framed text. For a round of
+    an agent chat, the messages of every round of that chat: what the person said earlier still holds."""
+    same = Comment.task_id == task.id
+    if task.chat_id is not None:
+        same = Comment.task_id.in_(select(Task.id).where(Task.chat_id == task.chat_id))
     rows = await db.execute(
         select(Comment, User.name)
         .outerjoin(User, User.id == Comment.author_user_id)
-        .where(Comment.task_id == task.id, Comment.delivery.in_(states))
+        .where(same, Comment.delivery.in_(states))
         .order_by(Comment.created_at, Comment.id)
     )
     return [(c, frame_instruction(name or "someone", c.created_at, c.body_md)) for c, name in rows.all()]
