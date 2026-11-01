@@ -13,6 +13,7 @@ const SECTIONS: Record<string, string> = {
   questions: "Questions",
   kb: "Knowledge Base",
   memory: "Memory",
+  hub: "Tool Hub",
   teams: "Teams",
   notifications: "Notifications",
   search: "Search",
@@ -21,10 +22,14 @@ const SECTIONS: Record<string, string> = {
 };
 
 const UNDER: Record<string, Record<string, string>> = {
-  admin: { agents: "Agents", ai: "AI", audit: "Audit log", git: "Git", methodology: "Methodology", settings: "Settings", users: "Users" },
+  admin: {
+    agents: "Agents", ai: "AI", audit: "Audit log", git: "Git", hub: "Tool Hub", methodology: "Methodology", settings: "Settings",
+    users: "Users",
+  },
   settings: { agents: "My agents", notifications: "Notifications", profile: "Profile", tokens: "Access tokens" },
   projects: { new: "New project" },
   kb: { search: "Search" },
+  hub: { "new-mcp": "Add MCP", "new-skill": "Add skill" },
 };
 
 // addresses that only redirect: never a link

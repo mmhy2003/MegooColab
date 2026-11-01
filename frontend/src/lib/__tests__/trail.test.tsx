@@ -28,6 +28,9 @@ describe("pathTrail", () => {
     ["/settings/tokens", [{ label: "Settings" }, { label: "Access tokens" }]],
     ["/projects/new", [{ label: "Projects", href: "/projects" }, { label: "New project" }]],
     ["/teams/3f9a2c4e-1b2d-4c3e-8f00-123456789abc", [{ label: "Teams", href: "/teams" }, { label: null }]],
+    ["/hub/new-mcp", [{ label: "Tool Hub", href: "/hub" }, { label: "Add MCP" }]],
+    ["/hub/new-skill", [{ label: "Tool Hub", href: "/hub" }, { label: "Add skill" }]],
+    ["/admin/hub", [{ label: "Admin" }, { label: "Tool Hub" }]],
     ["/nowhere/at-all", [{ label: "nowhere", href: "/nowhere" }, { label: "at-all" }]],
   ])("pathTrail(%s)", (path, want) => expect(pathTrail(path)).toEqual(want));
 });
