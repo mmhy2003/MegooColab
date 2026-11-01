@@ -2781,6 +2781,7 @@ export interface components {
             question?: {
                 [key: string]: unknown;
             } | null;
+            to_agent?: components["schemas"]["AgentMessageOut"] | null;
         };
         /** ActivityRow */
         ActivityRow: {
@@ -2922,6 +2923,23 @@ export interface components {
              */
             owner_id: string;
             runner?: components["schemas"]["RunnerInfo"] | null;
+        };
+        /**
+         * AgentMessageOut
+         * @description A message for the agent: who it was written to, and what happened to it.
+         */
+        AgentMessageOut: {
+            /** Agent Id */
+            agent_id: string | null;
+            /** Agent Name */
+            agent_name: string;
+            state: components["schemas"]["Delivery"];
+            /** Stage */
+            stage: string | null;
+            /** Error */
+            error: string | null;
+            /** Delivered At */
+            delivered_at: string | null;
         };
         /** AgentOut */
         AgentOut: {
@@ -3204,6 +3222,11 @@ export interface components {
         CommentIn: {
             /** Body Md */
             body_md: string;
+            /**
+             * To Agent
+             * @default false
+             */
+            to_agent: boolean;
         };
         /** CommentOut */
         CommentOut: {
@@ -3228,6 +3251,7 @@ export interface components {
             created_at: string;
             /** Edited At */
             edited_at: string | null;
+            to_agent?: components["schemas"]["AgentMessageOut"] | null;
         };
         /** CompleteIn */
         CompleteIn: {
@@ -3426,6 +3450,12 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * Delivery
+         * @description What happened to a message for the agent.
+         * @enum {string}
+         */
+        Delivery: "waiting" | "sending" | "read_while_working" | "given_at_start";
         /**
          * DocKind
          * @enum {string}
