@@ -1,10 +1,11 @@
 "use client";
 
-import { BookOpen, BookOpenText, Bot, Brain, BrainCircuit, FolderKanban, GitPullRequest, LayoutDashboard, MessagesSquare, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
+import { BookOpen, BookOpenText, Bot, Brain, BrainCircuit, FolderKanban, GitPullRequest, LayoutDashboard, MessageCircle, MessagesSquare, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Brand } from "@/components/Brand";
+import { useChatsWaiting } from "@/lib/chats";
 import { useDashboardCount } from "@/lib/dashboard";
 import type { User } from "@/lib/types";
 
@@ -15,8 +16,11 @@ export const LABEL_HIDDEN = "opacity-0 transition-opacity group-hover/side:opaci
 
 const DASHBOARD: Item = { href: "/", label: "Dashboard", icon: LayoutDashboard };
 
+const CHATS: Item = { href: "/chats", label: "Chats", icon: MessageCircle };
+
 const MAIN: Item[] = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
+  CHATS,
   { href: "/teams", label: "Teams", icon: UsersRound },
   { href: "/kb", label: "Knowledge Base", icon: BookOpen },
   { href: "/memory", label: "Memory", icon: Brain },
@@ -38,11 +42,13 @@ function NavLink({
   onNavigate,
   collapsed,
   badge = 0,
+  badgeLabel = "need you",
 }: {
   item: Item;
   onNavigate?: () => void;
   collapsed?: boolean;
   badge?: number;
+  badgeLabel?: string;
 }) {
   const pathname = usePathname();
   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -61,17 +67,17 @@ function NavLink({
       <span className="relative shrink-0">
         <Icon size={16} aria-hidden />
         {/* on the collapsed rail the count sits on the icon's corner, like the bell's */}
-        {badge > 0 && collapsed && <CountBadge n={badge} className="absolute -top-2 -right-2" />}
+        {badge > 0 && collapsed && <CountBadge n={badge} label={badgeLabel} className="absolute -top-2 -right-2" />}
       </span>
       <span className={collapsed ? LABEL_HIDDEN : ""}>{item.label}</span>
-      {badge > 0 && !collapsed && <CountBadge n={badge} className="ml-auto" />}
+      {badge > 0 && !collapsed && <CountBadge n={badge} label={badgeLabel} className="ml-auto" />}
     </Link>
   );
 }
 
-function CountBadge({ n, className }: { n: number; className: string }) {
+function CountBadge({ n, label, className }: { n: number; label: string; className: string }) {
   return (
-    <span aria-label={`${n} need you`} className={`min-w-4 rounded-full bg-pink px-1 text-center text-[10px] leading-4 text-on-accent ${className}`}>
+    <span aria-label={`${n} ${label}`} className={`min-w-4 rounded-full bg-pink px-1 text-center text-[10px] leading-4 text-on-accent ${className}`}>
       {n > 99 ? "99+" : n}
     </span>
   );
@@ -83,6 +89,12 @@ function DashboardLink({ onNavigate, collapsed }: { onNavigate?: () => void; col
   return <NavLink item={DASHBOARD} onNavigate={onNavigate} collapsed={collapsed} badge={count} />;
 }
 
+/** Chats, with how many wait on the viewer (a question, an approval, an escalation). */
+function ChatsLink({ onNavigate, collapsed }: { onNavigate?: () => void; collapsed?: boolean }) {
+  const count = useChatsWaiting().data?.waiting ?? 0;
+  return <NavLink item={CHATS} onNavigate={onNavigate} collapsed={collapsed} badge={count} badgeLabel="waiting on you" />;
+}
+
 export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigate?: () => void; collapsed?: boolean }) {
   return (
     // p-2 and the links' px-3 put the icons in the middle of the collapsed rail (w-14), so they stay put as it opens
@@ -92,9 +104,13 @@ export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigat
         <Brand logoSize={28} nameClassName={collapsed ? LABEL_HIDDEN : ""} />
       </Link>
       <DashboardLink onNavigate={onNavigate} collapsed={collapsed} />
-      {MAIN.map((item) => (
-        <NavLink key={item.href} item={item} onNavigate={onNavigate} collapsed={collapsed} />
-      ))}
+      {MAIN.map((item) =>
+        item === CHATS ? (
+          <ChatsLink key={item.href} onNavigate={onNavigate} collapsed={collapsed} />
+        ) : (
+          <NavLink key={item.href} item={item} onNavigate={onNavigate} collapsed={collapsed} />
+        ),
+      )}
       {user.role === "admin" && (
         <>
           <p className={`mt-6 mb-1 px-3 text-[11px] tracking-widest whitespace-nowrap text-muted-foreground uppercase ${collapsed ? LABEL_HIDDEN : ""}`}>Admin</p>

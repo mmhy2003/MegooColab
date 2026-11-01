@@ -50,6 +50,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   const p = project.data;
   const tabs = [
     { href: `/projects/${p.key}/board`, label: "Board" },
+    { href: `/projects/${p.key}/chats`, label: "Chats" },
     ...(p.sprints_enabled
       ? [
           { href: `/projects/${p.key}/backlog`, label: "Backlog" },

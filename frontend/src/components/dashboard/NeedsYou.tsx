@@ -89,7 +89,11 @@ export function NeedsYou({ items, total, showWaitingFor }: { items: NeedItem[]; 
             return (
               <li key={`${item.kind}:${item.ref}:${item.notification_id ?? ""}`} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1.5 text-sm">
                 <Chip tone={kind.tone}>{kind.label}</Chip>
-                {item.ref && <span className="shrink-0 font-mono text-xs text-cyan-ink">{item.ref}</span>}
+                {item.chat_id ? (
+                  <span className="shrink-0 rounded border border-violet px-1 text-[10px] text-violet uppercase">chat</span>
+                ) : (
+                  item.ref && <span className="shrink-0 font-mono text-xs text-cyan-ink">{item.ref}</span>
+                )}
                 <span className="min-w-0 flex-1 basis-32 truncate">{summary(item)}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">{minuteAge(now - Date.parse(item.since))}</span>
                 {item.kind === "mention" && item.notification_id ? (

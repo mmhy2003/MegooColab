@@ -30,6 +30,8 @@ from app.audit import service as audit
 from app.auth.models import User
 from app.core.text import strip_nul
 from app.kb import filing
+from app.notifications import service as notifications
+from app.notifications.models import Kind
 from app.projects.models import ColumnCategory, Project, ProjectRepository, RepoProvider
 from app.tasks.models import Task
 from app.workflow import build, engine, questions
@@ -153,6 +155,14 @@ async def finish_workflow(db: AsyncSession, wf: TaskWorkflow, task: Task, actor_
     await engine.record_workflow_event(db, task, actor_id, "workflow.finished", {
         "outcome": wf.finish_outcome, "branch": wf.branch, "pr_url": wf.pr_url,
     })
+    if task.in_chat:  # the chat asks whether to add the round to the board: its people hear it finished
+        from app.chats.service import chat_people  # local: the chats modules import the workflow
+
+        recipients, link = await chat_people(db, task)
+        await notifications.notify(
+            db, recipients, Kind.needs_you, title=f"Chat finished: {task.title}"[:200], body=task.title,
+            link=link, task_id=task.id, project_id=task.project_id, actor_id=actor_id,
+        )
 
 
 async def report_finish(

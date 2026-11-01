@@ -21,6 +21,7 @@ export type DayFinished = S["DayFinished"];
 export type ProjectRow = S["ProjectRow"];
 export type ActivityRow = S["ActivityRow"];
 export type SystemOut = S["SystemOut"];
+export type ChatBrief = S["ChatBrief"];
 
 /** Live events refresh these through the realtime throttle (at most once every 2 s), never on their own. */
 export const dashboardKeys = {

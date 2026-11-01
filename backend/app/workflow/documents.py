@@ -222,6 +222,9 @@ async def _start_build(db, user: User, wf, task: Task, doc: WorkflowDocument) ->
     column = await first_before_column(db, project)
     steps = []
     for n, step in enumerate(doc.steps or [], start=1):
+        if task.in_chat:  # a chat round's steps live in its plan; they become cards if it is added to the board
+            steps.append({**step, "subtask_id": None})
+            continue
         subtask = await create_task(
             db, user, project,
             TaskCreate(

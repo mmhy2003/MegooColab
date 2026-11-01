@@ -45,7 +45,7 @@ def _base(kind: str, id: uuid.UUID, **fields: Any) -> dict[str, Any]:
 
 async def _task(db: AsyncSession, id: uuid.UUID) -> dict | None:
     task = await db.get(Task, id)
-    if task is None:
+    if task is None or task.in_chat:  # a chat round is not searchable until it is added to the board
         return None
     project = await db.get(Project, task.project_id)
     column = await db.get(BoardColumn, task.column_id)
@@ -187,5 +187,7 @@ async def ids_of(db: AsyncSession, kind: str) -> AsyncIterator[uuid.UUID]:
     stmt = select(model.id).order_by(model.id)
     if kind == "person":
         stmt = stmt.where(User.status == UserStatus.active)
+    if kind == "task":
+        stmt = stmt.where(Task.in_chat.is_(False))
     for (id,) in (await db.execute(stmt)).all():
         yield id

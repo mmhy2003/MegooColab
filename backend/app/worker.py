@@ -25,11 +25,18 @@ async def enqueue_startup_jobs() -> None:
         await db.commit()
 
 
-async def _main() -> None:
+def load_handlers() -> None:
+    """Every model (a job's queries reach tables only foreign keys name), then the job handlers."""
     import importlib
+
+    import app.models  # noqa: F401
 
     for name in HANDLER_MODULES:
         importlib.import_module(name)
+
+
+async def _main() -> None:
+    load_handlers()
     from app.search import capture  # changes made by jobs are indexed too
 
     capture.install()

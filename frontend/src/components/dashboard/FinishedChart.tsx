@@ -7,28 +7,30 @@ function dayLabel(iso: string): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-/** Tasks finished per day over the last 14 days, stacked: by agents (cyan) and by people (violet). Plain elements, no
- * chart library. */
+/** Work finished per day over the last 14 days, stacked: tasks by agents (cyan), by people (violet), and agent chats
+ * (amber). Plain elements, no chart library. */
 export function FinishedChart({ days }: { days: DayFinished[] }) {
   const agents = days.reduce((n, d) => n + d.agents, 0);
   const people = days.reduce((n, d) => n + d.people, 0);
-  const max = Math.max(1, ...days.map((d) => d.agents + d.people));
+  const chats = days.reduce((n, d) => n + (d.chats ?? 0), 0);
+  const max = Math.max(1, ...days.map((d) => d.agents + d.people + (d.chats ?? 0)));
   const middle = Math.floor(days.length / 2);
   return (
-    <Widget title="Tasks finished · last 14 days" icon={BarChart3}>
-      {agents + people === 0 ? (
-        <Empty>No tasks finished in the last 14 days.</Empty>
+    <Widget title="Finished · last 14 days" icon={BarChart3}>
+      {agents + people + chats === 0 ? (
+        <Empty>Nothing finished in the last 14 days.</Empty>
       ) : (
         <>
           <div
             role="img"
-            aria-label={`Tasks finished in the last 14 days: ${agents} by agents, ${people} by people`}
+            aria-label={`Finished in the last 14 days: ${agents} tasks by agents, ${people} by people, ${chats} chats`}
             className="flex h-28 items-end gap-1 pt-1.5"
           >
             {days.map((d) => (
-              <div key={d.day} data-day className="flex h-full flex-1 flex-col-reverse gap-px" title={`${dayLabel(d.day)}: ${d.agents} by agents, ${d.people} by people`}>
+              <div key={d.day} data-day className="flex h-full flex-1 flex-col-reverse gap-px" title={`${dayLabel(d.day)}: ${d.agents} by agents, ${d.people} by people, ${d.chats ?? 0} chats`}>
                 <b className="block rounded-t-sm bg-cyan" style={{ height: `${(d.agents / max) * 100}%` }} />
                 <b className="block rounded-t-sm bg-violet" style={{ height: `${(d.people / max) * 100}%` }} />
+                <b className="block rounded-t-sm bg-amber" style={{ height: `${((d.chats ?? 0) / max) * 100}%` }} />
               </div>
             ))}
           </div>
@@ -47,6 +49,10 @@ export function FinishedChart({ days }: { days: DayFinished[] }) {
             <span className="inline-flex items-center gap-1">
               <i className="inline-block size-2.5 rounded-sm bg-violet" />
               by people · {people}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <i className="inline-block size-2.5 rounded-sm bg-amber" />
+              chats · {chats}
             </span>
           </p>
         </>

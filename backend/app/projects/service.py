@@ -68,7 +68,8 @@ async def column_task_counts(db: AsyncSession, project_id: uuid.UUID) -> dict[uu
     from app.tasks.models import Task
 
     rows = await db.execute(
-        select(Task.column_id, func.count()).where(Task.project_id == project_id).group_by(Task.column_id)
+        select(Task.column_id, func.count()).where(Task.project_id == project_id, Task.in_chat.is_(False))
+        .group_by(Task.column_id)
     )
     return dict(rows.all())
 

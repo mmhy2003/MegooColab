@@ -14,6 +14,7 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -95,6 +96,12 @@ class Task(IdMixin, TimestampMixin, Base):
     # production fix is also brought back into (None when the work started from the default branch)
     start_branch: Mapped[str | None] = mapped_column(String(200))
     back_merge_into: Mapped[str | None] = mapped_column(String(200))
+    # a round of an agent chat (app.chats): kept off the board, counts and search while in_chat; adding it to the
+    # board clears in_chat (chat_board "added") and it becomes an ordinary task, its history kept
+    chat_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("chats.id", ondelete="SET NULL"), index=True)
+    chat_round: Mapped[int | None]
+    in_chat: Mapped[bool] = mapped_column(default=False, server_default=false())
+    chat_board: Mapped[str | None] = mapped_column(String(10))  # "added" | "declined" once decided
 
 
 class LinkKind(StrEnum):

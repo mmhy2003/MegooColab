@@ -74,6 +74,16 @@ describe("CommentBox", () => {
     }
   });
 
+  it("puts the caret right after a picked mention at once, so fast typing lands after it", () => {
+    render(<CommentBox users={users} onSubmit={vi.fn()} />);
+    const box = screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "Hi @sa there", selectionStart: 6, selectionEnd: 6 } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    const token = `@[Sara Kim](user:${users[0].id}) `;
+    expect(box.value).toBe(`Hi ${token} there`);
+    expect(box.selectionStart).toBe(3 + token.length); // not on the next frame: a keystroke may come first
+  });
+
   describe("to the agent", () => {
     const agent = { id: "a1", name: "laptop-claude" };
     const token = "@[laptop-claude](agent:a1)";

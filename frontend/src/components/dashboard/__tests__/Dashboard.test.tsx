@@ -89,7 +89,7 @@ describe("Dashboard", () => {
     mockFetch(dashboardFixture({ system: healthy }));
     wrap(<Dashboard user={admin} />);
     await screen.findByText("Refund flow for partial orders");
-    for (const name of ["Needs you", "My tasks", "Running now", "Agents", "Workflows by stage", "Tasks finished · last 14 days", "Projects", "Recent activity", "System"]) {
+    for (const name of ["Needs you", "My tasks", "Running now", "Agents", "Workflows by stage", "Finished · last 14 days", "Projects", "Recent activity", "System"]) {
       expect(screen.getByRole("region", { name })).toBeInTheDocument();
     }
     cleanup();

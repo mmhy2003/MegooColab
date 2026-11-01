@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import { Command, CommandItem, CommandList } from "@/components/shadcn/command";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/shadcn/popover";
@@ -45,6 +45,12 @@ export function CommentBox({
   const [mention, setMention] = useState<{ start: number; end: number; query: string } | null>(null);
   const [active, setActive] = useState(0);
   const box = useRef<HTMLTextAreaElement>(null);
+  const caretAfter = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (caretAfter.current === null) return;
+    box.current?.setSelectionRange(caretAfter.current, caretAfter.current);
+    caretAfter.current = null;
+  }, [body]);
   const tellable = agent !== null && canTellAgent;
   const toAgent = tellable && (manualOn || hasAgentMention(body, agent.id));
   const people: Option[] = tellable ? [{ ...agent, agent: true }, ...users] : users;
@@ -64,7 +70,7 @@ export function CommentBox({
     const caret = mention.start + token.length;
     setBody(next);
     setMention(null);
-    requestAnimationFrame(() => box.current?.setSelectionRange(caret, caret));
+    caretAfter.current = caret; // placed as soon as the new text renders, before the next keystroke
   };
 
   return (

@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.routing import Route
 
 from app.a2a.context import register as register_a2a_context
+from app.chats.context import register as register_chats_context
 from app.a2a.router import router as a2a_router
 from app.a2a.routing import route_loop
 from app.agent_runs.router import router as agent_runs_router
@@ -65,6 +66,7 @@ from app.users.router import users_router
 from app.updates.router import router as updates_router
 from app.workflow.methodology import seed_defaults
 from app.workflow.router import router as workflow_router
+from app.chats.router import router as chats_router
 
 log = logging.getLogger(__name__)
 
@@ -129,6 +131,7 @@ def create_app() -> FastAPI:
     register_kb_context()
     register_memory_context()
     register_a2a_context()
+    register_chats_context()
     app = FastAPI(
         title="MegooColab",
         lifespan=lifespan,
@@ -173,6 +176,7 @@ def create_app() -> FastAPI:
         runner_router,
         agent_runs_router,
         workflow_router,
+        chats_router,
         jobs_router,
         ai_router,
         kb_router,

@@ -43,7 +43,7 @@ async def activity(db: AsyncSession, scope: Scope, limit: int = ACTIVITY_SHOWN) 
         select(TaskEvent, Project.key, Task.number)
         .join(Task, Task.id == TaskEvent.task_id).join(Project, Project.id == Task.project_id)
         .where(TaskEvent.created_at >= datetime.now(UTC) - timedelta(days=ACTIVITY_DAYS),
-               scope.in_projects(Task.project_id), scope.mine_tasks(), TaskEvent.kind.not_in(STREAMED),
+               scope.in_projects(Task.project_id), scope.board_tasks(), TaskEvent.kind.not_in(STREAMED),
                TaskEvent.kind.not_like("question.%"))
         .order_by(TaskEvent.created_at.desc(), TaskEvent.id.desc()).limit(limit)
     )).all()
