@@ -37,6 +37,7 @@ from app.tasks.schemas import (
     TaskOut,
     TaskUpdate,
 )
+from app.tasks.visibility import on_board
 from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
 from app.workflow.models import DocKind, DocStatus, TaskWorkflow, WorkflowDocument
@@ -640,7 +641,7 @@ async def list_tasks(
     column: uuid.UUID | None = None,
     q: str | None = None,
 ) -> list[Task]:
-    stmt = select(Task).where(Task.project_id == project.id).order_by(Task.position, Task.number)
+    stmt = select(Task).where(Task.project_id == project.id, on_board()).order_by(Task.position, Task.number)
     if type_:
         stmt = stmt.where(Task.type == type_)
     if assignee:
@@ -679,7 +680,7 @@ async def list_tasks(
 
 async def _column_tasks(db: AsyncSession, column_id: uuid.UUID, exclude: uuid.UUID) -> list[Task]:
     rows = await db.execute(
-        select(Task).where(Task.column_id == column_id, Task.id != exclude).order_by(Task.position, Task.number)
+        select(Task).where(Task.column_id == column_id, Task.id != exclude, on_board()).order_by(Task.position, Task.number)
     )
     return list(rows.scalars())
 

@@ -38,7 +38,7 @@ async def task_numbers(db: AsyncSession, scope: Scope) -> dict[str, int]:
             _count(and_(overdue, Task.assignee_user_id == scope.user.id)).label("overdue_mine"),
         )
         .select_from(Task).join(BoardColumn, BoardColumn.id == Task.column_id)
-        .where(Task.type.in_(COUNTED_TYPES), scope.in_projects(Task.project_id), scope.mine_tasks())
+        .where(Task.type.in_(COUNTED_TYPES), scope.in_projects(Task.project_id), scope.board_tasks())
     )).one()
     return dict(row._mapping)
 
@@ -75,7 +75,7 @@ async def finished_daily(db: AsyncSession, scope: Scope) -> list[DayFinished]:
     rows = await db.execute(
         select(day, _count(by_agent), _count(~by_agent))
         .where(Task.completed_at >= start, Task.type.in_(COUNTED_TYPES), scope.in_projects(Task.project_id),
-               scope.mine_tasks())
+               scope.board_tasks())
         .group_by(day)
     )
     counts = {int(d): (agents, people) for d, agents, people in rows.all()}
@@ -86,7 +86,7 @@ async def finished_daily(db: AsyncSession, scope: Scope) -> list[DayFinished]:
 
 
 async def projects(db: AsyncSession, scope: Scope) -> list[ProjectRow]:
-    counted = and_(Task.project_id == Project.id, Task.type.in_(COUNTED_TYPES), scope.mine_tasks())
+    counted = and_(Task.project_id == Project.id, Task.type.in_(COUNTED_TYPES), scope.board_tasks())
     rows = await db.execute(
         select(
             Project.key, Project.name,

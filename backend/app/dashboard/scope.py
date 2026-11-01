@@ -6,7 +6,7 @@ from datetime import date, datetime, time, timedelta, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, status
-from sqlalchemy import ColumnElement, or_, select, true
+from sqlalchemy import ColumnElement, and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.models import Agent
@@ -37,6 +37,12 @@ class Scope:
 
     def in_projects(self, column) -> ColumnElement[bool]:
         return true() if self.project_ids is None else column.in_(self.project_ids)
+
+    def board_tasks(self) -> ColumnElement[bool]:
+        """The tasks the dashboard counts: on the board (no chat round) and, for "mine", the viewer's."""
+        from app.tasks.visibility import on_board
+
+        return and_(on_board(), self.mine_tasks())
 
     def mine_tasks(self) -> ColumnElement[bool]:
         if self.name != "mine":

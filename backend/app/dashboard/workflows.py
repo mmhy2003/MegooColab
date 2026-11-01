@@ -16,7 +16,7 @@ DONE_DAYS = 30
 
 async def stages(db: AsyncSession, scope: Scope) -> tuple[Stages, int, int]:
     """(the stage bars, workflows in progress, how many projects they are in)."""
-    in_scope = (scope.in_projects(Task.project_id), scope.mine_tasks())
+    in_scope = (scope.in_projects(Task.project_id), scope.board_tasks())
     status = TaskWorkflow.status
     in_progress = and_(TaskWorkflow.started_at.is_not(None), status != WorkflowStatus.finished)
     rows = (await db.execute(

@@ -36,7 +36,7 @@ async def points(db: AsyncSession, sprint_id: uuid.UUID) -> tuple[int, int]:
     base = (
         select(pts)
         .join(BoardColumn, BoardColumn.id == Task.column_id)
-        .where(Task.sprint_id == sprint_id, Task.type.in_(SPRINTABLE))
+        .where(Task.sprint_id == sprint_id, Task.type.in_(SPRINTABLE), Task.in_chat.is_(False))
     )
     total = (await db.execute(base)).scalar_one()
     remaining = (await db.execute(base.where(BoardColumn.category != ColumnCategory.done))).scalar_one()
