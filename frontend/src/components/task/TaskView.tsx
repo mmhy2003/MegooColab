@@ -15,6 +15,7 @@ import { useMe } from "@/lib/me";
 import { useColumns, useLabels, useProject, useRepos, useSprints, useTask, useTasks, useUsers } from "@/lib/project";
 import { qk } from "@/lib/queries";
 import { useRecordTitle } from "@/lib/title";
+import { useRecordTrail } from "@/lib/trail";
 import type { ActivityItem, Attachment } from "@/lib/types";
 
 import { DocumentView } from "@/components/workflow/DocumentView";
@@ -80,6 +81,11 @@ export function TaskView({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const attachments = useQuery({ queryKey: qk.attachments(taskKey), queryFn: () => api<Attachment[]>(`/api/tasks/${taskKey}/attachments`) });
   const project = useProject(projectKey);
+  useRecordTrail([
+    { label: "Projects", href: "/projects" },
+    { label: project.data?.name ?? null, href: `/projects/${projectKey}/board` },
+    { label: taskKey.toUpperCase() },
+  ]);
   const columns = useColumns(projectKey);
   const labels = useLabels(projectKey);
   const users = useUsers();

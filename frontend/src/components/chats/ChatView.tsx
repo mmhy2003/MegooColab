@@ -15,6 +15,7 @@ import { latestRound, stateText, useChat, type Chat, type ChatRound } from "@/li
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import { useRecordTitle } from "@/lib/title";
+import { useRecordTrail } from "@/lib/trail";
 import type { ActivityItem } from "@/lib/types";
 import { useWorkflow } from "@/lib/workflow";
 
@@ -80,6 +81,7 @@ function RoundThread({ chat, round }: { chat: Chat; round: ChatRound }) {
 export function ChatView({ chatId }: { chatId: string }) {
   const chat = useChat(chatId);
   useRecordTitle(chat.data?.title);
+  useRecordTrail([{ label: "Chats", href: "/chats" }, { label: chat.data?.title ?? null }]);
   const latest = chat.data ? latestRound(chat.data) : undefined;
   const runs = useAgentRuns(latest?.key ?? "");
   const agentRunning = (runs.data ?? []).some((r) => r.status === "running");

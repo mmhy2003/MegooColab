@@ -7,11 +7,13 @@ import { QuestionView } from "@/components/questions/QuestionView";
 import { errorMessage } from "@/lib/errors";
 import { useQuestion } from "@/lib/questions";
 import { usePageTitle } from "@/lib/title";
+import { useTrail } from "@/lib/trail";
 
 export default function QuestionPage() {
   const { id } = useParams<{ id: string }>();
   const question = useQuestion(id);
   usePageTitle(question.data && `${question.data.ref} ${question.data.title}`, "Questions");
+  useTrail([{ label: "Questions", href: "/questions" }, { label: question.data ? `${question.data.ref} ${question.data.title}` : null }]);
 
   if (question.error) {
     return (
