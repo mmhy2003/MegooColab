@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 
 import { ENTITY_GROUPS, type MemEntity } from "@/lib/memory";
+import { useStoredState } from "@/lib/stored";
 
 /** Memory entities grouped by kind, with how many conclusions the viewer can see about each. */
 export function EntityList({ entities }: { entities: MemEntity[] }) {
-  const [filter, setFilter] = useState("");
+  const [filter, setFilter] = useStoredState("memory.filter", "", "session"); // kept for the tab, shared with the entity pages
   const f = filter.trim().toLowerCase();
   const shown = entities.filter((e) => !f || e.name.toLowerCase().includes(f));
   return (
