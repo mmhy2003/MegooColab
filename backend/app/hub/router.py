@@ -1,18 +1,30 @@
 import io
 import uuid
 import zipfile
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit import service as audit
 from app.auth.deps import AuthedUser
+from app.auth.models import Role, User, UserStatus
 from app.core.db import DbSession
 from app.hub import rules, service
-from app.hub.models import HubTool, HubToolFile
-from app.hub.schemas import SecretsIn, ToolFileText, ToolIn, ToolOut, ToolPatch
+from app.hub.models import HubTool, HubToolFile, HubToolShare
+from app.hub.schemas import (
+    SecretsIn,
+    SharingIn,
+    ToolFileText,
+    ToolIn,
+    ToolOut,
+    ToolPatch,
+    ToolSummary,
+)
+from app.teams.models import Team
+from app.teams.service import user_team_ids
 
 router = APIRouter(prefix="/api/hub", tags=["hub"])
 
@@ -38,6 +50,13 @@ async def create_tool(body: ToolIn, user: AuthedUser, db: DbSession) -> ToolOut:
     db.add(tool)
     await _flush_unique_name(db)
     return await service.tool_out(db, user, tool)
+
+
+@router.get("/tools")
+async def list_tools(
+    user: AuthedUser, db: DbSession, shelf: Literal["mine", "shared", "everyone"] = "mine", q: str | None = None
+) -> list[ToolSummary]:
+    return [await service.summary(db, user, t) for t in await service.shelf(db, user, shelf, q)]
 
 
 @router.get("/tools/{tool_id}")
@@ -81,6 +100,45 @@ async def put_secrets(tool_id: uuid.UUID, body: SecretsIn, user: AuthedUser, db:
     service.write_secrets(tool, current | body.values)
     service.bump(tool, version=False)
     await db.flush()
+    return await service.tool_out(db, user, tool)
+
+
+@router.put("/tools/{tool_id}/sharing")
+async def put_sharing(tool_id: uuid.UUID, body: SharingIn, user: AuthedUser, db: DbSession) -> ToolOut:
+    tool = await _own(db, user, tool_id)
+    service.require_not_removed(tool)
+    if tool.is_copy:
+        raise HTTPException(status.HTTP_409_CONFLICT, "hub_copy_read_only")
+    teams, users = sorted(set(body.teams)), sorted(set(body.users))
+    spec = service.spec_of(tool)
+    if (teams or users or body.everyone) and spec is not None and rules.flagged_values(spec):
+        raise HTTPException(status.HTTP_409_CONFLICT, "hub_flagged_values")
+    if body.everyone and not tool.share_everyone and not await service.everyone_enabled(db):
+        raise HTTPException(status.HTTP_409_CONFLICT, "hub_everyone_off")
+    if user.role != Role.admin:
+        mine = await user_team_ids(db, user.id)
+        if any(t not in mine for t in teams):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "hub_team_not_member")
+    elif teams and len((await db.execute(select(Team.id).where(Team.id.in_(teams)))).all()) != len(teams):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "hub_bad_team")
+    if users:
+        found = (
+            await db.execute(select(User.id).where(User.id.in_(users), User.status == UserStatus.active))
+        ).all()
+        if user.id in users or len(found) != len(users):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "hub_bad_user")
+    before = await service.sharing_of(db, tool)
+    await db.execute(delete(HubToolShare).where(HubToolShare.tool_id == tool.id))
+    db.add_all(HubToolShare(tool_id=tool.id, team_id=t) for t in teams)
+    db.add_all(HubToolShare(tool_id=tool.id, user_id=u) for u in users)
+    tool.share_everyone = body.everyone
+    await db.flush()
+    if await service.sharing_of(db, tool) != before:
+        await audit.record(
+            db, "hub.tool_shared", actor_id=user.id, target_type="hub_tool", target_id=tool.id,
+            data={"name": tool.name, "teams": [str(t) for t in teams], "users": [str(u) for u in users],
+                  "everyone": body.everyone},
+        )
     return await service.tool_out(db, user, tool)
 
 

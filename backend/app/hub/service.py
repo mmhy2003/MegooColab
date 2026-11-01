@@ -2,21 +2,25 @@ import json
 import uuid
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.models import User
+from app.auth.models import Role, User
 from app.core.crypto import decrypt, encrypt
 from app.hub import rules
-from app.hub.models import HubTool, HubToolFile
+from app.hub.models import HubTool, HubToolFile, HubToolShare
 from app.hub.schemas import (
     McpSpec,
     Named,
     SecretSlot,
+    Sharing,
     ToolFileOut,
     ToolOut,
     ToolSummary,
 )
+from app.org.models import ORG_SETTINGS_ID, OrgSettings
+from app.teams.models import Team
+from app.teams.service import user_team_ids
 
 
 async def get_tool_or_404(db: AsyncSession, tool_id: uuid.UUID) -> HubTool:
@@ -26,8 +30,63 @@ async def get_tool_or_404(db: AsyncSession, tool_id: uuid.UUID) -> HubTool:
     return tool
 
 
+async def everyone_enabled(db: AsyncSession) -> bool:
+    org = await db.get(OrgSettings, ORG_SETTINGS_ID)
+    return org is None or org.hub_share_everyone
+
+
+async def shares_of(db: AsyncSession, tool: HubTool) -> list[HubToolShare]:
+    return list((await db.execute(select(HubToolShare).where(HubToolShare.tool_id == tool.id))).scalars())
+
+
 async def can_view(db: AsyncSession, user: User, tool: HubTool) -> bool:
-    return tool.owner_id == user.id
+    """The owner always; others while it is not removed and is shared with them (by their current teams)."""
+    if tool.owner_id == user.id:
+        return True
+    if tool.removed_at is not None:
+        return False
+    shares = await shares_of(db, tool)
+    teams = await user_team_ids(db, user.id)
+    if any(s.user_id == user.id or s.team_id in teams for s in shares):
+        return True
+    if tool.share_everyone and await everyone_enabled(db):
+        return True
+    return user.role == Role.admin and (bool(shares) or tool.share_everyone)
+
+
+async def sharing_of(db: AsyncSession, tool: HubTool) -> Sharing:
+    shares = await shares_of(db, tool)
+    team_ids = [s.team_id for s in shares if s.team_id]
+    user_ids = [s.user_id for s in shares if s.user_id]
+    teams = (await db.execute(select(Team).where(Team.id.in_(team_ids)).order_by(Team.name))).scalars()
+    users = (await db.execute(select(User).where(User.id.in_(user_ids)).order_by(User.name))).scalars()
+    return Sharing(
+        teams=[Named(id=t.id, name=t.name) for t in teams],
+        users=[Named(id=u.id, name=u.name) for u in users],
+        everyone=tool.share_everyone,
+    )
+
+
+async def shelf(db: AsyncSession, user: User, which: str, q: str | None) -> list[HubTool]:
+    stmt = select(HubTool).order_by(HubTool.name, HubTool.id)
+    if which == "mine":
+        stmt = stmt.where(HubTool.owner_id == user.id)
+    else:
+        stmt = stmt.where(HubTool.owner_id != user.id, HubTool.removed_at.is_(None))
+        if which == "shared":
+            teams = await user_team_ids(db, user.id)
+            shared = select(HubToolShare.tool_id).where(
+                or_(HubToolShare.user_id == user.id, HubToolShare.team_id.in_(teams))
+            )
+            stmt = stmt.where(HubTool.id.in_(shared))
+        else:
+            if not await everyone_enabled(db):
+                return []
+            stmt = stmt.where(HubTool.share_everyone.is_(True))
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(HubTool.name.ilike(like), HubTool.description.ilike(like)))
+    return list((await db.execute(stmt)).scalars())
 
 
 async def visible_tool(db: AsyncSession, user: User, tool_id: uuid.UUID) -> HubTool:
@@ -122,6 +181,7 @@ async def summary(db: AsyncSession, user: User, tool: HubTool) -> ToolSummary:
         secrets_missing=mine and any(s not in secrets for s in slots_of(tool)),
         runs_code=runs_code,
         read_only_safe=tool.read_only_safe,
+        sharing=await sharing_of(db, tool) if mine else None,
     )
 
 

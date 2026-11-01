@@ -92,6 +92,12 @@ class Sharing(BaseModel):
     everyone: bool = False
 
 
+class SharingIn(BaseModel):
+    teams: list[uuid.UUID] = Field(default=[], max_length=100)
+    users: list[uuid.UUID] = Field(default=[], max_length=500)
+    everyone: bool = False
+
+
 class ToolSummary(BaseModel):
     id: uuid.UUID
     kind: Literal["mcp", "skill"]
