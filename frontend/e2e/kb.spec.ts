@@ -87,7 +87,7 @@ test("knowledge base: edit, link, search, permissions, MCP and filing", async ({
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("heading", { name: "Release process" })).toBeVisible();
   await expect(page.getByText("rev 2")).toBeVisible(); // rev 1 was the empty draft
-  await expect(page.getByText("Guides/Release process")).toBeVisible();
+  await expect(page.getByRole("main").getByText("Guides/Release process")).toBeVisible();
 
   const stale = await page.context().newPage();
   await stale.goto(`/kb/doc/${orgDocId}?edit=1`);
@@ -126,7 +126,7 @@ test("knowledge base: edit, link, search, permissions, MCP and filing", async ({
   await expect(page.getByRole("link", { name: "Release checklist" })).toBeVisible();
   await page.goto(`/kb/doc/${linking.id}`);
   await expect(page.getByRole("link", { name: "the release process" })).toHaveAttribute("href", `/kb/doc/${orgDocId}`);
-  await expect(page.getByRole("link", { name: "KBX-1" })).toHaveAttribute("href", "/projects/KBX/tasks/1");
+  await expect(page.getByRole("link", { name: "KBX-1", exact: true })).toHaveAttribute("href", "/projects/KBX/tasks/1");
   await page.goto(`/kb/doc/${orgDocId}`);
   await expect(page.getByRole("region", { name: "Backlinks" }).getByRole("link", { name: "Release checklist" })).toBeVisible();
 
@@ -202,4 +202,49 @@ test("knowledge base: edit, link, search, permissions, MCP and filing", async ({
   expect(filedDoc.body_md).toContain("Keep 90 days.");
   await page.goto(`/projects/KBX/tasks/${mine.key.split("-")[1]}`);
   await expect(page.getByRole("link", { name: "View in Knowledge Base" })).toHaveAttribute("href", `/kb/doc/${filed!.document_id}`);
+});
+
+test("knowledge base: read a folder file by file and come back", async ({ page }) => {
+  await setupOrSignIn(page);
+  const request = page.request;
+  const org = await spaceNamed(request, "Organization");
+  const folder = await post<{ id: string }>(request, `/api/kb/spaces/${org.id}/folders`, { name: "Reading Guides", parent_id: null });
+  const docs: Record<string, Doc> = {};
+  for (const title of ["Alpha note", "Beta note", "Gamma note"]) {
+    docs[title] = await post<Doc>(request, `/api/kb/spaces/${org.id}/documents`, {
+      title,
+      body_md: `${title}: zephyrine reading order.`,
+      folder_id: folder.id,
+    });
+  }
+
+  // from search results into the folder
+  await page.goto("/kb/search?q=zephyrine");
+  await page.getByRole("main").getByRole("link", { name: "Beta note" }).click();
+  await expect(page.getByRole("heading", { name: "Beta note" })).toBeVisible();
+  const files = page.getByRole("complementary", { name: "Files" });
+
+  // the next file from the tree, the previous one from the pager, without leaving
+  await files.getByRole("link", { name: "Gamma note" }).click();
+  await expect(page.getByRole("heading", { name: "Gamma note" })).toBeVisible();
+  await expect(files).toBeVisible();
+  await page.getByRole("navigation", { name: "Folder" }).getByRole("link", { name: "← Beta note" }).click();
+  await expect(page.getByRole("heading", { name: "Beta note" })).toBeVisible();
+  await expect(files.getByRole("link", { name: "Beta note" })).toHaveAttribute("aria-current", "page");
+
+  // the top bar names the way down; Back leads to the results the reading started from
+  const trail = page.getByRole("banner").getByRole("navigation", { name: "Breadcrumb" });
+  await expect(trail).toContainText("Knowledge Base");
+  await expect(trail).toContainText("Organization");
+  await expect(trail).toContainText("Reading Guides");
+  await expect(trail).toContainText("Beta note");
+  await page.getByRole("link", { name: '← Back to results for "zephyrine"' }).click();
+  await expect(page).toHaveURL(/\/kb\/search\?q=zephyrine$/);
+
+  // opened straight from a link in a new tab: Back leads up to its folder
+  const fresh = await page.context().newPage();
+  await fresh.goto(`/kb/doc/${docs["Alpha note"].id}`);
+  const up = fresh.getByRole("link", { name: "← Back to Reading Guides" });
+  await expect(up).toHaveAttribute("href", `/kb/${org.id}?folder=${folder.id}`);
+  await fresh.close();
 });
