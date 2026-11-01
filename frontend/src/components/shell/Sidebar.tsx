@@ -42,11 +42,13 @@ function NavLink({
   onNavigate,
   collapsed,
   badge = 0,
+  badgeLabel = "need you",
 }: {
   item: Item;
   onNavigate?: () => void;
   collapsed?: boolean;
   badge?: number;
+  badgeLabel?: string;
 }) {
   const pathname = usePathname();
   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -65,17 +67,17 @@ function NavLink({
       <span className="relative shrink-0">
         <Icon size={16} aria-hidden />
         {/* on the collapsed rail the count sits on the icon's corner, like the bell's */}
-        {badge > 0 && collapsed && <CountBadge n={badge} className="absolute -top-2 -right-2" />}
+        {badge > 0 && collapsed && <CountBadge n={badge} label={badgeLabel} className="absolute -top-2 -right-2" />}
       </span>
       <span className={collapsed ? LABEL_HIDDEN : ""}>{item.label}</span>
-      {badge > 0 && !collapsed && <CountBadge n={badge} className="ml-auto" />}
+      {badge > 0 && !collapsed && <CountBadge n={badge} label={badgeLabel} className="ml-auto" />}
     </Link>
   );
 }
 
-function CountBadge({ n, className }: { n: number; className: string }) {
+function CountBadge({ n, label, className }: { n: number; label: string; className: string }) {
   return (
-    <span aria-label={`${n} need you`} className={`min-w-4 rounded-full bg-pink px-1 text-center text-[10px] leading-4 text-on-accent ${className}`}>
+    <span aria-label={`${n} ${label}`} className={`min-w-4 rounded-full bg-pink px-1 text-center text-[10px] leading-4 text-on-accent ${className}`}>
       {n > 99 ? "99+" : n}
     </span>
   );
@@ -90,7 +92,7 @@ function DashboardLink({ onNavigate, collapsed }: { onNavigate?: () => void; col
 /** Chats, with how many wait on the viewer (a question, an approval, an escalation). */
 function ChatsLink({ onNavigate, collapsed }: { onNavigate?: () => void; collapsed?: boolean }) {
   const count = waitingOnMe(useChats().data);
-  return <NavLink item={CHATS} onNavigate={onNavigate} collapsed={collapsed} badge={count} />;
+  return <NavLink item={CHATS} onNavigate={onNavigate} collapsed={collapsed} badge={count} badgeLabel="waiting on you" />;
 }
 
 export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigate?: () => void; collapsed?: boolean }) {
