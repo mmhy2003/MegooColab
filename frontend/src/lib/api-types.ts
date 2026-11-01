@@ -1683,6 +1683,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chats */
+        get: operations["list_chats_api_chats_get"];
+        put?: never;
+        /** Start Chat */
+        post: operations["start_chat_api_chats_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chat */
+        get: operations["get_chat_api_chats__chat_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Message
+         * @description Answers the agent's question, asks for changes to the design or plan waiting, tells the working agent,
+         *     starts it again, or starts the next round: whatever the chat waits for when the message arrives.
+         */
+        post: operations["send_message_api_chats__chat_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** End Chat */
+        post: operations["end_chat_api_chats__chat_id__end_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/rounds/{n}/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Board Defaults */
+        get: operations["board_defaults_api_chats__chat_id__rounds__n__board_get"];
+        put?: never;
+        /**
+         * Decide Board
+         * @description Add this to the board? The round becomes an ordinary task (its steps as subtasks), or stays a chat.
+         */
+        post: operations["decide_board_api_chats__chat_id__rounds__n__board_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/jobs": {
         parameters: {
             query?: never;
@@ -2781,6 +2875,7 @@ export interface components {
             question?: {
                 [key: string]: unknown;
             } | null;
+            to_agent?: components["schemas"]["AgentMessageOut"] | null;
         };
         /** ActivityRow */
         ActivityRow: {
@@ -2922,6 +3017,23 @@ export interface components {
              */
             owner_id: string;
             runner?: components["schemas"]["RunnerInfo"] | null;
+        };
+        /**
+         * AgentMessageOut
+         * @description A message for the agent: who it was written to, and what happened to it.
+         */
+        AgentMessageOut: {
+            /** Agent Id */
+            agent_id: string | null;
+            /** Agent Name */
+            agent_name: string;
+            state: components["schemas"]["Delivery"];
+            /** Stage */
+            stage: string | null;
+            /** Error */
+            error: string | null;
+            /** Delivered At */
+            delivered_at: string | null;
         };
         /** AgentOut */
         AgentOut: {
@@ -3118,6 +3230,29 @@ export interface components {
             /** Bindings */
             bindings: components["schemas"]["BindingIn"][];
         };
+        /** BoardDefaults */
+        BoardDefaults: {
+            /** Title */
+            title: string;
+            /** Description Md */
+            description_md: string;
+            /**
+             * Column Id
+             * Format: uuid
+             */
+            column_id: string;
+        };
+        /** BoardIn */
+        BoardIn: {
+            /** Add */
+            add: boolean;
+            /** Title */
+            title?: string | null;
+            /** Description Md */
+            description_md?: string | null;
+            /** Column Id */
+            column_id?: string | null;
+        };
         /** Body_upload_attachment_api_tasks__key__attachments_post */
         Body_upload_attachment_api_tasks__key__attachments_post: {
             /** File */
@@ -3151,6 +3286,96 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /** ChatAgentOut */
+        ChatAgentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Program */
+            program: string;
+        };
+        /** ChatBrief */
+        ChatBrief: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Project Key */
+            project_key: string;
+            /** State */
+            state: string;
+            /** Current Step */
+            current_step?: number | null;
+            /** Steps Total */
+            steps_total?: number | null;
+            /** Pr Url */
+            pr_url?: string | null;
+            /** Finish Outcome */
+            finish_outcome?: string | null;
+            /** Agent Name */
+            agent_name?: string | null;
+        };
+        /** ChatIn */
+        ChatIn: {
+            /** Project Key */
+            project_key: string;
+            /** Agent Id */
+            agent_id?: string | null;
+            /** Message */
+            message: string;
+        };
+        /** ChatOut */
+        ChatOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Project Key */
+            project_key: string;
+            /** Title */
+            title: string;
+            status: components["schemas"]["ChatStatus"];
+            agent: components["schemas"]["ChatAgentOut"] | null;
+            started_by: components["schemas"]["UserOut"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "talking" | "question" | "design_approval" | "plan_approval" | "building" | "in_review" | "human_code_review" | "escalation" | "offline" | "finished" | "ended";
+            /**
+             * Intent
+             * @default closed
+             * @enum {string}
+             */
+            intent: "answer" | "changes" | "tell" | "restart" | "new_round" | "closed";
+            /** Can Act */
+            can_act: boolean;
+            /** Rounds */
+            rounds: components["schemas"]["RoundOut"][];
+        };
+        /**
+         * ChatStatus
+         * @enum {string}
+         */
+        ChatStatus: "open" | "ended";
         /** Citation */
         Citation: {
             /** Path */
@@ -3204,6 +3429,11 @@ export interface components {
         CommentIn: {
             /** Body Md */
             body_md: string;
+            /**
+             * To Agent
+             * @default false
+             */
+            to_agent: boolean;
         };
         /** CommentOut */
         CommentOut: {
@@ -3228,6 +3458,7 @@ export interface components {
             created_at: string;
             /** Edited At */
             edited_at: string | null;
+            to_agent?: components["schemas"]["AgentMessageOut"] | null;
         };
         /** CompleteIn */
         CompleteIn: {
@@ -3386,6 +3617,11 @@ export interface components {
              * @default []
              */
             activity: components["schemas"]["ActivityRow"][];
+            /**
+             * Chats
+             * @default []
+             */
+            chats: components["schemas"]["ChatBrief"][];
             system?: components["schemas"]["SystemOut"] | null;
         };
         /** DayFinished */
@@ -3399,6 +3635,11 @@ export interface components {
             agents: number;
             /** People */
             people: number;
+            /**
+             * Chats
+             * @default 0
+             */
+            chats: number;
         };
         /** DecisionOut */
         DecisionOut: {
@@ -3426,6 +3667,12 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * Delivery
+         * @description What happened to a message for the agent.
+         * @enum {string}
+         */
+        Delivery: "waiting" | "sending" | "read_while_working" | "given_at_start";
         /**
          * DocKind
          * @enum {string}
@@ -4055,6 +4302,21 @@ export interface components {
             /** User Ids */
             user_ids: string[];
         };
+        /** MessageIn */
+        MessageIn: {
+            /** Body */
+            body: string;
+        };
+        /** MessageOut */
+        MessageOut: {
+            /**
+             * Intent
+             * @enum {string}
+             */
+            intent: "answer" | "changes" | "tell" | "restart" | "new_round" | "closed";
+            /** Round Key */
+            round_key: string;
+        };
         /** MethodologyIn */
         MethodologyIn: {
             /** Body Md */
@@ -4210,6 +4472,8 @@ export interface components {
             waiting_for: string[];
             /** Notification Id */
             notification_id?: string | null;
+            /** Chat Id */
+            chat_id?: string | null;
         };
         /**
          * Needs
@@ -4327,6 +4591,16 @@ export interface components {
              * @default 0
              */
             overdue_mine: number;
+            /**
+             * Open Chats
+             * @default 0
+             */
+            open_chats: number;
+            /**
+             * Chats Waiting On You
+             * @default 0
+             */
+            chats_waiting_on_you: number;
             /**
              * Failed 24H
              * @default 0
@@ -4758,6 +5032,8 @@ export interface components {
             stage: components["schemas"]["Stage"] | null;
             /** Link */
             link?: string | null;
+            /** Chat Id */
+            chat_id?: string | null;
         };
         /** QuickGroup */
         QuickGroup: {
@@ -4933,6 +5209,35 @@ export interface components {
          * @enum {string}
          */
         Role: "admin" | "manager" | "member" | "viewer";
+        /** RoundOut */
+        RoundOut: {
+            /** N */
+            n: number;
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Stage */
+            stage: string | null;
+            /** Status */
+            status: string | null;
+            /** Needs */
+            needs: string | null;
+            /** Current Step */
+            current_step: number | null;
+            /** Steps Total */
+            steps_total: number | null;
+            /** Finish Outcome */
+            finish_outcome: string | null;
+            /** Pr Url */
+            pr_url: string | null;
+            /** Branch */
+            branch: string | null;
+            /** Branch From */
+            branch_from: string | null;
+            /** Board */
+            board: ("pending" | "added" | "declined") | null;
+        };
         /** RunAgentOut */
         RunAgentOut: {
             /**
@@ -5025,6 +5330,8 @@ export interface components {
             question_from: string | null;
             /** Link */
             link: string;
+            /** Chat Id */
+            chat_id?: string | null;
         };
         /** SearchAdminOut */
         SearchAdminOut: {
@@ -5465,6 +5772,8 @@ export interface components {
              * @default false
              */
             branch_from_locked: boolean;
+            /** Chat Id */
+            chat_id?: string | null;
         };
         /** TaskRef */
         TaskRef: {
@@ -9780,6 +10089,235 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chats_api_chats_get: {
+        parameters: {
+            query?: {
+                project?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_chat_api_chats_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_api_chats__chat_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_message_api_chats__chat_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    end_chat_api_chats__chat_id__end_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    board_defaults_api_chats__chat_id__rounds__n__board_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                n: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardDefaults"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_board_api_chats__chat_id__rounds__n__board_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                n: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoundOut"];
                 };
             };
             /** @description Validation Error */

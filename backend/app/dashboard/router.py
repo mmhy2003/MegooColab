@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from app.auth.deps import AuthedUser
 from app.auth.models import Role
 from app.core.db import DbSession
-from app.dashboard import activity, agents, needs, system, tasks, workflows
+from app.dashboard import activity, agents, chats, needs, system, tasks, workflows
 from app.dashboard.schemas import DashboardOut, NeedsCount, Numbers, ScopeName
 from app.dashboard.scope import resolve_scope, viewer_zone
 
@@ -20,6 +20,7 @@ async def dashboard(user: AuthedUser, db: DbSession, scope: ScopeName = "teams",
     stages, in_progress, workflow_projects = await workflows.stages(db, s)
     agent_rows, queued = await agents.agents(db, s), await agents.queued(db, s)
     failed, success_rate = await agents.failed_runs(db, s)
+    chat_rows, open_chats, chats_waiting = await chats.chats(db, s)
     return DashboardOut(
         scope=scope,
         numbers=Numbers(
@@ -29,6 +30,7 @@ async def dashboard(user: AuthedUser, db: DbSession, scope: ScopeName = "teams",
             agents_working=sum(1 for a in agent_rows if a.status == "busy"),  # busy in scope, as Running now
             agents_online=sum(1 for a in agent_rows if a.status != "offline"),
             runs_queued=queued.total, failed_24h=failed, success_rate_24h=success_rate,
+            open_chats=open_chats, chats_waiting_on_you=chats_waiting,
         ),
         needs=need_rows,
         my_tasks=await tasks.my_tasks(db, user, s.tz),
@@ -39,6 +41,7 @@ async def dashboard(user: AuthedUser, db: DbSession, scope: ScopeName = "teams",
         finished_daily=await tasks.finished_daily(db, s),
         projects=await tasks.projects(db, s),
         activity=await activity.activity(db, s),
+        chats=chat_rows,
         system=await system.system(db, s.tz) if user.role == Role.admin else None,
     )
 

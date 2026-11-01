@@ -59,14 +59,14 @@ function remarkWikiLinks(titles: WikiTitles) {
 
 const textOf = (node: MdNode): string => node.value ?? (node.children ?? []).map(textOf).join("");
 
-/** A remark plugin: a mention `@[Name](user:<uuid>)` becomes the text `@Name`, and any other `user:` link its
- * plain text. Neither is ever a link. */
+/** A remark plugin: a mention `@[Name](user:<uuid>)` (or of the task's agent, `agent:<uuid>`) becomes the text
+ * `@Name`, and any other `user:` or `agent:` link its plain text. Neither is ever a link. */
 function remarkMentions() {
   const walk = (node: MdNode) => {
     if (!node.children) return;
     const out: MdNode[] = [];
     for (const child of node.children) {
-      if (child.type !== "link" || !child.url?.startsWith("user:")) {
+      if (child.type !== "link" || !(child.url?.startsWith("user:") || child.url?.startsWith("agent:"))) {
         walk(child);
         out.push(child);
         continue;

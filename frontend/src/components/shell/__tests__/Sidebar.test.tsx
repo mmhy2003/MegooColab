@@ -39,6 +39,14 @@ describe("Sidebar", () => {
     expect(await within(nav[0]).findByLabelText("3 need you")).toHaveTextContent("3");
   });
 
+  it("counts the chats waiting on you from the cheap count, not the list of chats", async () => {
+    const fetchMock = mockFetch((url) => (url === "/api/chats/count" ? json({ waiting: 2 }) : undefined));
+    wrap(<Sidebar user={member} />);
+    const chats = screen.getByRole("link", { name: /^Chats/ });
+    expect(await within(chats).findByLabelText("2 waiting on you")).toHaveTextContent("2");
+    expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain("/api/chats");
+  });
+
   it("shows no badge at zero", async () => {
     const fetchMock = mockFetch((url) => (url === "/api/dashboard/count" ? json({ needs_you: 0 }) : undefined));
     wrap(<Sidebar user={member} />);

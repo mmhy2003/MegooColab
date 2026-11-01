@@ -58,7 +58,8 @@ async def test_queued_lists_five_and_counts_all(client, db, world):
     await login(client, world.viewer)
     body = await dash(client)
     assert body["queued"]["total"] == 7 and len(body["queued"]["items"]) == 5
-    assert body["queued"]["items"][0] == {"task_key": "PAY-1", "stage": "plan", "link": "/projects/PAY/board?task=PAY-1"}
+    assert body["queued"]["items"][0] == {"task_key": "PAY-1", "stage": "plan", "link": "/projects/PAY/board?task=PAY-1",
+                                               "chat_id": None}
     assert body["numbers"]["runs_queued"] == 7
 
 

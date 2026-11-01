@@ -209,6 +209,7 @@ type agentReport struct {
 	PromptEffort string          `json:"prompt_effort"`
 	Prompts      []string        `json:"prompts"`
 	Cancelled    bool            `json:"cancelled"`
+	Steers       []string        `json:"steers"`
 	Steps        []struct {
 		Type    string `json:"type"`
 		Exists  *bool  `json:"exists"`

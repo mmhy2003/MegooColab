@@ -260,4 +260,33 @@ describe("ActivityThread workflow events", () => {
     expect(screen.getByText("Which one?")).toBeInTheDocument();
     expect(screen.getByText(/withdrawn/)).toBeInTheDocument();
   });
+
+  describe("messages for the agent", () => {
+    const message = (to_agent: ActivityItem["to_agent"]): ActivityItem[] => [
+      { type: "comment", id: "m1", at: "2026-10-22T10:05:00Z", actor: { ...actor, name: "Mo" }, body_md: "Use RetryPolicy", edited_at: null, to_agent },
+    ];
+    const base = { agent_id: "a1", agent_name: "laptop-claude", stage: null, error: null, delivered_at: null };
+    const columnNames = new Map<string, string>();
+    const userNames = new Map<string, string>();
+
+    it.each([
+      [{ ...base, state: "waiting" as const }, "waiting: goes to its next run"],
+      [{ ...base, state: "waiting" as const, error: "boom" }, "couldn't be delivered (boom): goes to its next run"],
+      [{ ...base, state: "sending" as const }, "sending…"],
+      [{ ...base, state: "read_while_working" as const }, "read while working"],
+      [{ ...base, state: "given_at_start" as const, stage: "plan" }, "given at the start of the plan run"],
+    ])("shows %o as %s", (toAgent, text) => {
+      render(<ActivityThread items={message(toAgent)} columnNames={columnNames} userNames={userNames} />);
+      const row = screen.getByRole("listitem");
+      expect(row.textContent).toContain("Mo → laptop-claude");
+      expect(row.textContent).toContain(text);
+      expect(row.textContent).toContain("Use RetryPolicy");
+      expect(row.querySelector("[data-agent-message]")).not.toBeNull();
+    });
+
+    it("an ordinary comment has no agent heading", () => {
+      render(<ActivityThread items={items} columnNames={columnNames} userNames={userNames} />);
+      expect(screen.queryByText(/→/)).toBeNull();
+    });
+  });
 });

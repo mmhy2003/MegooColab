@@ -34,6 +34,7 @@ from app.runner.protocol import (
     ConfigChanged,
     Hello,
     RunFinished,
+    RunSteerResult,
     RunUpdate,
     Welcome,
     WelcomeAgent,
@@ -209,6 +210,11 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
         if await _on_this_machine(conn, msg.run_id):
             await _run_message(finish_run, conn.user_id, msg.run_id, msg.outcome, msg.summary, msg.error, msg)
         conn.run_ids.discard(msg.run_id)
+    elif isinstance(msg, RunSteerResult):
+        if await _on_this_machine(conn, msg.run_id):
+            from app.workflow import instructions  # local: the workflow imports this module's neighbours
+
+            await _run_message(instructions.on_steer_result, msg.run_id, msg.message_id, msg.outcome, msg.error)
     # Heartbeat only refreshes last_seen
     return True
 

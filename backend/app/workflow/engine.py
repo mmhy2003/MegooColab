@@ -156,6 +156,10 @@ async def record_workflow_event(
 ) -> TaskEvent:
     event = await record_event(db, task, actor_id, kind, data or {})
     await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
+    if task.chat_id is not None:
+        from app.chats.service import touch  # local: the chats modules import the engine
+
+        await touch(db, task.chat_id)
     return event
 
 
@@ -284,10 +288,15 @@ async def wait_for(db: AsyncSession, wf: TaskWorkflow, needs: Needs, *, actor_id
     agent_id = wf.agent_id or task.assignee_agent_id
     owner = await db.scalar(select(Agent.owner_id).where(Agent.id == agent_id)) if agent_id else None
     key = f"{project.key}-{task.number}"
+    recipients, link = [owner, task.assignee_user_id], f"/projects/{project.key}/board?task={key}"
+    if task.in_chat:  # a chat round: the person who started the chat follows it, in the chat
+        from app.chats.service import chat_people  # local: the chats modules import the engine
+
+        recipients, link = await chat_people(db, task)
     await notifications.notify(
-        db, [owner, task.assignee_user_id], Kind.needs_you,
+        db, recipients, Kind.needs_you,
         title=NEEDS_TITLES[wf.needs].format(key=key, reason=wf.escalation_reason or "escalated"), body=task.title,
-        link=f"/projects/{project.key}/board?task={key}", task_id=task.id, project_id=project.id, actor_id=actor_id,
+        link=link, task_id=task.id, project_id=project.id, actor_id=actor_id,
     )
 
 

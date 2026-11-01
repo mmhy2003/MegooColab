@@ -21,6 +21,10 @@ type Step struct {
 	Commit      *CommitStep `json:"commit,omitempty"`
 	ReportFile  *PathStep   `json:"report_file,omitempty"`
 	McpCall     *McpStep    `json:"mcp_call,omitempty"`
+	// AwaitSteerMS waits up to this long for a steer (_session/steering), then
+	// says "steered: " and the steer's last line (without its "> "). It goes on
+	// when none arrives.
+	AwaitSteerMS *int `json:"await_steer_ms,omitempty"`
 
 	// IfPromptContains makes the step a conditional block: Then runs only when
 	// the current turn's prompt contains the text. One scenario can so drive
@@ -104,6 +108,8 @@ func (s Step) typeName() string {
 		return "report_file"
 	case s.McpCall != nil:
 		return "mcp_call"
+	case s.AwaitSteerMS != nil:
+		return "await_steer"
 	}
 	return "unknown"
 }
@@ -152,6 +158,7 @@ type Report struct {
 	SessionEvents []string        `json:"session_events"` // new:<id> | load:<id> | resume:<id>
 	Replayed      int             `json:"replayed"`       // history updates sent while loading
 	McpServers    json.RawMessage `json:"mcp_servers"`    // what the last session request carried
+	Steers        []string        `json:"steers"`         // the text of every steer injected into a turn
 }
 
 type InitSummary struct {

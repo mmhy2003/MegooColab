@@ -4,6 +4,7 @@ from enum import StrEnum
 
 from sqlalchemy import (
     CheckConstraint,
+    Index,
     Column,
     Date,
     DateTime,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -94,6 +96,12 @@ class Task(IdMixin, TimestampMixin, Base):
     # production fix is also brought back into (None when the work started from the default branch)
     start_branch: Mapped[str | None] = mapped_column(String(200))
     back_merge_into: Mapped[str | None] = mapped_column(String(200))
+    # a round of an agent chat (app.chats): kept off the board, counts and search while in_chat; adding it to the
+    # board clears in_chat (chat_board "added") and it becomes an ordinary task, its history kept
+    chat_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("chats.id", ondelete="SET NULL"), index=True)
+    chat_round: Mapped[int | None]
+    in_chat: Mapped[bool] = mapped_column(default=False, server_default=false())
+    chat_board: Mapped[str | None] = mapped_column(String(10))  # "added" | "declined" once decided
 
 
 class LinkKind(StrEnum):
@@ -122,6 +130,15 @@ class TaskEvent(IdMixin, Base):
     )
 
 
+class Delivery(StrEnum):
+    """What happened to a message for the agent."""
+
+    waiting = "waiting"  # for the agent's next run
+    sending = "sending"  # steered into a running session, no answer from the runner yet
+    read_while_working = "read_while_working"
+    given_at_start = "given_at_start"
+
+
 class Comment(IdMixin, Base):
     __tablename__ = "comments"
 
@@ -132,6 +149,17 @@ class Comment(IdMixin, Base):
         DateTime(timezone=True), server_default=func.now(), index=True
     )
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # A message for the task's agent (to_agent_id set): an instruction, delivered into its running session or at
+    # its next run. to_agent_name keeps the name it was written to, also after a reassignment or deletion.
+    to_agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"))
+    to_agent_name: Mapped[str | None] = mapped_column(String(100))
+    delivery: Mapped[Delivery | None] = mapped_column(String(20))
+    delivery_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
+    delivery_stage: Mapped[str | None] = mapped_column(String(20))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_error: Mapped[str | None] = mapped_column(String(200))
+
+    __table_args__ = (Index("ix_comments_task_id_delivery", "task_id", "delivery"),)
 
 
 class Attachment(IdMixin, Base):

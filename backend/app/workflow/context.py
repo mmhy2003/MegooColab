@@ -130,7 +130,8 @@ def _item_text(item: Any) -> str:
 async def _thread(db: AsyncSession, task: Task) -> list[str]:
     # events are bookkeeping, not conversation: fetch wider so they cannot crowd out the latest 50 items
     items = await activity_items(db, task, limit=MAX_THREAD_ITEMS * 4)
-    texts = [_item_text(i) for i in items if i.type in ("comment", "question")]
+    # messages for the agent are instructions, in a section of their own (instructions.kept_in_mind)
+    texts = [_item_text(i) for i in items if i.type in ("comment", "question") and getattr(i, "to_agent", None) is None]
     return texts[-MAX_THREAD_ITEMS:]
 
 
@@ -193,6 +194,9 @@ async def build_prompt(
     meth = await methodology.current(db, key_override or ROLE_KEY[role])
     key = f"{(await db.get(Project, task.project_id)).key}-{task.number}"
     thread = await _thread(db, task)
+    from app.workflow.instructions import kept_in_mind  # local: instructions imports this module
+
+    instructions = await kept_in_mind(db, task)
 
     design = await _approved(db, task.id, DocKind.design) if role == RunRole.plan or role in BUILD_ROLES else None
     plan = await _approved(db, task.id, DocKind.plan) if role in BUILD_ROLES else None
@@ -251,6 +255,8 @@ async def build_prompt(
             + wrap_untrusted("task", f"{task.title}\n\n{description}".rstrip())
             + desc_note
         )
+        if instructions:  # MegooColab's framing around escaped, quoted text: never trimmed for the thread
+            parts.append(instructions)
         thread_note = f"\n({dropped} older thread items omitted to fit the prompt size limit.)" if dropped else ""
         body = wrap_untrusted("thread", "\n\n".join(thread)) if thread else "(no thread items)"
         parts.append("## Thread\n" + body + thread_note)

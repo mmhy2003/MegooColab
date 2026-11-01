@@ -34,6 +34,48 @@ function reveal(scroller: HTMLElement, target: HTMLElement) {
   target.focus({ preventScroll: true });
 }
 
+// the corner stack: 1rem from the bottom and right edges, up to three 36px buttons with 8px gaps, about 3rem wide
+const STACK_ZONE = 16 + 3 * 44;
+const STACK_WIDTH = 64;
+const PILL_WIDTH = 160; // "Following live", in the bottom-left corner
+const PILL_ZONE = 16 + 28;
+
+export type Lift = { right: number; left: number };
+const NO_LIFT: Lift = { right: 0, left: 0 };
+
+/**
+ * How far the corner buttons (right) and the "Following live" note (left) must rise so they never cover `avoid`
+ * (the floating comment box): the distance from the scroller's bottom to its top while it sits in that corner,
+ * else 0. On a wide layout the box is in the left column, away from the buttons; on a narrow one it floats right
+ * under them.
+ */
+export function useLiftAbove(scrollRef: RefObject<HTMLElement | null>, avoid: HTMLElement | null): Lift {
+  const [lift, setLift] = useState<Lift>(NO_LIFT);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !avoid) return;
+    const measure = () => {
+      const s = el.getBoundingClientRect();
+      const c = avoid.getBoundingClientRect();
+      const visible = c.top < s.bottom;
+      const rise = Math.ceil(s.bottom - c.top);
+      const right = visible && c.right > s.right - STACK_WIDTH && c.bottom > s.bottom - STACK_ZONE ? rise : 0;
+      const left = visible && c.left < s.left + PILL_WIDTH && c.bottom > s.bottom - PILL_ZONE ? rise : 0;
+      setLift((was) => (was.right === right && was.left === left ? was : { right, left }));
+    };
+    measure();
+    el.addEventListener("scroll", measure, { passive: true });
+    const sizes = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    sizes?.observe(el);
+    sizes?.observe(avoid);
+    return () => {
+      el.removeEventListener("scroll", measure);
+      sizes?.disconnect();
+    };
+  }, [scrollRef, avoid]);
+  return avoid ? lift : NO_LIFT;
+}
+
 /**
  * The corner buttons of a task: back to top, go to the latest Activity and follow it live, and jump to what waits
  * on the person. Anything a person can decide marks itself with `data-waiting` (its kind); they are counted and
@@ -49,11 +91,14 @@ export function JumpButtons({
   activity,
   loadEarlier,
   expectQuestion = false,
+  lift = NO_LIFT,
 }: {
   scrollRef: RefObject<HTMLElement | null>;
   activity: Entry[];
   loadEarlier?: () => Promise<boolean>;
   expectQuestion?: boolean;
+  /** px each corner rises: the floating comment box's height where it sits under it (useLiftAbove) */
+  lift?: Lift;
 }) {
   const subscribe = useCallback(
     (onChange: () => void) => {
@@ -179,18 +224,20 @@ export function JumpButtons({
 
   const round =
     "pointer-events-auto relative flex size-9 items-center justify-center rounded-full border bg-surface shadow-lg transition-colors hover:border-cyan";
+  const bottom = `calc(1rem + ${lift.right}px)`;
   const downLabel = unseen ? `Go to the latest and follow (${unseen} new)` : "Go to the latest and follow";
   return (
     <>
       {following && (
         <p
           role="status"
-          className="pointer-events-none absolute bottom-4 left-4 z-10 rounded-full border border-cyan bg-surface px-2 py-0.5 text-[11px] text-cyan-ink"
+          className="pointer-events-none absolute left-4 z-20 rounded-full border border-cyan bg-surface px-2 py-0.5 text-[11px] text-cyan-ink"
+          style={{ bottom: `calc(1rem + ${lift.left}px)` }}
         >
           <span aria-hidden>● </span>Following live
         </p>
       )}
-      <div className="pointer-events-none absolute right-4 bottom-4 z-10 flex flex-col items-end gap-2">
+      <div data-jump-buttons className="pointer-events-none absolute right-4 z-20 flex flex-col items-end gap-2" style={{ bottom }}>
         {waiting > 0 && (
           <Hint label="Go to the next thing waiting on you">
             <button

@@ -1,9 +1,10 @@
 "use client";
 
-import { Activity, BarChart3, Bot, FolderKanban, GitBranch, History, Inbox, UserRoundCheck } from "lucide-react";
+import { Activity, BarChart3, Bot, FolderKanban, GitBranch, History, Inbox, MessageCircle, UserRoundCheck } from "lucide-react";
 import { useState } from "react";
 
 import { AgentsCard } from "@/components/dashboard/AgentsCard";
+import { ChatsCard } from "@/components/dashboard/ChatsCard";
 import { FinishedChart } from "@/components/dashboard/FinishedChart";
 import { Kpis } from "@/components/dashboard/Kpis";
 import { MyTasks } from "@/components/dashboard/MyTasks";
@@ -47,6 +48,7 @@ export function Dashboard({ user }: { user: User }) {
           ) : (
             <Widget title="Needs you" icon={Inbox} loading />
           )}
+          {data ? <ChatsCard chats={data.chats ?? []} /> : <Widget title="Chats" icon={MessageCircle} loading />}
           {data ? <MyTasks items={data.my_tasks} /> : <Widget title="My tasks" icon={UserRoundCheck} loading />}
         </div>
         <div className="grid min-w-0 content-start gap-3">
@@ -63,7 +65,7 @@ export function Dashboard({ user }: { user: User }) {
         {data ? (
           <FinishedChart days={data.finished_daily} />
         ) : (
-          <Widget title="Tasks finished · last 14 days" icon={BarChart3} loading />
+          <Widget title="Finished · last 14 days" icon={BarChart3} loading />
         )}
         {data ? <ProjectsCard projects={data.projects} /> : <Widget title="Projects" icon={FolderKanban} loading />}
         {data ? <RecentActivity rows={data.activity} /> : <Widget title="Recent activity" icon={History} loading />}

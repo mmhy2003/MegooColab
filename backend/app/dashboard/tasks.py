@@ -38,7 +38,7 @@ async def task_numbers(db: AsyncSession, scope: Scope) -> dict[str, int]:
             _count(and_(overdue, Task.assignee_user_id == scope.user.id)).label("overdue_mine"),
         )
         .select_from(Task).join(BoardColumn, BoardColumn.id == Task.column_id)
-        .where(Task.type.in_(COUNTED_TYPES), scope.in_projects(Task.project_id), scope.mine_tasks())
+        .where(Task.type.in_(COUNTED_TYPES), scope.in_projects(Task.project_id), scope.board_tasks())
     )).one()
     return dict(row._mapping)
 
@@ -71,22 +71,24 @@ async def finished_daily(db: AsyncSession, scope: Scope) -> list[DayFinished]:
     first = scope.today() - timedelta(days=FINISHED_DAYS - 1)
     start = scope.day_start(first)
     day = func.floor((func.extract("epoch", Task.completed_at) - start.timestamp()) / 86400).label("day")
-    by_agent = Task.assignee_agent_id.is_not(None)
+    chat = Task.chat_id.is_not(None)  # a chat's round, on the board or not
+    by_agent = and_(~chat, Task.assignee_agent_id.is_not(None))
     rows = await db.execute(
-        select(day, _count(by_agent), _count(~by_agent))
+        select(day, _count(by_agent), _count(and_(~chat, Task.assignee_agent_id.is_(None))), _count(chat))
         .where(Task.completed_at >= start, Task.type.in_(COUNTED_TYPES), scope.in_projects(Task.project_id),
                scope.mine_tasks())
         .group_by(day)
     )
-    counts = {int(d): (agents, people) for d, agents, people in rows.all()}
+    counts = {int(d): (agents, people, chats) for d, agents, people, chats in rows.all()}
     return [
-        DayFinished(day=first + timedelta(days=i), agents=counts.get(i, (0, 0))[0], people=counts.get(i, (0, 0))[1])
+        DayFinished(day=first + timedelta(days=i), agents=counts.get(i, (0, 0, 0))[0],
+                    people=counts.get(i, (0, 0, 0))[1], chats=counts.get(i, (0, 0, 0))[2])
         for i in range(FINISHED_DAYS)
     ]
 
 
 async def projects(db: AsyncSession, scope: Scope) -> list[ProjectRow]:
-    counted = and_(Task.project_id == Project.id, Task.type.in_(COUNTED_TYPES), scope.mine_tasks())
+    counted = and_(Task.project_id == Project.id, Task.type.in_(COUNTED_TYPES), scope.board_tasks())
     rows = await db.execute(
         select(
             Project.key, Project.name,

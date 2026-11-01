@@ -96,8 +96,18 @@ class RunFinished(_FromRunner):
     git_after: GitState | None = None
 
 
+class RunSteerResult(_FromRunner):
+    """What became of a run_steer: injected into the running turn, or not (the message waits for the next run)."""
+
+    type: Literal["run_steer_result"]
+    run_id: uuid.UUID
+    message_id: uuid.UUID
+    outcome: Literal["injected", "not_running", "unsupported", "failed"]
+    error: Annotated[str, _trunc(200)] | None = None
+
+
 RunnerMessage = Annotated[
-    Hello | Heartbeat | AgentStatus | RunUpdate | RunFinished, Field(discriminator="type")
+    Hello | Heartbeat | AgentStatus | RunUpdate | RunFinished | RunSteerResult, Field(discriminator="type")
 ]
 runner_message = TypeAdapter(RunnerMessage)
 
@@ -237,4 +247,13 @@ class ConfigChanged(BaseModel):
     type: Literal["config_changed"] = "config_changed"
 
 
-ServerMessage = Welcome | RunStart | RunCancel | ConfigChanged
+class RunSteer(BaseModel):
+    """A person's message for the agent, for its running turn (capability steer/1)."""
+
+    type: Literal["run_steer"] = "run_steer"
+    run_id: uuid.UUID
+    message_id: uuid.UUID
+    text: str
+
+
+ServerMessage = Welcome | RunStart | RunCancel | ConfigChanged | RunSteer

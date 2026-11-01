@@ -11,6 +11,7 @@ from app.a2a.models import Question
 from app.agent_runs.models import AgentRun, RunStatus
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import agent_statuses, runner_info
+from app.chats.service import chat_link
 from app.dashboard.schemas import AgentItem, Queued, QueuedItem, RunningItem
 from app.dashboard.scope import Scope, task_link
 from app.projects.models import Project
@@ -74,7 +75,8 @@ async def running(db: AsyncSession, scope: Scope) -> list[RunningItem]:
     )
     stmt = (
         _runs(scope, AgentRun.id, Agent.name, AgentRun.started_at, Project.key, Task.number, AgentRun.stage,
-              AgentRun.step, steps_total, TaskWorkflow.review_round, AgentRun.question_id, asking_project.key)
+              AgentRun.step, steps_total, TaskWorkflow.review_round, AgentRun.question_id, asking_project.key,
+              Task.chat_id, Task.in_chat)
         .join(Agent, Agent.id == AgentRun.agent_id)
         .outerjoin(Project, Project.id == Task.project_id)
         .outerjoin(TaskWorkflow, TaskWorkflow.task_id == AgentRun.task_id)
@@ -84,7 +86,7 @@ async def running(db: AsyncSession, scope: Scope) -> list[RunningItem]:
         .order_by(AgentRun.started_at.desc().nulls_last())
     )
     out = []
-    for run_id, name, started, key, number, stage, step, total, rounds, question_id, asked_from in (
+    for run_id, name, started, key, number, stage, step, total, rounds, question_id, asked_from, chat_id, in_chat in (
         await db.execute(stmt)
     ).all():
         out.append(RunningItem(
@@ -93,7 +95,8 @@ async def running(db: AsyncSession, scope: Scope) -> list[RunningItem]:
             steps_total=total if stage == Stage.build else None,
             review_round=rounds if stage == Stage.review else None,
             question_from=asked_from if question_id else None,
-            link=task_link(key, number) if key else f"/questions/{question_id}",
+            link=(chat_link(chat_id) if in_chat else task_link(key, number)) if key else f"/questions/{question_id}",
+            chat_id=chat_id if in_chat else None,
         ))
     return out
 

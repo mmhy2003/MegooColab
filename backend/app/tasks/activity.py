@@ -19,7 +19,7 @@ from app.core.text import NoNulStr, strip_nul
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.access import get_project_for
-from app.tasks.models import Attachment, Comment, Task, TaskEvent
+from app.tasks.models import Attachment, Comment, Delivery, Task, TaskEvent
 from app.tasks.service import get_task_for
 from app.workflow.models import Mockup, WorkflowQuestion
 
@@ -29,8 +29,32 @@ MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 CHUNK = 1024 * 1024
 
 
+MAX_AGENT_MESSAGE_CHARS = 8_000
+
+
 class CommentIn(BaseModel):
     body_md: NoNulStr = Field(min_length=1, max_length=50_000)
+    to_agent: bool = False  # a message for the task's agent (an instruction), not an ordinary comment
+
+
+class AgentMessageOut(BaseModel):
+    """A message for the agent: who it was written to, and what happened to it."""
+
+    agent_id: uuid.UUID | None
+    agent_name: str
+    state: Delivery
+    stage: str | None
+    error: str | None
+    delivered_at: datetime | None
+
+
+def agent_message_out(c: Comment) -> AgentMessageOut | None:
+    if c.delivery is None:
+        return None
+    return AgentMessageOut(
+        agent_id=c.to_agent_id, agent_name=c.to_agent_name or "the agent", state=c.delivery,
+        stage=c.delivery_stage, error=c.delivery_error, delivered_at=c.delivered_at,
+    )
 
 
 class CommentOut(BaseModel):
@@ -42,6 +66,11 @@ class CommentOut(BaseModel):
     body_md: str
     created_at: datetime
     edited_at: datetime | None
+    to_agent: AgentMessageOut | None = None
+
+
+def comment_out(c: Comment) -> CommentOut:
+    return CommentOut.model_validate(c).model_copy(update={"to_agent": agent_message_out(c)})
 
 
 class ActivityItem(BaseModel):
@@ -56,6 +85,7 @@ class ActivityItem(BaseModel):
     # type "question": {id, body, choices, status, mockup: {id, version, title}|None, answered_by,
     # answer_choice, answer_text}
     question: dict | None = None
+    to_agent: AgentMessageOut | None = None  # type "comment": a message for the task's agent
 
 
 class AttachmentOut(BaseModel):
@@ -135,7 +165,7 @@ async def activity_items(
     }
     items = [
         ActivityItem(type="comment", id=c.id, at=c.created_at, actor=actors.get(c.author_user_id),
-                     body_md=c.body_md, edited_at=c.edited_at)
+                     body_md=c.body_md, edited_at=c.edited_at, to_agent=agent_message_out(c))
         for c in comments
     ] + [
         ActivityItem(type="event", id=e.id, at=e.created_at, actor=actors.get(e.actor_user_id),
@@ -173,10 +203,12 @@ async def task_activity(
 # ---- comments ---------------------------------------------------------------
 
 
-async def create_comment(db, user: User, key: str, body_md: str) -> Comment:
+async def create_comment(db, user: User, key: str, body_md: str, *, to_agent: bool = False) -> Comment:
     body_md = strip_nul(body_md)  # also reached by MCP, which bypasses CommentIn
     task, project = await get_task_for(db, user, key, write=True)
     comment = Comment(task_id=task.id, author_user_id=user.id, body_md=body_md)
+    if to_agent:
+        await _address_to_agent(db, user, task, comment)
     db.add(comment)
     await db.flush()
     await db.refresh(comment)
@@ -194,9 +226,34 @@ async def create_comment(db, user: User, key: str, body_md: str) -> Comment:
     return comment
 
 
+async def _address_to_agent(db, user: User, task: Task, comment: Comment) -> None:
+    """Only the people who direct the task's work may instruct its agent (WF-6). The workflow row is locked
+    first, so a run being sent out at the same moment either takes this message or leaves it for the steer."""
+    from app.agents.models import Agent
+    from app.workflow import engine  # local: the workflow imports the task modules
+
+    if task.assignee_agent_id is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "no_agent")
+    await engine.require_actor(db, user, task)
+    if len(comment.body_md) > MAX_AGENT_MESSAGE_CHARS:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "message_too_long")
+    await engine.lock_workflow(db, task.id)
+    agent = await db.get(Agent, task.assignee_agent_id)
+    comment.to_agent_id = agent.id
+    comment.to_agent_name = agent.name[:100]
+    comment.delivery = Delivery.waiting
+
+
 @router.post("/api/tasks/{key}/comments", status_code=status.HTTP_201_CREATED)
 async def add_comment(key: str, body: CommentIn, user: AuthedUser, db: DbSession) -> CommentOut:
-    return CommentOut.model_validate(await create_comment(db, user, key, body.body_md))
+    comment = await create_comment(db, user, key, body.body_md, to_agent=body.to_agent)
+    out = comment_out(comment)
+    if body.to_agent:
+        from app.workflow.instructions import steer_after_commit  # local: the workflow imports this module
+
+        await db.commit()  # the runner's answer must find the message
+        await steer_after_commit(comment.id)
+    return out
 
 
 async def _own_comment(db, user: User, comment_id: uuid.UUID, allow_admin: bool) -> tuple[Comment, Task]:
@@ -212,6 +269,15 @@ async def _own_comment(db, user: User, comment_id: uuid.UUID, allow_admin: bool)
 @router.patch("/api/comments/{comment_id}")
 async def edit_comment(comment_id: uuid.UUID, body: CommentIn, user: AuthedUser, db: DbSession) -> CommentOut:
     comment, task = await _own_comment(db, user, comment_id, allow_admin=False)
+    if comment.delivery not in (None, Delivery.waiting):
+        raise HTTPException(status.HTTP_409_CONFLICT, "message_delivered")  # the agent has (or is getting) this text
+    if comment.delivery is not None:
+        from app.workflow import engine  # local: the workflow imports the task modules
+
+        # it still goes out framed as an instruction: only someone who may direct the task's work can rewrite it
+        await engine.require_actor(db, user, task)
+        if len(body.body_md) > MAX_AGENT_MESSAGE_CHARS:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "message_too_long")
     comment.body_md = body.body_md
     comment.edited_at = datetime.now(UTC)
     await _changed(db, task, "comment.updated")
@@ -219,7 +285,7 @@ async def edit_comment(comment_id: uuid.UUID, body: CommentIn, user: AuthedUser,
     from app.memory.sources import queue_extract
 
     await queue_extract(db, "comment", comment.id)
-    return CommentOut.model_validate(comment)
+    return comment_out(comment)
 
 
 @router.delete("/api/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)

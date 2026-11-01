@@ -10,7 +10,7 @@ import { MachineField } from "@/components/agents/MachineField";
 import { ModelField } from "@/components/agents/ModelField";
 import { RunnerSetup } from "@/components/agents/RunnerSetup";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClass } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -193,7 +193,12 @@ export default function AgentsPage() {
         <PageHeader
           title="My agents"
           subtitle="Register the coding agents on your computer and tell each one where a project's repository lives."
-          actions={<Button onClick={() => setAdding(true)}>Add agent</Button>}
+          actions={
+            <>
+              <a href="#runner" className={buttonClass("ghost")}>Runner commands</a>
+              <Button onClick={() => setAdding(true)}>Add agent</Button>
+            </>
+          }
         />
         {agents.error && <p role="alert" className="text-sm text-pink">{errorMessage(agents.error)}</p>}
         <ul className="space-y-3">
@@ -210,9 +215,9 @@ export default function AgentsPage() {
           {agents.data?.length === 0 && <li className="card px-3 py-6 text-center text-sm text-muted-foreground">No agents yet.</li>}
         </ul>
       </div>
-      <section className="card space-y-3 p-4">
-        <h2 className="text-sm font-bold text-cyan-ink">Install the runner</h2>
-        <RunnerSetup />
+      <section id="runner" aria-labelledby="runner-heading" className="card scroll-mt-4 space-y-3 p-4">
+        <h2 id="runner-heading" className="text-sm font-bold text-cyan-ink">Runner</h2>
+        <RunnerSetup hasAgents={(agents.data?.length ?? 0) > 0} />
       </section>
       {adding && (
         <AddAgentDialog

@@ -107,6 +107,8 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
 
 MENTION = re.compile(r"@\[([^\]\n]{1,200})\]\(user:([0-9a-f-]{36})\)")
 MENTION_CAP = 20
+# the task's agent, mentioned in a message for it: `@[Agent name](agent:<uuid>)`
+AGENT_MENTION = re.compile(r"@\[([^\]\n]{1,200})\]\(agent:([0-9a-f-]{36})\)")
 
 
 def mentioned_user_ids(body_md: str) -> list[uuid.UUID]:
@@ -123,5 +125,5 @@ def mentioned_user_ids(body_md: str) -> list[uuid.UUID]:
 
 
 def plain_mentions(body_md: str) -> str:
-    """Mention tokens as `@Name`, for a notification's text."""
-    return MENTION.sub(lambda m: f"@{m.group(1)}", body_md)
+    """Mention tokens (people and agents) as `@Name`, for a notification's text."""
+    return AGENT_MENTION.sub(lambda m: f"@{m.group(1)}", MENTION.sub(lambda m: f"@{m.group(1)}", body_md))

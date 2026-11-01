@@ -122,6 +122,9 @@ async def _transition(
         await publish_agents_updated(db, owner_id, await _answering_projects(db, run))
         await routing.on_answer_run_finished(db, run)
         return
+    from app.workflow import instructions  # local: the workflow imports this module
+
+    await instructions.release_on_run_end(db, run)
     task = await db.get(Task, run.task_id)
     data = {"run_id": str(run.id), "agent_id": str(run.agent_id), **(extra or {})}
     if reason:
@@ -301,8 +304,20 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
         await db.commit()
         return True
     task_key = f"{project_key}-{task.number}"
+    from app.workflow import instructions  # local: the workflow imports this module
+
+    # a resumed session may not have seen what other sessions were told: it gets every delivered message again
+    resumed = bool(run.workflow_role and run.resume_session_ref)
+    earlier = await instructions.kept_in_mind(db, task) if resumed else None
+    # waiting messages for the agent go out with this run: the workflow lock is held, so none can slip between
+    new_instructions, given = await instructions.take_waiting(db, run, task)
+    prompt = run.prompt
     try:
         v2 = await _v2_start_fields(db, run, task, task_key) if run.workflow_role else {}
+        if resumed and (earlier or new_instructions):
+            v2["resume_prompt"] = "\n\n".join(p for p in (run.resume_prompt, earlier, new_instructions) if p)
+        elif new_instructions:
+            prompt = f"{prompt}\n\n{new_instructions}"
         repos = await db.execute(
             select(ProjectRepository.url, ProjectRepository.default_branch)
             .where(ProjectRepository.project_id == task.project_id)
@@ -321,7 +336,7 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
             ),
             local_path=local_path,
             policy=run.policy,
-            prompt=run.prompt,
+            prompt=prompt,
             branch=branch,
             **v2,
         )
@@ -341,6 +356,7 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
         await conn.send(payload)
     except RunnerClosed:
         conn.run_ids.discard(run.id)
+        await instructions.release(db, given)
         run.status = RunStatus.queued
         run.started_at = None
         run.mcp_token_hash = None

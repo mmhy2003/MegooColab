@@ -138,7 +138,7 @@ test("agents end to end", async ({ browser, request }) => {
   await page.getByLabel("Local path").fill(repo);
   await page.getByRole("button", { name: "Save bindings" }).click();
   await expect(page.getByLabel("Local path")).toHaveValue(repo);
-  await expect(page.getByText("Offline")).toBeVisible();
+  await expect(page.getByText("Offline", { exact: true })).toBeVisible(); // not the Runner card's troubleshooting note
 
   // 4-5. start the runner; the agent is online within 5 s
   launch(token);

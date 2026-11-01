@@ -117,10 +117,13 @@ type run struct {
 	// held is the end of the message text so far that may be the start of it.
 	secret string
 	held   string // guarded by emitMu
+
+	steer steering // people's messages for the running turn
 }
 
 // emit sends one metadata update with the next seq. The acpclient calls it in order.
 func (r *run) emit(kind string, data map[string]any) {
+	r.turnAlive() // the agent's first update of its turn: it is in its turn, held steers can go in
 	r.emitMu.Lock()
 	defer r.emitMu.Unlock()
 	if r.closed || r.stale() {
@@ -248,6 +251,11 @@ func (m *Manager) Dispatch(ctx context.Context, env protocol.Envelope) {
 		var rc protocol.RunCancel
 		if env.Into(&rc) == nil {
 			m.HandleRunCancel(rc.RunID)
+		}
+	case protocol.TypeRunSteer:
+		var rs protocol.RunSteer
+		if env.Into(&rs) == nil {
+			m.HandleRunSteer(rs)
 		}
 	}
 	// config_changed needs no action: the server follows it with a welcome.
@@ -526,6 +534,7 @@ func (m *Manager) Shutdown(ctx context.Context) {
 func (m *Manager) execute(r *run, rs protocol.RunStart, agent protocol.WelcomeAgent) {
 	defer m.wg.Done()
 	outcome, errMsg := m.drive(r, rs, agent)
+	r.endTurn()          // a run that never reached its turn: held steers go back to the server
 	if r.client != nil { // the process is gone; send what the agent said last
 		r.client.Flush()
 	}
@@ -798,10 +807,16 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return "cancelled", ""
 	}
 
+	r.beginTurn(ac, sess.id, steeringSupported(initResp.Meta))
 	resp, err := ac.Prompt(r.ctx, acp.PromptRequest{
 		SessionId: sess.id,
 		Prompt:    []acp.ContentBlock{acp.TextBlock(sess.prompt)},
 	})
+	if r.endTurn() {
+		// a steer arrived as the turn ended and the adapter (Codex) started a turn for it: stop that turn, the
+		// server gives the message to the next run
+		_ = ac.Cancel(context.WithoutCancel(r.ctx), acp.CancelNotification{SessionId: sess.id})
+	}
 	client.Flush()
 	if err != nil {
 		return fail("prompt_failed", err)
