@@ -30,7 +30,7 @@ async def _in_scope(db: AsyncSession, scope: Scope) -> list[Chat]:
 async def chats(db: AsyncSession, scope: Scope) -> tuple[list[ChatBrief], int, int]:
     """The open chats shown (most recent first), how many are open, and how many wait on the viewer."""
     outs = [await chat_out(db, c, scope.user) for c in await _in_scope(db, scope)]
-    waiting = sum(1 for o in outs if o.can_act and o.state in WAITING)
+    waiting = sum(1 for o in outs if o.can_act and o.state in WAITING)  # within the scope (Mine: the viewer's)
     shown = sorted(outs, key=lambda o: o.last_activity_at, reverse=True)[:CHATS_SHOWN]
     briefs = [
         ChatBrief(

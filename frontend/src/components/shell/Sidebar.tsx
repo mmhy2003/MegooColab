@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Brand } from "@/components/Brand";
-import { useChats, waitingOnMe } from "@/lib/chats";
+import { useChatsWaiting } from "@/lib/chats";
 import { useDashboardCount } from "@/lib/dashboard";
 import type { User } from "@/lib/types";
 
@@ -91,7 +91,7 @@ function DashboardLink({ onNavigate, collapsed }: { onNavigate?: () => void; col
 
 /** Chats, with how many wait on the viewer (a question, an approval, an escalation). */
 function ChatsLink({ onNavigate, collapsed }: { onNavigate?: () => void; collapsed?: boolean }) {
-  const count = waitingOnMe(useChats().data);
+  const count = useChatsWaiting().data?.waiting ?? 0;
   return <NavLink item={CHATS} onNavigate={onNavigate} collapsed={collapsed} badge={count} badgeLabel="waiting on you" />;
 }
 

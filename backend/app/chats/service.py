@@ -102,6 +102,47 @@ async def get_chat_for(db: AsyncSession, user: User, chat_id: uuid.UUID) -> Chat
     return chat
 
 
+def visible_chat_ids(user: User):
+    """The chats the user can see, as a subquery of ids, within projects the caller already limits to theirs:
+    admins and managers every chat there, others the chats they started or whose agent is theirs."""
+    stmt = select(Chat.id)
+    if user.role not in (Role.admin, Role.manager):
+        owned = select(Agent.id).where(Agent.owner_id == user.id)
+        stmt = stmt.where(or_(Chat.started_by == user.id, Chat.agent_id.in_(owned)))
+    return stmt
+
+
+async def waiting_count(db: AsyncSession, user: User, project_ids: frozenset[uuid.UUID] | set[uuid.UUID] | None = None) -> int:
+    """Open chats the user can see that wait on a person (a question, an approval, an escalation): the badge."""
+    allowed = await accessible_project_ids(db, user)
+    stmt = (
+        select(func.count(func.distinct(Chat.id)))
+        .join(Task, Task.chat_id == Chat.id)
+        .join(TaskWorkflow, TaskWorkflow.task_id == Task.id)
+        .where(Chat.status == ChatStatus.open, Chat.id.in_(visible_chat_ids(user)),
+               TaskWorkflow.status == WorkflowStatus.waiting_human,
+               TaskWorkflow.needs.in_((Needs.question, Needs.design_approval, Needs.plan_approval, Needs.escalation)))
+    )
+    if allowed is not None:
+        stmt = stmt.where(Chat.project_id.in_(allowed))
+    if project_ids is not None:
+        stmt = stmt.where(Chat.project_id.in_(project_ids))
+    return int(await db.scalar(stmt) or 0)
+
+
+async def lock_chat(db: AsyncSession, chat: Chat) -> Chat:
+    """Every change to a chat starts here: the chat row locked and read afresh (lock order: chat, task, workflow),
+    in a project still open."""
+    from app.projects.models import ProjectStatus
+
+    chat = (await db.execute(
+        select(Chat).where(Chat.id == chat.id).with_for_update().execution_options(populate_existing=True)
+    )).scalar_one()
+    if (await db.get(Project, chat.project_id)).status != ProjectStatus.active:
+        raise HTTPException(status.HTTP_409_CONFLICT, "project_closed")
+    return chat
+
+
 async def visible_chats(db: AsyncSession, user: User, project_key: str | None = None) -> list[Chat]:
     stmt = select(Chat)
     if project_key:
@@ -300,6 +341,8 @@ async def intent(db: AsyncSession, chat: Chat, task: Task | None, wf: TaskWorkfl
         return "changes"
     if await engine.active_run(db, task.id) is not None:
         return "tell"
+    if wf.status == WorkflowStatus.paused:  # cancelled, or an escalation decided as pause: the message resumes it
+        return "restart"
     if wf.needs is None and wf.status == WorkflowStatus.running:
         return "restart"
     return "tell"  # an escalation or a code review waits: the agent gets it at its next run
@@ -336,6 +379,7 @@ async def send_message(db: AsyncSession, user: User, chat: Chat, body: str) -> t
     from app.tasks.activity import create_comment
     from app.workflow import documents, engine, questions
 
+    chat = await lock_chat(db, chat)  # an End chat or a new round in between is seen
     task = await latest_round(db, chat)
     if chat.status == ChatStatus.ended or task is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "chat_ended")
@@ -365,6 +409,10 @@ async def send_message(db: AsyncSession, user: User, chat: Chat, body: str) -> t
         await documents.decide(db, user, task, kind, version, False, body)
     elif what == "tell":
         steer = (await create_comment(db, user, key, body, to_agent=True)).id
+    elif what == "restart" and wf.status == WorkflowStatus.paused:
+        await engine.resume(db, user, task)
+        # the resumed run takes it at its start (or a wait it returns to keeps it for the next run)
+        await create_comment(db, user, key, body, to_agent=True)
     elif what == "restart":
         await engine.hand_to_agent(
             db, wf, task, engine.STAGE_ROLE[Stage(wf.stage)], resume_kind="nudge", payload={"text": body},
@@ -384,6 +432,7 @@ async def end_chat(db: AsyncSession, user: User, chat: Chat) -> Chat:
     review keeps waiting, so its pull request is still followed."""
     from app.workflow import engine
 
+    chat = await lock_chat(db, chat)
     task = await latest_round(db, chat)
     if chat.status == ChatStatus.ended:
         raise HTTPException(status.HTTP_409_CONFLICT, "chat_ended")
@@ -457,7 +506,11 @@ async def _step_cards(db: AsyncSession, user: User, task: Task, wf: TaskWorkflow
     project = await db.get(Project, task.project_id)
     done = await _first_column(db, task.project_id, ColumnCategory.done)
     before = await _first_column(db, task.project_id, ColumnCategory.before)
-    finished = wf is not None and wf.status == WorkflowStatus.finished
+    # finished, or past the build (in review, or waiting for a person's code review): every step was done
+    finished = wf is not None and (
+        wf.status == WorkflowStatus.finished or wf.stage in (Stage.review, Stage.done)
+        or wf.needs == Needs.human_code_review
+    )
     current = (wf.current_step or 1) if wf is not None else 1
     steps = []
     for n, step in enumerate(plan.steps, start=1):
@@ -477,6 +530,7 @@ async def decide_board(db: AsyncSession, user: User, chat: Chat, n: int, data: B
     from app.tasks.service import apply_column, end_position, get_column, task_changed
     from app.workflow import engine
 
+    chat = await lock_chat(db, chat)
     task, _ = await _round_n(db, chat, n)
     wf = await engine.lock_task(db, task)
     await engine.require_actor(db, user, task, wf)

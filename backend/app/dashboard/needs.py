@@ -12,7 +12,7 @@ from app.a2a.models import Question, QuestionStatus
 from app.agents.models import Agent
 from app.auth.models import Role, User
 from app.chats.models import Chat
-from app.chats.service import chat_link
+from app.chats.service import chat_link, visible_chat_ids
 from app.dashboard.schemas import NeedItem
 from app.dashboard.scope import Scope, task_link
 from app.notifications.models import Kind, Notification
@@ -45,6 +45,7 @@ def _workflow_waits_query(scope: Scope, *columns) -> Select:
         .where(TaskWorkflow.status == WorkflowStatus.waiting_human, TaskWorkflow.needs.is_not(None),
                scope.in_projects(Task.project_id))
     )
+    stmt = stmt.where(or_(Task.in_chat.is_(False), Task.chat_id.in_(visible_chat_ids(scope.user))))
     if scope.name == "mine":
         started = select(Chat.id).where(Chat.started_by == scope.user.id)
         stmt = stmt.where(or_(_WAIT_OWNER == scope.user.id, Task.assignee_user_id == scope.user.id,

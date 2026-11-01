@@ -28,6 +28,11 @@ export function useChat(id: string | undefined) {
   return useQuery({ queryKey: chatKeys.one(id ?? ""), queryFn: () => api<Chat>(`/api/chats/${id}`), enabled: !!id });
 }
 
+/** How many open chats wait on the viewer: one cheap count, for the sidebar badge. */
+export function useChatsWaiting() {
+  return useQuery({ queryKey: ["chats", "count"], queryFn: () => api<{ waiting: number }>("/api/chats/count") });
+}
+
 export function waitingOnMe(chats: Chat[] | undefined): number {
   return (chats ?? []).filter((c) => c.can_act && WAITING.includes(c.state)).length;
 }

@@ -25,6 +25,12 @@ async def list_chats(user: AuthedUser, db: DbSession, project: str | None = None
     return await service.chats_out(db, await service.visible_chats(db, user, project), user)
 
 
+@router.get("/api/chats/count")
+async def waiting_count(user: AuthedUser, db: DbSession) -> dict[str, int]:
+    """The sidebar badge: open chats waiting on the viewer."""
+    return {"waiting": await service.waiting_count(db, user)}
+
+
 @router.get("/api/chats/{chat_id}")
 async def get_chat(chat_id: uuid.UUID, user: AuthedUser, db: DbSession) -> ChatOut:
     return await service.chat_out(db, await service.get_chat_for(db, user, chat_id), user)
