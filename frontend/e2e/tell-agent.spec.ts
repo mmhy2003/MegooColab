@@ -124,7 +124,7 @@ test("telling the agent something while it works, and before its next run", asyn
   await drawer.getByRole("button", { name: "Send to agent" }).click();
   await expect(drawer.getByText(`${ADMIN.name} → ${AGENT_NAME}`)).toBeVisible();
   await expect(drawer.getByText(/read while working/)).toBeVisible({ timeout: 15_000 });
-  await expect(drawer.getByText(/steered: .*Use RetryPolicy/)).toBeVisible({ timeout: 15_000 });
+  await expect(drawer.getByText(/steered: .*Use RetryPolicy/).first()).toBeVisible({ timeout: 15_000 });
   await expect(drawer.getByRole("switch", { name: `Send to ${AGENT_NAME}` })).toHaveAttribute("aria-checked", "false");
 
   // 2. the design is waiting for approval and no run is going: the next message waits
@@ -139,6 +139,6 @@ test("telling the agent something while it works, and before its next run", asyn
 
   // 3. approving the design starts the plan run, which is given the waiting message at its start
   await post(request, `/api/tasks/${KEY}/documents/design/1/decision`, { approve: true });
-  await expect(drawer.getByText("Got the instruction: Log retries")).toBeVisible({ timeout: 30_000 });
+  await expect(drawer.getByText("Got the instruction: Log retries").first()).toBeVisible({ timeout: 30_000 });
   await expect(drawer.getByText("given at the start of the plan run")).toBeVisible({ timeout: 15_000 });
 });
