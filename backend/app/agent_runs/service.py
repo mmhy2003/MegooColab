@@ -122,6 +122,9 @@ async def _transition(
         await publish_agents_updated(db, owner_id, await _answering_projects(db, run))
         await routing.on_answer_run_finished(db, run)
         return
+    from app.workflow import instructions  # local: the workflow imports this module
+
+    await instructions.release_on_run_end(db, run)
     task = await db.get(Task, run.task_id)
     data = {"run_id": str(run.id), "agent_id": str(run.agent_id), **(extra or {})}
     if reason:

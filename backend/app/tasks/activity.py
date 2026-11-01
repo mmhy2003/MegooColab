@@ -246,7 +246,14 @@ async def _address_to_agent(db, user: User, task: Task, comment: Comment) -> Non
 
 @router.post("/api/tasks/{key}/comments", status_code=status.HTTP_201_CREATED)
 async def add_comment(key: str, body: CommentIn, user: AuthedUser, db: DbSession) -> CommentOut:
-    return comment_out(await create_comment(db, user, key, body.body_md, to_agent=body.to_agent))
+    comment = await create_comment(db, user, key, body.body_md, to_agent=body.to_agent)
+    out = comment_out(comment)
+    if body.to_agent:
+        from app.workflow.instructions import steer_after_commit  # local: the workflow imports this module
+
+        await db.commit()  # the runner's answer must find the message
+        await steer_after_commit(comment.id)
+    return out
 
 
 async def _own_comment(db, user: User, comment_id: uuid.UUID, allow_admin: bool) -> tuple[Comment, Task]:
