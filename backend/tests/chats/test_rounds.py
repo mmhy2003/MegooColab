@@ -7,6 +7,7 @@ from sqlalchemy import update
 from app.agent_runs.models import AgentRun, RunStatus
 from app.core.db import SessionLocal
 from app.git.models import TaskPullRequest
+from app.projects.models import Project, ProjectRepository, RepoProvider
 from app.tasks.models import Task
 from app.workflow import context
 from app.workflow.models import DocKind, DocStatus, RunRole, TaskWorkflow, WorkflowDocument, WorkflowStatus
@@ -28,8 +29,17 @@ async def _next(client, chat, body="Also add retries to the payment API"):
     return await client.post(f"/api/chats/{chat['id']}/messages", json={"body": body})
 
 
+async def _repository(db) -> None:
+    """The project's code lives in a known repository: its branches can start from one another."""
+    project = (await db.execute(Project.__table__.select().where(Project.key == "PAY"))).first()
+    db.add(ProjectRepository(project_id=project.id, name="pay", url="https://git.example/pay.git",
+                             provider=RepoProvider.github, default_branch="main"))
+    await db.commit()
+
+
 async def test_next_round_branches_from_an_open_pr(client, db):
     await world(client, db)
+    await _repository(db)
     chat = await start(client)
     await _finished(db, await _round(db, chat), "pr_opened", pr_url="https://git.example/pr/42", pr_state="open")
     r = await _next(client, chat)
@@ -38,6 +48,15 @@ async def test_next_round_branches_from_an_open_pr(client, db):
     assert [x["n"] for x in rounds] == [1, 2]
     assert rounds[1]["branch_from"] == "megoo/PAY-1-fix" and rounds[1]["stage"] == "brainstorm"
     assert rounds[1]["title"] == "Also add retries to the payment API"
+
+
+async def test_without_a_repository_the_next_round_starts_from_default(client, db):
+    """No repository to start a branch from another branch in: the runner could not do it."""
+    await world(client, db)
+    chat = await start(client)
+    await _finished(db, await _round(db, chat), "pr_opened", pr_url="https://git.example/pr/42", pr_state="open")
+    await _next(client, chat)
+    assert (await client.get(f"/api/chats/{chat['id']}")).json()["rounds"][1]["branch_from"] is None
 
 
 async def test_next_round_after_a_merge_starts_from_default(client, db):

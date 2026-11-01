@@ -26,7 +26,7 @@ from app.chats.schemas import (
     RoundOut,
 )
 from app.projects.access import accessible_project_ids, get_project_for
-from app.projects.models import BoardColumn, ColumnCategory, Project
+from app.projects.models import BoardColumn, ColumnCategory, Project, ProjectRepository
 from app.runner.registry import registry
 from app.tasks.models import Task, TaskType
 from app.tasks.schemas import TaskCreate
@@ -317,7 +317,11 @@ async def start_next_round(db: AsyncSession, user: User, chat: Chat, message: st
     if wf is None or wf.status != WorkflowStatus.finished:
         raise HTTPException(status.HTTP_409_CONFLICT, "round_not_finished")
     branch_from = None
-    if wf.finish_outcome == "pr_opened" and wf.branch:
+    # stacking needs a repository the runner can start the branch in (Branch from); without one, start afresh
+    has_repository = await db.scalar(
+        select(ProjectRepository.id).where(ProjectRepository.project_id == chat.project_id).limit(1)
+    )
+    if wf.finish_outcome == "pr_opened" and wf.branch and has_repository:
         pr_state = await db.scalar(
             select(TaskPullRequest.state).where(TaskPullRequest.task_id == prev.id, TaskPullRequest.kind == PR_MAIN)
         )
