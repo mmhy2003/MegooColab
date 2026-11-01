@@ -52,15 +52,16 @@ describe("invalidationsFor", () => {
   });
 
   it("maps project-scoped agent events to project agents and my agents", () => {
-    expect(invalidationsFor({ type: "agents.updated", project_id: "p1" }, keys)).toEqual([["project-agents", "PAY"], ["agents"], ["team"]]);
+    expect(invalidationsFor({ type: "agents.updated", project_id: "p1" }, keys)).toEqual([["project-agents", "PAY"], ["agents"], ["team"], ["hub", "machines"], ["hub", "summary"]]);
   });
 
   it("still refreshes every project's agents when the project list is not cached", () => {
-    expect(invalidationsFor({ type: "agents.updated", project_id: "unknown" }, keys)).toEqual([["project-agents"], ["agents"], ["team"]]);
+    expect(invalidationsFor({ type: "agents.updated", project_id: "unknown" }, keys)).toEqual([["project-agents"], ["agents"], ["team"], ["hub", "machines"], ["hub", "summary"]]);
   });
 
   it("maps user-only agent events to my agents", () => {
-    expect(invalidationsFor({ type: "agents.updated", user_id: "u" }, keys)).toEqual([["agents"], ["team"]]);
+    expect(invalidationsFor({ type: "agents.updated", user_id: "u" }, keys)).toEqual([["agents"], ["team"], ["hub", "machines"], ["hub", "summary"]]);
+    expect(invalidationsFor({ type: "hub.machines", user_id: "u" }, keys)).toEqual([["hub", "machines"], ["hub", "summary"]]);
   });
 
   it("invalidates everything on membership changes", () => {

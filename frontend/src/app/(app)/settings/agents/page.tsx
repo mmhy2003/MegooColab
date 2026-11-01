@@ -6,6 +6,7 @@ import { useState } from "react";
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { BindingEditor } from "@/components/agents/BindingEditor";
+import { HubMachines } from "@/components/hub/HubMachines";
 import { MachineField } from "@/components/agents/MachineField";
 import { ModelField } from "@/components/agents/ModelField";
 import { RunnerSetup } from "@/components/agents/RunnerSetup";
@@ -215,6 +216,7 @@ export default function AgentsPage() {
           {agents.data?.length === 0 && <li className="card px-3 py-6 text-center text-sm text-muted-foreground">No agents yet.</li>}
         </ul>
       </div>
+      <HubMachines />
       <section id="runner" aria-labelledby="runner-heading" className="card scroll-mt-4 space-y-3 p-4">
         <h2 id="runner-heading" className="text-sm font-bold text-cyan-ink">Runner</h2>
         <RunnerSetup hasAgents={(agents.data?.length ?? 0) > 0} />

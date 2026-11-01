@@ -13,6 +13,11 @@ export type HubAdminTool = S["AdminToolOut"];
 export type HubFileText = S["ToolFileText"];
 export type HubSpec = S["McpSpec"];
 export type HubShelf = "mine" | "shared" | "everyone";
+export type HubMachine = S["HubMachineOut"];
+export type HubMachineTool = S["HubMachineTool"];
+export type HubScan = S["ScanOut"];
+export type HubImportItem = S["ImportItem"];
+export type HubMachineState = NonNullable<S["HubProgramState"]["state"]>;
 
 /** Every Tool Hub query starts with "hub", so one invalidation refreshes them all. */
 export const hubKeys = {
@@ -21,6 +26,10 @@ export const hubKeys = {
   tool: (id: string) => ["hub", "tool", id] as const,
   file: (id: string, path: string) => ["hub", "file", id, path] as const,
   admin: (q: string) => ["hub", "admin", q] as const,
+  machines: () => ["hub", "machines"] as const,
+  summary: () => ["hub", "summary"] as const,
+  prefs: () => ["hub", "prefs"] as const,
+  scan: (id: string) => ["hub", "scan", id] as const,
 };
 
 export function useHubShelf(shelf: HubShelf, q = "") {
@@ -50,4 +59,41 @@ export function sharingLabel(sharing: HubToolSummary["sharing"]): string | null 
   if (sharing.everyone) return "Everyone";
   const names = [...sharing.teams, ...sharing.users].map((x) => x.name);
   return names.length ? `Shared: ${names.join(", ")}` : "Private";
+}
+
+export function useHubMachines() {
+  return useQuery({ queryKey: hubKeys.machines(), queryFn: () => api<HubMachine[]>("/api/hub/machines") });
+}
+
+/** Whether any of my machines doesn't match my library: the sidebar's mark. */
+export function useHubSummary() {
+  return useQuery({
+    queryKey: hubKeys.summary(),
+    queryFn: () => api<{ out_of_step: boolean }>("/api/hub/machines/summary"),
+    refetchInterval: 60_000,
+  });
+}
+
+export function useHubPrefs() {
+  return useQuery({ queryKey: hubKeys.prefs(), queryFn: () => api<{ auto_default: boolean }>("/api/hub/prefs") });
+}
+
+export const OS_LABEL: Record<string, string> = { windows: "Windows", linux: "Linux", macos: "macOS" };
+
+/** A machine's state for one tool in one program, in words. */
+export function stateText(state: HubMachineState, program: string, os: string | null | undefined, detail: string): string {
+  switch (state) {
+    case "installed": return "installed";
+    case "update_ready": return "update ready";
+    case "will_install": return "will install";
+    case "will_remove": return "will remove";
+    case "changed": return "changed on this machine";
+    case "conflict": return "made by hand on this machine";
+    case "key_missing": return "key missing: can't install yet";
+    case "removed": return "push to uninstall";
+    case "failed": return `failed: ${detail}`;
+    case "not_supported": return `not supported by ${program}`;
+    case "not_available": return `not available on ${(os && OS_LABEL[os]) || os || "this system"}`;
+    case "waiting": return "waiting for the machine to come online";
+  }
 }

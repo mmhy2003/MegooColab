@@ -24,7 +24,12 @@ from app.hub.models import (
     HubTool,
     HubToolFile,
 )
-from app.hub.schemas import MachineAgent, MachineOut, MachineTool, ProgramState
+from app.hub.schemas import (
+    HubMachineAgent,
+    HubMachineOut,
+    HubMachineTool,
+    HubProgramState,
+)
 from app.runner.protocol import (
     McpPayload,
     SkillFile,
@@ -271,7 +276,7 @@ def _state(tool: HubTool | None, inst: HubInstall | None, ticked: bool, os_: str
     return "will_install"
 
 
-async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) -> MachineOut:
+async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) -> HubMachineOut:
     machine = await db.get(HubMachine, token.id)
     agents = await _agents(db, token.id)
     programs = sorted({a.program for a in agents})
@@ -291,14 +296,14 @@ async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) 
             orphans.setdefault((i.name, i.kind), {})[i.program] = i
     waiting = machine is not None and machine.pending
 
-    def states(tool: HubTool | None, mine: dict[str, HubInstall], ticked: bool) -> list[ProgramState]:
+    def states(tool: HubTool | None, mine: dict[str, HubInstall], ticked: bool) -> list[HubProgramState]:
         out = []
         for program in sorted(set(programs) | set(mine)):
             inst = mine.get(program)
             state = _state(tool, inst, ticked, token.runner_os)
             if waiting and state in _TO_DO:
                 state = "waiting"
-            out.append(ProgramState(program=program, state=state,
+            out.append(HubProgramState(program=program, state=state,
                                     detail=inst.detail if inst is not None and state == "failed" else ""))
         return out
 
@@ -307,18 +312,18 @@ async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) 
         mine = by_tool.get(tool.id, {})
         if tool.removed_at is not None and not mine:
             continue
-        rows.append(MachineTool(tool_id=tool.id, name=tool.name, kind=tool.kind, ticked=tool.id in wants,
+        rows.append(HubMachineTool(tool_id=tool.id, name=tool.name, kind=tool.kind, ticked=tool.id in wants,
                                 programs=states(tool, mine, tool.id in wants)))
     for (name, kind), mine in sorted(orphans.items()):
-        rows.append(MachineTool(tool_id=None, name=name, kind=kind, ticked=False, programs=states(None, mine, False)))
+        rows.append(HubMachineTool(tool_id=None, name=name, kind=kind, ticked=False, programs=states(None, mine, False)))
     out_of_step = waiting or any(p.state not in (None, "installed") for r in rows for p in r.programs)
-    return MachineOut(
+    return HubMachineOut(
         token_id=token.id,
         name=token.name,
         os=token.runner_os,
         online=conn is not None,
         supports_tools=conn is not None and TOOLS_CAPABILITY in conn.capabilities,
-        agents=[MachineAgent(id=a.id, name=a.name, program=a.program) for a in agents],
+        agents=[HubMachineAgent(id=a.id, name=a.name, program=a.program) for a in agents],
         pending=bool(waiting),
         reported_at=machine.reported_at if machine else None,
         tools=rows,

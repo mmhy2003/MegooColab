@@ -866,6 +866,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/machines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Machines */
+        get: operations["list_machines_api_hub_machines_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/machines/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Machines Summary */
+        get: operations["machines_summary_api_hub_machines_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/machines/{token_id}/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Push Machine */
+        post: operations["push_machine_api_hub_machines__token_id__push_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/prefs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prefs */
+        get: operations["get_prefs_api_hub_prefs_get"];
+        /** Put Prefs */
+        put: operations["put_prefs_api_hub_prefs_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/machines/{token_id}/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan Machine */
+        post: operations["scan_machine_api_hub_machines__token_id__scan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/scans/{scan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scan */
+        get: operations["get_scan_api_hub_scans__scan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/scans/{scan_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Scan */
+        post: operations["accept_scan_api_hub_scans__scan_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/hub/tools": {
         parameters: {
             query?: never;
@@ -3090,6 +3210,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcceptIn */
+        AcceptIn: {
+            /** Items */
+            items: components["schemas"]["AcceptItem"][];
+        };
+        /** AcceptItem */
+        AcceptItem: {
+            /** Index */
+            index: number;
+            /** Name */
+            name: string;
+            /**
+             * Secret
+             * @default []
+             */
+            secret: string[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
         /** ActivityItem */
         ActivityItem: {
             /**
@@ -3242,6 +3384,11 @@ export interface components {
             /** Read Only Safe */
             read_only_safe: boolean;
             sharing: components["schemas"]["Sharing"];
+            /**
+             * In Default Set
+             * @default false
+             */
+            in_default_set: boolean;
         };
         /**
          * AdminUserDetailsOut
@@ -4353,6 +4500,72 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** HubMachineAgent */
+        HubMachineAgent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Program */
+            program: string;
+        };
+        /** HubMachineOut */
+        HubMachineOut: {
+            /**
+             * Token Id
+             * Format: uuid
+             */
+            token_id: string;
+            /** Name */
+            name: string;
+            /** Os */
+            os: string | null;
+            /** Online */
+            online: boolean;
+            /** Supports Tools */
+            supports_tools: boolean;
+            /** Agents */
+            agents: components["schemas"]["HubMachineAgent"][];
+            /** Pending */
+            pending: boolean;
+            /** Reported At */
+            reported_at: string | null;
+            /** Tools */
+            tools: components["schemas"]["HubMachineTool"][];
+            /** Out Of Step */
+            out_of_step: boolean;
+        };
+        /** HubMachineTool */
+        HubMachineTool: {
+            /** Tool Id */
+            tool_id: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "mcp" | "skill";
+            /** Ticked */
+            ticked: boolean;
+            /** Programs */
+            programs: components["schemas"]["HubProgramState"][];
+        };
+        /** HubProgramState */
+        HubProgramState: {
+            /** Program */
+            program: string;
+            /** State */
+            state: ("installed" | "update_ready" | "will_install" | "will_remove" | "changed" | "conflict" | "key_missing" | "removed" | "failed" | "not_supported" | "not_available" | "waiting") | null;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+        };
         /** HubSettings */
         HubSettings: {
             /**
@@ -4368,6 +4581,63 @@ export interface components {
              * @constant
              */
             approved: true;
+        };
+        /** ImportEntry */
+        ImportEntry: {
+            /** Name */
+            name: string;
+            /** Value Masked */
+            value_masked: string;
+            /** Suggested Secret */
+            suggested_secret: boolean;
+        };
+        /** ImportItem */
+        ImportItem: {
+            /** Index */
+            index: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "mcp" | "skill";
+            /** Name */
+            name: string;
+            /** Programs */
+            programs: string[];
+            /** Problem */
+            problem?: string | null;
+            mcp?: components["schemas"]["ImportMcp"] | null;
+            /** Files */
+            files?: components["schemas"]["ToolFileOut"][] | null;
+            /** Exists In Library */
+            exists_in_library: boolean;
+        };
+        /** ImportMcp */
+        ImportMcp: {
+            /**
+             * Transport
+             * @enum {string}
+             */
+            transport: "http" | "stdio";
+            /** Url */
+            url?: string | null;
+            /** Command */
+            command?: string | null;
+            /**
+             * Args
+             * @default []
+             */
+            args: string[];
+            /**
+             * Headers
+             * @default []
+             */
+            headers: components["schemas"]["ImportEntry"][];
+            /**
+             * Env
+             * @default []
+             */
+            env: components["schemas"]["ImportEntry"][];
         };
         /** InviteIn */
         InviteIn: {
@@ -5042,6 +5312,16 @@ export interface components {
              */
             if_busy: "wait" | "another";
         };
+        /** PrefsIn */
+        PrefsIn: {
+            /** Auto Default */
+            auto_default: boolean;
+        };
+        /** PrefsOut */
+        PrefsOut: {
+            /** Auto Default */
+            auto_default: boolean;
+        };
         /**
          * Priority
          * @enum {string}
@@ -5291,6 +5571,19 @@ export interface components {
             review: string;
             /** Tracked */
             tracked: boolean;
+        };
+        /** PushIn */
+        PushIn: {
+            /**
+             * Tool Ids
+             * @default []
+             */
+            tool_ids: string[];
+            /**
+             * Take Over
+             * @default []
+             */
+            take_over: string[];
         };
         /** PushKeyOut */
         PushKeyOut: {
@@ -5702,6 +5995,24 @@ export interface components {
             link: string;
             /** Chat Id */
             chat_id?: string | null;
+        };
+        /** ScanOut */
+        ScanOut: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "waiting" | "done";
+            /** Items */
+            items: components["schemas"]["ImportItem"][];
+        };
+        /** ScanStarted */
+        ScanStarted: {
+            /**
+             * Scan Id
+             * Format: uuid
+             */
+            scan_id: string;
         };
         /** SearchAdminOut */
         SearchAdminOut: {
@@ -6515,6 +6826,11 @@ export interface components {
             /** Read Only Safe */
             read_only_safe: boolean;
             sharing?: components["schemas"]["Sharing"] | null;
+            /**
+             * In Default Set
+             * @default false
+             */
+            in_default_set: boolean;
             spec?: components["schemas"]["McpSpec"] | null;
             /**
              * Secrets
@@ -6541,6 +6857,8 @@ export interface components {
             spec?: components["schemas"]["McpSpec"] | null;
             /** Read Only Safe */
             read_only_safe?: boolean | null;
+            /** In Default Set */
+            in_default_set?: boolean | null;
         };
         /** ToolSource */
         ToolSource: {
@@ -6590,6 +6908,11 @@ export interface components {
             /** Read Only Safe */
             read_only_safe: boolean;
             sharing?: components["schemas"]["Sharing"] | null;
+            /**
+             * In Default Set
+             * @default false
+             */
+            in_default_set: boolean;
         };
         /** TotpCodeIn */
         TotpCodeIn: {
@@ -8645,6 +8968,233 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolFileText"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_machines_api_hub_machines_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubMachineOut"][];
+                };
+            };
+        };
+    };
+    machines_summary_api_hub_machines_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+        };
+    };
+    push_machine_api_hub_machines__token_id__push_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubMachineOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prefs_api_hub_prefs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrefsOut"];
+                };
+            };
+        };
+    };
+    put_prefs_api_hub_prefs_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrefsIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrefsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scan_machine_api_hub_machines__token_id__scan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scan_api_hub_scans__scan_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_scan_api_hub_scans__scan_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolOut"][];
                 };
             };
             /** @description Validation Error */

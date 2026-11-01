@@ -120,3 +120,14 @@ describe("a copy of someone's tool", () => {
     expect(screen.getByText("needs Authorization")).toBeInTheDocument();
   });
 });
+
+describe("default set", () => {
+  it("the owner can put a tool in the default set", async () => {
+    wrap(<ToolPage />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "In my default set" }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u, i]) => u === "/api/hub/tools/t1" && i?.method === "PATCH");
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({ in_default_set: true });
+    });
+  });
+});

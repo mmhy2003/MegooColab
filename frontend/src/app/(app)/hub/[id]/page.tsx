@@ -34,6 +34,33 @@ function useRefresh() {
   return () => client.invalidateQueries({ queryKey: hubKeys.all });
 }
 
+/** Whether a new machine gets this tool when "install my default set" is on. */
+function DefaultSetBox({ tool }: { tool: HubTool }) {
+  const refresh = useRefresh();
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={tool.in_default_set ?? false}
+          onChange={async (e) => {
+            setError(null);
+            try {
+              await api(`/api/hub/tools/${tool.id}`, { method: "PATCH", json: { in_default_set: e.target.checked } });
+              await refresh();
+            } catch (err) {
+              setError(errorMessage(err));
+            }
+          }}
+        />
+        In my default set
+      </label>
+      {error && <p role="alert" className="text-sm text-pink">{error}</p>}
+    </div>
+  );
+}
+
 /** The one switch a copy keeps for its owner. */
 function ReadOnlySwitch({ tool }: { tool: HubTool }) {
   const refresh = useRefresh();
@@ -92,6 +119,9 @@ function OwnTool({ tool }: { tool: HubTool }) {
       <Section title="Sharing">
         <ShareEditor key={tool.rev} tool={tool} />
       </Section>
+      <Section title="Machines">
+        <DefaultSetBox tool={tool} />
+      </Section>
     </>
   );
 }
@@ -136,6 +166,7 @@ function CopyOfTool({ tool }: { tool: HubTool }) {
       <Section title={tool.kind === "mcp" ? "Setup" : "Files"}>
         {tool.spec ? <SetupText spec={tool.spec} /> : <SkillFiles tool={tool} />}
         <ReadOnlySwitch tool={tool} />
+        <DefaultSetBox tool={tool} />
       </Section>
       {tool.kind === "mcp" && (
         <Section title="Secrets">

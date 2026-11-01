@@ -10,7 +10,7 @@ from app.hub import importing, machines
 from app.hub.models import HubPrefs
 from app.hub.schemas import (
     AcceptIn,
-    MachineOut,
+    HubMachineOut,
     PrefsIn,
     PrefsOut,
     PushIn,
@@ -23,7 +23,7 @@ machines_router = APIRouter(prefix="/api/hub", tags=["hub"])
 
 
 @machines_router.get("/machines")
-async def list_machines(user: AuthedUser, db: DbSession) -> list[MachineOut]:
+async def list_machines(user: AuthedUser, db: DbSession) -> list[HubMachineOut]:
     return [await machines.machine_out(db, user, t) for t in await machines.my_machines(db, user)]
 
 
@@ -34,7 +34,7 @@ async def machines_summary(user: AuthedUser, db: DbSession) -> dict[str, bool]:
 
 
 @machines_router.post("/machines/{token_id}/push")
-async def push_machine(token_id: uuid.UUID, body: PushIn, user: AuthedUser, db: DbSession) -> MachineOut:
+async def push_machine(token_id: uuid.UUID, body: PushIn, user: AuthedUser, db: DbSession) -> HubMachineOut:
     token = await machines.machine_or_404(db, user, token_id)
     await machines.push(db, user, token, body.tool_ids, body.take_over)
     return await machines.machine_out(db, user, token)

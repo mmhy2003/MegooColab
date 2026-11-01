@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { Brand } from "@/components/Brand";
 import { useChatsWaiting } from "@/lib/chats";
 import { useDashboardCount } from "@/lib/dashboard";
+import { useHubSummary } from "@/lib/hub";
 import type { User } from "@/lib/types";
 
 type Item = { href: string; label: string; icon: typeof FolderKanban };
@@ -18,13 +19,15 @@ const DASHBOARD: Item = { href: "/", label: "Dashboard", icon: LayoutDashboard }
 
 const CHATS: Item = { href: "/chats", label: "Chats", icon: MessageCircle };
 
+const HUB: Item = { href: "/hub", label: "Tool Hub", icon: Blocks };
+
 const MAIN: Item[] = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
   CHATS,
   { href: "/teams", label: "Teams", icon: UsersRound },
   { href: "/kb", label: "Knowledge Base", icon: BookOpen },
   { href: "/memory", label: "Memory", icon: Brain },
-  { href: "/hub", label: "Tool Hub", icon: Blocks },
+  HUB,
   { href: "/questions", label: "Questions", icon: MessagesSquare },
 ];
 
@@ -45,12 +48,15 @@ function NavLink({
   collapsed,
   badge = 0,
   badgeLabel = "need you",
+  mark,
 }: {
   item: Item;
   onNavigate?: () => void;
   collapsed?: boolean;
   badge?: number;
   badgeLabel?: string;
+  /** a dot on the icon, named for screen readers */
+  mark?: string;
 }) {
   const pathname = usePathname();
   const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -70,6 +76,7 @@ function NavLink({
         <Icon size={16} aria-hidden />
         {/* on the collapsed rail the count sits on the icon's corner, like the bell's */}
         {badge > 0 && collapsed && <CountBadge n={badge} label={badgeLabel} className="absolute -top-2 -right-2" />}
+        {mark && <span aria-label={mark} className="absolute -top-1 -right-1 size-2 rounded-full bg-amber" />}
       </span>
       <span className={collapsed ? LABEL_HIDDEN : ""}>{item.label}</span>
       {badge > 0 && !collapsed && <CountBadge n={badge} label={badgeLabel} className="ml-auto" />}
@@ -97,6 +104,12 @@ function ChatsLink({ onNavigate, collapsed }: { onNavigate?: () => void; collaps
   return <NavLink item={CHATS} onNavigate={onNavigate} collapsed={collapsed} badge={count} badgeLabel="waiting on you" />;
 }
 
+/** The Tool Hub, marked when one of the viewer's machines doesn't match their library. */
+function HubLink({ onNavigate, collapsed }: { onNavigate?: () => void; collapsed?: boolean }) {
+  const outOfStep = useHubSummary().data?.out_of_step ?? false;
+  return <NavLink item={HUB} onNavigate={onNavigate} collapsed={collapsed} mark={outOfStep ? "Tool Hub needs a push" : undefined} />;
+}
+
 export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigate?: () => void; collapsed?: boolean }) {
   return (
     // p-2 and the links' px-3 put the icons in the middle of the collapsed rail (w-14), so they stay put as it opens
@@ -109,6 +122,8 @@ export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigat
       {MAIN.map((item) =>
         item === CHATS ? (
           <ChatsLink key={item.href} onNavigate={onNavigate} collapsed={collapsed} />
+        ) : item === HUB ? (
+          <HubLink key={item.href} onNavigate={onNavigate} collapsed={collapsed} />
         ) : (
           <NavLink key={item.href} item={item} onNavigate={onNavigate} collapsed={collapsed} />
         ),

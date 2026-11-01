@@ -156,36 +156,36 @@ MachineState = Literal[
 ]
 
 
-class ProgramState(BaseModel):
+class HubProgramState(BaseModel):
     program: str
     state: MachineState | None  # None: not ticked and not installed there
     detail: str = ""
 
 
-class MachineTool(BaseModel):
+class HubMachineTool(BaseModel):
     tool_id: uuid.UUID | None  # None: installed from a tool since deleted
     name: str
     kind: Literal["mcp", "skill"]
     ticked: bool
-    programs: list[ProgramState]
+    programs: list[HubProgramState]
 
 
-class MachineAgent(BaseModel):
+class HubMachineAgent(BaseModel):
     id: uuid.UUID
     name: str
     program: str
 
 
-class MachineOut(BaseModel):
+class HubMachineOut(BaseModel):
     token_id: uuid.UUID
     name: str
     os: str | None
     online: bool
     supports_tools: bool
-    agents: list[MachineAgent]
+    agents: list[HubMachineAgent]
     pending: bool
     reported_at: datetime | None
-    tools: list[MachineTool]
+    tools: list[HubMachineTool]
     out_of_step: bool
 
 
