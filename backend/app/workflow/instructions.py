@@ -86,6 +86,51 @@ async def kept_in_mind(db: AsyncSession, task: Task) -> str | None:
     return section("## Instructions from people on this task", [text for _, text in messages])
 
 
+
+# ---- delivering at the start of a run ---------------------------------------------------------------------------
+
+
+async def take_waiting(db: AsyncSession, run: AgentRun, task: Task) -> tuple[str | None, list[uuid.UUID]]:
+    """The waiting messages (and any whose steer went to a run no longer active), for the run being sent out:
+    marked given at its start. The caller holds the workflow lock, which message creation takes too."""
+    stale_sending = select(AgentRun.id).where(AgentRun.id == Comment.delivery_run_id, AgentRun.status.in_(
+        (RunStatus.queued, RunStatus.running)))
+    rows = (await db.execute(
+        select(Comment, User.name)
+        .outerjoin(User, User.id == Comment.author_user_id)
+        .where(
+            Comment.task_id == task.id,
+            (Comment.delivery == Delivery.waiting)
+            | ((Comment.delivery == Delivery.sending) & ~exists(stale_sending)),
+        )
+        .order_by(Comment.created_at, Comment.id)
+        .with_for_update(of=Comment)
+    )).all()
+    if not rows:
+        return None, []
+    now = datetime.now(UTC)
+    for c, _ in rows:
+        c.delivery = Delivery.given_at_start
+        c.delivery_run_id = run.id
+        c.delivery_stage = run.stage
+        c.delivered_at = now
+        c.delivery_error = None
+    framed = [frame_instruction(name or "someone", c.created_at, c.body_md) for c, name in rows]
+    await _changed(db, task.id)
+    return section("## New instructions", framed), [c.id for c, _ in rows]  # section keeps the newest
+
+
+async def release(db: AsyncSession, ids: list[uuid.UUID]) -> None:
+    """The run never left: its messages wait again."""
+    if not ids:
+        return
+    for c in (await db.execute(select(Comment).where(Comment.id.in_(ids)))).scalars():
+        c.delivery = Delivery.waiting
+        c.delivery_run_id = None
+        c.delivery_stage = None
+        c.delivered_at = None
+
+
 # ---- delivering into a running session ------------------------------------------------------------------------
 
 # the run updates that show the agent itself was working (model options and branch reports come before the prompt)
