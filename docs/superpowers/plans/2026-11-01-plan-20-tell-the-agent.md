@@ -224,7 +224,7 @@ async def test_section_drops_oldest_over_budget(db, ...):
   - `class RunSteerResult(_FromRunner)`, with fields `type: Literal["run_steer_result"]`, `run_id: UUID`, `message_id: UUID`, `outcome: Literal["injected","not_running","unsupported","failed"]` and `error: str | None` (truncated to 200). It is added to `RunnerMessage`.
   - `async def steer_after_commit(comment_id: UUID) -> None` in `instructions.py`. In its own session:
     - load the comment;
-    - lock the workflow;
+    - lock the workflow, then re-check that the comment is still `waiting` (a dispatch holding the lock may have given it to the run already);
     - find `engine.active_run(db, task.id)`;
     - if that run is `running`, its connection is `registry.conn_for_run(run.id)` with `STEER_CAPABILITY`, and the run's agent is the task's current agent: set `delivery=sending`, `delivery_run_id=run.id`, commit, then send `RunSteer(text=STEER_PREFIX + frame_instruction(...))`;
     - on `RunnerClosed`, put it back to `waiting`.
@@ -273,7 +273,7 @@ async def test_queued_run_is_not_steered(db, tc_factory)                     # r
   - `async def release(db, ids: list[UUID]) -> None` puts the ids back to `waiting`.
   - In `_send_start`, after the run row lock and before building `RunStart`, for task runs (`run.task_id`):
     - call `take_waiting`;
-    - if `run.resume_session_ref` is set, append the section to `resume_prompt`, joined with `"\n\n"`; otherwise append it to `prompt`;
+    - if `run.resume_session_ref` is set, append the section to `resume_prompt` (treating `None` as empty), joined with `"\n\n"`; otherwise append it to `prompt`;
     - only the payload changes, never `run.prompt` or `run.resume_prompt` in the database;
     - on `RunnerClosed`, call `release(ids)` before the commit.
 
@@ -373,7 +373,7 @@ func TestHelloAdvertisesSteer(t *testing.T)                 // protocol_test: Ne
   - `agentHint(runs: AgentRun[], workflow: Workflow | undefined): AgentHint`:
     - a `running` run → `working`;
     - a `queued` run → `starting`;
-    - workflow `status` running or waiting → `idle`;
+    - workflow `status` `running`, `waiting_human` or `paused` → `idle`;
     - otherwise → `nothing_scheduled`.
   - `hintText(hint: AgentHint, agentName: string, stage?: string): string`. Exact copy:
     - working: `"${agent} is working on the ${stageWord}: it reads this straight away, without stopping."`
