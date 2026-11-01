@@ -55,6 +55,7 @@ type Manager struct {
 
 	send      func(any) error
 	cacheRoot string
+	toolsMu   sync.Mutex // one Tool Hub job (push, scan, drift check) at a time
 
 	mu       sync.Mutex
 	agents   map[string]protocol.WelcomeAgent
@@ -241,6 +242,17 @@ func (m *Manager) Dispatch(ctx context.Context, env protocol.Envelope) {
 		var w protocol.Welcome
 		if env.Into(&w) == nil {
 			m.HandleWelcome(w)
+			m.toolsJob(m.sendDrift)
+		}
+	case protocol.TypeToolsPush:
+		var p protocol.ToolsPush
+		if env.Into(&p) == nil {
+			m.toolsJob(func() { m.applyPush(p) })
+		}
+	case protocol.TypeToolsScan:
+		var sc protocol.ToolsScan
+		if env.Into(&sc) == nil {
+			m.toolsJob(func() { m.scanTools(sc.ScanID) })
 		}
 	case protocol.TypeRunStart:
 		var rs protocol.RunStart

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -36,7 +37,7 @@ func codexPayload(m *protocol.McpPayload) protocol.McpPayload {
 func codexServers(data []byte) (map[string]any, error) {
 	var doc map[string]any
 	if err := toml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("config.toml: %w", err)
+		return nil, errors.New("config.toml could not be read") // the parser's message may quote the file
 	}
 	servers, _ := doc["mcp_servers"].(map[string]any)
 	if servers == nil {
