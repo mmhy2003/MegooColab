@@ -47,8 +47,8 @@ describe("invalidationsFor", () => {
     expect(out).toContainEqual(["tasks"]);
   });
 
-  it("maps comments to the activity thread only", () => {
-    expect(invalidationsFor({ type: "comment.created", project_id: "p1" }, keys)).toEqual([["activity"]]);
+  it("maps comments to the activity thread and the chats (a message for the agent changes its state)", () => {
+    expect(invalidationsFor({ type: "comment.created", project_id: "p1" }, keys)).toEqual([["activity"], ["chats"]]);
   });
 
   it("maps project-scoped agent events to project agents and my agents", () => {

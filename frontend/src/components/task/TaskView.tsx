@@ -5,6 +5,7 @@ import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { TYPE_ICON } from "@/components/board/TaskCard";
+import { ChatRedirect } from "@/components/chats/ChatRedirect";
 import { agentHint, hintText } from "@/lib/agentMessages";
 import { useAgentRuns, useProjectAgents } from "@/lib/agents";
 import { api } from "@/lib/api";
@@ -102,6 +103,7 @@ export function TaskView({
   if (task.error) return <p className="p-4 text-sm text-pink">{errorMessage(task.error)}</p>;
   const t = task.data;
   if (!t || !columns.data) return <p className="p-4 text-sm text-muted-foreground">Loading…</p>;
+  if (t.chat_id) return <ChatRedirect chatId={t.chat_id} />;
 
   const rights = projectRights(me, project.data);
   const disabled = !rights.canWrite;

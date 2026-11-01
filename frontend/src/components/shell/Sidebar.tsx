@@ -1,10 +1,11 @@
 "use client";
 
-import { BookOpen, BookOpenText, Bot, Brain, BrainCircuit, FolderKanban, GitPullRequest, LayoutDashboard, MessagesSquare, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
+import { BookOpen, BookOpenText, Bot, Brain, BrainCircuit, FolderKanban, GitPullRequest, LayoutDashboard, MessageCircle, MessagesSquare, ScrollText, Settings2, Users, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { Brand } from "@/components/Brand";
+import { useChats, waitingOnMe } from "@/lib/chats";
 import { useDashboardCount } from "@/lib/dashboard";
 import type { User } from "@/lib/types";
 
@@ -15,8 +16,11 @@ export const LABEL_HIDDEN = "opacity-0 transition-opacity group-hover/side:opaci
 
 const DASHBOARD: Item = { href: "/", label: "Dashboard", icon: LayoutDashboard };
 
+const CHATS: Item = { href: "/chats", label: "Chats", icon: MessageCircle };
+
 const MAIN: Item[] = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
+  CHATS,
   { href: "/teams", label: "Teams", icon: UsersRound },
   { href: "/kb", label: "Knowledge Base", icon: BookOpen },
   { href: "/memory", label: "Memory", icon: Brain },
@@ -83,6 +87,12 @@ function DashboardLink({ onNavigate, collapsed }: { onNavigate?: () => void; col
   return <NavLink item={DASHBOARD} onNavigate={onNavigate} collapsed={collapsed} badge={count} />;
 }
 
+/** Chats, with how many wait on the viewer (a question, an approval, an escalation). */
+function ChatsLink({ onNavigate, collapsed }: { onNavigate?: () => void; collapsed?: boolean }) {
+  const count = waitingOnMe(useChats().data);
+  return <NavLink item={CHATS} onNavigate={onNavigate} collapsed={collapsed} badge={count} />;
+}
+
 export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigate?: () => void; collapsed?: boolean }) {
   return (
     // p-2 and the links' px-3 put the icons in the middle of the collapsed rail (w-14), so they stay put as it opens
@@ -92,9 +102,13 @@ export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigat
         <Brand logoSize={28} nameClassName={collapsed ? LABEL_HIDDEN : ""} />
       </Link>
       <DashboardLink onNavigate={onNavigate} collapsed={collapsed} />
-      {MAIN.map((item) => (
-        <NavLink key={item.href} item={item} onNavigate={onNavigate} collapsed={collapsed} />
-      ))}
+      {MAIN.map((item) =>
+        item === CHATS ? (
+          <ChatsLink key={item.href} onNavigate={onNavigate} collapsed={collapsed} />
+        ) : (
+          <NavLink key={item.href} item={item} onNavigate={onNavigate} collapsed={collapsed} />
+        ),
+      )}
       {user.role === "admin" && (
         <>
           <p className={`mt-6 mb-1 px-3 text-[11px] tracking-widest whitespace-nowrap text-muted-foreground uppercase ${collapsed ? LABEL_HIDDEN : ""}`}>Admin</p>
