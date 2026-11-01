@@ -27,6 +27,13 @@ describe("Kpis", () => {
     expect(screen.getByText("1 assigned to you")).toBeInTheDocument();
   });
 
+  it("counts open chats and the ones waiting on you", () => {
+    render(<Kpis numbers={{ ...numbers, open_chats: 5, chats_waiting_on_you: 2 }} />);
+    expect(tile("Open chats")).toHaveTextContent("5");
+    expect(screen.getByText("2 waiting on you")).toBeInTheDocument();
+    expect(tile("Open chats")).toHaveAttribute("data-alert", "true");
+  });
+
   it("says when done matches or falls behind the 7 days before", () => {
     render(<Kpis numbers={{ ...numbers, done_7d: 4, done_prev_7d: 4 }} />);
     expect(screen.getByText("same as the 7 days before")).toBeInTheDocument();

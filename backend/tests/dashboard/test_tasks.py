@@ -80,8 +80,8 @@ async def test_finished_daily_splits_agents_and_people_over_14_days(client, db, 
     await login(client, world.viewer)
     days = (await dash(client))["finished_daily"]
     assert len(days) == 14
-    assert days[-1] == {"day": today().isoformat(), "agents": 1, "people": 1}
-    assert days[0] == {"day": (today() - timedelta(days=13)).isoformat(), "agents": 0, "people": 1}
+    assert days[-1] == {"day": today().isoformat(), "agents": 1, "people": 1, "chats": 0}
+    assert days[0] == {"day": (today() - timedelta(days=13)).isoformat(), "agents": 0, "people": 1, "chats": 0}
 
 
 async def test_projects_rows(client, db, world):

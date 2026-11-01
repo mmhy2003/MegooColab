@@ -15,7 +15,7 @@ export const NOW = new Date("2026-10-28T10:12:00Z");
 export const numbers: Numbers = {
   need_you: 3, need_you_over_day: 1, agents_working: 1, agents_online: 2, runs_queued: 2, workflows_in_progress: 4,
   workflow_projects: 2, open_tasks: 12, open_in_progress: 5, done_7d: 7, done_prev_7d: 4, overdue: 2, overdue_mine: 1,
-  failed_24h: 1, success_rate_24h: 0.75,
+  failed_24h: 1, success_rate_24h: 0.75, open_chats: 0, chats_waiting_on_you: 0,
 };
 
 export function need(kind: NeedItem["kind"], ref: string, title: string, over: Partial<NeedItem> = {}): NeedItem {
@@ -42,10 +42,10 @@ export function stageRow(stage: StageRow["stage"], running = 0, waiting = 0, pau
   return { stage, running, waiting, paused };
 }
 
-export function fourteenDays(last: { agents: number; people: number } = { agents: 2, people: 1 }): DayFinished[] {
+export function fourteenDays(last: { agents: number; people: number; chats?: number } = { agents: 2, people: 1 }): DayFinished[] {
   return Array.from({ length: 14 }, (_, i) => {
     const day = new Date(Date.UTC(2026, 9, 15 + i)).toISOString().slice(0, 10);
-    return i === 13 ? { day, ...last } : { day, agents: 0, people: 0 };
+    return i === 13 ? { day, chats: 0, ...last } : { day, agents: 0, people: 0, chats: 0 };
   });
 }
 
@@ -68,6 +68,7 @@ export function dashboardFixture(over: Partial<Dashboard> = {}): Dashboard {
     running: [run()],
     queued: { total: 0, items: [] },
     agents: [agent()],
+    chats: [],
     stages: { rows: ["brainstorm", "design", "plan", "build", "review", "done"].map((s) => stageRow(s as StageRow["stage"])), done_30d: 0 },
     finished_daily: fourteenDays(),
     projects: [{ key: "PAY", name: "Payments", open: 4, in_progress: 2, done: 6, late: 1 }],

@@ -24,6 +24,8 @@ class Numbers(BaseModel):
     done_prev_7d: int = 0
     overdue: int = 0
     overdue_mine: int = 0
+    open_chats: int = 0
+    chats_waiting_on_you: int = 0
     failed_24h: int = 0
     success_rate_24h: float | None = None  # completed / (completed + failed); None when no run finished
 
@@ -40,6 +42,7 @@ class NeedItem(BaseModel):
     link: str
     waiting_for: list[str] = []  # names, under My teams and Everything
     notification_id: uuid.UUID | None = None  # mentions: marked read by Reply
+    chat_id: uuid.UUID | None = None  # a round of an agent chat: the link opens the chat
 
 
 class MyTask(BaseModel):
@@ -61,12 +64,14 @@ class RunningItem(BaseModel):
     review_round: int | None
     question_from: str | None  # answering runs: the asking task's project key
     link: str
+    chat_id: uuid.UUID | None = None
 
 
 class QueuedItem(BaseModel):
     task_key: str | None
     stage: Stage | None
     link: str | None = None
+    chat_id: uuid.UUID | None = None
 
 
 class Queued(BaseModel):
@@ -100,6 +105,19 @@ class DayFinished(BaseModel):
     day: date
     agents: int
     people: int
+    chats: int = 0  # rounds of agent chats that finished
+
+
+class ChatBrief(BaseModel):
+    id: uuid.UUID
+    title: str
+    project_key: str
+    state: str
+    current_step: int | None = None
+    steps_total: int | None = None
+    pr_url: str | None = None
+    finish_outcome: str | None = None
+    agent_name: str | None = None
 
 
 class ProjectRow(BaseModel):
@@ -148,6 +166,7 @@ class DashboardOut(BaseModel):
     finished_daily: list[DayFinished] = []
     projects: list[ProjectRow] = []
     activity: list[ActivityRow] = []
+    chats: list[ChatBrief] = []
     system: SystemOut | None = None  # admins only
 
 

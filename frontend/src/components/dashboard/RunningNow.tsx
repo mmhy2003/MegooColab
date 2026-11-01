@@ -68,8 +68,9 @@ export function RunningNow({ running, queued, isAdmin }: { running: RunningItem[
                 {" · "}
                 {run.task_key ? (
                   <>
+                    {run.chat_id && <span className="mr-1 rounded border border-violet px-1 text-[10px] text-violet uppercase">chat</span>}
                     <Link href={run.link} className="font-mono text-xs text-cyan-ink no-underline hover:underline">
-                      {run.task_key}
+                      {run.chat_id ? "chat" : run.task_key}
                     </Link>{" "}
                     {where(run)}
                     {run.stage === "build" && run.step && run.steps_total && (

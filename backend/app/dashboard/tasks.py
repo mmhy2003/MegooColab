@@ -71,16 +71,18 @@ async def finished_daily(db: AsyncSession, scope: Scope) -> list[DayFinished]:
     first = scope.today() - timedelta(days=FINISHED_DAYS - 1)
     start = scope.day_start(first)
     day = func.floor((func.extract("epoch", Task.completed_at) - start.timestamp()) / 86400).label("day")
-    by_agent = Task.assignee_agent_id.is_not(None)
+    chat = Task.chat_id.is_not(None)  # a chat's round, on the board or not
+    by_agent = and_(~chat, Task.assignee_agent_id.is_not(None))
     rows = await db.execute(
-        select(day, _count(by_agent), _count(~by_agent))
+        select(day, _count(by_agent), _count(and_(~chat, Task.assignee_agent_id.is_(None))), _count(chat))
         .where(Task.completed_at >= start, Task.type.in_(COUNTED_TYPES), scope.in_projects(Task.project_id),
-               scope.board_tasks())
+               scope.mine_tasks())
         .group_by(day)
     )
-    counts = {int(d): (agents, people) for d, agents, people in rows.all()}
+    counts = {int(d): (agents, people, chats) for d, agents, people, chats in rows.all()}
     return [
-        DayFinished(day=first + timedelta(days=i), agents=counts.get(i, (0, 0))[0], people=counts.get(i, (0, 0))[1])
+        DayFinished(day=first + timedelta(days=i), agents=counts.get(i, (0, 0, 0))[0],
+                    people=counts.get(i, (0, 0, 0))[1], chats=counts.get(i, (0, 0, 0))[2])
         for i in range(FINISHED_DAYS)
     ]
 

@@ -47,6 +47,7 @@ export function Kpis({ numbers: n }: { numbers: Numbers }) {
     <div className="grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-2.5">
       <Tile label="Need you" value={n.need_you} small={`${n.need_you_over_day} over a day old`} alert={n.need_you > 0} />
       <Tile label="Agents working / online" value={n.agents_working} of={n.agents_online} small={plural(n.runs_queued, "run") + " queued"} live />
+      <Tile label="Open chats" value={n.open_chats ?? 0} small={`${n.chats_waiting_on_you ?? 0} waiting on you`} alert={(n.chats_waiting_on_you ?? 0) > 0} />
       <Tile label="Workflows in progress" value={n.workflows_in_progress} small={`across ${plural(n.workflow_projects, "project")}`} />
       <Tile label="Open tasks" value={n.open_tasks} small={`${n.open_in_progress} in progress`} />
       <Tile label="Done, last 7 days" value={n.done_7d} small={doneTrend(n.done_7d, n.done_prev_7d)} />

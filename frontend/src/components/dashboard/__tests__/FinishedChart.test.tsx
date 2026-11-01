@@ -13,7 +13,7 @@ describe("FinishedChart", () => {
     days[0] = { ...days[0], people: 1 };
     render(<FinishedChart days={days} />);
     const chart = screen.getByRole("img");
-    expect(chart).toHaveAccessibleName("Tasks finished in the last 14 days: 2 by agents, 2 by people");
+    expect(chart).toHaveAccessibleName("Finished in the last 14 days: 2 tasks by agents, 2 by people, 0 chats");
     expect(chart.querySelectorAll("[data-day]")).toHaveLength(14);
     expect(screen.getByText("by agents · 2")).toBeInTheDocument();
     expect(screen.getByText("by people · 2")).toBeInTheDocument();
@@ -23,6 +23,6 @@ describe("FinishedChart", () => {
 
   it("says when nothing was finished", () => {
     render(<FinishedChart days={fourteenDays({ agents: 0, people: 0 })} />);
-    expect(screen.getByText("No tasks finished in the last 14 days.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing finished in the last 14 days.")).toBeInTheDocument();
   });
 });

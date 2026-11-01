@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.a2a.models import Question, QuestionStatus
 from app.agents.models import Agent
 from app.auth.models import Role, User
+from app.chats.models import Chat
+from app.chats.service import chat_link
 from app.dashboard.schemas import NeedItem
 from app.dashboard.scope import Scope, task_link
 from app.notifications.models import Kind, Notification
@@ -44,7 +46,9 @@ def _workflow_waits_query(scope: Scope, *columns) -> Select:
                scope.in_projects(Task.project_id))
     )
     if scope.name == "mine":
-        stmt = stmt.where(or_(_WAIT_OWNER == scope.user.id, Task.assignee_user_id == scope.user.id))
+        started = select(Chat.id).where(Chat.started_by == scope.user.id)
+        stmt = stmt.where(or_(_WAIT_OWNER == scope.user.id, Task.assignee_user_id == scope.user.id,
+                              Task.chat_id.in_(started)))
     return stmt
 
 
@@ -52,7 +56,7 @@ async def _workflow_waits(db: AsyncSession, scope: Scope) -> list[tuple[NeedItem
     rows = (await db.execute(_workflow_waits_query(
         scope, Task.id, Task.number, Task.title, Project.key, TaskWorkflow.needs, TaskWorkflow.escalation_reason,
         TaskWorkflow.pr_url, func.coalesce(TaskWorkflow.waiting_since, TaskWorkflow.updated_at), _WAIT_OWNER,
-        Task.assignee_user_id,
+        Task.assignee_user_id, Task.chat_id, Task.in_chat,
     ))).all()
     asking = [r[0] for r in rows if r[4] == "question"]
     questions: dict[uuid.UUID, str] = {}
@@ -64,10 +68,11 @@ async def _workflow_waits(db: AsyncSession, scope: Scope) -> list[tuple[NeedItem
             .ext(distinct_on(WorkflowQuestion.task_id))
         )).all())
     out = []
-    for task_id, number, title, key, needs, reason, pr_url, since, owner_id, assignee_id in rows:
+    for task_id, number, title, key, needs, reason, pr_url, since, owner_id, assignee_id, chat_id, in_chat in rows:
         detail = {"question": questions.get(task_id), "escalation": reason, "human_code_review": pr_url}.get(needs)
+        chat = chat_id if in_chat else None
         item = NeedItem(kind=needs, ref=f"{key}-{number}", title=title, detail=detail, since=since,
-                        link=task_link(key, number))
+                        link=chat_link(chat) if chat else task_link(key, number), chat_id=chat)
         out.append((item, [u for u in dict.fromkeys((owner_id, assignee_id)) if u is not None]))
     return out
 
