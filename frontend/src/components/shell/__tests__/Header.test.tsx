@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Header } from "@/components/shell/Header";
+import { useTrail, type Crumb } from "@/lib/trail";
 import type { User } from "@/lib/types";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/projects", useRouter: () => ({ push: vi.fn() }) }));
@@ -86,6 +87,52 @@ describe("Header", () => {
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
     expect(bell).toHaveFocus();
+  });
+});
+
+function Page({ crumbs }: { crumbs: Crumb[] }) {
+  useTrail(crumbs);
+  return null;
+}
+
+function renderWithTrail(crumbs: Crumb[]) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <Header user={user} onMenu={() => {}} />
+      <Page crumbs={crumbs} />
+    </QueryClientProvider>,
+  );
+}
+
+describe("Header trail", () => {
+  it("shows the trail's names, links all but the last, and a loading crumb as …", () => {
+    renderWithTrail([{ label: "Teams", href: "/teams" }, { label: null }]);
+    const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(nav).getAllByRole("link", { name: "Teams" })[0]).toHaveAttribute("href", "/teams");
+    const loading = within(nav).getAllByLabelText("Loading")[0];
+    expect(loading).toHaveTextContent("…");
+    expect(nav.textContent).not.toMatch(/[0-9a-f]{8}-/);
+  });
+
+  it("collapses a trail of more than three crumbs behind a Show full path button on narrow screens", async () => {
+    renderWithTrail([
+      { label: "Knowledge Base", href: "/kb" },
+      { label: "Payments", href: "/kb/s1" },
+      { label: "Designs & Plans", href: "/kb/s1?folder=f1" },
+      { label: "PAY-12", href: "/kb/s1?folder=f2" },
+      { label: "Plan" },
+    ]);
+    const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
+    const compact = nav.querySelector("[data-compact]") as HTMLElement;
+    expect(compact.textContent).toContain("Knowledge Base");
+    expect(compact.textContent).toContain("Plan");
+    expect(compact.textContent).not.toContain("Designs & Plans");
+    const full = nav.querySelector("[data-full]") as HTMLElement;
+    expect(full.textContent).toContain("Designs & Plans");
+    await userEvent.click(within(compact).getByRole("button", { name: "Show full path" }));
+    expect(compact.textContent).toContain("Designs & Plans");
+    expect(compact.textContent).toContain("PAY-12");
   });
 });
 

@@ -16,6 +16,8 @@ import { api } from "@/lib/api";
 import { forgetThisDevice } from "@/lib/push";
 import type { User } from "@/lib/types";
 import { Hint } from "@/components/ui/Hint";
+import { TrailNav } from "@/components/shell/TrailNav";
+import { useShownTrail } from "@/lib/trail";
 
 const LINKS = [
   { href: "/settings/profile", label: "Profile", icon: UserRound },
@@ -24,13 +26,9 @@ const LINKS = [
   { href: "/settings/notifications", label: "Notifications", icon: Bell },
 ];
 
-function crumbs(pathname: string): { href: string; label: string }[] {
-  const parts = pathname.split("/").filter(Boolean);
-  return parts.map((p, i) => ({ href: `/${parts.slice(0, i + 1).join("/")}`, label: decodeURIComponent(p) }));
-}
-
 export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
   const pathname = usePathname();
+  const trail = useShownTrail(pathname);
   const [open, setOpen] = useState(false);
   return (
     <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b border-line bg-surface-2/80 px-3 backdrop-blur">
@@ -39,20 +37,7 @@ export function Header({ user, onMenu }: { user: User; onMenu: () => void }) {
           <Menu size={18} aria-hidden />
         </button>
       </Hint>
-      <nav aria-label="Breadcrumb" className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-        {crumbs(pathname).map((c, i, all) => (
-          <span key={c.href}>
-            {i > 0 && <span className="mx-1">/</span>}
-            {i === all.length - 1 ? (
-              <span className="text-fg">{c.label}</span>
-            ) : (
-              <Link href={c.href} className="text-muted-foreground no-underline hover:text-cyan-ink">
-                {c.label}
-              </Link>
-            )}
-          </span>
-        ))}
-      </nav>
+      <TrailNav crumbs={trail.crumbs} />
       <SearchLauncher />
       <UpdatePill />
       <NotificationBell />
