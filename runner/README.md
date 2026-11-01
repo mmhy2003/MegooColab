@@ -102,6 +102,10 @@ The file is truncated at start when it exceeds 5 MiB. Interactive `run` prints t
   (`git status|log|diff|show|blame|grep|ls-files`, `ls`, `cat`, `rg`, ...).
   `workspace` allows reads, writes and commands only inside the worktree; anything
   resolving outside it (including `..` and symlinks) is denied. Denials are shown on the task.
+- **Messages from people.** A message sent to the agent from a task reaches it in the turn it is
+  working on, without stopping it, through the ACP steering extension (`_session/steering`,
+  which the Claude Code and Codex adapters support). With an adapter that lacks it, or when no
+  turn is running, the agent gets the message at its next run.
 - **Isolation.** Your own Claude settings cannot pre-approve tools for MegooColab runs.
 - **Not a sandbox.** The runner's before/after git check (risk R1) is a best-effort check of what a
   run changed. It is there to catch adapters or settings that bypass the runner's permission
