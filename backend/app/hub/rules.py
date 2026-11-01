@@ -18,11 +18,11 @@ MAX_SKILL_BYTES = 2 << 20
 _PREFIXED = re.compile(r"(?<![A-Za-z0-9])(?:sk-|sk_|ghp_|gho_|github_pat_|xoxb-|xoxp-|glpat-|AKIA|Bearer )\S{8,}")
 _TOKEN_RUN = re.compile(r"[A-Za-z0-9_\-]{24,}")
 
-_UNIX = ["linux", "macos"]
-_ALL = ["linux", "macos", "windows"]
+_UNIX = ("linux", "macos")
+_ALL = ("linux", "macos", "windows")
 _SCRIPTS = {
     **dict.fromkeys((".sh", ".bash", ".zsh"), _UNIX),
-    **dict.fromkeys((".ps1", ".bat", ".cmd"), ["windows"]),
+    **dict.fromkeys((".ps1", ".bat", ".cmd"), ("windows",)),
     **dict.fromkeys((".py", ".js", ".mjs", ".cjs", ".ts", ".rb", ".pl"), _ALL),
 }
 
@@ -64,7 +64,8 @@ def script_systems(path: str) -> list[str] | None:
     """The systems a skill's file runs on when it is a script, else None."""
     name = path.rsplit("/", 1)[-1].lower()
     dot = name.rfind(".")
-    return _SCRIPTS.get(name[dot:]) if dot > 0 else None
+    systems = _SCRIPTS.get(name[dot:]) if dot > 0 else None
+    return list(systems) if systems else None
 
 
 def skill_frontmatter(text: str) -> tuple[str | None, str | None]:
