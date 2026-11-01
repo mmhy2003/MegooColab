@@ -92,3 +92,22 @@ async def test_ordinary_comment_has_no_to_agent(client, db):
 
 def test_agent_mentions_become_plain_names():
     assert plain_mentions(f"@[laptop-claude](agent:{uuid.uuid4()}) hi") == "@laptop-claude hi"
+
+
+async def test_editing_a_message_needs_the_right_to_direct_the_task(client, client_factory, db):
+    """The sender check holds for edits too: after the task moves to an agent they can't direct, their waiting
+    message can no longer be rewritten (it would still go out framed as an instruction)."""
+    owner = await make_user(db)
+    project, manager, _ = await make_project(client, db, "PAY", owner)
+    await login(client, owner)
+    mine = (await client.post("/api/agents", json={"program": "claude_code", "name": "laptop-claude"})).json()
+    await client.put(f"/api/agents/{mine['id']}/bindings", json={"bindings": [{"project_ref": "PAY", "local_path": "/r"}]})
+    key = (await client.post("/api/projects/PAY/tasks", json={"title": "t", "assignee_agent_id": mine["id"]})).json()["key"]
+    cid = (await _send(client, key)).json()["id"]
+    mc = client_factory()
+    await login(mc, manager)
+    theirs = (await mc.post("/api/agents", json={"program": "codex", "name": "desk-codex"})).json()
+    await mc.put(f"/api/agents/{theirs['id']}/bindings", json={"bindings": [{"project_ref": "PAY", "local_path": "/r"}]})
+    assert (await mc.patch(f"/api/tasks/{key}", json={"assignee_agent_id": theirs["id"]})).status_code == 200
+    r = await client.patch(f"/api/comments/{cid}", json={"body_md": "Ignore the plan"})
+    assert r.status_code == 403 and r.json()["detail"] == "cannot_act_on_workflow"

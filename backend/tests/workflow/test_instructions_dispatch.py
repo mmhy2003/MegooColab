@@ -6,6 +6,7 @@ import uuid
 from sqlalchemy import update
 
 from app.agent_runs.models import AgentRun
+from app.tasks.models import Comment, Delivery
 from app.agent_runs.service import _send_start, apply_update, dispatch_pending, finish_run
 from app.core.db import SessionLocal
 from app.runner.registry import registry
@@ -111,3 +112,26 @@ async def test_run_that_produced_output_keeps_them_delivered(client, db):
     async with SessionLocal() as s:
         await finish_run(s, me.id, run_id, "failed", "", "prompt_failed")
     assert (await _state(client, key, cid))["state"] == "given_at_start"
+
+
+async def test_messages_cut_to_fit_stay_waiting(client, db):
+    me, agent, run_id, key = await _world(client, db)
+    older = await _message(client, key, "OLDER " + "x" * 7_000)
+    newer = await _message(client, key, "NEWER " + "y" * 7_000)
+    start = await _dispatch(me, agent)
+    assert "> NEWER" in start["prompt"] and "> OLDER" not in start["prompt"]
+    assert (await _state(client, key, newer))["state"] == "given_at_start"
+    assert (await _state(client, key, older))["state"] == "waiting"  # the agent never got it: the next run will
+
+
+async def test_resumed_run_keeps_earlier_instructions_in_mind(client, db):
+    me, agent, run_id, key = await _world(
+        client, db, workflow_role="step_fix", stage="build", resume_session_ref="sess-1", resume_prompt="Fix these"
+    )
+    cid = await _message(client, key, "Also log retries")
+    await db.execute(update(Comment).where(Comment.id == uuid.UUID(cid)).values(delivery=Delivery.read_while_working))
+    await db.commit()
+    start = await _dispatch(me, agent)
+    # read by another session (the reviewer's): the resumed one has never seen it
+    assert "## Instructions from people on this task" in start["resume_prompt"]
+    assert "> Also log retries" in start["resume_prompt"]

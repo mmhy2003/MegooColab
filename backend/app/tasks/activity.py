@@ -271,8 +271,13 @@ async def edit_comment(comment_id: uuid.UUID, body: CommentIn, user: AuthedUser,
     comment, task = await _own_comment(db, user, comment_id, allow_admin=False)
     if comment.delivery not in (None, Delivery.waiting):
         raise HTTPException(status.HTTP_409_CONFLICT, "message_delivered")  # the agent has (or is getting) this text
-    if comment.delivery is not None and len(body.body_md) > MAX_AGENT_MESSAGE_CHARS:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "message_too_long")
+    if comment.delivery is not None:
+        from app.workflow import engine  # local: the workflow imports the task modules
+
+        # it still goes out framed as an instruction: only someone who may direct the task's work can rewrite it
+        await engine.require_actor(db, user, task)
+        if len(body.body_md) > MAX_AGENT_MESSAGE_CHARS:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "message_too_long")
     comment.body_md = body.body_md
     comment.edited_at = datetime.now(UTC)
     await _changed(db, task, "comment.updated")

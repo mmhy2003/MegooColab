@@ -306,13 +306,16 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     task_key = f"{project_key}-{task.number}"
     from app.workflow import instructions  # local: the workflow imports this module
 
+    # a resumed session may not have seen what other sessions were told: it gets every delivered message again
+    resumed = bool(run.workflow_role and run.resume_session_ref)
+    earlier = await instructions.kept_in_mind(db, task) if resumed else None
     # waiting messages for the agent go out with this run: the workflow lock is held, so none can slip between
     new_instructions, given = await instructions.take_waiting(db, run, task)
     prompt = run.prompt
     try:
         v2 = await _v2_start_fields(db, run, task, task_key) if run.workflow_role else {}
-        if new_instructions and run.workflow_role and run.resume_session_ref:
-            v2["resume_prompt"] = "\n\n".join(p for p in (run.resume_prompt, new_instructions) if p)
+        if resumed and (earlier or new_instructions):
+            v2["resume_prompt"] = "\n\n".join(p for p in (run.resume_prompt, earlier, new_instructions) if p)
         elif new_instructions:
             prompt = f"{prompt}\n\n{new_instructions}"
         repos = await db.execute(

@@ -62,10 +62,11 @@ async def framed_messages(db: AsyncSession, task: Task, states: tuple[Delivery, 
     return [(c, frame_instruction(name or "someone", c.created_at, c.body_md)) for c, name in rows.all()]
 
 
-def section(heading: str, framed: list[str], budget: int = INSTRUCTIONS_CHARS) -> str | None:
-    """`heading`, the rule, and the framed messages; the oldest are dropped (with a note) to fit `budget`."""
+def fit(heading: str, framed: list[str], budget: int = INSTRUCTIONS_CHARS) -> tuple[str | None, int]:
+    """`heading`, the rule, and the framed messages, and how many of the oldest were dropped (with a note) to fit
+    `budget`. The newest is always kept whole: one message (at most 8,000 characters) fits with room to spare."""
     if not framed:
-        return None
+        return None, 0
     kept = list(framed)
     dropped = 0
 
@@ -76,8 +77,11 @@ def section(heading: str, framed: list[str], budget: int = INSTRUCTIONS_CHARS) -
     while len(render()) > budget and len(kept) > 1:
         kept.pop(0)
         dropped += 1
-    text = render()
-    return text if len(text) <= budget else text[:budget]
+    return render(), dropped
+
+
+def section(heading: str, framed: list[str], budget: int = INSTRUCTIONS_CHARS) -> str | None:
+    return fit(heading, framed, budget)[0]
 
 
 async def kept_in_mind(db: AsyncSession, task: Task) -> str | None:
@@ -109,15 +113,17 @@ async def take_waiting(db: AsyncSession, run: AgentRun, task: Task) -> tuple[str
     if not rows:
         return None, []
     now = datetime.now(UTC)
-    for c, _ in rows:
+    framed = [frame_instruction(name or "someone", c.created_at, c.body_md) for c, name in rows]
+    text, dropped = fit("## New instructions", framed)
+    given = [c for c, _ in rows[dropped:]]  # the oldest cut to fit stay waiting, for the next run
+    for c in given:
         c.delivery = Delivery.given_at_start
         c.delivery_run_id = run.id
         c.delivery_stage = run.stage
         c.delivered_at = now
         c.delivery_error = None
-    framed = [frame_instruction(name or "someone", c.created_at, c.body_md) for c, name in rows]
     await _changed(db, task.id)
-    return section("## New instructions", framed), [c.id for c, _ in rows]  # section keeps the newest
+    return text, [c.id for c in given]
 
 
 async def release(db: AsyncSession, ids: list[uuid.UUID]) -> None:
