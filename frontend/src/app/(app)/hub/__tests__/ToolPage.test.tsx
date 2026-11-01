@@ -74,3 +74,49 @@ describe("a tool of mine", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/hub/t9"));
   });
 });
+
+describe("a copy of someone's tool", () => {
+  const COPY = {
+    ...TOOL, is_copy: true, can_edit: false, source_state: "update_available", version: 1,
+    source: { id: "s1", name: "ctx", owner_name: "Mona", version: 2 },
+  };
+
+  it("offers the update and making it my own, keeps the setup read-only", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/hub/tools/t1") return new Response(JSON.stringify(COPY));
+      return new Response(JSON.stringify(COPY));
+    });
+    wrap(<ToolPage />);
+    expect(await screen.findByText("Copy of ctx by Mona · v1")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Sharing" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Take update" }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u, i]) => u === "/api/hub/tools/t1/update" && i?.method === "POST")).toBe(true),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Make it my own" }));
+    expect(await screen.findByText("It stops getting updates from Mona.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Safe in read-only runs" }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u, i]) => u === "/api/hub/tools/t1" && i?.method === "PATCH");
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({ read_only_safe: true });
+    });
+  });
+
+  it("a removed tool only says so", async () => {
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ...COPY, removed: true })));
+    wrap(<ToolPage />);
+    expect(await screen.findByText(/removed by an admin/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Take update" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  it("someone else's tool shows the shared view", async () => {
+    fetchMock.mockImplementation(async () =>
+      new Response(JSON.stringify({ ...TOOL, sharing: null, can_edit: false, owner: { id: "u2", name: "Mona" } })),
+    );
+    wrap(<ToolPage />);
+    expect(await screen.findByRole("button", { name: "Add to my library" })).toBeInTheDocument();
+    expect(screen.getByText("needs Authorization")).toBeInTheDocument();
+  });
+});
