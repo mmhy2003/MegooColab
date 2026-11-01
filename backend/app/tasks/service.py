@@ -69,6 +69,13 @@ async def get_task_for(
     ).scalar_one_or_none()
     if task is None:
         raise _not_found()
+    if task.in_chat:  # a chat round: only the people who see the chat see it
+        from app.chats.models import Chat  # local: the chats modules import this one
+        from app.chats.service import can_see_chat
+
+        chat = await db.get(Chat, task.chat_id) if task.chat_id else None
+        if chat is None or not await can_see_chat(db, user, chat):
+            raise _not_found()
     return task, project
 
 
@@ -161,6 +168,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[T
             )
     return [
         TaskOut(
+            chat_id=t.chat_id if t.in_chat else None,
             id=t.id,
             key=f"{project_keys[t.project_id]}-{t.number}",
             number=t.number,
@@ -446,7 +454,11 @@ async def next_number(db: AsyncSession, project: Project) -> int:
     ).scalar_one()
 
 
-async def create_task(db: AsyncSession, user: User, project: Project, data: TaskCreate) -> Task:
+async def create_task(
+    db: AsyncSession, user: User, project: Project, data: TaskCreate,
+    *, chat_id: uuid.UUID | None = None, chat_round: int | None = None,
+) -> Task:
+    """`chat_id`: a round of that agent chat, kept off the board (in_chat) and announced to nobody."""
     await validate_parent(db, project, data.type, data.parent_id)
     branch_from = clean_branch_from(data.branch_from)
     if data.assignee_user_id and data.assignee_agent_id:
@@ -471,6 +483,9 @@ async def create_task(db: AsyncSession, user: User, project: Project, data: Task
         reporter_id=user.id,
         parent_id=data.parent_id,
         branch_from=branch_from,
+        chat_id=chat_id,
+        chat_round=chat_round,
+        in_chat=chat_id is not None,
     )
     apply_column(task, column)
     db.add(task)
@@ -479,7 +494,8 @@ async def create_task(db: AsyncSession, user: User, project: Project, data: Task
         await set_labels(db, project, task, data.label_ids)
     await add_watcher(db, task.id, user.id)
     await record_event(db, task, user.id, "created", {"column": str(column.id)})
-    await notify_assigned(db, user, project, task)
+    if not task.in_chat:  # the chat itself is what the people concerned follow
+        await notify_assigned(db, user, project, task)
     # local: memory imports the task modules
     from app.memory.sources import queue_extract
 

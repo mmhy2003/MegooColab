@@ -1,0 +1,245 @@
+"""Agent chats: a conversation with an agent about one project, each round of work a task kept off the board and run
+by the task workflow (talk, design, plan, build, finish), as a task would be."""
+
+import uuid
+from datetime import UTC, datetime
+
+from fastapi import HTTPException, status
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
+from app.agents.models import Agent, AgentBinding
+from app.agents.service import can_use_agent, is_usable_binding, owner_can_access
+from app.auth.models import Role, User
+from app.auth.schemas import UserOut
+from app.chats.models import Chat, ChatStatus
+from app.chats.schemas import ChatAgentOut, ChatIn, ChatOut, ChatState, RoundOut
+from app.projects.access import accessible_project_ids, get_project_for
+from app.projects.models import Project
+from app.runner.registry import registry
+from app.tasks.models import Task, TaskType
+from app.tasks.schemas import TaskCreate
+from app.workflow.models import DocKind, DocStatus, Needs, Stage, TaskWorkflow, WorkflowDocument, WorkflowStatus
+
+TITLE_CHARS = 120
+NEEDS_STATE: dict[Needs, ChatState] = {
+    Needs.question: "question",
+    Needs.design_approval: "design_approval",
+    Needs.plan_approval: "plan_approval",
+    Needs.escalation: "escalation",
+    Needs.human_code_review: "human_code_review",
+}
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def first_line(text: str, limit: int = TITLE_CHARS) -> str:
+    line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "Chat")
+    return line[:limit]
+
+
+def chat_link(chat_id: uuid.UUID) -> str:
+    return f"/chats/{chat_id}"
+
+
+# ---- who sees a chat ---------------------------------------------------------------------------------------------
+
+
+async def can_see_chat(db: AsyncSession, user: User, chat: Chat) -> bool:
+    """The person who started it, the agent's owner, the project's managers and admins."""
+    if user.role == Role.admin:
+        return True
+    allowed = await accessible_project_ids(db, user)
+    if allowed is not None and chat.project_id not in allowed:
+        return False
+    if user.role == Role.manager or chat.started_by == user.id:  # a manager in one of the project's teams
+        return True
+    owner = await db.scalar(select(Agent.owner_id).where(Agent.id == chat.agent_id)) if chat.agent_id else None
+    return owner == user.id
+
+
+async def get_chat_for(db: AsyncSession, user: User, chat_id: uuid.UUID) -> Chat:
+    chat = await db.get(Chat, chat_id)
+    if chat is None or not await can_see_chat(db, user, chat):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
+    return chat
+
+
+async def visible_chats(db: AsyncSession, user: User, project_key: str | None = None) -> list[Chat]:
+    stmt = select(Chat)
+    if project_key:
+        project = await get_project_for(db, user, project_key)
+        stmt = stmt.where(Chat.project_id == project.id)
+    if user.role != Role.admin:
+        allowed = await accessible_project_ids(db, user) or set()
+        stmt = stmt.where(Chat.project_id.in_(allowed))
+        if user.role != Role.manager:
+            owned = select(Agent.id).where(Agent.owner_id == user.id)
+            stmt = stmt.where(or_(Chat.started_by == user.id, Chat.agent_id.in_(owned)))
+    return list((await db.execute(stmt.order_by(Chat.last_activity_at.desc()))).scalars())
+
+
+# ---- starting a chat -----------------------------------------------------------------------------------------------
+
+
+async def pick_agent(db: AsyncSession, user: User, project: Project) -> Agent:
+    """Any free agent the person may use on the project: online first, then the least busy, then by name."""
+    agents = (
+        await db.execute(
+            select(Agent)
+            .join(AgentBinding, AgentBinding.agent_id == Agent.id)
+            .where(AgentBinding.project_id == project.id, owner_can_access(project.id))
+        )
+    ).scalars().all()
+    usable = [a for a in agents if await can_use_agent(db, user, a, project)]
+    if not usable:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "no_agent")
+    counts = dict(
+        (await db.execute(
+            select(AgentRun.agent_id, func.count())
+            .where(AgentRun.agent_id.in_([a.id for a in usable]), AgentRun.status.in_(ACTIVE_STATUSES))
+            .group_by(AgentRun.agent_id)
+        )).all()
+    )
+    return min(usable, key=lambda a: (not registry.is_available(a.id), counts.get(a.id, 0), a.name.lower()))
+
+
+async def _chosen_agent(db: AsyncSession, user: User, project: Project, agent_id: uuid.UUID | None) -> Agent:
+    if agent_id is None:
+        return await pick_agent(db, user, project)
+    agent = await db.get(Agent, agent_id)
+    if (
+        agent is None
+        or not await is_usable_binding(db, agent.id, project.id)
+        or not await can_use_agent(db, user, agent, project)
+    ):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agent_not_available")
+    return agent
+
+
+async def create_round(
+    db: AsyncSession, user: User, chat: Chat, message: str, *, branch_from: str | None = None
+) -> Task:
+    """The next round: a task kept off the board, assigned to the chat's agent, its workflow started."""
+    from app.tasks.service import create_task  # local: the task modules import this one
+    from app.workflow import engine
+
+    project = await db.get(Project, chat.project_id)
+    n = (await db.scalar(select(Task.chat_round).where(Task.chat_id == chat.id).order_by(Task.chat_round.desc()))) or 0
+    title = chat.title if n == 0 else first_line(message, 500)
+    task = await create_task(
+        db, user, project,
+        TaskCreate(title=title, type=TaskType.task, description_md=message, assignee_agent_id=chat.agent_id,
+                   branch_from=branch_from),
+        chat_id=chat.id, chat_round=n + 1,
+    )
+    await engine.start(db, user, task)
+    chat.last_activity_at = _now()
+    return task
+
+
+async def start_chat(db: AsyncSession, user: User, data: ChatIn) -> Chat:
+    project = await get_project_for(db, user, data.project_key, write=True)
+    agent = await _chosen_agent(db, user, project, data.agent_id)
+    chat = Chat(project_id=project.id, started_by=user.id, agent_id=agent.id, title=first_line(data.message))
+    db.add(chat)
+    await db.flush()
+    await create_round(db, user, chat, data.message)
+    return chat
+
+
+# ---- what a chat shows ---------------------------------------------------------------------------------------------
+
+
+async def rounds_of(db: AsyncSession, chat: Chat) -> list[tuple[Task, TaskWorkflow | None]]:
+    rows = await db.execute(
+        select(Task, TaskWorkflow)
+        .outerjoin(TaskWorkflow, TaskWorkflow.task_id == Task.id)
+        .where(Task.chat_id == chat.id)
+        .order_by(Task.chat_round)
+    )
+    return [(t, wf) for t, wf in rows.all()]
+
+
+async def _steps_total(db: AsyncSession, task_id: uuid.UUID) -> int | None:
+    plan = await db.scalar(
+        select(WorkflowDocument)
+        .where(WorkflowDocument.task_id == task_id, WorkflowDocument.kind == DocKind.plan,
+               WorkflowDocument.status == DocStatus.approved)
+        .order_by(WorkflowDocument.version.desc())
+        .limit(1)
+    )
+    return len(plan.steps or []) if plan else None
+
+
+def chat_state(chat: Chat, wf: TaskWorkflow | None, *, run_queued: bool, agent_online: bool) -> ChatState:
+    if chat.status == ChatStatus.ended:
+        return "ended"
+    if wf is None:
+        return "talking"
+    if wf.status == WorkflowStatus.finished:
+        return "finished"
+    if wf.needs is not None:
+        return NEEDS_STATE[Needs(wf.needs)]
+    if run_queued and not agent_online:
+        return "offline"
+    if wf.stage == Stage.review:
+        return "in_review"
+    if wf.stage == Stage.build:
+        return "building"
+    return "talking"
+
+
+def _board(task: Task, wf: TaskWorkflow | None, chat: Chat) -> str | None:
+    if task.chat_board:
+        return task.chat_board
+    done = wf is not None and wf.status == WorkflowStatus.finished
+    return "pending" if done or chat.status == ChatStatus.ended else None
+
+
+async def chat_out(db: AsyncSession, chat: Chat, viewer: User) -> ChatOut:
+    from app.workflow import engine
+    from app.workflow.rules import can_act
+
+    project = await db.get(Project, chat.project_id)
+    agent = await db.get(Agent, chat.agent_id) if chat.agent_id else None
+    starter = await db.get(User, chat.started_by) if chat.started_by else None
+    rounds = await rounds_of(db, chat)
+    out_rounds = [
+        RoundOut(
+            n=t.chat_round or 0, key=f"{project.key}-{t.number}", title=t.title,
+            stage=wf.stage if wf else None, status=wf.status if wf else None, needs=wf.needs if wf else None,
+            current_step=wf.current_step if wf else None, steps_total=await _steps_total(db, t.id),
+            finish_outcome=wf.finish_outcome if wf else None, pr_url=wf.pr_url if wf else None,
+            branch=wf.branch if wf else None, branch_from=t.branch_from, board=_board(t, wf, chat),
+        )
+        for t, wf in rounds
+    ]
+    latest, latest_wf = rounds[-1] if rounds else (None, None)
+    run = await engine.active_run(db, latest.id) if latest is not None else None
+    state = chat_state(
+        chat, latest_wf, run_queued=run is not None and run.status == RunStatus.queued,
+        agent_online=agent is not None and registry.is_available(agent.id),
+    )
+    acting = latest is not None and chat.status == ChatStatus.open and can_act(
+        viewer, latest, latest_wf, await engine.manages(db, viewer, project), agent.owner_id if agent else None
+    )
+    return ChatOut(
+        id=chat.id, project_key=project.key, title=chat.title, status=chat.status,
+        agent=ChatAgentOut(id=agent.id, name=agent.name, program=agent.program) if agent else None,
+        started_by=UserOut.model_validate(starter) if starter else None,
+        created_at=chat.created_at, last_activity_at=chat.last_activity_at, state=state, can_act=acting,
+        rounds=out_rounds,
+    )
+
+
+WAITING: tuple[ChatState, ...] = ("question", "design_approval", "plan_approval", "escalation")
+
+
+async def chats_out(db: AsyncSession, chats: list[Chat], viewer: User) -> list[ChatOut]:
+    """Chats waiting on the viewer first, then the most recently active."""
+    out = [await chat_out(db, c, viewer) for c in chats]
+    return sorted(out, key=lambda c: (not (c.can_act and c.state in WAITING), -c.last_activity_at.timestamp()))

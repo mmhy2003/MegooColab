@@ -65,6 +65,7 @@ from app.users.router import users_router
 from app.updates.router import router as updates_router
 from app.workflow.methodology import seed_defaults
 from app.workflow.router import router as workflow_router
+from app.chats.router import router as chats_router
 
 log = logging.getLogger(__name__)
 
@@ -173,6 +174,7 @@ def create_app() -> FastAPI:
         runner_router,
         agent_runs_router,
         workflow_router,
+        chats_router,
         jobs_router,
         ai_router,
         kb_router,

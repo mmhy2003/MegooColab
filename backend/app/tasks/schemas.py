@@ -89,6 +89,7 @@ class TaskOut(BaseModel):
     start_branch: str | None = None
     back_merge_into: str | None = None
     branch_from_locked: bool = False
+    chat_id: uuid.UUID | None = None  # a round still in its agent chat: its page opens the chat
 
 
 class LinkedTask(BaseModel):
