@@ -1,16 +1,17 @@
 "use client";
 
 import { Search } from "lucide-react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
 import { SearchResults } from "@/components/kb/SearchResults";
+import { BackLink } from "@/components/nav/BackLink";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { errorMessage } from "@/lib/errors";
 import { useKbSearch, useKbSpaces } from "@/lib/kb";
 import { usePageTitle } from "@/lib/title";
+import { useTrail } from "@/lib/trail";
 
 export default function KbSearchPage() {
   usePageTitle("Search", "Knowledge Base");
@@ -21,6 +22,8 @@ export default function KbSearchPage() {
   );
 }
 
+const TRAIL = [{ label: "Knowledge Base", href: "/kb" }, { label: "Search" }];
+
 function KbSearch() {
   const router = useRouter();
   const params = useSearchParams();
@@ -30,13 +33,14 @@ function KbSearch() {
   const [draftSpace, setDraftSpace] = useState(space);
   const spaces = useKbSpaces();
   const results = useKbSearch(q, space);
+  useTrail(TRAIL, q ? { backName: `results for "${q}"` } : undefined);
 
   return (
     <div className="max-w-3xl">
+      <div className="mb-4">
+        <BackLink area="kb-search" fallback={{ href: "/kb", label: "Knowledge Base" }} />
+      </div>
       <PageHeader title="Search the Knowledge Base" />
-      <p className="mb-4 text-sm">
-        <Link href="/kb">Knowledge Base</Link>
-      </p>
       <form
         role="search"
         className="mb-4 flex flex-wrap gap-2"

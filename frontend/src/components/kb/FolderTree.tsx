@@ -1,14 +1,16 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight, Folder, FolderPlus, Pencil, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, ChevronRight, FileText, Folder, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-import { kbKeys, type KbFolder, type KbTreeDoc } from "@/lib/kb";
+import { folderChain, kbKeys, type KbFolder, type KbTreeDoc } from "@/lib/kb";
+import { useStoredState } from "@/lib/stored";
 import { Hint } from "@/components/ui/Hint";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 
@@ -17,21 +19,44 @@ type Props = {
   folders: KbFolder[];
   documents: KbTreeDoc[];
   selected: string | null;
+  /** The document being read, marked in the tree with the folders on its path open. */
+  currentDocId?: string | null;
   onSelect: (folderId: string | null) => void;
   canWrite: boolean;
 };
 
-/** A space's folders as a tree; selecting one shows its documents. Writers create, rename and delete folders. */
-export function FolderTree({ spaceId, folders, documents, selected, onSelect, canWrite }: Props) {
+/** A space's folders and documents as a tree; selecting a folder shows it, a document opens. Writers create, rename
+ *  and delete folders. Which folders are open is remembered per space; a folder never opened starts closed. */
+export function FolderTree({ spaceId, folders, documents, selected, currentDocId, onSelect, canWrite }: Props) {
   const { ask, askText, dialog } = useConfirm();
   const client = useQueryClient();
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [stored, setStored] = useStoredState<string[]>(`kb.open.${spaceId}`, [], "local");
+  const known = new Set(folders.map((f) => f.id));
+  const open = new Set(stored.filter((id) => known.has(id))); // remembered folders since deleted are ignored
+  const currentRef = useRef<HTMLLIElement>(null);
+  const topSelected = selected === null && !currentDocId;
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const children = (parent: string | null) =>
     folders.filter((f) => f.parent_id === parent).sort((a, b) => a.name.localeCompare(b.name));
+  const docsIn = (folderId: string | null) =>
+    documents.filter((d) => (d.folder_id ?? null) === folderId).sort((a, b) => a.title.localeCompare(b.title));
+  const setOpen = (id: string, on: boolean) => setStored(on ? [...open, id] : [...open].filter((x) => x !== id));
+
+  // on arrival, the folders down to what is shown open, and it scrolls into view
+  const currentFolder = currentDocId ? (documents.find((d) => d.id === currentDocId)?.folder_id ?? null) : selected;
+  const path = folderChain(folders, currentFolder).map((f) => f.id);
+  const arrival = `${currentDocId ?? ""}|${selected ?? ""}|${path.join(",")}`;
+  useEffect(() => {
+    const missing = path.filter((id) => !open.has(id));
+    if (missing.length) setStored([...open, ...missing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per arrival: a folder closed by hand stays closed
+  }, [arrival]);
+  useEffect(() => {
+    currentRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [currentDocId, selected]);
   const refresh = () => client.invalidateQueries({ queryKey: kbKeys.tree(spaceId) });
 
   function isEmpty(id: string): boolean {
@@ -69,32 +94,56 @@ export function FolderTree({ spaceId, folders, documents, selected, onSelect, ca
     await run(() => api(`/api/kb/folders/${f.id}`, { method: "PATCH", json: { name: next } }));
   }
 
-  function renderFolder(f: KbFolder) {
-    const kids = children(f.id);
-    const open = !collapsed.has(f.id);
+  function renderDoc(d: KbTreeDoc) {
+    const current = d.id === currentDocId;
     return (
-      <li key={f.id} role="treeitem" aria-selected={selected === f.id} aria-expanded={kids.length ? open : undefined} aria-label={f.name}>
+      <li key={d.id} role="treeitem" aria-selected={current} aria-label={d.title} ref={current ? currentRef : undefined}>
+        <Link
+          href={`/kb/doc/${d.id}`}
+          aria-current={current ? "page" : undefined}
+          className={`flex min-w-0 items-center gap-1 rounded py-1 pr-1 pl-[26px] text-sm no-underline ${current ? "bg-surface-2 text-cyan-ink" : "text-fg"}`}
+        >
+          <FileText size={14} aria-hidden className="shrink-0 text-muted-foreground" />
+          <span className="min-w-0 truncate">{d.title}</span>
+        </Link>
+      </li>
+    );
+  }
+
+  function renderFolder(f: KbFolder) {
+    const subfolders = children(f.id);
+    const docs = docsIn(f.id);
+    const kids = [...subfolders, ...docs];
+    const isOpen = open.has(f.id);
+    return (
+      <li
+        key={f.id}
+        role="treeitem"
+        aria-selected={selected === f.id}
+        aria-expanded={kids.length ? isOpen : undefined}
+        aria-label={f.name}
+        ref={!currentDocId && selected === f.id ? currentRef : undefined}
+      >
         <div className={`group flex items-center gap-1 rounded px-1 ${selected === f.id ? "bg-surface-2 text-cyan-ink" : ""}`}>
           {kids.length ? (
-            <Hint label={`${open ? "Collapse" : "Expand"} ${f.name}`}>
+            <Hint label={`${isOpen ? "Collapse" : "Expand"} ${f.name}`}>
               <button
                 type="button"
                 className="icon-btn"
-                aria-label={`${open ? "Collapse" : "Expand"} ${f.name}`}
-                onClick={() => {
-                  const next = new Set(collapsed);
-                  if (open) next.add(f.id);
-                  else next.delete(f.id);
-                  setCollapsed(next);
-                }}
+                aria-label={`${isOpen ? "Collapse" : "Expand"} ${f.name}`}
+                onClick={() => setOpen(f.id, !isOpen)}
               >
-                {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+                {isOpen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
               </button>
             </Hint>
           ) : (
             <span className="inline-block w-[22px]" aria-hidden />
           )}
-          <button type="button" className="flex min-w-0 flex-1 items-center gap-1 py-1 text-left text-sm" onClick={() => onSelect(f.id)}>
+          <button type="button" className="flex min-w-0 flex-1 items-center gap-1 py-1 text-left text-sm" onClick={() => {
+              onSelect(f.id);
+              if (!isOpen && kids.length) setOpen(f.id, true);
+            }}
+          >
             <Folder size={14} aria-hidden className="shrink-0 text-muted-foreground" />
             <span className="min-w-0 truncate">{f.name}</span>
           </button>
@@ -113,9 +162,10 @@ export function FolderTree({ spaceId, folders, documents, selected, onSelect, ca
             </span>
           )}
         </div>
-        {kids.length > 0 && open && (
+        {kids.length > 0 && isOpen && (
           <ul role="group" className="ml-4">
-            {kids.map(renderFolder)}
+            {subfolders.map(renderFolder)}
+            {docs.map(renderDoc)}
           </ul>
         )}
       </li>
@@ -125,17 +175,18 @@ export function FolderTree({ spaceId, folders, documents, selected, onSelect, ca
   return (
     <>
       <div className="space-y-2">
-        <ul role="tree" aria-label="Folders" className="space-y-0.5">
-          <li role="treeitem" aria-selected={selected === null} aria-label="All documents">
+        <ul role="tree" aria-label="Folders and documents" className="space-y-0.5">
+          <li role="treeitem" aria-selected={topSelected} aria-label="All documents">
             <button
               type="button"
-              className={`w-full rounded px-2 py-1 text-left text-sm ${selected === null ? "bg-surface-2 text-cyan-ink" : ""}`}
+              className={`w-full rounded px-2 py-1 text-left text-sm ${topSelected ? "bg-surface-2 text-cyan-ink" : ""}`}
               onClick={() => onSelect(null)}
             >
               All documents
             </button>
           </li>
           {children(null).map(renderFolder)}
+          {docsIn(null).map(renderDoc)}
         </ul>
         {error && (
           <p role="alert" className="text-sm text-pink">

@@ -42,6 +42,8 @@ describe("KbDocumentPage", () => {
             ? new Response(JSON.stringify({ detail: "document_not_found" }), { status: 404 })
             : new Response(JSON.stringify(DOC), { status: 200 });
         }
+        if (url === "/api/kb/spaces") return new Response("[]", { status: 200 });
+        if (url.endsWith("/tree")) return new Response(JSON.stringify({ folders: [], documents: [] }), { status: 200 });
         return new Response("{}", { status: 200 });
       }),
     );

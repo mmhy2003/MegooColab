@@ -5,6 +5,8 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { DocEditor } from "@/components/kb/DocEditor";
+import { DocPager } from "@/components/kb/DocPager";
+import { KbReader } from "@/components/kb/KbReader";
 import { DocView } from "@/components/kb/DocView";
 import { RevisionHistory } from "@/components/kb/RevisionHistory";
 import { NotFoundView } from "@/components/shell/NotFound";
@@ -36,10 +38,7 @@ export default function KbDocumentPage() {
   const d = doc.data;
 
   return (
-    <div className="space-y-4">
-      <nav aria-label="Breadcrumb" className="text-sm">
-        <Link href="/kb">Knowledge Base</Link> / <Link href={`/kb/${d.space.id}`}>{d.space.name}</Link>
-      </nav>
+    <KbReader spaceId={d.space.id} folderId={d.folder_id} docId={d.id} docTitle={d.title} editing={editing && d.can_write}>
       {doc.isError && (
         <p role="alert" className="rounded border border-pink/60 px-3 py-2 text-sm text-pink">
           This document is no longer available ({errorMessage(doc.error)}). Copy any text you want to keep.
@@ -64,8 +63,9 @@ export default function KbDocumentPage() {
             ))}
           </div>
           {tab === "document" ? <DocView doc={d} onEdit={() => setEditing(true)} /> : <RevisionHistory docId={d.id} />}
+          <DocPager spaceId={d.space.id} docId={d.id} />
         </>
       )}
-    </div>
+    </KbReader>
   );
 }

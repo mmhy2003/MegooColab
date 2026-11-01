@@ -26,6 +26,7 @@ function wrap(ui: ReactNode) {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 describe("FolderTree", () => {
@@ -88,6 +89,58 @@ describe("FolderTree", () => {
     const [rurl, rinit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(rurl).toBe("/api/kb/folders/f1");
     expect(JSON.parse(rinit.body as string)).toEqual({ name: "Docs" });
+  });
+
+  it("lists documents under their folders and marks the current one", () => {
+    localStorage.clear();
+    wrap(<FolderTree spaceId="s1" folders={FOLDERS} documents={DOCS} selected={null} currentDocId="d1" onSelect={vi.fn()} canWrite={false} />);
+    const tree = screen.getByRole("tree");
+    const api = within(tree).getByRole("treeitem", { name: "API" });
+    const webhooks = within(api).getByRole("link", { name: "Webhooks" });
+    expect(webhooks).toHaveAttribute("href", "/kb/doc/d1");
+    expect(webhooks).toHaveAttribute("aria-current", "page");
+    // the top level's documents come after its folders
+    const top = within(tree).getByRole("link", { name: "Readme" });
+    expect(top).toHaveAttribute("href", "/kb/doc/d2");
+    expect(top).not.toHaveAttribute("aria-current");
+    // reading a document, the top level isn't the selected place
+    expect(within(tree).getByRole("treeitem", { name: "All documents" })).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("opens the path to the current document and remembers folders opened by hand", () => {
+    localStorage.clear();
+    const { unmount } = wrap(
+      <FolderTree spaceId="s1" folders={[...FOLDERS, { id: "f4", parent_id: "f3", name: "Inner" }]} documents={DOCS} selected={null} currentDocId="d2" onSelect={vi.fn()} canWrite={false} />,
+    );
+    const tree = screen.getByRole("tree");
+    // never opened: closed
+    expect(within(tree).queryByRole("treeitem", { name: "API" })).toBeNull();
+    fireEvent.click(within(tree).getByRole("button", { name: "Expand Guides" }));
+    expect(within(tree).getByRole("treeitem", { name: "API" })).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem("kb.open.s1")!)).toEqual(["f1"]);
+    unmount();
+    wrap(<FolderTree spaceId="s1" folders={FOLDERS} documents={DOCS} selected={null} onSelect={vi.fn()} canWrite={false} />);
+    expect(within(screen.getByRole("tree")).getByRole("treeitem", { name: "API" })).toBeInTheDocument();
+  });
+
+  it("ignores remembered folders that no longer exist", () => {
+    localStorage.setItem("kb.open.s1", JSON.stringify(["gone", "f1"]));
+    wrap(<FolderTree spaceId="s1" folders={FOLDERS} documents={DOCS} selected={null} onSelect={vi.fn()} canWrite={false} />);
+    expect(within(screen.getByRole("tree")).getByRole("treeitem", { name: "API" })).toBeInTheDocument();
+    localStorage.clear();
+  });
+
+  it("works when storage throws", () => {
+    const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    wrap(<FolderTree spaceId="s1" folders={FOLDERS} documents={DOCS} selected={null} currentDocId="d1" onSelect={vi.fn()} canWrite={false} />);
+    expect(within(screen.getByRole("tree")).getByRole("link", { name: "Webhooks" })).toBeInTheDocument();
+    get.mockRestore();
+    set.mockRestore();
   });
 
   it("no write actions without can_write", () => {

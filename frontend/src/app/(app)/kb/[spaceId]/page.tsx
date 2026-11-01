@@ -6,7 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { DocList } from "@/components/kb/DocList";
-import { FolderTree } from "@/components/kb/FolderTree";
+import { KbReader } from "@/components/kb/KbReader";
 import { NotFoundView } from "@/components/shell/NotFound";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -38,11 +38,10 @@ export default function KbSpacePage() {
       </div>
     );
   }
-  const select = (id: string | null) => router.replace(id ? `/kb/${spaceId}?folder=${id}` : `/kb/${spaceId}`);
   const folderName = tree.data?.folders.find((f) => f.id === folder)?.name;
 
   return (
-    <div>
+    <KbReader spaceId={spaceId} folderId={folder}>
       <PageHeader
         title={space?.name ?? "Knowledge Base"}
         subtitle={space ? `${space.kind === "org" ? "Organization" : space.kind === "team" ? "Team" : "Project"} space` : undefined}
@@ -54,23 +53,7 @@ export default function KbSpacePage() {
           )
         }
       />
-      <p className="mb-4 text-sm">
-        <Link href="/kb">Knowledge Base</Link>
-      </p>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:grid-cols-[16rem_minmax(0,1fr)]">
-        <aside className="card p-3">
-          {tree.data && (
-            <FolderTree
-              spaceId={spaceId}
-              folders={tree.data.folders}
-              documents={tree.data.documents}
-              selected={folder}
-              onSelect={select}
-              canWrite={Boolean(space?.can_write)}
-            />
-          )}
-        </aside>
-        <section className="card min-w-0 p-4">
+      <section className="card min-w-0 p-4">
           <h2 className="mb-2 text-xs tracking-widest text-muted-foreground uppercase">{folderName ?? "Top level"}</h2>
           {creating && (
             <form
@@ -104,8 +87,7 @@ export default function KbSpacePage() {
             </form>
           )}
           {tree.data && <DocList documents={tree.data.documents} folderId={folder} />}
-        </section>
-      </div>
-    </div>
+      </section>
+    </KbReader>
   );
 }
