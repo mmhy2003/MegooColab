@@ -74,7 +74,8 @@ function Chats({ projectKey, chatId }: { projectKey?: string; chatId?: string })
           )}
         </section>
       </div>
-      <NewChatDialog open={adding} onClose={() => setAdding(false)} projectKey={projectKey} />
+      {/* mounted only while open: the dialog opens itself on mount */}
+      {adding && <NewChatDialog open onClose={() => setAdding(false)} projectKey={projectKey} />}
     </div>
   );
 }
