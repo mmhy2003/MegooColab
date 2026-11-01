@@ -1,6 +1,11 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 import { setupOrSignIn } from "./helpers/auth";
+import { buildBinaries, mintLinkedRunnerToken, startRunner, type RunnerHandle } from "./helpers/runner";
 
 /**
  * Tool Hub (plan 23): an MCP kept with its key, shared with a team without the key, taken as a copy that later
@@ -78,4 +83,60 @@ test("tool hub: add, share without the key, take a copy", async ({ page, browser
   await tp.goto("/hub");
   await expect(tp.getByText("removed by an admin")).toBeVisible();
   await taker.close();
+});
+
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
+const PUSHED = "push-e2e-secret-987654";
+
+test("tool hub: push to a machine and see it installed", async ({ page }) => {
+  test.setTimeout(240_000);
+  const work = mkdtempSync(join(tmpdir(), "megoo-e2e-hub-"));
+  const home = join(work, "home");
+  let runner: RunnerHandle | undefined;
+  try {
+    const bins = buildBinaries(join(work, "bin"));
+    await setupOrSignIn(page);
+    const request = page.request;
+    const agent = await post<{ id: string }>(request, "/api/agents", { program: "claude_code", name: "Hub Builder" });
+    const token = await mintLinkedRunnerToken(request, agent.id, "hub-e2e-machine");
+    const launch = () =>
+      startRunner({ url: BASE, token, home, adapterOverride: bins.fakeAgent, scenario: [], runnerBin: bins.runner,
+        env: { CODEX_HOME: "" } });
+    runner = launch();
+    const tool = await post<{ id: string }>(request, "/api/hub/tools", {
+      kind: "mcp", name: "push-e2e",
+      spec: { transport: "http", url: "https://mcp.example.com/mcp", headers: [{ name: "X-Key", secret: true }] },
+    });
+    const put = await request.put(`/api/hub/tools/${tool.id}/secrets`, { data: { values: { "X-Key": PUSHED } }, headers: WEB });
+    expect(put.ok()).toBeTruthy();
+
+    // 1. tick it on the machine and push: the runner installs it into ~/.claude.json
+    await page.goto("/settings/agents");
+    const panel = page.getByRole("region", { name: 'Tools on "hub-e2e-machine"' });
+    await expect(panel.getByText(/· online$/)).toBeVisible({ timeout: 30_000 });
+    await panel.getByRole("checkbox", { name: "push-e2e" }).check();
+    await panel.getByRole("button", { name: "Push 1 change" }).click();
+    await expect(panel.getByText("Claude Code: installed")).toBeVisible({ timeout: 15_000 });
+    const claudeJson = join(home, ".claude.json");
+    const written = JSON.parse(readFileSync(claudeJson, "utf8")) as { mcpServers: Record<string, { url: string; headers: Record<string, string> }> };
+    expect(written.mcpServers["push-e2e"].headers["X-Key"]).toBe(PUSHED);
+
+    // 2. a hand edit shows once the runner reconnects
+    written.mcpServers["push-e2e"].url = "https://edited.example.com/mcp";
+    writeFileSync(claudeJson, JSON.stringify(written));
+    await runner.stop();
+    await expect(panel.getByText(/· offline$/)).toBeVisible({ timeout: 30_000 });
+    runner = launch();
+    await expect(panel.getByText("Claude Code: changed on this machine")).toBeVisible({ timeout: 30_000 });
+
+    // 3. pushing puts the library's version back, after asking
+    await panel.getByRole("button", { name: "Push 1 change" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Push" }).click();
+    await expect(panel.getByText("Claude Code: installed")).toBeVisible({ timeout: 15_000 });
+    const restored = JSON.parse(readFileSync(claudeJson, "utf8")) as { mcpServers: Record<string, { url: string }> };
+    expect(restored.mcpServers["push-e2e"].url).toBe("https://mcp.example.com/mcp");
+  } finally {
+    await runner?.stop();
+    rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
 });
