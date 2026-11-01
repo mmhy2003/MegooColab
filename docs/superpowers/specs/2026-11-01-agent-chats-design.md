@@ -126,6 +126,26 @@ on its branch; the dialog says so ("The branch megoo/… keeps what was done so 
   keeps the list readable and the agent's context focused. The chat doesn't force this; the agent's first reply in a
   new round may suggest it when the request looks unrelated.
 
+## Knowledge Base and memory (owner's request)
+
+- A chat's approved design and plan, and its final review, are filed in the Knowledge Base exactly as a task's are
+  (WF-9), whether or not the chat is added to the board.
+- Memory learns from a chat's conversation, decisions and runs as it does from a task's, so later chats and tasks
+  benefit.
+- In both, the "from"/source link opens the chat; it opens only for people who can see the chat (others see the entry as
+  they would a task's, under the same project rules).
+
+## Dashboard (owner's choice: option B; mockup `.superpowers/brainstorm/2839-1793520974/content/dashboard.html`)
+
+- A new KPI tile **"Open chats"**: the count of open chats in scope, with "N waiting on you" underneath.
+- **Needs you** lists chats waiting on the viewer, tagged "chat", opening the chat.
+- **Running now** shows a chat's agent run, tagged "chat", with its stage/step.
+- A new **Chats** card: open chats in scope, most recent activity first, each with what it's doing ("waiting: plan",
+  "building 2/3", "in review · PR #42", "finished"), and links **New chat** and **All chats**.
+- **"Tasks finished · last 14 days"** gets a third colour: chats (a round that finished), next to tasks by agents and by
+  people; the card's title becomes "Finished · last 14 days".
+- The Mine / Team / All switch filters chats like everything else (Mine: chats I started or whose agent I own).
+
 ## How it works underneath (my recommendations, approved with the designs)
 
 - **One engine.** A chat runs on the existing task workflow engine — the same runs, approvals, reviews, enforcement,
