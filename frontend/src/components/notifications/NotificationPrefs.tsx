@@ -10,16 +10,22 @@ import {
   useNotificationPrefs,
   useSavePref,
 } from "@/lib/notifications";
+import { useMyTelegram } from "@/lib/telegram";
 
-/** Per kind: in the app, by email (only once an admin set up SMTP), and as push (to the devices turned on above). */
+/** Per kind: in the app, by email (only once an admin set up SMTP), as push (to the devices turned on above), and in
+ * Telegram (while the site has a bot; ticked once this person connected their chat). */
 export function NotificationPrefs() {
   const prefs = useNotificationPrefs();
+  const telegram = useMyTelegram().data;
   // a toggle shows at once; once its save settles, the saved choices (or, after a failure, the old ones) show
   const [unsaved, setUnsaved] = useState<Partial<Record<NotificationKind, NotificationPref>>>({});
   const save = useSavePref((pref) =>
     setUnsaved((u) => {
       const shown = u[pref.kind];
-      if (!shown || shown.in_app !== pref.in_app || shown.email !== pref.email || shown.push !== pref.push) {
+      if (
+        !shown || shown.in_app !== pref.in_app || shown.email !== pref.email || shown.push !== pref.push
+        || shown.telegram !== pref.telegram
+      ) {
         return u; // a newer toggle waits
       }
       const rest = { ...u };
@@ -28,14 +34,14 @@ export function NotificationPrefs() {
     }),
   );
   if (prefs.isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  const toggle = (p: NotificationPref, field: "in_app" | "email" | "push") => {
+  const toggle = (p: NotificationPref, field: "in_app" | "email" | "push" | "telegram") => {
     const next = { ...p, [field]: !p[field] };
     setUnsaved((u) => ({ ...u, [p.kind]: next }));
     save.mutate(next);
   };
   return (
     <div className="space-y-2">
-      {/* four columns: on a narrow phone the table scrolls inside its card instead of widening the page */}
+      {/* four or five columns: on a narrow phone the table scrolls inside its card instead of widening the page */}
       <div className="card max-w-xl overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -44,6 +50,7 @@ export function NotificationPrefs() {
               <th className="px-2 py-2 sm:px-3 font-normal">In app</th>
               <th className="px-2 py-2 sm:px-3 font-normal">Email</th>
               <th className="px-2 py-2 sm:px-3 font-normal">Push</th>
+              {telegram?.available && <th className="px-2 py-2 sm:px-3 font-normal">Telegram</th>}
             </tr>
           </thead>
           <tbody>
@@ -59,6 +66,18 @@ export function NotificationPrefs() {
                 <td className="px-2 py-2 sm:px-3">
                   <input type="checkbox" aria-label={`Push: ${KIND_LABELS[p.kind]}`} checked={p.push ?? false} onChange={() => toggle(p, "push")} />
                 </td>
+                {telegram?.available && (
+                  <td className="px-2 py-2 sm:px-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Telegram: ${KIND_LABELS[p.kind]}`}
+                      checked={p.telegram ?? false}
+                      disabled={!telegram.linked}
+                      title={telegram.linked ? undefined : "Connect Telegram first"}
+                      onChange={() => toggle(p, "telegram")}
+                    />
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

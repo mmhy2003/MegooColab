@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type Query } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import type { components } from "@/lib/api-types";
@@ -23,6 +23,8 @@ export function useAdminTelegram() {
 }
 
 /** Whether the site has a bot and this person linked their chat; refetchInterval while waiting for Start. */
-export function useMyTelegram(refetchInterval: number | false = false) {
+export function useMyTelegram(
+  refetchInterval: number | false | ((query: Query<MyTelegram, Error, MyTelegram, readonly unknown[]>) => number | false) = false,
+) {
   return useQuery({ queryKey: telegramKeys.mine(), queryFn: () => api<MyTelegram>("/api/me/telegram"), refetchInterval });
 }
