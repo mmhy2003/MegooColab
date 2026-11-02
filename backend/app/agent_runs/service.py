@@ -13,7 +13,7 @@ from app.a2a.models import Question
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agent_runs.schemas import RunAgentOut, RunOut
 from app.agent_runs.tokens import issue_run_token
-from app.agents.models import Agent, AgentBinding
+from app.agents.models import Agent, AgentBinding, AgentProgram
 from app.agents.service import (
     can_use_agent,
     owner_can_access,
@@ -43,6 +43,7 @@ from app.runner.protocol import (
 from app.runner.registry import (
     BRANCH_CAPABILITY,
     MODEL_CAPABILITY,
+    OMP_CAPABILITY,
     WORKFLOW_CAPABILITY,
     RunnerClosed,
     RunnerConn,
@@ -185,6 +186,8 @@ async def _claim_next(
     run = None
     # a runner without model/1 would start an agent with a chosen model or effort on the defaults: its runs wait
     model_ok = not (agent.model or agent.effort) or registry.agent_supports(agent.id, MODEL_CAPABILITY)
+    # a runner without omp/1 cannot start OMP: its runs wait for one that can
+    model_ok = model_ok and (agent.program != AgentProgram.omp or registry.agent_supports(agent.id, OMP_CAPABILITY))
     limit = agent.max_concurrent_runs if welcomed is None else min(agent.max_concurrent_runs, welcomed)
     if model_ok and limit > (running or 0):
         # a runner without workflow/1 leaves workflow and answering runs queued (they need the MCP run token); one

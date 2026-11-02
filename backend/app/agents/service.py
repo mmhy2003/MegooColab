@@ -24,6 +24,8 @@ from app.runner.registry import (
     BRANCH_PROBLEM,
     MODEL_CAPABILITY,
     MODEL_PROBLEM,
+    OMP_CAPABILITY,
+    OMP_PROBLEM,
     WORKFLOW_CAPABILITY,
     WORKFLOW_PROBLEM,
     registry,
@@ -33,9 +35,12 @@ from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
 from app.workflow.models import TaskWorkflow, WorkflowStatus
 
-PROGRAM_LABELS = {AgentProgram.claude_code: "Claude Code", AgentProgram.codex: "Codex"}
-# the model a new agent starts on, unless its owner asks for another (or for the program's own default)
-DEFAULT_MODELS = {AgentProgram.claude_code: "Opus 5.5", AgentProgram.codex: "GPT-6.1 Sol"}
+PROGRAM_LABELS = {AgentProgram.claude_code: "Claude Code", AgentProgram.codex: "Codex", AgentProgram.omp: "OMP"}
+# the model a new agent starts on, unless its owner asks for another (or for the program's own default). OMP works
+# with many providers, so it starts on whatever its owner set up in OMP.
+DEFAULT_MODELS: dict[AgentProgram, str | None] = {
+    AgentProgram.claude_code: "Opus 5.5", AgentProgram.codex: "GPT-6.1 Sol", AgentProgram.omp: None,
+}
 
 # Windows drive (C:\ or C:/), UNC (\\server\share) or POSIX (/...)
 _ABSOLUTE_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\[^\\/]|/)")
@@ -90,7 +95,9 @@ def runner_info(agent_id: uuid.UUID) -> RunnerInfo | None:
     return RunnerInfo(version=conn.version, os=conn.os or "")
 
 
-def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, chooses: bool = False) -> list[str]:
+def agent_problems(
+    agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, chooses: bool = False, program: str | None = None
+) -> list[str]:
     """What its machine's live runner reports as wrong with the agent (shown to the owner and admins only),
     plus the server's own too-old-runner notices (shown to everyone who can see the agent)."""
     conn = registry.conn_for_agent(agent_id)
@@ -104,6 +111,8 @@ def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, choos
         problems.append(BRANCH_PROBLEM)
     if chooses and MODEL_CAPABILITY not in conn.capabilities:  # a model or an effort of its own
         problems.append(MODEL_PROBLEM)
+    if program == AgentProgram.omp and OMP_CAPABILITY not in conn.capabilities:
+        problems.append(OMP_PROBLEM)
     return problems
 
 
@@ -278,7 +287,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "owner": UserOut.model_validate(owners[a.owner_id]),
             "status": statuses[a.id],
             "running": running.get(a.id, 0),
-            "problems": agent_problems(a.id, a.owner_id, viewer, bool(a.model or a.effort)),
+            "problems": agent_problems(a.id, a.owner_id, viewer, bool(a.model or a.effort), a.program),
             "bindings": bindings.get(a.id, []),
             "runner": runner_info(a.id),
             "machine": _machine(tokens.get(a.runner_token_id), a.owner_id, viewer),

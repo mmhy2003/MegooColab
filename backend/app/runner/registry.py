@@ -23,6 +23,9 @@ MODEL_CAPABILITY = "model/1"
 MODEL_PROBLEM = "runner too old to choose the model — update megoocolab-runner"
 # the runner hands a person's message into the running turn (ACP _session/steering), run_steer / run_steer_result
 STEER_CAPABILITY = "steer/1"
+# the runner starts OMP agents (omp acp) and installs Tool Hub tools for them
+OMP_CAPABILITY = "omp/1"
+OMP_PROBLEM = "Update the runner to use OMP agents."
 
 
 class RunnerClosed(Exception):
