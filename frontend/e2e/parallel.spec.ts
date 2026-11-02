@@ -98,8 +98,11 @@ test("an agent works on three chats at once, and its limit can be raised and low
     if (agentId) {
       const id = agentId;
       await expect
-        .poll(async () => (await page.request.delete(`/api/agents/${id}`, { headers: WEB })).status(), { timeout: 30_000 })
-        .toBe(204);
+        .poll(async () => {
+          const r = await page.request.delete(`/api/agents/${id}`, { headers: WEB });
+          return `${r.status()} ${await r.text()}`;
+        }, { timeout: 30_000 })
+        .toMatch(/^204/);
     }
     const tokens = (await (await page.request.get("/api/tokens")).json()) as { id: string; name: string }[];
     for (const t of tokens.filter((x) => x.name === "parallel-e2e-machine")) {
