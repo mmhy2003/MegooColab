@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
 )
@@ -20,11 +21,25 @@ func init() { register(ompAgent{}) }
 
 func (ompAgent) Program() string { return "omp" }
 
-// ompConfigPath asks omp for its active agent folder; tests replace it.
+// ompConfigPath asks omp for its active agent folder; tests replace it. omp starts slowly and a push or scan asks
+// many times, so an answer is kept for the runner's life (a profile is chosen in its environment, fixed at start).
 var ompConfigPath = func() (string, error) {
+	ompPathMu.Lock()
+	defer ompPathMu.Unlock()
+	if ompPath != "" {
+		return ompPath, nil
+	}
 	out, err := exec.Command("omp", "config", "path").Output()
+	if err == nil {
+		ompPath = string(out)
+	}
 	return string(out), err
 }
+
+var (
+	ompPathMu sync.Mutex
+	ompPath   string
+)
 
 // OmpAgentDir is the active OMP agent folder: what `omp config path` prints, else OMP's own rule. The root is
 // $PI_CONFIG_DIR or <home>/.omp; a named profile ($OMP_PROFILE, $PI_PROFILE) uses <root>/profiles/<name>/agent;
