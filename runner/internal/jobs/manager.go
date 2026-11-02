@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,6 +56,10 @@ type Manager struct {
 	ExitGrace     time.Duration                     // wait for the adapter to exit after a finished turn; default 2 s
 	FlushInterval time.Duration                     // message coalescing interval; 0 keeps the default
 	LogCap        int                               // bytes of adapter output kept per run log; default 5 MiB
+	// Where a run's images are downloaded from (the server's base URL and this runner's token), and with what.
+	ServerURL  string
+	Token      string
+	HTTPClient *http.Client // default: one with a 60 s timeout per image
 
 	send      func(any) error
 	cacheRoot string
@@ -153,6 +158,8 @@ type run struct {
 	held   string // guarded by emitMu
 
 	steer steering // people's messages for the running turn
+
+	images runImages // guarded by mu
 }
 
 // emit sends one metadata update with the next seq. The acpclient calls it in order.
@@ -725,6 +732,15 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if err != nil {
 		return fail("policy_failed", err)
 	}
+	// before the agent starts: a run never goes out without the images it was sent with
+	imageData, err := m.fetchImages(r.ctx, rs.Images)
+	if err != nil {
+		return fail("image_download_failed", err)
+	}
+	r.mu.Lock()
+	r.images.pol = pol
+	r.mu.Unlock()
+	defer r.removeImages()
 
 	// Pinned before any agent runs: the git dir the runner reads is the one the
 	// worktree had now, whatever the agent later does to its .git file.
@@ -839,6 +855,9 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if rs.Mcp != nil && !initResp.AgentCapabilities.McpCapabilities.Http {
 		return fail("mcp_http_unsupported", nil)
 	}
+	r.mu.Lock()
+	r.images.blocks = initResp.AgentCapabilities.PromptCapabilities.Image
+	r.mu.Unlock()
 	sess, err := openSession(r.ctx, sessionRequest{
 		ac: ac, client: client, caps: initResp.AgentCapabilities, rs: rs, cwd: wt,
 		meta: adapters.SessionMeta(agent.Program, kind, tools.PluginDir(m.cacheRoot)), servers: servers, log: logf,
@@ -875,11 +894,12 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return "cancelled", ""
 	}
 
+	prompt, err := r.content(sess.prompt, rs.Images, imageData)
+	if err != nil {
+		return fail("images_failed", err)
+	}
 	r.beginTurn(ac, sess.id, steeringSupported(initResp.Meta))
-	resp, err := ac.Prompt(r.ctx, acp.PromptRequest{
-		SessionId: sess.id,
-		Prompt:    []acp.ContentBlock{acp.TextBlock(sess.prompt)},
-	})
+	resp, err := ac.Prompt(r.ctx, acp.PromptRequest{SessionId: sess.id, Prompt: prompt})
 	if r.endTurn() {
 		// a steer arrived as the turn ended and the adapter (Codex) started a turn for it: stop that turn, the
 		// server gives the message to the next run

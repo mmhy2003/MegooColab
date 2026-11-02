@@ -4,6 +4,8 @@ package policy
 
 import (
 	"fmt"
+	"path/filepath"
+	"sync"
 
 	"github.com/coder/acp-go-sdk"
 )
@@ -33,6 +35,37 @@ type Policy interface {
 	CheckTool(kind acp.ToolKind, title string, locations []string, command string) Decision
 	CheckWrite(path string) Decision
 	CheckRead(path string) Decision
+	// AllowRead lets the agent also read inside dir (the run's images, when its program can't take them in
+	// the prompt). Writes there stay refused.
+	AllowRead(dir string)
+	// ResolveRead is InsideRoot for a read: the resolved path when it is inside the worktree or an allowed folder.
+	ResolveRead(path string) (string, bool)
+}
+
+// readDirs are the folders outside the worktree a run may read, shared by a policy's copies.
+type readDirs struct {
+	mu   sync.Mutex
+	dirs []string
+}
+
+func (d *readDirs) add(dir string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.dirs = append(d.dirs, dir)
+}
+
+func (d *readDirs) resolve(path string) (string, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, dir := range d.dirs {
+		if !filepath.IsAbs(path) {
+			continue // a relative path means the worktree
+		}
+		if real, ok := InsideRoot(dir, path); ok {
+			return real, true
+		}
+	}
+	return "", false
 }
 
 // New builds the policy of the given kind for a worktree root.
@@ -42,21 +75,27 @@ func New(kind Kind, root string) (Policy, error) {
 	}
 	switch kind {
 	case ReadOnly:
-		return readOnly{root: root}, nil
+		return readOnly{root: root, extra: &readDirs{}}, nil
 	case Workspace:
-		return workspace{root: root}, nil
+		return workspace{root: root, extra: &readDirs{}}, nil
 	}
 	return nil, fmt.Errorf("policy: unknown kind %q", kind)
 }
 
 // readOnly: nothing is ever written; only plain read-only commands run.
-type readOnly struct{ root string }
+type readOnly struct {
+	root  string
+	extra *readDirs
+}
+
+func (p readOnly) AllowRead(dir string)                   { p.extra.add(dir) }
+func (p readOnly) ResolveRead(path string) (string, bool) { return resolveRead(p.root, p.extra, path) }
 
 func (p readOnly) CheckWrite(string) Decision {
 	return deny("read-only policy: writes are not allowed")
 }
 
-func (p readOnly) CheckRead(path string) Decision { return checkInside(p.root, path, "read") }
+func (p readOnly) CheckRead(path string) Decision { return checkRead(p.root, p.extra, path) }
 
 func (p readOnly) CheckTool(kind acp.ToolKind, _ string, _ []string, command string) Decision {
 	switch kind {
@@ -73,11 +112,16 @@ func (p readOnly) CheckTool(kind acp.ToolKind, _ string, _ []string, command str
 	return deny("read-only policy: tool not allowed")
 }
 
-// workspace: reads and writes stay inside the worktree; commands run there.
-type workspace struct{ root string }
+// workspace: reads and writes stay inside the worktree (reads also in an allowed folder); commands run there.
+type workspace struct {
+	root  string
+	extra *readDirs
+}
 
-func (p workspace) CheckWrite(path string) Decision { return checkInside(p.root, path, "write") }
-func (p workspace) CheckRead(path string) Decision  { return checkInside(p.root, path, "read") }
+func (p workspace) CheckWrite(path string) Decision        { return checkInside(p.root, path, "write") }
+func (p workspace) CheckRead(path string) Decision         { return checkRead(p.root, p.extra, path) }
+func (p workspace) AllowRead(dir string)                   { p.extra.add(dir) }
+func (p workspace) ResolveRead(path string) (string, bool) { return resolveRead(p.root, p.extra, path) }
 
 func (p workspace) CheckTool(kind acp.ToolKind, _ string, locations []string, _ string) Decision {
 	switch kind {
@@ -88,6 +132,11 @@ func (p workspace) CheckTool(kind acp.ToolKind, _ string, locations []string, _ 
 		fallthrough
 	case acp.ToolKindRead, acp.ToolKindSearch:
 		for _, l := range locations {
+			if kind == acp.ToolKindRead {
+				if _, ok := p.extra.resolve(l); ok {
+					continue // the run's images
+				}
+			}
 			if d := checkInside(p.root, l, "access"); !d.Allow {
 				return d
 			}
@@ -97,6 +146,20 @@ func (p workspace) CheckTool(kind acp.ToolKind, _ string, locations []string, _ 
 		return allow("workspace policy")
 	}
 	return deny("workspace policy: tool not allowed")
+}
+
+func checkRead(root string, extra *readDirs, path string) Decision {
+	if _, ok := extra.resolve(path); ok {
+		return allow("the run's own files")
+	}
+	return checkInside(root, path, "read")
+}
+
+func resolveRead(root string, extra *readDirs, path string) (string, bool) {
+	if real, ok := InsideRoot(root, path); ok {
+		return real, true
+	}
+	return extra.resolve(path)
 }
 
 func checkInside(root, path, verb string) Decision {

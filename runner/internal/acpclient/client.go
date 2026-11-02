@@ -251,7 +251,7 @@ func (c *Client) ReadTextFile(_ context.Context, p acp.ReadTextFileRequest) (acp
 	if d := c.pol.CheckRead(p.Path); !d.Allow {
 		return acp.ReadTextFileResponse{}, errors.New("read denied: " + d.Reason)
 	}
-	real, ok := policy.InsideRoot(c.root, p.Path)
+	real, ok := c.pol.ResolveRead(p.Path) // the worktree, or a folder the run may read (its images)
 	if !ok {
 		return acp.ReadTextFileResponse{}, errors.New("read denied: outside the worktree")
 	}

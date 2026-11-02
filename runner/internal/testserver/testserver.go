@@ -22,6 +22,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -51,6 +52,17 @@ type Server struct {
 	frames   []Frame
 	headers  []string
 	rejectAs int
+	images   map[string][]byte
+}
+
+// SetImage serves data at /api/runner/images/{id} to the server's token, as the backend serves a run's images.
+func (s *Server) SetImage(id string, data []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.images == nil {
+		s.images = map[string][]byte{}
+	}
+	s.images[id] = data
 }
 
 // New starts a server that accepts the given bearer token.
@@ -173,6 +185,17 @@ func (s *Server) wait(t testing.TB, what string, cond func() bool) {
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	if id, ok := strings.CutPrefix(r.URL.Path, "/api/runner/images/"); ok {
+		s.mu.Lock()
+		data, found := s.images[id]
+		s.mu.Unlock()
+		if !found || r.Header.Get("Authorization") != "Bearer "+s.token {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(data)
+		return
+	}
 	if r.URL.Path != "/api/runner/ws" {
 		http.NotFound(w, r)
 		return
