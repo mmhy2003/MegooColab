@@ -9,7 +9,7 @@ from app.agent_runs.models import AgentRun
 from app.hub.machines import machine_programs
 from app.runner.registry import OMP_PROBLEM, registry
 from tests.a2a.test_preference import _ask, _no_suggestions
-from tests.a2a.test_routing import _cleanup, _world
+from tests.a2a.test_routing import _agent, _cleanup, _online, _runs, _world
 from tests.agent_runs.test_dispatch import (
     _dispatch_in_own_session,
     _fake_conn,
@@ -17,6 +17,7 @@ from tests.agent_runs.test_dispatch import (
     queue_run,
 )
 from tests.factories import login, make_project, make_user
+from tests.hub.test_machines import _machine, _machines, _tool, conns  # noqa: F401 (conns is a fixture)
 
 
 async def _bound_agent(client, db, program):
@@ -112,5 +113,37 @@ async def test_question_prefers_omp_program(client, db, monkeypatch):
     try:
         q = await _ask(client, asker, prefer_program="omp")
         assert q["preference"] == {"program": "omp", "agent": None, "if_busy": "wait"}
+    finally:
+        _cleanup(m1, m2)
+
+
+async def test_machine_panel_leaves_out_omp_on_a_runner_without_it(client, db, conns):  # noqa: F811
+    me = await make_user(db)
+    await login(client, me)
+    token = await _machine(client, db, program="omp")
+    await client.post("/api/agents", json={"program": "claude_code", "runner_token_id": token, "name": "cc"})
+    await _tool(client, secrets={"API_KEY": "k"})
+    conn = conns(token, me)
+    m = (await _machines(client))[0]
+    assert [p["program"] for p in m["tools"][0]["programs"]] == ["claude_code"]
+    conn.capabilities.add("omp/1")
+    m = (await _machines(client))[0]
+    assert [p["program"] for p in m["tools"][0]["programs"]] == ["claude_code", "omp"]
+
+
+async def test_question_skips_an_omp_agent_on_a_runner_without_it(client, db, monkeypatch):
+    monkeypatch.setattr("app.a2a.service.suggest", _no_suggestions)
+    m1, m2, asker = await _world(client, db)
+    await login(client, m1)
+    agent = (await client.post("/api/agents", json={"program": "omp", "name": f"omp-{uuid.uuid4().hex[:6]}"})).json()
+    await client.put(f"/api/agents/{agent['id']}/bindings",
+                     json={"bindings": [{"project_ref": "QBB", "local_path": "/repo/qbb"}]})
+    claude = await _agent(client, m2)
+    await _online(m1, agent)  # a current runner, but without omp/1
+    await _online(m2, claude)
+    try:
+        q = await _ask(client, asker, prefer_program="omp", if_busy="another")  # preferred, but it cannot run
+        [run] = await _runs(db, uuid.UUID(q["id"]))
+        assert str(run.agent_id) == claude["id"]
     finally:
         _cleanup(m1, m2)

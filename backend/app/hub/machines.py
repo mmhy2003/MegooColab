@@ -293,7 +293,7 @@ def _state(tool: HubTool | None, inst: HubInstall | None, ticked: bool, os_: str
 async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) -> HubMachineOut:
     machine = await db.get(HubMachine, token.id)
     agents = await _agents(db, token.id)
-    programs = sorted({a.program for a in agents})
+    programs = await machine_programs(db, token.id)  # what a push installs into: OMP only on a runner with omp/1
     conn = _conn(token)
     library = list((await db.execute(
         select(HubTool).where(HubTool.owner_id == user.id).order_by(HubTool.name, HubTool.id))).scalars())
