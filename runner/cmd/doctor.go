@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -84,7 +85,7 @@ func (d doctor) report(w io.Writer) error {
 	} else {
 		results = append(results, checkResult{Name: "server", Hint: "skipped: no usable config"})
 	}
-	results = append(results, d.checkGit(), d.checkNode())
+	results = append(results, d.checkGit(), d.checkNode(), d.checkOmp())
 	failed := 0
 	for _, r := range results {
 		fmt.Fprintln(w, r.Line())
@@ -159,9 +160,37 @@ func (d doctor) checkNode() checkResult {
 	return checkResult{Name: name, OK: true, Hint: ver + " with npx"}
 }
 
+// ompProblem is adapters.OmpProblem on this machine.
+func (d doctor) ompProblem() string {
+	version := func(path string) (string, error) { return d.run(path, "--version") }
+	return adapters.OmpProblem(runtime.GOOS, os.Getenv, d.lookPath, version)
+}
+
+// ompInstall is how to install OMP on this OS.
+func ompInstall() string {
+	if runtime.GOOS == "windows" {
+		return "irm https://omp.sh/install.ps1 | iex"
+	}
+	return "curl -fsSL https://omp.sh/install | sh"
+}
+
+// checkOmp checks for OMP, which only OMP agents need: missing is fine, too old or not startable is not.
+func (d doctor) checkOmp() checkResult {
+	const name = "omp"
+	switch problem := d.ompProblem(); problem {
+	case "":
+		return checkResult{Name: name, OK: true, Hint: adapters.OmpMinVersion + " or newer"}
+	case "omp not found":
+		return checkResult{Name: name, OK: true, Hint: "not found; needed only for OMP agents. Install it with: " +
+			ompInstall() + ", then sign in: omp auth-broker login"}
+	default:
+		return checkResult{Name: name, Hint: problem + ". Install it with: " + ompInstall()}
+	}
+}
+
 // acpPrograms are the agent programs the runner can drive. The runner's local
 // config knows no agents (the server sends them), so every program is checked.
-var acpPrograms = []string{adapters.ClaudeCode, adapters.Codex}
+var acpPrograms = []string{adapters.ClaudeCode, adapters.Codex, adapters.Omp}
 
 func yesNo(b bool) string {
 	if b {
@@ -179,6 +208,11 @@ func (d doctor) reportACP(ctx context.Context, w io.Writer) error {
 	}
 	failed := 0
 	for _, program := range acpPrograms {
+		// OMP is optional: a machine without it has no OMP agents to check
+		if program == adapters.Omp && d.lookPath != nil && d.ompProblem() == "omp not found" {
+			fmt.Fprintf(w, "%s: not installed\n", program)
+			continue
+		}
 		caps, err := d.probeACP(ctx, program)
 		if err != nil {
 			fmt.Fprintf(w, "%s: unchecked (%v)\n", program, err)

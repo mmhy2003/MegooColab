@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/coder/acp-go-sdk"
+
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
 )
 
@@ -181,6 +183,72 @@ func TestOmpScanIgnoresMegooColabAndOtherPrograms(t *testing.T) {
 	}
 	if skills, _ := omp(t).ScanSkills(home); len(skills) != 0 {
 		t.Fatalf("skills = %+v", skills)
+	}
+}
+
+func runServersSetup(t *testing.T) (string, *Manifest) {
+	t.Helper()
+	home := isolate(t)
+	writeOmpJSON(t, home, `{"mcpServers":{
+		"docs":{"type":"http","url":"https://d/mcp","headers":{"X-Key":"k","A":"1"}},
+		"db":{"type":"stdio","command":"node","args":["db.js"],"env":{"PW":"p"}},
+		"mine":{"type":"http","url":"https://mine"}}}`)
+	m := &Manifest{Entries: []Entry{
+		{Program: "omp", Kind: "mcp", Name: "docs", ReadOnlySafe: true},
+		{Program: "omp", Kind: "mcp", Name: "db"},
+		{Program: "omp", Kind: "mcp", Name: "gone", ReadOnlySafe: true},
+		{Program: "claude_code", Kind: "mcp", Name: "mine", ReadOnlySafe: true},
+		{Program: "omp", Kind: "skill", Name: "ui"},
+	}}
+	return home, m
+}
+
+func serverNames(servers []acp.McpServer) []string {
+	var out []string
+	for _, s := range servers {
+		switch {
+		case s.Http != nil:
+			out = append(out, s.Http.Name)
+		case s.Stdio != nil:
+			out = append(out, s.Stdio.Name)
+		}
+	}
+	return out
+}
+
+func TestOmpRunServersWorkspaceHasAll(t *testing.T) {
+	home, m := runServersSetup(t)
+	servers := OmpRunServers(m, home, false)
+	if got := serverNames(servers); !reflect.DeepEqual(got, []string{"db", "docs"}) {
+		t.Fatalf("servers = %v", got)
+	}
+	db, docs := servers[0].Stdio, servers[1].Http
+	if db == nil || db.Command != "node" || !reflect.DeepEqual(db.Args, []string{"db.js"}) ||
+		!reflect.DeepEqual(db.Env, []acp.EnvVariable{{Name: "PW", Value: "p"}}) {
+		t.Fatalf("db = %+v", db)
+	}
+	if docs == nil || docs.Url != "https://d/mcp" ||
+		!reflect.DeepEqual(docs.Headers, []acp.HttpHeader{{Name: "A", Value: "1"}, {Name: "X-Key", Value: "k"}}) {
+		t.Fatalf("docs = %+v", docs)
+	}
+}
+
+func TestOmpRunServersReadOnlyOnlySafe(t *testing.T) {
+	home, m := runServersSetup(t)
+	if got := serverNames(OmpRunServers(m, home, true)); !reflect.DeepEqual(got, []string{"docs"}) {
+		t.Fatalf("servers = %v", got)
+	}
+}
+
+func TestOmpRunServersSkipsMissingOrUnreadable(t *testing.T) {
+	home, m := runServersSetup(t)
+	writeOmpJSON(t, home, `{"mcpServers":{"docs":"not an object","db":{"type":"stdio","command":"node"}}}`)
+	if got := serverNames(OmpRunServers(m, home, false)); !reflect.DeepEqual(got, []string{"db"}) {
+		t.Fatalf("servers = %v", got)
+	}
+	writeOmpJSON(t, home, `{broken`)
+	if got := OmpRunServers(m, home, false); len(got) != 0 {
+		t.Fatalf("servers from a broken file = %v", got)
 	}
 }
 

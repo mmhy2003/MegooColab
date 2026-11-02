@@ -75,6 +75,7 @@ func newEnvWithCache(t *testing.T, scenario string, maxRuns int, cache string, t
 	e := &env{t: t, repo: gitRepo(t), cache: cache, serveErr: make(chan error, 1)}
 	e.report = filepath.Join(t.TempDir(), "report.json")
 	t.Setenv("MEGOO_ADAPTER_CLAUDE_CODE", `"`+testutil.BuildFakeAgent(t)+`"`)
+	t.Setenv("MEGOO_ADAPTER_OMP", `"`+testutil.BuildFakeAgent(t)+`"`)
 	t.Setenv("FAKEAGENT_SCENARIO", scenario)
 	t.Setenv("FAKEAGENT_REPORT", e.report)
 	e.srv = testserver.New(t, token)
@@ -105,11 +106,14 @@ func newEnvWithCache(t *testing.T, scenario string, maxRuns int, cache string, t
 	return e
 }
 
-func (e *env) welcome(maxRuns int) {
+func (e *env) welcome(maxRuns int) { e.welcomeAs(maxRuns, "claude_code") }
+
+// welcomeAs is welcome with agent-1 as an agent of that program.
+func (e *env) welcomeAs(maxRuns int, program string) {
 	if err := e.srv.Send(protocol.Welcome{
 		Type: protocol.TypeWelcome, UserID: "u1",
 		Agents: []protocol.WelcomeAgent{{
-			AgentID: "agent-1", Name: "A", Program: "claude_code", MaxConcurrentRuns: maxRuns,
+			AgentID: "agent-1", Name: "A", Program: program, MaxConcurrentRuns: maxRuns,
 			Bindings: []protocol.WelcomeBinding{{ProjectKey: "MEG", LocalPath: e.repo}},
 		}},
 	}); err != nil {

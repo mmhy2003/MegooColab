@@ -132,6 +132,7 @@ func TestDoctorAcpPrintsCapabilities(t *testing.T) {
 	agent := `"` + testutil.BuildFakeAgent(t) + `"`
 	t.Setenv("MEGOO_ADAPTER_CLAUDE_CODE", agent)
 	t.Setenv("MEGOO_ADAPTER_CODEX", agent)
+	t.Setenv("MEGOO_ADAPTER_OMP", agent)
 	t.Setenv("FAKEAGENT_RESUME", "1")
 	t.Setenv("FAKEAGENT_NO_MCP_HTTP", "1")
 
@@ -143,9 +144,47 @@ func TestDoctorAcpPrintsCapabilities(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	want := "claude_code: mcp http: no, loadSession: yes, resume: yes\n" +
-		"codex: mcp http: no, loadSession: yes, resume: yes\n"
+		"codex: mcp http: no, loadSession: yes, resume: yes\n" +
+		"omp: mcp http: no, loadSession: yes, resume: yes\n"
 	if out.String() != want {
 		t.Fatalf("output:\n%s\nwant:\n%s", out.String(), want)
+	}
+}
+
+func TestDoctorOmpMissingIsNotAFailure(t *testing.T) {
+	res := doctor{lookPath: fakeLook("omp", "omp.ps1"), run: fakeRun("v20.1.0")}.checkOmp()
+	if !res.OK || !strings.HasPrefix(res.Line(), "[OK] omp: not found; needed only for OMP agents") ||
+		!strings.Contains(res.Hint, "omp auth-broker login") || !strings.Contains(res.Hint, "omp.sh/install") {
+		t.Fatalf("line = %q", res.Line())
+	}
+}
+
+func TestDoctorOmpTooOld(t *testing.T) {
+	run := func(name string, args ...string) (string, error) { return "omp 18.0.0\n", nil }
+	res := doctor{lookPath: fakeLook(), run: run}.checkOmp()
+	if res.OK || !strings.Contains(res.Hint, "OMP 18.12.6 or newer is needed") {
+		t.Fatalf("line = %q", res.Line())
+	}
+	run = func(name string, args ...string) (string, error) { return "18.12.6\n", nil }
+	if res := (doctor{lookPath: fakeLook(), run: run}).checkOmp(); !res.OK || !strings.HasPrefix(res.Line(), "[OK] omp: ") {
+		t.Fatalf("new enough: %q", res.Line())
+	}
+}
+
+func TestDoctorAcpSkipsOmpWhenNotInstalled(t *testing.T) {
+	t.Setenv("MEGOO_ADAPTER_OMP", "")
+	d := doctor{lookPath: fakeLook("omp", "omp.ps1"), probeACP: func(_ context.Context, p string) (jobs.Capabilities, error) {
+		if p == "omp" {
+			t.Fatal("omp probed though not installed")
+		}
+		return jobs.Capabilities{McpHTTP: true}, nil
+	}}
+	var out bytes.Buffer
+	if err := d.reportACP(context.Background(), &out); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "omp: not installed\n") {
+		t.Fatalf("output:\n%s", out.String())
 	}
 }
 

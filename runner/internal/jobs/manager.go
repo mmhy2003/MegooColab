@@ -815,8 +815,13 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		opts = append(opts, acpclient.WithFlushInterval(m.FlushInterval))
 	}
 	opts = append(opts, acpclient.WithSecret(r.secret))
+	servers := mcpServers(rs.Mcp)
 	if man, err := tools.LoadManifest(); err == nil {
 		opts = append(opts, acpclient.WithSafeMcpServers(tools.SafeServers(man, agent.Program)))
+		// OMP ignores its own MCP config in ACP mode: its hub servers come with the session
+		if home, err := tools.Home(); err == nil && agent.Program == adapters.Omp {
+			servers = append(servers, tools.OmpRunServers(man, home, kind == policy.ReadOnly)...)
+		}
 	}
 	client := acpclient.New(pol, wt, r.emit, opts...)
 	r.client = client
@@ -832,7 +837,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	}
 	sess, err := openSession(r.ctx, sessionRequest{
 		ac: ac, client: client, caps: initResp.AgentCapabilities, rs: rs, cwd: wt,
-		meta: adapters.SessionMeta(agent.Program, kind, tools.PluginDir(m.cacheRoot)), servers: mcpServers(rs.Mcp), log: logf,
+		meta: adapters.SessionMeta(agent.Program, kind, tools.PluginDir(m.cacheRoot)), servers: servers, log: logf,
 	})
 	if err != nil {
 		return fail("session_failed", err)

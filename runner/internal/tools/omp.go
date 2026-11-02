@@ -22,23 +22,25 @@ func init() { register(ompAgent{}) }
 func (ompAgent) Program() string { return "omp" }
 
 // ompConfigPath asks omp for its active agent folder; tests replace it. omp starts slowly and a push or scan asks
-// many times, so an answer is kept for the runner's life (a profile is chosen in its environment, fixed at start).
+// many times, so each answer is kept for the environment it was given in (the profile and folder variables, home).
 var ompConfigPath = func() (string, error) {
+	key := strings.Join([]string{os.Getenv("OMP_PROFILE"), os.Getenv("PI_PROFILE"), os.Getenv("PI_CONFIG_DIR"),
+		os.Getenv("PI_CODING_AGENT_DIR"), os.Getenv("HOME"), os.Getenv("USERPROFILE")}, "|")
 	ompPathMu.Lock()
 	defer ompPathMu.Unlock()
-	if ompPath != "" {
-		return ompPath, nil
+	if out, ok := ompPaths[key]; ok {
+		return out, nil
 	}
 	out, err := exec.Command("omp", "config", "path").Output()
 	if err == nil {
-		ompPath = string(out)
+		ompPaths[key] = string(out)
 	}
 	return string(out), err
 }
 
 var (
 	ompPathMu sync.Mutex
-	ompPath   string
+	ompPaths  = map[string]string{}
 )
 
 // OmpAgentDir is the active OMP agent folder: what `omp config path` prints, else OMP's own rule. The root is
