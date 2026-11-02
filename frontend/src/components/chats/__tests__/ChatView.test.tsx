@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatView } from "@/components/chats/ChatView";
 import { chat } from "@/components/chats/__tests__/fixtures";
@@ -29,11 +29,6 @@ function show(c: Chat) {
     </QueryClientProvider>,
   );
 }
-
-// jsdom does no scrolling
-beforeAll(() => {
-  Element.prototype.scrollTo = vi.fn() as unknown as typeof Element.prototype.scrollTo;
-});
 
 afterEach(() => {
   cleanup();
