@@ -6,12 +6,16 @@ A run token (`mgr_`) may read and comment on its own task only, and use the work
 (app/mcp_server/workflow_tools.py); the other task tools refuse it.
 """
 
+import base64
+import json
 import uuid
+from pathlib import Path
 from typing import Any
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp_types import CallToolResult, ImageContent, TextContent
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +23,8 @@ from starlette.routing import Route
 from starlette.types import ASGIApp
 
 from app.agents.models import Agent
+from app.core.config import get_settings
+from app.images import delivery as image_delivery
 from app.mcp_server.a2a_tools import register_a2a_tools
 from app.mcp_server.auth import (
     McpBearerAuth,
@@ -38,6 +44,7 @@ from app.tasks.activity import CommentIn, activity_items, create_comment
 from app.tasks.models import Priority, Task, TaskType
 from app.tasks.schemas import MoveIn, TaskCreate, TaskUpdate
 from app.workflow import engine
+from app.workflow.models import Driver, TaskWorkflow
 
 MCP_PATH = "/api/mcp"
 ACTIVITY_LIMIT = 20
@@ -46,6 +53,30 @@ MAX_REQUEST_BYTES = 8 * 1024 * 1024
 
 def _json(model: Any) -> dict[str, Any]:
     return model.model_dump(mode="json")
+
+
+async def _with_images(db: AsyncSession, task: Task, out: dict[str, Any]) -> dict[str, Any] | CallToolResult:
+    """A connect-only agent (the person's own) gets the task's images here, as image content after the JSON: a
+    runner-driven one has them in its prompt. Each one returned counts as delivered."""
+    wf = await db.get(TaskWorkflow, task.id)
+    if wf is None or wf.driver != Driver.connect_only:
+        return out
+    atts, note = await image_delivery.images_for_mcp(db, task)
+    root = Path(get_settings().upload_dir)
+    shown = [(a, root / a.storage_key) for a in atts]
+    shown = [(a, path) for a, path in shown if path.is_file()]
+    if not shown:
+        return out
+    out["images_note"] = note
+    image_delivery.mark_sent([a for a, _ in shown], None)
+    return CallToolResult(
+        content=[
+            TextContent(type="text", text=json.dumps(out)),
+            *(ImageContent(type="image", data=base64.b64encode(path.read_bytes()).decode(), mime_type=a.content_type)
+              for a, path in shown),
+        ],
+        structured_content=out,
+    )
 
 
 async def _column_by_name(db: AsyncSession, project: Project, name: str) -> BoardColumn:
@@ -119,13 +150,14 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
 
     @mcp.tool()
     async def get_task(key: str) -> dict[str, Any]:
-        """A task by key (e.g. PAY-12) with its last 20 activity items (comments, events and questions)."""
+        """A task by key (e.g. PAY-12) with its last 20 activity items (comments, events and questions), and the
+        images people sent you with their messages, after the task's JSON."""
         async with _tool_session() as (db, user):
             await require_run_task(db, key)
             task, _ = await service.get_task_for(db, user, key)
             out = _json(await service.task_out(db, task, user))
             out["activity"] = [_json(i) for i in await activity_items(db, task, ACTIVITY_LIMIT)]
-            return out
+            return await _with_images(db, task, out)
 
     @mcp.tool()
     async def create_task(

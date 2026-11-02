@@ -116,10 +116,12 @@ def run_images(atts: Sequence[Attachment]) -> list[RunImage]:
     return [RunImage(id=a.id, filename=a.filename, content_type=a.content_type, size=a.size) for a in atts]
 
 
-def mark_sent(atts: Sequence[Attachment], run_id: uuid.UUID, *, delivered: bool = True) -> None:
+def mark_sent(atts: Sequence[Attachment], run_id: uuid.UUID | None, *, delivered: bool = True) -> None:
+    """Sent with this run (None: over MCP); delivered now unless the runner has yet to say so (a steer)."""
     now = datetime.now(UTC)
     for a in atts:
-        a.sent_run_id = run_id
+        if run_id is not None:
+            a.sent_run_id = run_id
         if delivered and a.delivered_at is None:
             a.delivered_at = now
 
