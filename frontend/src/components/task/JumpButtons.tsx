@@ -85,6 +85,8 @@ export function useLiftAbove(scrollRef: RefObject<HTMLElement | null>, avoid: HT
  * `activity` is the live Activity page, oldest first: what arrives while not following is counted on ↓.
  * `expectQuestion` with `loadEarlier`: an agent question waits on the person but may be older than the loaded
  * Activity; it counts, and jumping to it loads earlier pages until it shows.
+ * `startFollowing`: open at the latest, following (a chat, which is read from its newest message).
+ * `jumpRef`: set to the waiting button's jump, for something else on the page that goes there too.
  */
 export function JumpButtons({
   scrollRef,
@@ -92,6 +94,8 @@ export function JumpButtons({
   loadEarlier,
   expectQuestion = false,
   lift = NO_LIFT,
+  startFollowing = false,
+  jumpRef,
 }: {
   scrollRef: RefObject<HTMLElement | null>;
   activity: Entry[];
@@ -99,6 +103,8 @@ export function JumpButtons({
   expectQuestion?: boolean;
   /** px each corner rises: the floating comment box's height where it sits under it (useLiftAbove) */
   lift?: Lift;
+  startFollowing?: boolean;
+  jumpRef?: RefObject<(() => void) | null>;
 }) {
   const subscribe = useCallback(
     (onChange: () => void) => {
@@ -141,8 +147,8 @@ export function JumpButtons({
     newestRef.current = newest;
   }, [newest]);
 
-  const [following, setFollowingState] = useState(false);
-  const followingRef = useRef(false);
+  const [following, setFollowingState] = useState(startFollowing);
+  const followingRef = useRef(startFollowing);
   // the newest entry the person has seen: what came after it, while not following, is counted on ↓
   const [seenAt, setSeenAt] = useState(newest);
   const follow = useCallback((on: boolean) => {
@@ -210,6 +216,14 @@ export function JumpButtons({
     }
     if (target) reveal(el, target);
   };
+
+  useEffect(() => {
+    if (!jumpRef) return;
+    jumpRef.current = () => void jumpToWaiting();
+    return () => {
+      jumpRef.current = null;
+    };
+  });
 
   const toTop = () => {
     follow(false);
