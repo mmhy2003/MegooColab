@@ -80,6 +80,18 @@ export function useHubPrefs() {
 
 export const OS_LABEL: Record<string, string> = { windows: "Windows", linux: "Linux", macos: "macOS" };
 
+/** The states a push changes. */
+export const PUSH_STATES = new Set<HubMachineState>(["will_install", "update_ready", "will_remove", "changed", "removed", "waiting"]);
+
+/** A machine in a few words, for the Tools list: what a push would do, or why there is nothing to push. */
+export function machineState(m: HubMachine): string {
+  if (!m.online) return "not connected";
+  const n = m.tools.filter((t) => t.programs.some((p) => p.state && PUSH_STATES.has(p.state))).length;
+  if (n > 0) return `${n} ${n === 1 ? "change" : "changes"} to push`;
+  if (m.pending) return "changes to push";
+  return m.out_of_step ? "needs a look" : "up to date";
+}
+
 /** A machine's state for one tool in one program, in words. */
 export function stateText(state: HubMachineState, program: string, os: string | null | undefined, detail: string): string {
   switch (state) {

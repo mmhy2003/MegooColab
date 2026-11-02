@@ -10,11 +10,9 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { PROGRAM_LABEL } from "@/lib/agents";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-import { hubKeys, OS_LABEL, stateText, type HubMachine, type HubMachineState, type HubMachineTool } from "@/lib/hub";
+import { hubKeys, OS_LABEL, PUSH_STATES, stateText, type HubMachine, type HubMachineState, type HubMachineTool } from "@/lib/hub";
 import type { AgentProgram } from "@/lib/types";
 
-// states a push changes
-const TO_DO = new Set<HubMachineState>(["will_install", "update_ready", "will_remove", "changed", "removed", "waiting"]);
 
 const TONE: Partial<Record<HubMachineState, "green" | "amber" | "pink" | "cyan">> = {
   installed: "green", update_ready: "cyan", will_install: "cyan", changed: "amber", conflict: "amber",
@@ -43,7 +41,7 @@ export function MachineTools({ machine }: { machine: HubMachine }) {
   const changes = machine.tools.filter(
     (t) =>
       (t.tool_id && !fixed(t) && ticked.has(t.tool_id) !== t.ticked) ||
-      states(t).some((s) => TO_DO.has(s)) ||
+      states(t).some((s) => PUSH_STATES.has(s)) ||
       (t.tool_id && takeOver.has(t.tool_id)),
   ).length;
 
@@ -142,7 +140,8 @@ export function MachineTools({ machine }: { machine: HubMachine }) {
             </ul>
           )}
           {error && <p role="alert" className="text-sm text-pink">{error}</p>}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* on a phone the Push button stays on the screen while the list scrolls */}
+          <div className="flex flex-wrap items-center gap-2 max-md:sticky max-md:bottom-0 max-md:-mx-4 max-md:border-t max-md:border-line max-md:bg-card max-md:px-4 max-md:py-2">
             <span className="flex-1 text-xs text-muted-foreground">
               {machine.reported_at ? `Last report: ${new Date(machine.reported_at).toLocaleString()}` : "Nothing reported yet."}
             </span>

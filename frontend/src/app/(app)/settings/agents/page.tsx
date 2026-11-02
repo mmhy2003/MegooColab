@@ -8,7 +8,7 @@ import { AddAgentDialog } from "@/components/agents/AddAgentDialog";
 import { AgentsTab } from "@/components/agents/AgentsTab";
 import { usableRunnerTokens } from "@/components/agents/MachineField";
 import { RunnerSetup } from "@/components/agents/RunnerSetup";
-import { HubMachines } from "@/components/hub/HubMachines";
+import { ToolsTab } from "@/components/hub/ToolsTab";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TabPanel, Tabs, useTabParam } from "@/components/ui/Tabs";
@@ -69,7 +69,7 @@ function MyAgents() {
         )}
       </TabPanel>
       <TabPanel id="tools" active={tab === "tools"}>
-        <HubMachines />
+        <ToolsTab />
       </TabPanel>
       <TabPanel id="runner" active={tab === "runner"}>
         <section aria-labelledby="runner-heading" className="card space-y-3 p-4">
