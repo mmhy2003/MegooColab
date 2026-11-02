@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useRef, useState } from "react";
+import { createRef, type RefObject, useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { JumpButtons, useLiftAbove } from "@/components/task/JumpButtons";
@@ -31,11 +31,13 @@ function fakeLayout(el: HTMLElement, layout: { scrollHeight: number; clientHeigh
 
 const layout = { scrollHeight: 3000, clientHeight: 500 };
 
-function Harness({ activity, waiting = [], loadEarlier, expectQuestion }: {
+function Harness({ activity, waiting = [], loadEarlier, expectQuestion, startFollowing, jumpRef }: {
   activity: Entry[];
   waiting?: string[];
   loadEarlier?: () => Promise<boolean>;
   expectQuestion?: boolean;
+  startFollowing?: boolean;
+  jumpRef?: RefObject<(() => void) | null>;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   return (
@@ -55,7 +57,14 @@ function Harness({ activity, waiting = [], loadEarlier, expectQuestion }: {
           ))}
         </div>
       </div>
-      <JumpButtons scrollRef={ref} activity={activity} loadEarlier={loadEarlier} expectQuestion={expectQuestion} />
+      <JumpButtons
+        scrollRef={ref}
+        activity={activity}
+        loadEarlier={loadEarlier}
+        expectQuestion={expectQuestion}
+        startFollowing={startFollowing}
+        jumpRef={jumpRef}
+      />
     </div>
   );
 }
@@ -147,6 +156,27 @@ describe("JumpButtons", () => {
 
     fireEvent.click(jump);
     expect(plan).toHaveFocus(); // round again
+  });
+
+  it("can open at the latest, following (a chat)", () => {
+    layout.scrollHeight = 3000;
+    const { rerender } = render(<Harness activity={entries(3)} startFollowing />);
+    expect(scroller().scrollTop).toBe(2500);
+    expect(screen.getByText("Following live")).toBeInTheDocument();
+
+    layout.scrollHeight = 3400;
+    rerender(<Harness activity={entries(4)} startFollowing />);
+    expect(scroller().scrollTop).toBe(2900);
+  });
+
+  it("lets something else on the page jump to what waits, as its button does", () => {
+    layout.scrollHeight = 3000;
+    const jumpRef = createRef<(() => void) | null>();
+    render(<Harness activity={entries(3)} waiting={["question"]} jumpRef={jumpRef} />);
+    act(() => jumpRef.current?.());
+    const question = screen.getByRole("button", { name: "question" }).parentElement!;
+    expect(question).toHaveFocus();
+    expect(question).toHaveClass("jump-flash");
   });
 
   it("jumping to a waiting item stops following", () => {

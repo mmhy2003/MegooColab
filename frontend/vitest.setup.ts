@@ -17,3 +17,6 @@ if (!("ResizeObserver" in globalThis)) {
 
 // jsdom does no layout: cmdk scrolls the highlighted item into view
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+
+// nor scrolling: a chat's conversation opens at its latest (JumpButtons)
+if (!Element.prototype.scrollTo) Element.prototype.scrollTo = () => {};

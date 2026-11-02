@@ -1,17 +1,18 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 
 import { BoardDialog } from "@/components/chats/BoardDialog";
 import { ChatComposer } from "@/components/chats/ChatComposer";
 import { EndChatButton } from "@/components/chats/EndChatButton";
 import { RoundDivider } from "@/components/chats/RoundDivider";
 import { ActivityThread } from "@/components/task/ActivityThread";
+import { JumpButtons } from "@/components/task/JumpButtons";
 import { DocumentView } from "@/components/workflow/DocumentView";
 import { PROGRAM_LABEL, useAgentRuns } from "@/lib/agents";
 import { api } from "@/lib/api";
-import { latestRound, stateText, useChat, type Chat, type ChatRound } from "@/lib/chats";
+import { latestRound, stateText, useChat, WAITING, type Chat, type ChatRound } from "@/lib/chats";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import { useRecordTitle } from "@/lib/title";
@@ -77,7 +78,11 @@ function RoundThread({ chat, round }: { chat: Chat; round: ChatRound }) {
   );
 }
 
-/** A chat: its rounds as one conversation, the progress of the latest, and the message box at the bottom. */
+/**
+ * A chat: its rounds as one conversation, the progress of the latest, and the message box at the bottom. It fills
+ * the height it is given: the header stays at the top and the message box at the bottom, only the conversation
+ * scrolls between them, with a task's corner buttons (back to top, the latest, what waits on the viewer).
+ */
 export function ChatView({ chatId }: { chatId: string }) {
   const chat = useChat(chatId);
   useRecordTitle(chat.data?.title);
@@ -85,35 +90,70 @@ export function ChatView({ chatId }: { chatId: string }) {
   const latest = chat.data ? latestRound(chat.data) : undefined;
   const runs = useAgentRuns(latest?.key ?? "");
   const agentRunning = (runs.data ?? []).some((r) => r.status === "running");
+  // the latest round's thread is the one that grows: what the corner buttons follow and count (the same query
+  // RoundThread reads)
+  const activity = useQuery({
+    queryKey: qk.activity(latest?.key ?? ""),
+    queryFn: () => api<ActivityItem[]>(`/api/tasks/${latest?.key}/activity?limit=200`),
+    enabled: !!latest,
+  });
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const jumpRef = useRef<(() => void) | null>(null);
   if (chat.error) return <p role="alert" className="card p-4 text-sm text-pink">{errorMessage(chat.error)}</p>;
   if (!chat.data) return <p className="card p-4 text-sm text-muted-foreground">Loading…</p>;
   const c = chat.data;
   const pending = c.can_act ? c.rounds.find((r) => r.board === "pending") : undefined;
+  // what waits on the viewer goes there, as the corner's "waiting on you" does; an escalation has nothing in the
+  // conversation to go to
+  const goesToWaiting = c.can_act && WAITING.includes(c.state) && c.state !== "escalation";
   return (
-    <div className="card flex min-h-[60vh] flex-col">
-      <header className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
-        <h2 className="text-base font-bold">{c.title}</h2>
-        <span className="rounded border border-cyan px-1.5 text-xs text-cyan-ink">{c.project_key}</span>
-        {c.agent && (
-          <span className="rounded border border-line px-1.5 text-xs text-muted-foreground">
-            {c.agent.name} · {PROGRAM_LABEL[c.agent.program as AgentProgram] ?? c.agent.program}
-          </span>
-        )}
-        <span className="text-xs text-muted-foreground">{stateText(c)}</span>
-        <div className="ml-auto flex items-center gap-2">
-          <ChatProgress round={latest} />
+    <div className="card flex h-full min-h-0 flex-col">
+      <header className="shrink-0 space-y-2 border-b border-line px-4 py-3">
+        <div className="flex items-start gap-3">
+          {/* a long title wraps to two lines, then is cut; the whole of it shows on hover (and in the tab's title) */}
+          <h2 title={c.title} className="line-clamp-2 min-w-0 flex-1 text-base font-bold break-words">
+            {c.title}
+          </h2>
           {c.can_act && c.status === "open" && <EndChatButton chat={c} agentRunning={agentRunning} />}
         </div>
-      </header>
-      <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
-        {c.rounds.map((r) => (
-          <div key={r.key}>
-            {c.rounds.length > 1 && <RoundDivider round={r} canEdit={c.can_act && r === latest} />}
-            <RoundThread chat={c} round={r} />
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="rounded border border-cyan px-1.5 text-cyan-ink">{c.project_key}</span>
+          {c.agent && (
+            <span className="rounded border border-line px-1.5 text-muted-foreground">
+              {c.agent.name} · {PROGRAM_LABEL[c.agent.program as AgentProgram] ?? c.agent.program}
+            </span>
+          )}
+          {goesToWaiting ? (
+            <button
+              type="button"
+              onClick={() => jumpRef.current?.()}
+              className="rounded-full border border-amber/50 bg-amber/10 px-2 text-amber hover:border-amber"
+            >
+              <span aria-hidden>● </span>
+              {stateText(c)}
+            </button>
+          ) : (
+            <span className="text-muted-foreground">{stateText(c)}</span>
+          )}
+          <div className="ml-auto">
+            <ChatProgress round={latest} />
           </div>
-        ))}
+        </div>
+      </header>
+      <div className="relative min-h-0 flex-1">
+        <div ref={scrollRef} data-thread className="h-full overflow-y-auto px-4 py-3">
+          <div className="space-y-2">
+            {c.rounds.map((r) => (
+              <div key={r.key}>
+                {c.rounds.length > 1 && <RoundDivider round={r} canEdit={c.can_act && r === latest} />}
+                <RoundThread chat={c} round={r} />
+              </div>
+            ))}
+          </div>
+        </div>
+        {activity.data && <JumpButtons key={chatId} scrollRef={scrollRef} activity={activity.data} startFollowing jumpRef={jumpRef} />}
       </div>
-      <div className="sticky bottom-0 border-t border-line bg-surface px-4 py-3">
+      <div className="shrink-0 border-t border-line bg-surface px-4 py-3">
         <ChatComposer chat={c} agentRunning={agentRunning} />
       </div>
       {pending && <BoardDialog key={pending.key} chat={c} round={pending} />}

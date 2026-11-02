@@ -130,6 +130,9 @@ test("a chat with an agent, from first message to the board and a second round",
   await expect(ui).toHaveURL(/\/chats\/[0-9a-f-]{36}$/);
   const view = ui.getByRole("main");
   await expect(view.getByText("Which database does the login use?")).toBeVisible({ timeout: 30_000 });
+  // the question waits on the viewer: the corner button and the state in the header both go to it
+  await expect(view.getByRole("button", { name: "1 waiting on you" })).toBeVisible();
+  await expect(view.getByRole("button", { name: "waiting: answer the agent's question" })).toBeVisible();
 
   // 2. the dashboard shows the chat waiting
   const chatUrl = ui.url();
@@ -175,6 +178,20 @@ test("a chat with an agent, from first message to the board and a second round",
   await view.getByRole("button", { name: "Send", exact: true }).click();
   await expect(view.getByText(/Round 2 · Also add retries/)).toBeVisible({ timeout: 15_000 });
   await expect(view.getByText("Looking at the retries")).toBeVisible({ timeout: 30_000 });
+
+  // the page stays put on a short window: the chat list and the conversation scroll on their own, the chat's
+  // header and message box stay in view, and the conversation opened at the latest
+  await ui.setViewportSize({ width: 1280, height: 600 });
+  const thread = view.locator("[data-thread]");
+  await expect.poll(() => thread.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  expect(await ui.evaluate(() => document.documentElement.scrollHeight <= document.documentElement.clientHeight + 1)).toBe(true);
+  await thread.evaluate((el) => el.scrollTo({ top: 0, behavior: "instant" }));
+  await expect(view.getByRole("button", { name: /^Go to the latest and follow/ })).toBeVisible();
+  await expect(view.getByRole("heading", { level: 2 })).toBeInViewport();
+  await expect(box).toBeInViewport();
+  await view.getByRole("button", { name: /^Go to the latest and follow/ }).click();
+  await expect(view.getByText("Following live")).toBeVisible();
+  await expect(view.getByText("Looking at the retries")).toBeInViewport();
 
   // 7. end it, and leave round 2 off the board
   await view.getByRole("button", { name: "End chat" }).click();
