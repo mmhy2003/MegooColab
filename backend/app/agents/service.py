@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import ColumnElement, or_, select, update
+from sqlalchemy import ColumnElement, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
@@ -49,19 +49,32 @@ def is_absolute_path(path: str) -> bool:
     return bool(_ABSOLUTE_PATH.match(path))
 
 
-async def agent_statuses(db: AsyncSession, agent_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
-    """online | busy | offline per agent. busy: it has a running run; online: its machine's live runner
-    reports it available."""
-    ids = set(agent_ids)
-    busy: set[uuid.UUID] = set()
-    if ids:
-        rows = await db.execute(
-            select(AgentRun.agent_id).where(AgentRun.agent_id.in_(ids), AgentRun.status == RunStatus.running)
-        )
-        busy = set(rows.scalars())
+async def running_counts(db: AsyncSession, agent_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """How many running runs each agent has; agents with none are left out."""
+    if not agent_ids:
+        return {}
+    rows = await db.execute(
+        select(AgentRun.agent_id, func.count())
+        .where(AgentRun.agent_id.in_(set(agent_ids)), AgentRun.status == RunStatus.running)
+        .group_by(AgentRun.agent_id)
+    )
+    return dict(rows.all())
+
+
+async def agent_statuses(
+    db: AsyncSession, agent_ids: list[uuid.UUID], limits: dict[uuid.UUID, int] | None = None
+) -> dict[uuid.UUID, str]:
+    """online | busy | offline per agent. busy: it has a running run, or with `limits` (its runs at once) every
+    slot is taken; online: its machine's live runner reports it available."""
+    running = await running_counts(db, agent_ids)
+
+    def busy(agent_id: uuid.UUID) -> bool:
+        n = running.get(agent_id, 0)
+        return n > 0 if limits is None else n >= limits[agent_id]
+
     return {
         agent_id: "busy"
-        if agent_id in busy
+        if busy(agent_id)
         else "online"
         if registry.is_available(agent_id)
         else "offline"
@@ -235,7 +248,8 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
         if token_ids
         else {}
     )
-    statuses = await agent_statuses(db, list(owner_of))
+    statuses = await agent_statuses(db, list(owner_of), {a.id: a.max_concurrent_runs for a in agents})
+    running = await running_counts(db, list(owner_of))
     allowed = await accessible_project_ids(db, viewer)
     rows = await db.execute(
         select(AgentBinding, Project.key)
@@ -263,6 +277,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "max_concurrent_runs": a.max_concurrent_runs,
             "owner": UserOut.model_validate(owners[a.owner_id]),
             "status": statuses[a.id],
+            "running": running.get(a.id, 0),
             "problems": agent_problems(a.id, a.owner_id, viewer, bool(a.model or a.effort)),
             "bindings": bindings.get(a.id, []),
             "runner": runner_info(a.id),

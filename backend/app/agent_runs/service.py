@@ -155,14 +155,15 @@ async def _lock_question_of(db: AsyncSession, question_id: uuid.UUID | None) -> 
 
 
 async def _claim_next(
-    db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID, token_id: uuid.UUID
+    db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID, token_id: uuid.UUID, welcomed: int | None = None
 ) -> AgentRun | None:
     """Under the agent lock, mark its oldest queued run running and COMMIT, if a slot is free.
 
     The agent row is locked FOR NO KEY UPDATE (serialises concurrent dispatches so max_concurrent_runs
     cannot be overshot) and the run row FOR UPDATE SKIP LOCKED. A queued run whose task already has a running
     run is skipped (one active run per task; the workflow engine already refuses a second one). The commit comes before
-    run_start is sent: a run the runner has can never be rolled back to queued and sent twice."""
+    run_start is sent: a run the runner has can never be rolled back to queued and sent twice. `welcomed`: the limit
+    the runner was last welcomed with; a raised one waits for its welcome, or the runner would answer busy."""
     agent = (
         await db.execute(
             select(Agent)
@@ -184,7 +185,8 @@ async def _claim_next(
     run = None
     # a runner without model/1 would start an agent with a chosen model or effort on the defaults: its runs wait
     model_ok = not (agent.model or agent.effort) or registry.agent_supports(agent.id, MODEL_CAPABILITY)
-    if model_ok and agent.max_concurrent_runs > (running or 0):
+    limit = agent.max_concurrent_runs if welcomed is None else min(agent.max_concurrent_runs, welcomed)
+    if model_ok and limit > (running or 0):
         # a runner without workflow/1 leaves workflow and answering runs queued (they need the MCP run token); one
         # without branch/1 leaves every task run queued (it would start the task's branch from whatever is checked out)
         workflow = registry.agent_supports(agent.id, WORKFLOW_CAPABILITY)
@@ -424,7 +426,7 @@ async def dispatch_pending(db: AsyncSession, owner_id: uuid.UUID) -> None:
 async def _send_pending(db: AsyncSession, conn: RunnerConn, owner_id: uuid.UUID) -> None:
     for agent_id in sorted(conn.available):
         while True:
-            run = await _claim_next(db, agent_id, owner_id, conn.token_id)
+            run = await _claim_next(db, agent_id, owner_id, conn.token_id, conn.run_limits.get(agent_id))
             if run is None:
                 break
             if not await _send_start(db, conn, agent_id, run):

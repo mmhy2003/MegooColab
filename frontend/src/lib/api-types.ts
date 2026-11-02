@@ -3310,6 +3310,11 @@ export interface components {
             /** Status */
             status: string;
             /**
+             * Running
+             * @default 0
+             */
+            running: number;
+            /**
              * Problems
              * @default []
              */
@@ -3482,6 +3487,11 @@ export interface components {
             owner: components["schemas"]["UserOut"];
             /** Status */
             status: string;
+            /**
+             * Running
+             * @default 0
+             */
+            running: number;
             /**
              * Problems
              * @default []
@@ -5372,6 +5382,11 @@ export interface components {
             owner: components["schemas"]["UserOut"];
             /** Status */
             status: string;
+            /**
+             * Running
+             * @default 0
+             */
+            running: number;
             /**
              * Problems
              * @default []

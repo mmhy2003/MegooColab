@@ -181,17 +181,21 @@ async def _run_message(handler, *args) -> None:
         log.exception("runner: handling a run message failed")
 
 
-async def _send_welcome(conn: RunnerConn, *, announce_change: bool) -> None:
+async def _send_welcome(conn: RunnerConn, *, announce_change: bool) -> bool:
+    """True if a welcome was sent."""
     welcome = await build_welcome(conn.user_id, conn.token_id)
     payload = welcome.model_dump(mode="json")
     conn.owned_agents = {a.agent_id for a in welcome.agents}
     conn.retain_agents(conn.owned_agents)
     if announce_change:
         if payload == conn.last_welcome:
-            return  # nothing the runner cares about changed (e.g. our own availability events)
+            return False  # nothing the runner cares about changed (e.g. our own availability events)
         await conn.send(ConfigChanged())
     conn.last_welcome = payload
     await conn.send(welcome)
+    # only once sent: a run_start for a raised limit must reach the runner after the welcome that allows it
+    conn.run_limits = {a.agent_id: a.max_concurrent_runs for a in welcome.agents}
+    return True
 
 
 def machine_os(goos: str) -> str:
@@ -352,9 +356,11 @@ async def _serve(conn: RunnerConn, queue: asyncio.Queue[Event], raw: str | None)
                         recheck = True
                     elif ev.type == "agents.updated":
                         try:
-                            await _send_welcome(conn, announce_change=True)
+                            changed = await _send_welcome(conn, announce_change=True)
                         except RunnerClosed:
                             return  # the runner is gone; the caller cleans up
+                        if changed:
+                            await _dispatch(conn.user_id)  # a raised runs-at-once limit starts waiting work
             if time.monotonic() - conn.last_seen >= IDLE_TIMEOUT_SECONDS:
                 await conn.close(CLOSE_IDLE)
                 return

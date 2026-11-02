@@ -9,6 +9,7 @@ import { BindingEditor } from "@/components/agents/BindingEditor";
 import { HubMachines } from "@/components/hub/HubMachines";
 import { MachineField } from "@/components/agents/MachineField";
 import { ModelField } from "@/components/agents/ModelField";
+import { RUNS_HELP, RunsField, RunsInput, parseRuns, runsLabel } from "@/components/agents/RunsField";
 import { RunnerSetup } from "@/components/agents/RunnerSetup";
 import { Badge } from "@/components/ui/Badge";
 import { Button, buttonClass } from "@/components/ui/Button";
@@ -31,6 +32,7 @@ function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[];
   const [answerMode, setAnswerMode] = useState<AnswerMode>("manual");
   const [model, setModel] = useState(DEFAULT_MODEL.claude_code);
   const [effort, setEffort] = useState("");
+  const [runs, setRuns] = useState("1");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -47,7 +49,7 @@ function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[];
               method: "POST",
               json: {
                 program, name: name.trim() || null, answer_mode: answerMode, runner_token_id: machine,
-                model: model.trim() || null, effort: effort || null,
+                model: model.trim() || null, effort: effort || null, max_concurrent_runs: parseRuns(runs),
               },
             });
             onCreated();
@@ -92,10 +94,14 @@ function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[];
           </Select>
           <p className="mt-1 text-xs text-muted-foreground">{ANSWER_MODE_HELP[answerMode]}</p>
         </div>
+        <div>
+          <RunsInput value={runs} onChange={setRuns} />
+          <p className="mt-1 text-xs text-muted-foreground">{RUNS_HELP}</p>
+        </div>
         {error && <p role="alert" className="text-sm text-pink">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={busy}>Add agent</Button>
+          <Button type="submit" disabled={busy || parseRuns(runs) === null}>Add agent</Button>
         </div>
       </form>
     </Dialog>
@@ -115,6 +121,7 @@ function AgentCard({
 }) {
   const { ask, dialog } = useConfirm();
   const [error, setError] = useState<string | null>(null);
+  const runs = runsLabel(agent.running ?? 0, agent.max_concurrent_runs);
   return (
     <>
       <li className="card space-y-3 p-4">
@@ -122,6 +129,7 @@ function AgentCard({
           <h3 className="flex-1 text-sm font-bold">{agent.name}</h3>
           <Badge>{PROGRAM_LABEL[agent.program]}</Badge>
           <AgentStatusDot status={agent.status} />
+          {runs && <span className="text-xs text-muted-foreground">{runs}</span>}
           {agent.machine && <span className="text-xs text-muted-foreground">on {agent.machine.name}</span>}
           <RunnerUpdateArrow runner={agent.runner} ownerId={agent.owner.id} />
           <Button
@@ -162,6 +170,20 @@ function AgentCard({
             setError(null);
             try {
               await api(`/api/agents/${agent.id}`, { method: "PATCH", json: choice });
+              onChanged();
+            } catch (err) {
+              setError(errorMessage(err));
+            }
+          }}
+        />
+        <RunsField
+          key={agent.max_concurrent_runs}
+          max={agent.max_concurrent_runs}
+          running={agent.running ?? 0}
+          onSave={async (runs) => {
+            setError(null);
+            try {
+              await api(`/api/agents/${agent.id}`, { method: "PATCH", json: { max_concurrent_runs: runs } });
               onChanged();
             } catch (err) {
               setError(errorMessage(err));
