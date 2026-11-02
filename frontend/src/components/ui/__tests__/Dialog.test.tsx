@@ -121,3 +121,14 @@ describe("Dialog", () => {
     expect(dialog.className).toMatch(/backdrop:backdrop-blur/);
   });
 });
+
+describe("Dialog on a phone", () => {
+  it("phoneFull adds the full-screen classes below md", () => {
+    render(
+      <Dialog open phoneFull title="Add agent" onClose={vi.fn()}>
+        <p>x</p>
+      </Dialog>,
+    );
+    expect(screen.getByRole("dialog", { name: "Add agent" }).className).toContain("max-md:h-dvh");
+  });
+});
