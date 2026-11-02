@@ -293,7 +293,7 @@ Vitest, Playwright.
   `frontend/src/app/(app)/settings/notifications/page.tsx` (TelegramConnect after PushDevices; subtitle "Choose what
   reaches you in the app, by email, as push notifications and in Telegram. …"), `frontend/src/lib/notifications.ts`
   (the pref's `telegram` in `useSavePref` comparisons)
-- Test: `frontend/src/components/notifications/__tests__/TelegramConnect.test.tsx`, `.../NotificationPrefs.test.tsx`
+- Test: `frontend/src/components/notifications/__tests__/TelegramConnect.test.tsx`, `frontend/src/components/notifications/__tests__/Notifications.test.tsx`
   (extend)
 
 **Interfaces:**
