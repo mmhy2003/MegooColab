@@ -1,5 +1,6 @@
 import re
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -16,7 +17,7 @@ from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.events import Event, publish
 from app.core.text import NoNulStr, strip_nul
-from app.images.files import save_upload, sniff
+from app.images.files import ImageRef, MessageKind, save_upload, sniff
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.access import get_project_for
@@ -35,6 +36,8 @@ MAX_AGENT_MESSAGE_CHARS = 8_000
 class CommentIn(BaseModel):
     body_md: NoNulStr = Field(min_length=1, max_length=50_000)
     to_agent: bool = False  # a message for the task's agent (an instruction), not an ordinary comment
+    # unsent images (POST /api/images) it sends; an edit leaves the images as they are
+    image_ids: list[uuid.UUID] = Field(default=[], max_length=6)
 
 
 class AgentMessageOut(BaseModel):
@@ -86,6 +89,9 @@ class ActivityItem(BaseModel):
     # answer_choice, answer_text}
     question: dict | None = None
     to_agent: AgentMessageOut | None = None  # type "comment": a message for the task's agent
+    # the images sent with it: a comment's, an answer's (type "question"), a change request's (event
+    # "document.rejected")
+    images: list[ImageRef] = []
 
 
 class AttachmentOut(BaseModel):
@@ -186,7 +192,22 @@ async def activity_items(
         for q in questions
     ]
     items.sort(key=lambda i: (i.at, i.id), reverse=True)
-    return list(reversed(items[:limit]))
+    items = list(reversed(items[:limit]))
+    from app.images.links import images_of  # local: the images modules import this one
+
+    shown = await images_of(db, filter(None, map(_message_of, items)))
+    for i in items:
+        i.images = shown.get(_message_of(i), [])
+    return items
+
+
+def _message_of(item: ActivityItem) -> uuid.UUID | None:
+    """The message an activity item's images were sent with: the comment or question itself, or for a change
+    request the rejected document."""
+    if item.type != "event":
+        return item.id
+    doc = (item.data or {}).get("document_id") if item.kind == "document.rejected" else None
+    return uuid.UUID(doc) if doc else None
 
 
 @router.get("/api/tasks/{key}/activity")
@@ -206,7 +227,9 @@ async def task_activity(
 # ---- comments ---------------------------------------------------------------
 
 
-async def create_comment(db, user: User, key: str, body_md: str, *, to_agent: bool = False) -> Comment:
+async def create_comment(
+    db, user: User, key: str, body_md: str, *, to_agent: bool = False, image_ids: Sequence[uuid.UUID] = ()
+) -> Comment:
     body_md = strip_nul(body_md)  # also reached by MCP, which bypasses CommentIn
     task, project = await get_task_for(db, user, key, write=True)
     comment = Comment(task_id=task.id, author_user_id=user.id, body_md=body_md)
@@ -215,6 +238,13 @@ async def create_comment(db, user: User, key: str, body_md: str, *, to_agent: bo
     db.add(comment)
     await db.flush()
     await db.refresh(comment)
+    if image_ids:
+        from app.images.links import (
+            link_images,  # local: the images modules import this one
+        )
+
+        kind = MessageKind.agent_message if to_agent else MessageKind.comment
+        await link_images(db, user, image_ids, task, kind, comment.id)
     await _changed(db, task, "comment.created")
     task_key = f"{project.key}-{task.number}"
     await notifications.notify(db, notifications.mentioned_user_ids(body_md), Kind.mentioned,
@@ -249,7 +279,7 @@ async def _address_to_agent(db, user: User, task: Task, comment: Comment) -> Non
 
 @router.post("/api/tasks/{key}/comments", status_code=status.HTTP_201_CREATED)
 async def add_comment(key: str, body: CommentIn, user: AuthedUser, db: DbSession) -> CommentOut:
-    comment = await create_comment(db, user, key, body.body_md, to_agent=body.to_agent)
+    comment = await create_comment(db, user, key, body.body_md, to_agent=body.to_agent, image_ids=body.image_ids)
     # here, not in create_comment: an agent's comment through MCP is not its owner acting
     await notifications.read_by_acting(db, user.id, task_id=comment.task_id)
     out = comment_out(comment)
@@ -298,6 +328,11 @@ async def edit_comment(comment_id: uuid.UUID, body: CommentIn, user: AuthedUser,
 @router.delete("/api/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_comment(comment_id: uuid.UUID, user: AuthedUser, db: DbSession) -> None:
     comment, task = await _own_comment(db, user, comment_id, allow_admin=True)
+    from app.images.links import (
+        unlink_message,  # local: the images modules import this one
+    )
+
+    await unlink_message(db, comment.id)  # its images stay, as files of the task
     await db.delete(comment)
     await _changed(db, task, "comment.deleted")
     # local: memory imports the task modules

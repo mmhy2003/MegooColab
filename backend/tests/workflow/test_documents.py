@@ -99,7 +99,7 @@ async def test_design_rejection_resumes_brainstorm_session_with_comment(db, tc_f
     [doc] = await _docs(b.task_id)
     assert (doc.status, doc.decision_comment) == ("rejected", "Needs a rollback section")
     [ev] = await _events(b.task_id, "document.rejected")
-    assert ev.data == {"kind": "design", "version": 1, "comment": "Needs a rollback section"}
+    assert ev.data == {"kind": "design", "version": 1, "comment": "Needs a rollback section", "document_id": str(doc.id)}
     # the revised design is version 2 and waits for approval again
     await _submit(b, new)
     await _finish(b.manager.id, new, "completed")

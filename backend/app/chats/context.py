@@ -5,7 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.tasks.models import Task
 from app.workflow import context
-from app.workflow.models import DocKind, DocStatus, RunRole, TaskWorkflow, WorkflowDocument
+from app.workflow.models import (
+    DocKind,
+    DocStatus,
+    RunRole,
+    TaskWorkflow,
+    WorkflowDocument,
+)
 
 EARLIER_CHARS = 8_000
 NEW_CHAT_HINT = (

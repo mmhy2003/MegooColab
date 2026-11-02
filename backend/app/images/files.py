@@ -1,10 +1,12 @@
 """Images sent with messages: what is accepted (by the file's bytes, never its name or the browser's word), how
 an upload is saved, and the kinds of message an image can go with."""
 
+import uuid
 from enum import StrEnum
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
+from pydantic import BaseModel, ConfigDict
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_IMAGES_PER_MESSAGE = 6
@@ -26,6 +28,16 @@ class MessageKind(StrEnum):
 
 # kinds whose images the agent gets
 AGENT_KINDS = frozenset(MessageKind) - {MessageKind.comment}
+
+
+class ImageRef(BaseModel):
+    """An image as a message shows it: /api/attachments/{id} serves it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    filename: str
+    size: int
 
 
 def sniff(head: bytes) -> str | None:

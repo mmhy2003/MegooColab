@@ -2,6 +2,7 @@
 by the task workflow (talk, design, plan, build, finish), as a task would be."""
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
@@ -25,6 +26,8 @@ from app.chats.schemas import (
     RoundOut,
 )
 from app.git.models import PR_MAIN, TaskPullRequest
+from app.images.files import MessageKind
+from app.images.links import images_of, link_images
 from app.images.support import agent_takes_images, task_takes_images
 from app.notifications import service as notifications
 from app.projects.access import accessible_project_ids, get_project_for
@@ -224,7 +227,8 @@ async def start_chat(db: AsyncSession, user: User, data: ChatIn) -> Chat:
     chat = Chat(project_id=project.id, started_by=user.id, agent_id=agent.id, title=first_line(data.message))
     db.add(chat)
     await db.flush()
-    await create_round(db, user, chat, data.message)
+    task = await create_round(db, user, chat, data.message)
+    await link_images(db, user, data.image_ids, task, MessageKind.first_message, task.id)
     return chat
 
 
@@ -285,6 +289,7 @@ async def chat_out(db: AsyncSession, chat: Chat, viewer: User | None) -> ChatOut
     agent = await db.get(Agent, chat.agent_id) if chat.agent_id else None
     starter = await db.get(User, chat.started_by) if chat.started_by else None
     rounds = await rounds_of(db, chat)
+    first_images = await images_of(db, [t.id for t, _ in rounds])  # each round's first message's
     out_rounds = [
         RoundOut(
             n=t.chat_round or 0, key=f"{project.key}-{t.number}", title=t.title,
@@ -292,6 +297,7 @@ async def chat_out(db: AsyncSession, chat: Chat, viewer: User | None) -> ChatOut
             current_step=wf.current_step if wf else None, steps_total=await _steps_total(db, t.id),
             finish_outcome=wf.finish_outcome if wf else None, pr_url=wf.pr_url if wf else None,
             branch=wf.branch if wf else None, branch_from=t.branch_from, board=_board(t, wf, chat),
+            images=first_images.get(t.id, []),
         )
         for t, wf in rounds
     ]
@@ -376,7 +382,9 @@ async def start_next_round(db: AsyncSession, user: User, chat: Chat, message: st
     return await create_round(db, user, chat, message, branch_from=branch_from)
 
 
-async def send_message(db: AsyncSession, user: User, chat: Chat, body: str) -> tuple[Intent, Task, uuid.UUID | None]:
+async def send_message(
+    db: AsyncSession, user: User, chat: Chat, body: str, images: Sequence[uuid.UUID] = ()
+) -> tuple[Intent, Task, uuid.UUID | None]:
     """Does what the chat waits for, decided under the round's lock. Returns the intent, the round, and the id of a
     message for the agent to hand into its running session after the commit."""
     from app.tasks.activity import create_comment
@@ -401,7 +409,7 @@ async def send_message(db: AsyncSession, user: User, chat: Chat, body: str) -> t
             .order_by(WorkflowQuestion.created_at.desc())
             .limit(1)
         )
-        await questions.answer(db, user, task, qid, None, body)
+        await questions.answer(db, user, task, qid, None, body, images)
     elif what == "changes":
         kind = DECIDED_BY_MESSAGE[Needs(wf.needs)]
         version = await db.scalar(
@@ -411,20 +419,23 @@ async def send_message(db: AsyncSession, user: User, chat: Chat, body: str) -> t
             .order_by(WorkflowDocument.version.desc())
             .limit(1)
         )
-        await documents.decide(db, user, task, kind, version, False, body)
+        await documents.decide(db, user, task, kind, version, False, body, images)
     elif what == "tell":
-        steer = (await create_comment(db, user, key, body, to_agent=True)).id
+        steer = (await create_comment(db, user, key, body, to_agent=True, image_ids=images)).id
     elif what == "restart" and wf.status == WorkflowStatus.paused:
         await engine.resume(db, user, task)
         # the resumed run takes it at its start (or a wait it returns to keeps it for the next run)
-        await create_comment(db, user, key, body, to_agent=True)
+        await create_comment(db, user, key, body, to_agent=True, image_ids=images)
     elif what == "restart":
-        await engine.hand_to_agent(
+        run = await engine.hand_to_agent(
             db, wf, task, engine.STAGE_ROLE[Stage(wf.stage)], resume_kind="nudge", payload={"text": body},
             requested_by=user.id,
         )
+        # the images go with the run the message starts (a connect-only round has none: then with the round)
+        await link_images(db, user, images, task, MessageKind.nudge, run.id if run is not None else task.id)
     elif what == "new_round":
         task = await start_next_round(db, user, chat, body)
+        await link_images(db, user, images, task, MessageKind.first_message, task.id)
     chat.last_activity_at = _now()
     return what, task, steer
 

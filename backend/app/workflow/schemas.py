@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.text import NoNulStr
 from app.workflow.models import (
@@ -118,6 +118,7 @@ class DocumentOut(DocumentInfo):
 
 
 class DocumentDecisionIn(BaseModel):
+    image_ids: list[uuid.UUID] = Field(default=[], max_length=6)  # unsent images (POST /api/images) a change request sends
     approve: bool
     comment: NoNulStr | None = None
 
