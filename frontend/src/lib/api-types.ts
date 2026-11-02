@@ -1531,7 +1531,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Attachment */
+        /**
+         * Download Attachment
+         * @description The file, as a download; `inline` shows it in the page instead, only for an image checked by its bytes
+         *     (never SVG or HTML). The browser is told not to guess the type either way.
+         */
         get: operations["download_attachment_api_attachments__attachment_id__get"];
         put?: never;
         post?: never;
@@ -3260,6 +3264,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Image */
+        post: operations["upload_image_api_images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runner/images/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Runner Image
+         * @description The image, when a run of one of this runner's agents is running on its task (or, for a chat, on a round of
+         *     that chat: messages to the agent are kept across rounds). 404 otherwise, as for an image that doesn't exist.
+         */
+        get: operations["runner_image_api_runner_images__image_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3319,6 +3361,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             to_agent?: components["schemas"]["AgentMessageOut"] | null;
+            /**
+             * Images
+             * @default []
+             */
+            images: components["schemas"]["ImageRef"][];
         };
         /** ActivityRow */
         ActivityRow: {
@@ -3670,6 +3717,15 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Image
+             * @default false
+             */
+            image: boolean;
+            /** Message Kind */
+            message_kind?: string | null;
+            /** Message Id */
+            message_id?: string | null;
         };
         /** AuditOut */
         AuditOut: {
@@ -3767,6 +3823,11 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_image_api_images_post */
+        Body_upload_image_api_images_post: {
+            /** File */
+            file: string;
+        };
         /** BurndownPoint */
         BurndownPoint: {
             /**
@@ -3839,6 +3900,11 @@ export interface components {
             agent_id?: string | null;
             /** Message */
             message: string;
+            /**
+             * Image Ids
+             * @default []
+             */
+            image_ids: string[];
         };
         /** ChatOut */
         ChatOut: {
@@ -3879,6 +3945,11 @@ export interface components {
             can_act: boolean;
             /** Rounds */
             rounds: components["schemas"]["RoundOut"][];
+            /**
+             * Takes Images
+             * @default false
+             */
+            takes_images: boolean;
         };
         /**
          * ChatStatus
@@ -3953,6 +4024,11 @@ export interface components {
              * @default false
              */
             to_agent: boolean;
+            /**
+             * Image Ids
+             * @default []
+             */
+            image_ids: string[];
         };
         /** CommentOut */
         CommentOut: {
@@ -4215,6 +4291,11 @@ export interface components {
         DocStatus: "submitted" | "approved" | "rejected" | "superseded";
         /** DocumentDecisionIn */
         DocumentDecisionIn: {
+            /**
+             * Image Ids
+             * @default []
+             */
+            image_ids: string[];
             /** Approve */
             approve: boolean;
             /** Comment */
@@ -4648,6 +4729,35 @@ export interface components {
              */
             approved: true;
         };
+        /** ImageOut */
+        ImageOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string;
+            /** Size */
+            size: number;
+        };
+        /**
+         * ImageRef
+         * @description An image as a message shows it: /api/attachments/{id} serves it.
+         */
+        ImageRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Size */
+            size: number;
+        };
         /** ImportEntry */
         ImportEntry: {
             /** Name */
@@ -5012,6 +5122,11 @@ export interface components {
         MessageIn: {
             /** Body */
             body: string;
+            /**
+             * Image Ids
+             * @default []
+             */
+            image_ids: string[];
         };
         /** MessageOut */
         MessageOut: {
@@ -5985,6 +6100,11 @@ export interface components {
             branch_from: string | null;
             /** Board */
             board: ("pending" | "added" | "declined") | null;
+            /**
+             * Images
+             * @default []
+             */
+            images: components["schemas"]["ImageRef"][];
         };
         /** RunAgentOut */
         RunAgentOut: {
@@ -7188,6 +7308,11 @@ export interface components {
             can_act: boolean;
             finishing_option: components["schemas"]["FinishingOption"];
             /**
+             * Takes Images
+             * @default false
+             */
+            takes_images: boolean;
+            /**
              * Finishing Forced
              * @default false
              */
@@ -7292,6 +7417,11 @@ export interface components {
             choice?: string | null;
             /** Text */
             text?: string | null;
+            /**
+             * Image Ids
+             * @default []
+             */
+            image_ids: string[];
         };
     };
     responses: never;
@@ -10777,7 +10907,9 @@ export interface operations {
     };
     download_attachment_api_attachments__attachment_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                inline?: boolean;
+            };
             header?: never;
             path: {
                 attachment_id: string;
@@ -14322,6 +14454,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelegramLinkUrl"];
+                };
+            };
+        };
+    };
+    upload_image_api_images_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_image_api_images_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    runner_image_api_runner_images__image_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

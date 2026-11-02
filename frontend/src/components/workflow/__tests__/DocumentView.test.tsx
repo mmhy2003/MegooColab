@@ -17,6 +17,9 @@ function setup(opts: { decision?: Response; can_act?: boolean; disabled?: boolea
   const kind = opts.kind ?? "design";
   const fetchMock = vi.fn(async (url: string) => {
     if (url.endsWith("/decision")) return (opts.decision ?? new Response("{}", { status: 200 })).clone();
+    if (url === "/api/images") {
+      return new Response(JSON.stringify({ id: "img-1", filename: "a.png", size: 4, content_type: "image/png" }), { status: 201 });
+    }
     if (url.endsWith("/mockups")) return new Response(JSON.stringify([{ id: "m1", version: 3, title: "Compact", choices: [] }]), { status: 200 });
     if (url.endsWith("/workflow")) {
       return new Response(JSON.stringify({ can_act: opts.can_act ?? true, steps: [], documents: [] }), { status: 200 });
@@ -98,6 +101,22 @@ describe("DocumentView", () => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/tasks/PAY-1/documents/design/2/decision",
         expect.objectContaining({ method: "POST", body: JSON.stringify({ approve: false, comment: "too vague" }) }),
+      ),
+    );
+  });
+
+  it("posts a rejection's images with its comment", async () => {
+    const fetchMock = setup();
+    fireEvent.change(await screen.findByLabelText("Comment"), { target: { value: "like this" } });
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, {
+      target: { files: [new File(["PNG"], "a.png", { type: "image/png" })] },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/tasks/PAY-1/documents/design/2/decision",
+        expect.objectContaining({ body: JSON.stringify({ approve: false, comment: "like this", image_ids: ["img-1"] }) }),
       ),
     );
   });

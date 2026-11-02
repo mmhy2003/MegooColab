@@ -22,7 +22,8 @@ export type DocKind = S["DocKind"];
 export type TaskType = Task["type"];
 export type Priority = Task["priority"];
 export type ColumnCategory = Column["category"];
-export type ActivityItem = S["ActivityItem"];
+// images: always sent by the server (empty when none); optional here so a hand-built item needs none
+export type ActivityItem = Omit<S["ActivityItem"], "images"> & Partial<Pick<S["ActivityItem"], "images">>;
 export type Attachment = S["AttachmentOut"];
 export type Sprint = S["SprintOut"];
 export type BurndownPoint = S["BurndownPoint"];

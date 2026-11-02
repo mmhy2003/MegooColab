@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { ImageAttach, ImageDropZone } from "@/components/images/ImageAttach";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Select } from "@/components/ui/Select";
@@ -11,6 +12,7 @@ import { useProjectAgents } from "@/lib/agents";
 import { api } from "@/lib/api";
 import type { Chat } from "@/lib/chats";
 import { errorMessage } from "@/lib/errors";
+import { useImageDraft } from "@/lib/images";
 import { useProjects } from "@/lib/project";
 
 /** Start a chat: the project (fixed on a project's own tab), the agent (any free one by default), the message. */
@@ -25,6 +27,8 @@ export function NewChatDialog({ open, onClose, projectKey }: { open: boolean; on
   const [error, setError] = useState<string | null>(null);
   const agents = useProjectAgents(project);
   const usable = (agents.data ?? []).filter((a) => a.can_use);
+  // whether the chosen agent can be sent images is known only to the server: it says so when it can't
+  const images = useImageDraft();
 
   const submit = async () => {
     setBusy(true);
@@ -32,7 +36,7 @@ export function NewChatDialog({ open, onClose, projectKey }: { open: boolean; on
     try {
       const chat = await api<Chat>("/api/chats", {
         method: "POST",
-        json: { project_key: project, agent_id: agent || null, message },
+        json: { project_key: project, agent_id: agent || null, message, image_ids: images.ids },
       });
       await client.invalidateQueries({ queryKey: ["chats"] });
       onClose();
@@ -74,18 +78,21 @@ export function NewChatDialog({ open, onClose, projectKey }: { open: boolean; on
           <label htmlFor="new-chat-message" className="text-xs tracking-wider text-muted-foreground uppercase">
             Message
           </label>
-          <textarea
-            id="new-chat-message"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="What should the agent do? For example: the login page throws on an empty email, fix it."
-            className="min-h-28 w-full rounded border border-line bg-surface-2 p-2 text-sm"
-          />
+          <ImageDropZone draft={images}>
+            <textarea
+              id="new-chat-message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="What should the agent do? For example: the login page throws on an empty email, fix it."
+              className="block min-h-28 w-full rounded border border-line bg-surface-2 p-2 text-sm"
+            />
+          </ImageDropZone>
+          <ImageAttach draft={images} />
         </div>
         {error && <p role="alert" className="text-sm text-pink">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={busy || !project || !message.trim()}>Start chat</Button>
+          <Button type="submit" disabled={busy || !project || !message.trim() || images.uploading}>Start chat</Button>
         </div>
       </form>
     </Dialog>

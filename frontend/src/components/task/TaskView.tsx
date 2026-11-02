@@ -288,8 +288,11 @@ export function TaskView({
                     users={activeUsers}
                     agent={assignedAgent}
                     canTellAgent={workflow.data?.can_act === true}
+                    takesImages={workflow.data?.takes_images === true}
                     hint={assignedAgent ? hintText(agentHint(runs.data ?? [], workflow.data), assignedAgent.name, workflow.data?.stage) : undefined}
-                    onSubmit={(body_md, to_agent) => run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md, to_agent } }))}
+                    onSubmit={(body_md, to_agent, image_ids) =>
+                      run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md, to_agent, image_ids } }))
+                    }
                   />
                 </div>
               )}

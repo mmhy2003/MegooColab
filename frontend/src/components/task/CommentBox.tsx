@@ -2,10 +2,12 @@
 
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
 
+import { ImageAttach, ImageDropZone } from "@/components/images/ImageAttach";
 import { Command, CommandItem, CommandList } from "@/components/shadcn/command";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/shadcn/popover";
 import { Button } from "@/components/ui/Button";
 import { hasAgentMention, removeAgentMentions } from "@/lib/agentMessages";
+import { useImageDraft } from "@/lib/images";
 import { encodeMentions, mentionAt, mentionRanges, type PickedMention } from "@/lib/mentions";
 
 type Person = { id: string; name: string };
@@ -24,19 +26,22 @@ function matching(people: Option[], query: string): Option[] {
 
 /** A comment, or with the switch on (or the agent @mentioned), a message for the task's agent: an instruction it
  * reads in the turn it is working on, or at its next run. Only people who direct the task's work may send one
- * (`canTellAgent`); after each send the box goes back to an ordinary comment. */
+ * (`canTellAgent`); after each send the box goes back to an ordinary comment. Either may carry images: a message
+ * to the agent only when it can be sent them (`takesImages`), a comment always (they are for people). */
 export function CommentBox({
   users = [],
   agent = null,
   canTellAgent = false,
+  takesImages = false,
   hint,
   onSubmit,
 }: {
   users?: Person[];
   agent?: Person | null;
   canTellAgent?: boolean;
+  takesImages?: boolean;
   hint?: string;
-  onSubmit: (body: string, toAgent: boolean) => Promise<void>;
+  onSubmit: (body: string, toAgent: boolean, imageIds: string[]) => Promise<void>;
 }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -57,6 +62,10 @@ export function CommentBox({
   const tellable = agent !== null && canTellAgent;
   const sent = encodeMentions(body, picked);
   const toAgent = tellable && (manualOn || hasAgentMention(sent, agent.id));
+  const noImages = toAgent && !takesImages ? `Update the runner on ${agent?.name ?? "the agent"}'s machine to send images.` : undefined;
+  const images = useImageDraft(noImages);
+  // switched to the agent with images it can't be sent: they stay, the send waits until they are taken out
+  const blocked = !!noImages && images.items.length > 0;
   const ranges = mentionRanges(body, picked);
   const people: Option[] = tellable ? [{ ...agent, agent: true }, ...users] : users;
   const options = mention ? matching(people, mention.query) : [];
@@ -85,13 +94,14 @@ export function CommentBox({
       data-to-agent={toAgent || undefined}
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!body.trim()) return;
+        if (!body.trim() || images.uploading || blocked) return;
         setBusy(true);
         try {
-          await onSubmit(sent, toAgent);
+          await onSubmit(sent, toAgent, images.ids);
           setBody("");
           setPicked([]);
           setManualOn(false);
+          images.clear();
         } finally {
           setBusy(false);
         }
@@ -99,78 +109,81 @@ export function CommentBox({
     >
       {/* the list opens under the comment like a dropdown: no blur, the cursor stays in the comment */}
       <Popover open={picking} onOpenChange={(open) => !open && setMention(null)}>
-        <PopoverAnchor asChild>
-          {/* the mentions are highlighted on a copy of the text behind the (transparent) box, laid out the same way */}
-          <div className="relative rounded bg-surface-2">
-            <div
-              ref={backdrop}
-              aria-hidden
-              className="pointer-events-none absolute inset-0 overflow-hidden rounded border border-transparent p-2 text-sm break-words whitespace-pre-wrap text-transparent"
-            >
-              {ranges.map((r, i) => (
-                <Fragment key={r.start}>
-                  {body.slice(i === 0 ? 0 : ranges[i - 1].end, r.start)}
-                  <mark className={`rounded text-transparent ${r.mention.agent ? "bg-violet/30" : "bg-cyan/25"}`}>{body.slice(r.start, r.end)}</mark>
-                </Fragment>
-              ))}
-              {body.slice(ranges.at(-1)?.end ?? 0)}
-              {"\u200b" /* a final newline still takes its line */}
+        {/* images pasted into the box or dropped on it are added to the message */}
+        <ImageDropZone draft={images}>
+          <PopoverAnchor asChild>
+            {/* the mentions are highlighted on a copy of the text behind the (transparent) box, laid out the same way */}
+            <div className="relative rounded bg-surface-2">
+              <div
+                ref={backdrop}
+                aria-hidden
+                className="pointer-events-none absolute inset-0 overflow-hidden rounded border border-transparent p-2 text-sm break-words whitespace-pre-wrap text-transparent"
+              >
+                {ranges.map((r, i) => (
+                  <Fragment key={r.start}>
+                    {body.slice(i === 0 ? 0 : ranges[i - 1].end, r.start)}
+                    <mark className={`rounded text-transparent ${r.mention.agent ? "bg-violet/30" : "bg-cyan/25"}`}>{body.slice(r.start, r.end)}</mark>
+                  </Fragment>
+                ))}
+                {body.slice(ranges.at(-1)?.end ?? 0)}
+                {"\u200b" /* a final newline still takes its line */}
+              </div>
+              <textarea
+                ref={box}
+                aria-label="Add a comment"
+                placeholder="Add a comment (Markdown supported, @ to mention someone)"
+                // on a phone, an empty box waiting at the bottom is one line: it grows when tapped
+                className={`relative block w-full rounded border bg-transparent p-2 text-sm ${toAgent ? "border-violet" : "border-line"} ${
+                  focused || body ? "min-h-20" : "h-9 min-h-9 resize-none sm:h-auto sm:min-h-20"
+                }`}
+                onScroll={(e) => {
+                  if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop;
+                }}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                value={body}
+                aria-autocomplete="list"
+                onChange={(e) => {
+                  setBody(e.target.value);
+                  track(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                }}
+                onKeyDown={(e) => {
+                  if (picking) {
+                    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                      e.preventDefault();
+                      const step = e.key === "ArrowDown" ? 1 : -1;
+                      setActive((i) => (i + step + options.length) % options.length);
+                      return;
+                    }
+                    if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
+                      e.preventDefault();
+                      pick(options[Math.min(active, options.length - 1)]);
+                      return;
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      e.stopPropagation(); // closes the list only, not the task drawer around it
+                      setMention(null);
+                      return;
+                    }
+                  }
+                  if (e.key === "Backspace") {
+                    const { selectionStart: at, selectionEnd } = e.currentTarget;
+                    const whole = at === selectionEnd ? mentionAt(body, picked, at) : null;
+                    if (whole) {
+                      // a mention goes as one: half a name would be sent as plain text
+                      e.preventDefault();
+                      setBody(body.slice(0, whole.start) + body.slice(whole.end));
+                      caretAfter.current = whole.start;
+                      return;
+                    }
+                  }
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
+                }}
+              />
             </div>
-            <textarea
-              ref={box}
-              aria-label="Add a comment"
-              placeholder="Add a comment (Markdown supported, @ to mention someone)"
-              // on a phone, an empty box waiting at the bottom is one line: it grows when tapped
-              className={`relative block w-full rounded border bg-transparent p-2 text-sm ${toAgent ? "border-violet" : "border-line"} ${
-                focused || body ? "min-h-20" : "h-9 min-h-9 resize-none sm:h-auto sm:min-h-20"
-              }`}
-              onScroll={(e) => {
-                if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop;
-              }}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
-              value={body}
-              aria-autocomplete="list"
-              onChange={(e) => {
-                setBody(e.target.value);
-                track(e.target.value, e.target.selectionStart ?? e.target.value.length);
-              }}
-              onKeyDown={(e) => {
-                if (picking) {
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    e.preventDefault();
-                    const step = e.key === "ArrowDown" ? 1 : -1;
-                    setActive((i) => (i + step + options.length) % options.length);
-                    return;
-                  }
-                  if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
-                    e.preventDefault();
-                    pick(options[Math.min(active, options.length - 1)]);
-                    return;
-                  }
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    e.stopPropagation(); // closes the list only, not the task drawer around it
-                    setMention(null);
-                    return;
-                  }
-                }
-                if (e.key === "Backspace") {
-                  const { selectionStart: at, selectionEnd } = e.currentTarget;
-                  const whole = at === selectionEnd ? mentionAt(body, picked, at) : null;
-                  if (whole) {
-                    // a mention goes as one: half a name would be sent as plain text
-                    e.preventDefault();
-                    setBody(body.slice(0, whole.start) + body.slice(whole.end));
-                    caretAfter.current = whole.start;
-                    return;
-                  }
-                }
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
-              }}
-            />
-          </div>
-        </PopoverAnchor>
+          </PopoverAnchor>
+        </ImageDropZone>
         <PopoverContent
           align="start"
           className="w-60 p-1"
@@ -199,6 +212,7 @@ export function CommentBox({
           </Command>
         </PopoverContent>
       </Popover>
+      <ImageAttach draft={images} />
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -230,7 +244,7 @@ export function CommentBox({
         <Button
           type="submit"
           className={`ml-auto ${toAgent ? "border-violet bg-violet text-on-accent dark:bg-violet" : ""}`}
-          disabled={busy || !body.trim()}
+          disabled={busy || !body.trim() || images.uploading || blocked}
         >
           {toAgent ? "Send to agent" : "Comment"}
         </Button>
@@ -240,6 +254,11 @@ export function CommentBox({
         <p className="text-xs text-muted-foreground">Only {agent.name}&apos;s owner and the project&apos;s managers can send it messages.</p>
       )}
       {toAgent && hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {!toAgent && agent && images.items.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          A comment for the people on this task. The agent sees that it had images, not the images.
+        </p>
+      )}
     </form>
   );
 }
