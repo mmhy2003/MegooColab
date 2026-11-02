@@ -3,7 +3,12 @@ from fastapi import APIRouter, Response, status
 from app.auth.deps import AdminUser, AuthedUser
 from app.core.db import DbSession
 from app.telegram import service
-from app.telegram.schemas import MyTelegramOut, TelegramBotIn, TelegramBotOut, TelegramLinkUrl
+from app.telegram.schemas import (
+    MyTelegramOut,
+    TelegramBotIn,
+    TelegramBotOut,
+    TelegramLinkUrl,
+)
 
 router = APIRouter(tags=["telegram"])
 

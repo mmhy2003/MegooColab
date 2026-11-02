@@ -14,8 +14,10 @@ from app.core.email import get_mailer
 from app.core.events import Event, publish
 from app.jobs import queue
 from app.notifications.models import DEFAULT_PREFS, Kind, Notification, NotificationPref
+from app.org.models import ORG_SETTINGS_ID, OrgSettings
 from app.push.models import PushSubscription
 from app.projects.access import accessible_project_ids
+from app.telegram.models import TelegramLink
 
 DEDUPE_WINDOW = timedelta(minutes=10)
 
@@ -54,6 +56,13 @@ async def preferences(
     return {uid: chosen.get(uid, DEFAULT_PREFS[kind]) for uid in ids}
 
 
+async def _telegram_recipients(db: AsyncSession, user_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    """Those of these people who linked their Telegram, while the site has a bot."""
+    if not user_ids or not await db.scalar(select(OrgSettings.telegram_token_enc).where(OrgSettings.id == ORG_SETTINGS_ID)):
+        return set()
+    return set((await db.execute(select(TelegramLink.user_id).where(TelegramLink.user_id.in_(user_ids)))).scalars())
+
+
 async def _recent_unread(db: AsyncSession, user_ids: list[uuid.UUID], kind: Kind, task_id: uuid.UUID) -> set[uuid.UUID]:
     since = datetime.now(UTC) - DEDUPE_WINDOW
     return set((await db.execute(select(Notification.user_id).where(
@@ -83,9 +92,10 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
     prefs = await preferences(db, [u.id for u in recipients], kind)
     title, body, link = title[:200], body[:500], link[:500]
     mail = await get_mailer(db) is not None
+    telegram_to = await _telegram_recipients(db, [u.id for u in recipients if prefs[u.id][3]])
     created = 0
     for user in recipients:
-        in_app, email, push, _telegram = prefs[user.id]
+        in_app, email, push, telegram = prefs[user.id]
         if in_app:
             db.add(Notification(user_id=user.id, kind=kind, title=title, body=body, link=link, task_id=task_id,
                                 project_id=project_id))
@@ -100,6 +110,9 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
             for sub_id in (await db.execute(
                     select(PushSubscription.id).where(PushSubscription.user_id == user.id))).scalars():
                 await queue.enqueue(db, "notify.push", {"subscription_id": str(sub_id), "title": title, "body": body,
+                                                        "link": link})
+        if telegram and user.id in telegram_to:
+            await queue.enqueue(db, "notify.telegram", {"user_id": str(user.id), "title": title, "body": body,
                                                         "link": link})
     await db.flush()
     return created
