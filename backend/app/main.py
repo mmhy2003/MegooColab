@@ -68,6 +68,7 @@ from app.users.router import admin_router as admin_users_router
 from app.users.router import users_router
 from app.updates.router import router as updates_router
 from app.telegram.router import router as telegram_router
+from app.images.router import router as images_router
 from app.workflow.methodology import seed_defaults
 from app.workflow.router import router as workflow_router
 from app.chats.router import router as chats_router
@@ -198,6 +199,7 @@ def create_app() -> FastAPI:
         rate_limits_router,
         updates_router,
         telegram_router,
+        images_router,
     ):
         app.include_router(router)
     # added last, as a plain route: no other /api path can be shadowed, and no trailing-slash redirect

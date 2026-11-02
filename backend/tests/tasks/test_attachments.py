@@ -55,3 +55,19 @@ async def test_attachment_filename_path_traversal_is_neutralized(client, db):
     assert stored.resolve().is_relative_to(Path(get_settings().upload_dir).resolve())
     assert stored.read_bytes() == b"x"
     assert "passwd" not in row.storage_key
+
+
+async def test_direct_upload_served_inline_only_when_checked(client, db):
+    await _task(client, db)
+    png = (await client.post("/api/tasks/PAY-1/attachments",
+                             files={"file": ("a.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 8, "application/octet-stream")})).json()
+    svg = (await client.post("/api/tasks/PAY-1/attachments",
+                             files={"file": ("b.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>", "image/svg+xml")})).json()
+    assert png["image"] is True and png["content_type"] == "image/png"
+    assert svg["image"] is False
+    shown = await client.get(f"/api/attachments/{png['id']}?inline=1")
+    assert shown.headers["content-disposition"].startswith("inline")
+    assert shown.headers["x-content-type-options"] == "nosniff"
+    kept = await client.get(f"/api/attachments/{svg['id']}?inline=1")
+    assert kept.headers["content-disposition"].startswith("attachment")
+    assert kept.headers["x-content-type-options"] == "nosniff"

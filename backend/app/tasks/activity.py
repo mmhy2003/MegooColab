@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.events import Event, publish
 from app.core.text import NoNulStr, strip_nul
+from app.images.files import save_upload, sniff
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.access import get_project_for
@@ -26,7 +27,6 @@ from app.workflow.models import Mockup, WorkflowQuestion
 router = APIRouter(tags=["activity"])
 
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
-CHUNK = 1024 * 1024
 
 
 MAX_AGENT_MESSAGE_CHARS = 8_000
@@ -98,6 +98,9 @@ class AttachmentOut(BaseModel):
     size: int
     uploaded_by: uuid.UUID | None
     created_at: datetime
+    image: bool = False  # checked as an image: shown in the page
+    message_kind: str | None = None  # the message it was sent with (app.images.files.MessageKind)
+    message_id: uuid.UUID | None = None
 
 
 def safe_filename(name: str | None) -> str:
@@ -251,7 +254,9 @@ async def add_comment(key: str, body: CommentIn, user: AuthedUser, db: DbSession
     await notifications.read_by_acting(db, user.id, task_id=comment.task_id)
     out = comment_out(comment)
     if body.to_agent:
-        from app.workflow.instructions import steer_after_commit  # local: the workflow imports this module
+        from app.workflow.instructions import (
+            steer_after_commit,  # local: the workflow imports this module
+        )
 
         await db.commit()  # the runner's answer must find the message
         await steer_after_commit(comment.id)
@@ -322,25 +327,17 @@ async def upload_attachment(key: str, file: UploadFile, user: AuthedUser, db: Db
     task, _ = await get_task_for(db, user, key, write=True)
     storage_key = f"{task.id}/{uuid.uuid4().hex}"
     dest = _upload_root() / storage_key
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    size = 0
-    try:
-        with dest.open("wb") as out:
-            while chunk := await file.read(CHUNK):
-                size += len(chunk)
-                if size > MAX_ATTACHMENT_BYTES:
-                    raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "attachment_too_large")
-                out.write(chunk)
-    except BaseException:
-        dest.unlink(missing_ok=True)
-        raise
+    size, head = await save_upload(file, dest, MAX_ATTACHMENT_BYTES, "attachment_too_large")
+    # an image is recognised by its bytes: only then is it shown in the page, whatever the browser called it
+    image_type = sniff(head)
     att = Attachment(
         task_id=task.id,
         filename=safe_filename(file.filename),
-        content_type=(file.content_type or "application/octet-stream")[:200],
+        content_type=image_type or (file.content_type or "application/octet-stream")[:200],
         size=size,
         storage_key=storage_key,
         uploaded_by=user.id,
+        image=image_type is not None,
     )
     db.add(att)
     await db.flush()
@@ -351,20 +348,25 @@ async def upload_attachment(key: str, file: UploadFile, user: AuthedUser, db: Db
 
 async def _attachment(db, user: User, attachment_id: uuid.UUID, write: bool = False) -> tuple[Attachment, Task]:
     att = await db.get(Attachment, attachment_id)
-    if att is None:
+    if att is None or att.task_id is None:  # an unsent image belongs to no task yet
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
     task = await _task_for_project_object(db, user, att.task_id, write=write)
     return att, task
 
 
 @router.get("/api/attachments/{attachment_id}")
-async def download_attachment(attachment_id: uuid.UUID, user: AuthedUser, db: DbSession) -> FileResponse:
+async def download_attachment(
+    attachment_id: uuid.UUID, user: AuthedUser, db: DbSession, inline: bool = False
+) -> FileResponse:
+    """The file, as a download; `inline` shows it in the page instead, only for an image checked by its bytes
+    (never SVG or HTML). The browser is told not to guess the type either way."""
     att, _ = await _attachment(db, user, attachment_id)
     path = _upload_root() / att.storage_key
     if not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "file_missing")
     return FileResponse(path, media_type=att.content_type, filename=att.filename,
-                        content_disposition_type="attachment")
+                        content_disposition_type="inline" if inline and att.image else "attachment",
+                        headers={"X-Content-Type-Options": "nosniff"})
 
 
 @router.delete("/api/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)

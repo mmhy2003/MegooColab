@@ -91,6 +91,8 @@ class PersonalAccessToken(IdMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # a runner token's machine: its system as its last hello said ("windows" | "linux" | "macos" | other)
     runner_os: Mapped[str | None] = mapped_column(String(10))
+    # and its capabilities as its last hello said: what an offline machine's agents can be sent (images/1)
+    runner_capabilities: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
 
 
 class ChallengePurpose(StrEnum):
