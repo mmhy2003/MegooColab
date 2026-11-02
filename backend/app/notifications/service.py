@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import Role, User, UserStatus
@@ -103,6 +103,22 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
                                                         "link": link})
     await db.flush()
     return created
+
+
+async def read_by_acting(db: AsyncSession, user_id: uuid.UUID, *, task_id: uuid.UUID | None = None,
+                         link: str | None = None) -> None:
+    """The person did something on a task (or on the question at `link`): their unread notifications about it are
+    read. Only those from before this transaction: one this very action has just raised stays unread."""
+    about = Notification.task_id == task_id if task_id is not None else Notification.link == link
+    done = await db.execute(
+        update(Notification)
+        .where(Notification.user_id == user_id, Notification.read_at.is_(None), about,
+               Notification.created_at < func.now())  # now(): when this transaction began
+        .values(read_at=datetime.now(UTC))
+        .execution_options(synchronize_session=False)
+    )
+    if done.rowcount:
+        await publish(db, Event(type="notification.read", user_id=user_id))
 
 
 MENTION = re.compile(r"@\[([^\]\n]{1,200})\]\(user:([0-9a-f-]{36})\)")

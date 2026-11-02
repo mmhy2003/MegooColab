@@ -310,6 +310,8 @@ async def record_event(
 ) -> TaskEvent:
     event = TaskEvent(task_id=task.id, actor_user_id=actor_id, kind=kind, data=data or {})
     db.add(event)
+    if actor_id is not None:  # a person acted on the task: what they were told about it is dealt with
+        await notifications.read_by_acting(db, actor_id, task_id=task.id)
     return event
 
 

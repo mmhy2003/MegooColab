@@ -22,6 +22,7 @@ from app.a2a import routing
 from app.runner.registry import WORKFLOW_CAPABILITY, registry
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
+from app.notifications.service import read_by_acting
 from app.projects.access import accessible_project_ids, get_project_for
 from app.projects.models import Project, ProjectStatus
 from app.ratelimit.deps import check_ai
@@ -103,22 +104,32 @@ async def get_question(question_id: uuid.UUID, user: AuthedUser, db: DbSession) 
     return await service.question_out(db, user, await service.get_question_for(db, user, question_id))
 
 
+async def _acted(db, user_id: uuid.UUID, question_id: uuid.UUID) -> None:
+    """The person dealt with the question: what they were told about it is read."""
+    await read_by_acting(db, user_id, link=f"/questions/{question_id}")
+
+
 @router.post("/api/questions/{question_id}/withdraw")
 async def withdraw(question_id: uuid.UUID, user: AuthedUser, db: DbSession) -> QuestionOut:
     q = await service.get_question_for(db, user, question_id)
-    return await service.question_out(db, user, await service.withdraw(db, user, q))
+    out = await service.question_out(db, user, await service.withdraw(db, user, q))
+    await _acted(db, user.id, question_id)
+    return out
 
 
 @router.post("/api/questions/{question_id}/approve")
 async def approve(question_id: uuid.UUID, body: ApproveIn, user: AuthedUser, db: DbSession) -> QuestionOut:
     q = await service.get_question_for(db, user, question_id)
-    return await service.question_out(db, user, await service.approve(db, user, q, answer_md=body.answer_md))
+    out = await service.question_out(db, user, await service.approve(db, user, q, answer_md=body.answer_md))
+    await _acted(db, user.id, question_id)
+    return out
 
 
 @router.post("/api/questions/{question_id}/reject")
 async def reject(question_id: uuid.UUID, body: RejectIn, user: AuthedUser, db: DbSession) -> QuestionOut:
     q = await service.get_question_for(db, user, question_id)
     out = await service.question_out(db, user, await service.reject(db, user, q, reason=body.reason))
+    await _acted(db, user.id, question_id)
     await engine.dispatch_queued(db)  # the question may have been routed to another agent
     return out
 
@@ -127,9 +138,11 @@ async def reject(question_id: uuid.UUID, body: RejectIn, user: AuthedUser, db: D
 async def answer(question_id: uuid.UUID, body: AnswerIn, user: AuthedUser, db: DbSession) -> QuestionOut:
     q = await service.get_question_for(db, user, question_id)
     citations = [c.model_dump() for c in body.citations]
-    return await service.question_out(
+    out = await service.question_out(
         db, user, await service.answer_by_human(db, user, q, answer_md=body.answer_md, citations=citations)
     )
+    await _acted(db, user.id, question_id)
+    return out
 
 
 @router.get("/api/tasks/{key}/questions")
