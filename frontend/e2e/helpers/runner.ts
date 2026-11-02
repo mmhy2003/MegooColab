@@ -26,7 +26,7 @@ export type StartRunnerOptions = {
   token: string;
   /** Becomes the runner's whole user profile: config and cache both live under it. */
   home: string;
-  /** Path to the fake agent executable (used as MEGOO_ADAPTER_CLAUDE_CODE). */
+  /** Path to the fake agent executable (used as MEGOO_ADAPTER_CLAUDE_CODE and MEGOO_ADAPTER_OMP). */
   adapterOverride: string;
   /** Steps for FAKEAGENT_SCENARIO. */
   scenario: unknown[];
@@ -63,6 +63,7 @@ export function startRunner(opts: StartRunnerOptions): RunnerHandle {
   const env = {
     ...isolatedEnv(opts.home),
     MEGOO_ADAPTER_CLAUDE_CODE: `"${opts.adapterOverride}"`,
+    MEGOO_ADAPTER_OMP: `"${opts.adapterOverride}"`,
     FAKEAGENT_SCENARIO: JSON.stringify(opts.scenario),
     // the models and effort levels the Claude Code adapter offers, so a new agent's default model (Opus 5.5) is
     // chosen as on a real machine
