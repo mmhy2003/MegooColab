@@ -38,6 +38,19 @@ describe("Sidebar", () => {
     expect(links[1].closest(".overflow-y-auto")).not.toBeNull();
   });
 
+  it("drops the menu's scrollbar on the closed rail, so it doesn't cut into the icons, and brings it back as the rail opens", () => {
+    mockFetch(() => undefined);
+    const { rerender } = wrap(<Sidebar user={member} collapsed />);
+    const scroller = () => within(screen.getByRole("navigation", { name: "Main" })).getAllByRole("link")[1].closest(".overflow-y-auto")!;
+    expect(scroller()).toHaveClass("[scrollbar-width:none]", "group-hover/side:[scrollbar-width:thin]", "group-has-[:focus-visible]/side:[scrollbar-width:thin]");
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <Sidebar user={member} />
+      </QueryClientProvider>,
+    );
+    expect(scroller()).not.toHaveClass("[scrollbar-width:none]");
+  });
+
   it("puts Dashboard first with the need-you badge", async () => {
     mockFetch((url) => (url === "/api/dashboard/count" ? json({ needs_you: 3 }) : undefined));
     wrap(<Sidebar user={member} />);

@@ -119,7 +119,13 @@ export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigat
       <Link href="/" className="mb-4 shrink-0 px-2 py-2 text-base no-underline" onClick={onNavigate}>
         <Brand logoSize={28} nameClassName={collapsed ? LABEL_HIDDEN : ""} />
       </Link>
-      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto">
+      {/* the scrollbar takes its width even when invisible, which the closed rail can't spare: there it is dropped (the
+          wheel still scrolls), and it comes back as the rail opens, which the pointer over it always does */}
+      <div
+        className={`flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto ${
+          collapsed ? "[scrollbar-width:none] group-hover/side:[scrollbar-width:thin] group-has-[:focus-visible]/side:[scrollbar-width:thin]" : ""
+        }`}
+      >
         <DashboardLink onNavigate={onNavigate} collapsed={collapsed} />
         {MAIN.map((item) =>
           item === CHATS ? (
