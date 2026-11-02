@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.images.delivery import attached_line
 from app.projects.models import Project
 from app.tasks.activity import activity_items
 from app.tasks.models import Task
@@ -124,6 +125,11 @@ def _item_text(item: Any) -> str:
         body = _question_text(_get(item, "question"))
     else:
         body = getattr(item, "body_md", None) or ""
+    images = getattr(item, "images", None) or []
+    if images and item.type == "question":  # the answer's images: the run shows them (## Images)
+        body += "\n" + attached_line([i.filename for i in images])
+    elif images:  # a plain comment's are for people: the agent only learns they exist
+        body += f"\n(this comment had {len(images)} images, for the people on the task)"
     return f"[{item.type} by {who} at {item.at:%Y-%m-%d %H:%M}]\n{body}"
 
 
@@ -194,7 +200,9 @@ async def build_prompt(
     meth = await methodology.current(db, key_override or ROLE_KEY[role])
     key = f"{(await db.get(Project, task.project_id)).key}-{task.number}"
     thread = await _thread(db, task)
-    from app.workflow.instructions import kept_in_mind  # local: instructions imports this module
+    from app.workflow.instructions import (
+        kept_in_mind,  # local: instructions imports this module
+    )
 
     instructions = await kept_in_mind(db, task)
 
