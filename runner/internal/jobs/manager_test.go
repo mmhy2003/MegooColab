@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -524,6 +525,65 @@ func TestProbeFlagsMissingRepo(t *testing.T) {
 		if a.AgentID == "ok" && (a.Available || len(a.Problems) != 1 || a.Problems[0] != "node not found") {
 			t.Errorf("without node: %+v", a)
 		}
+	}
+}
+
+func ompWelcome(t *testing.T, m *Manager) {
+	t.Helper()
+	repo := gitRepo(t)
+	m.HandleWelcome(protocol.Welcome{Agents: []protocol.WelcomeAgent{
+		{AgentID: "omp", Program: "omp", MaxConcurrentRuns: 1, Bindings: []protocol.WelcomeBinding{{ProjectKey: "A", LocalPath: repo}}},
+		{AgentID: "cc", Program: "claude_code", MaxConcurrentRuns: 1, Bindings: []protocol.WelcomeBinding{{ProjectKey: "A", LocalPath: repo}}},
+	}})
+}
+
+func probed(m *Manager) map[string]protocol.AgentAvailability {
+	got := map[string]protocol.AgentAvailability{}
+	for _, a := range m.Probe() {
+		got[a.AgentID] = a
+	}
+	return got
+}
+
+func TestProbeOmpNeedsOmpNotNode(t *testing.T) {
+	m := New(func(any) error { return nil }, t.TempDir())
+	m.LookPath = func(s string) (string, error) {
+		if s == "omp" {
+			return "/bin/omp", nil
+		}
+		return "", errors.New("missing")
+	}
+	m.RunVersion = func(string) (string, error) { return "18.12.6", nil }
+	ompWelcome(t, m)
+	got := probed(m)
+	if a := got["omp"]; !a.Available || len(a.Problems) != 0 {
+		t.Errorf("omp agent = %+v", a)
+	}
+	if a := got["cc"]; a.Available || !reflect.DeepEqual(a.Problems, []string{"node not found", "npx not found"}) {
+		t.Errorf("claude agent = %+v", a)
+	}
+}
+
+func TestProbeOmpTooOld(t *testing.T) {
+	m := New(func(any) error { return nil }, t.TempDir())
+	m.LookPath = func(s string) (string, error) { return "/bin/" + s, nil }
+	m.RunVersion = func(string) (string, error) { return "omp 18.0.1", nil }
+	ompWelcome(t, m)
+	if a := probed(m)["omp"]; a.Available || !reflect.DeepEqual(a.Problems, []string{"OMP 18.12.6 or newer is needed"}) {
+		t.Errorf("omp agent = %+v", a)
+	}
+}
+
+func TestProbeOmpVersionCachedPerPath(t *testing.T) {
+	m := New(func(any) error { return nil }, t.TempDir())
+	m.LookPath = func(s string) (string, error) { return "/bin/" + s, nil }
+	calls := 0
+	m.RunVersion = func(string) (string, error) { calls++; return "18.12.6", nil }
+	ompWelcome(t, m)
+	probed(m)
+	probed(m)
+	if calls != 1 {
+		t.Fatalf("omp --version ran %d times", calls)
 	}
 }
 
