@@ -5,9 +5,9 @@ import { useState } from "react";
 
 import { AgentMenu } from "@/components/agents/AgentMenu";
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
-import { BindingEditor } from "@/components/agents/BindingEditor";
 import { MachineField } from "@/components/agents/MachineField";
 import { ModelField } from "@/components/agents/ModelField";
+import { ProjectBindings } from "@/components/agents/ProjectBindings";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { RunsField, runsLabel } from "@/components/agents/RunsField";
 import { Badge } from "@/components/ui/Badge";
@@ -29,7 +29,7 @@ function AgentDetails({
   agent: Agent;
   projects: Project[];
   tokens: AccessToken[];
-  onChanged: () => void;
+  onChanged: () => Promise<unknown>;
   onDeleted: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +38,7 @@ function AgentDetails({
     setError(null);
     try {
       await api(`/api/agents/${agent.id}`, { method: "PATCH", json });
-      onChanged();
+      await onChanged();
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -52,7 +52,7 @@ function AgentDetails({
         <AgentStatusDot status={agent.status} />
         {runs && <span className="text-xs text-muted-foreground">{runs}</span>}
         <RunnerUpdateArrow runner={agent.runner} ownerId={agent.owner.id} />
-        <AgentMenu agent={agent} onChanged={onChanged} onDeleted={onDeleted} onError={setError} />
+        <AgentMenu agent={agent} onChanged={() => void onChanged()} onDeleted={onDeleted} onError={setError} />
       </div>
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}
       <div className="space-y-2">
@@ -78,13 +78,7 @@ function AgentDetails({
           />
         </div>
       </div>
-      <BindingEditor
-        // keyed by bindings so the editor resets when the saved bindings change
-        key={agent.bindings.map((b) => `${b.project_id}=${b.local_path}`).join("|")}
-        agent={agent}
-        projects={projects}
-        onSaved={onChanged}
-      />
+      <ProjectBindings agent={agent} projects={projects} onSaved={onChanged} />
     </section>
   );
 }
@@ -154,7 +148,7 @@ export function AgentsTab({
             agent={shown}
             projects={projects}
             tokens={tokens}
-            onChanged={() => void onChanged()}
+            onChanged={onChanged}
             onDeleted={() => {
               choose(null);
               void onChanged();
