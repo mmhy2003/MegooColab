@@ -1,6 +1,6 @@
 "use client";
 
-import { RUNNER_UPDATE } from "@/components/agents/RunnerSetup";
+import { RUNNER_UPDATE } from "@/lib/runner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/shadcn/popover";
 import { Hint } from "@/components/ui/Hint";
 import { useMe } from "@/lib/me";

@@ -7,7 +7,7 @@ import { Suspense, useState } from "react";
 import { AddAgentDialog } from "@/components/agents/AddAgentDialog";
 import { AgentsTab } from "@/components/agents/AgentsTab";
 import { usableRunnerTokens } from "@/components/agents/MachineField";
-import { RunnerSetup } from "@/components/agents/RunnerSetup";
+import { RunnerTab } from "@/components/agents/RunnerTab";
 import { ToolsTab } from "@/components/hub/ToolsTab";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -27,7 +27,8 @@ function MyAgents() {
   const router = useRouter();
   const pathname = usePathname();
   const [tab, setTab] = useTabParam<Tab>(TAB_IDS);
-  const [adding, setAdding] = useState(false);
+  // Add agent is open, with the machine to start on (from a just-connected machine in the Runner tab)
+  const [adding, setAdding] = useState<{ machine: string | null } | null>(null);
   const agents = useQuery({ queryKey: qk.agents(), queryFn: () => api<Agent[]>("/api/agents/mine") });
   const projects = useQuery({ queryKey: qk.projects(), queryFn: () => api<Project[]>("/api/projects") });
   const tokens = useQuery({ queryKey: qk.tokens(), queryFn: () => api<AccessToken[]>("/api/tokens") });
@@ -44,7 +45,7 @@ function MyAgents() {
       <PageHeader
         title="My agents"
         subtitle="Register the coding agents on your computer and tell each one where a project's repository lives."
-        actions={<Button onClick={() => setAdding(true)}>Add agent</Button>}
+        actions={<Button onClick={() => setAdding({ machine: null })}>Add agent</Button>}
       />
       <Tabs
         label="My agents"
@@ -72,17 +73,15 @@ function MyAgents() {
         <ToolsTab />
       </TabPanel>
       <TabPanel id="runner" active={tab === "runner"}>
-        <section aria-labelledby="runner-heading" className="card space-y-3 p-4">
-          <h2 id="runner-heading" className="text-sm font-bold text-cyan-ink">Runner</h2>
-          <RunnerSetup hasAgents={(agents.data?.length ?? 0) > 0} />
-        </section>
+        <RunnerTab onAddAgent={(machine) => setAdding({ machine })} />
       </TabPanel>
       {adding && (
         <AddAgentDialog
           tokens={tokens.data ?? []}
-          onClose={() => setAdding(false)}
+          initialMachine={adding.machine}
+          onClose={() => setAdding(null)}
           onCreated={async (agent) => {
-            setAdding(false);
+            setAdding(null);
             router.push(`${pathname}?tab=agents&agent=${agent.id}`, { scroll: false });
             await refresh();
           }}

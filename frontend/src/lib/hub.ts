@@ -61,8 +61,9 @@ export function sharingLabel(sharing: HubToolSummary["sharing"]): string | null 
   return names.length ? `Shared: ${names.join(", ")}` : "Private";
 }
 
-export function useHubMachines() {
-  return useQuery({ queryKey: hubKeys.machines(), queryFn: () => api<HubMachine[]>("/api/hub/machines") });
+/** My machines; refetchInterval while waiting for one to connect. */
+export function useHubMachines(refetchInterval: number | false = false) {
+  return useQuery({ queryKey: hubKeys.machines(), queryFn: () => api<HubMachine[]>("/api/hub/machines"), refetchInterval });
 }
 
 /** Whether any of my machines doesn't match my library: the sidebar's mark. */
