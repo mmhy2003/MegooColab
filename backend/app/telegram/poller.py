@@ -24,11 +24,14 @@ MIN_ROUND = 1.0  # a poll answered at once is not repeated sooner than this
 async def poll_once(db: AsyncSession) -> bool:
     """Reads and handles the bot's new messages; False when there is no bot or Telegram could not be read."""
     token = await service.bot_token(db)
+    offset = (await db.get(OrgSettings, ORG_SETTINGS_ID)).telegram_offset if token is not None else None
+    # nothing waits in a transaction while Telegram holds the poll open (a migration altering org_settings would
+    # queue behind it)
+    await db.commit()
     if token is None:
         return False
-    org = await db.get(OrgSettings, ORG_SETTINGS_ID)
     try:
-        updates = await get_client().get_updates(token, org.telegram_offset, POLL_TIMEOUT)
+        updates = await get_client().get_updates(token, offset, POLL_TIMEOUT)
     except TelegramError as exc:
         log.warning("telegram: reading the bot's messages failed (%s)", exc.status)
         return False
@@ -71,7 +74,9 @@ async def run_telegram_poller(stop: asyncio.Event) -> None:
     """Runs beside the worker's job loop until `stop` is set."""
     while not stop.is_set():
         try:
-            async with engine.connect() as conn:
+            async with engine.connect() as pooled:
+                # autocommit: the lock is held by the session, so the connection never sits in a transaction
+                conn = await pooled.execution_options(isolation_level="AUTOCOMMIT")
                 if await conn.scalar(text("SELECT pg_try_advisory_lock(:k)"), {"k": POLL_LOCK}):
                     try:
                         await _poll_while_holding(stop)

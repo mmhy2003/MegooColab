@@ -42,6 +42,8 @@ describe("TelegramConnect", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Connect Telegram" }));
     expect(open).toHaveBeenCalledWith("https://t.me/megoo_bot?start=abc", "_blank", "noopener");
     expect(screen.getByText("Waiting for you to press Start in Telegram…")).toBeInTheDocument();
+    // a blocked popup (Safari after an await) must not leave the person without a way to Telegram
+    expect(screen.getByRole("link", { name: "Open Telegram" })).toHaveAttribute("href", "https://t.me/megoo_bot?start=abc");
     linked = true;
     expect(await screen.findByText("Connected to Telegram", {}, { timeout: 5_000 })).toBeInTheDocument();
   });

@@ -184,3 +184,10 @@ async def test_no_bot_no_link(client, db, org, telegram):
     r = await client.post(f"{ME}/link")
     assert (r.status_code, r.json()["detail"]) == (409, "telegram_not_set")
     assert (await client.get(ME)).json() == {"available": False, "bot_username": None, "linked": False}
+
+
+async def test_the_reply_escapes_the_name(client, db, org, telegram):
+    await _bot(db)
+    await login(client, await make_user(db, name="Ann <QA> & co"))
+    await _handle(_start(f"/start {await _code(client)}"))
+    assert telegram.sent[-1]["text"] == "Connected to MegooColab as Ann &lt;QA&gt; &amp; co."

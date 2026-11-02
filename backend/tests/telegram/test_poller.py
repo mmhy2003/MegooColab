@@ -86,3 +86,28 @@ async def test_the_poller_polls_with_the_lock_and_stops(db, org, telegram):
     stop.set()
     await asyncio.wait_for(poller, 5)
     assert telegram.update_calls
+
+
+async def test_no_transaction_waits_on_telegram(db, org, telegram):
+    """Neither the poll's session nor the lock's connection sits in a transaction during the long wait: a migration
+    altering org_settings would queue behind it, and an idle-in-transaction timeout would drop the lock."""
+    await _bot(db)
+    seen: list[int] = []
+
+    async def look() -> None:
+        async with engine.connect() as probe:
+            seen.append(await probe.scalar(text(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
+                "AND state LIKE 'idle in transaction%' AND pid <> pg_backend_pid()")))
+            await probe.rollback()
+
+    telegram.on_get_updates = look
+    stop = asyncio.Event()
+    poller = asyncio.create_task(run_telegram_poller(stop))
+    for _ in range(50):
+        if seen:
+            break
+        await asyncio.sleep(0.05)
+    stop.set()
+    await asyncio.wait_for(poller, 5)
+    assert seen and seen[0] == 0

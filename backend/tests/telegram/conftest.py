@@ -14,6 +14,8 @@ class FakeTelegram:
         self.send_errors: list[Exception] = []  # raised by the next sends, in order
         self.updates: list[list[dict] | Exception] = []  # one entry per get_updates call
         self.update_calls: list[dict] = []
+        self.on_get_updates = None  # an async callable run inside each get_updates, to look at the world then
+        self.webhooks_deleted: list[str] = []
 
     async def get_me(self, token: str) -> dict:
         if isinstance(self.me, Exception):
@@ -25,8 +27,13 @@ class FakeTelegram:
             raise self.send_errors.pop(0)
         self.sent.append({"token": token, "chat_id": chat_id, "text": text, "button_url": button_url})
 
+    async def delete_webhook(self, token: str) -> None:
+        self.webhooks_deleted.append(token)
+
     async def get_updates(self, token: str, offset: int | None, timeout: int) -> list[dict]:
         self.update_calls.append({"token": token, "offset": offset, "timeout": timeout})
+        if self.on_get_updates is not None:
+            await self.on_get_updates()
         if not self.updates:
             return []
         got = self.updates.pop(0)

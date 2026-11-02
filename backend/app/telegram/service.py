@@ -1,5 +1,6 @@
 """The site's Telegram bot and the people linked to it."""
 
+import html
 import logging
 import secrets
 import uuid
@@ -62,6 +63,8 @@ async def set_bot(db: AsyncSession, admin_id: uuid.UUID, token: str) -> str:
     token = token.strip()
     try:
         me = await get_client().get_me(token)
+        # a bot left with a webhook (used elsewhere before) cannot be polled: Telegram answers getUpdates with 409
+        await get_client().delete_webhook(token)
     except TelegramError as exc:
         if exc.status == 0:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, "telegram_unreachable") from None
@@ -151,7 +154,7 @@ async def _link(db: AsyncSession, token: str, chat_id: int, code: str) -> None:
     await apply_first_link_defaults(db, user.id)
     await audit.record(db, "telegram.linked", actor_id=user.id, target_type="user", target_id=user.id)
     await db.flush()
-    await _reply(token, chat_id, CONNECTED.format(name=user.name))
+    await _reply(token, chat_id, CONNECTED.format(name=html.escape(user.name, quote=False)))  # sent as HTML
 
 
 async def handle_update(db: AsyncSession, token: str, update: dict) -> None:

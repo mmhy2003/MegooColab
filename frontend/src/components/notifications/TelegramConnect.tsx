@@ -18,7 +18,9 @@ export function TelegramConnect() {
   const client = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [waiting, setWaiting] = useState(false);
+  // the Start link while waiting: also shown as a link, for when the browser blocked the new tab
+  const [startUrl, setStartUrl] = useState<string | null>(null);
+  const waiting = startUrl !== null;
   // asks again while waiting for Start, and stops once the chat is linked
   const mine = useMyTelegram(waiting ? (q) => (q.state.data?.linked ? false : WAIT_MS) : false);
   const linked = mine.data?.linked ?? false;
@@ -42,7 +44,7 @@ export function TelegramConnect() {
             onClick={async () => {
               setBusy(true);
               setError(null);
-              setWaiting(false);
+              setStartUrl(null);
               try {
                 await api("/api/me/telegram", { method: "DELETE" });
                 await client.invalidateQueries({ queryKey: telegramKeys.all });
@@ -67,7 +69,7 @@ export function TelegramConnect() {
               try {
                 const { url } = await api<{ url: string }>("/api/me/telegram/link", { method: "POST" });
                 window.open(url, "_blank", "noopener");
-                setWaiting(true);
+                setStartUrl(url);
               } catch (err) {
                 setError(errorMessage(err));
               } finally {
@@ -77,7 +79,12 @@ export function TelegramConnect() {
           >
             Connect Telegram
           </Button>
-          {polling && <p role="status" className="text-sm text-muted-foreground">Waiting for you to press Start in Telegram…</p>}
+          {polling && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Waiting for you to press Start in Telegram…{" "}
+              <a href={startUrl} target="_blank" rel="noopener noreferrer">Open Telegram</a>
+            </p>
+          )}
         </div>
       )}
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}

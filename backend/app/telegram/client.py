@@ -25,6 +25,8 @@ class TelegramClient(Protocol):
 
     async def send_message(self, token: str, chat_id: int, text: str, button_url: str | None) -> None: ...
 
+    async def delete_webhook(self, token: str) -> None: ...
+
     async def get_updates(self, token: str, offset: int | None, timeout: int) -> list[dict]: ...
 
 
@@ -55,6 +57,9 @@ class HttpTelegramClient:
         if button_url:
             payload["reply_markup"] = {"inline_keyboard": [[{"text": BUTTON_TEXT, "url": button_url}]]}
         await self._call(token, "sendMessage", payload)
+
+    async def delete_webhook(self, token: str) -> None:
+        await self._call(token, "deleteWebhook", {})
 
     async def get_updates(self, token: str, offset: int | None, timeout: int) -> list[dict]:
         payload: dict[str, Any] = {"timeout": timeout, "allowed_updates": ["message"]}

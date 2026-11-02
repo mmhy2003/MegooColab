@@ -38,6 +38,7 @@ async def test_admin_sets_a_bot(client_factory, db, org, telegram):
     stored = await _org()
     assert decrypt(stored.telegram_token_enc) == TOKEN and stored.telegram_bot_id == 42
     assert (await admin.get(URL)).json() == {"bot_username": "megoo_bot"}
+    assert telegram.webhooks_deleted == [TOKEN]  # a bot left with a webhook could never be polled
     assert (await member.get(URL)).status_code == 403
     assert (await member.put(URL, json={"token": TOKEN})).status_code == 403
 
