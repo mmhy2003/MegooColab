@@ -119,6 +119,8 @@ export type FakeAgentReport = {
   prompts: string[] | null;
   session_events: string[] | null;
   steps: { type: string; ok?: boolean; error?: string; exists?: boolean; content?: string; tool?: string; result?: string }[];
+  /** image blocks it was given (FAKEAGENT_IMAGES=1 makes it take them) */
+  images?: { mime: string; bytes: number; where: "prompt" | "steer" }[] | null;
 };
 
 /** Every report in a FAKEAGENT_REPORT_DIR (one per agent process, so one per run), oldest first. */
