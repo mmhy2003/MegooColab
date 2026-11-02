@@ -123,6 +123,29 @@ added to OMP by hand is not passed (the hub only ever touches its own entries).
 - Because OMP also reads Claude Code's and Codex's skill folders, a hub skill pushed to all three programs on one
   machine is the same text in each place, which OMP shows once.
 
+### Windows, Linux and macOS *(owner's requirement)*
+
+OMP agents work on all three, with nothing extra for the person to do on any of them:
+
+- **Folders**: the OMP agent folder is found with the same rule OMP itself uses on each OS (the user's home folder,
+  so `%USERPROFILE%\.omp\agent` on Windows and `~/.omp/agent` on macOS and Linux, plus any override OMP honours,
+  such as its agent-folder environment variable or a profile). The builder takes the rule from OMP's source, not
+  from a guess, so the hub writes exactly where OMP reads.
+- **Starting `omp`**: found on the PATH on every OS. On Windows the installers can leave `omp.exe`, a `.cmd` shim
+  (npm/bun style) or a PowerShell shim; the runner starts an `.exe` directly and a `.cmd` through `cmd /c` (as it does
+  for npx), and if only a shim it cannot start is found, the agent shows "omp found but cannot be started; reinstall
+  with the OMP installer". Stopping a run kills OMP's whole process tree on every OS, as for the other programs.
+- **Version check**: parses `omp --version` output on every OS.
+- **Keys stay private** on every OS: `mcp.json` is written atomically, owner-only on macOS and Linux and with a
+  user-only access rule on Windows (the existing helpers).
+- **Command MCP servers**: npx-style launchers are wrapped in `cmd /c` on Windows (the existing rule), and unwrapped
+  again when scanned.
+- **Help text** names the install command for the person's OS: `curl -fsSL https://omp.sh/install | sh` on macOS and
+  Linux, `irm https://omp.sh/install.ps1 | iex` in PowerShell on Windows.
+- **Tests**: the path, launch and version rules are unit-tested for all three OSes (the OS passed in, as the existing
+  `adapters.forOS` and hub path tests do), and **macOS is added to the runner's CI matrix** next to Linux and
+  Windows *(author's call)*, so the runner's tests run on all three.
+
 ### Server
 
 - Runs to an OMP agent go to a runner that supports it. Runner capability **`omp/1`**: a runner without it never
@@ -160,5 +183,5 @@ added to OMP by hand is not passed (the hub only ever touches its own entries).
   availability check (missing, too old, fine), and the server's `omp/1` gating.
 - An end-to-end test with a real runner and the fake agent standing in for `omp acp`: an OMP agent finishes a task
   run, and a push installs a skill and an MCP server for OMP.
-- Before release, a manual check with a real `omp` on the owner's machine: a read-only run cannot edit, a workspace
-  run can, a hub MCP server and a hub skill work in a run.
+- Before release, a manual check with a real `omp` on the owner's machines (Windows, and macOS or Linux where the
+  owner has one): a read-only run cannot edit, a workspace run can, a hub MCP server and a hub skill work in a run.
