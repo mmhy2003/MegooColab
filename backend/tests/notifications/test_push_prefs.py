@@ -26,4 +26,14 @@ async def test_put_without_push_keeps_push_off(client, db):
     r = await client.put(URL, json=[{"kind": "assigned", "in_app": False, "email": True}])
     assert r.status_code == 200
     assigned = next(p for p in r.json() if p["kind"] == "assigned")
-    assert assigned == {"kind": "assigned", "in_app": False, "email": True, "push": False}
+    assert assigned == {"kind": "assigned", "in_app": False, "email": True, "push": False, "telegram": False}
+
+
+async def test_telegram_preference_defaults_off_and_saves(client, db):
+    await login(client, await make_user(db))
+    assert all(p["telegram"] is False for p in (await client.get(URL)).json())
+    r = await client.put(URL, json=[{"kind": "mentioned", "in_app": True, "email": True, "push": False, "telegram": True}])
+    assert r.status_code == 200
+    telegram = {p["kind"]: p["telegram"] for p in (await client.get(URL)).json()}
+    assert telegram.pop("mentioned") is True
+    assert not any(telegram.values())

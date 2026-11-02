@@ -18,8 +18,10 @@ class Kind(StrEnum):
     question_waiting = "question_waiting"
 
 
-# (in_app, email, push) when a user has not chosen; push stays off until the person ticks it
-DEFAULT_PREFS: dict[Kind, tuple[bool, bool, bool]] = {k: (True, k != Kind.question_waiting, False) for k in Kind}
+# (in_app, email, push, telegram) when a user has not chosen; push and Telegram stay off until the person ticks them
+DEFAULT_PREFS: dict[Kind, tuple[bool, bool, bool, bool]] = {
+    k: (True, k != Kind.question_waiting, False, False) for k in Kind
+}
 
 
 class Notification(IdMixin, Base):
@@ -45,3 +47,4 @@ class NotificationPref(Base):
     in_app: Mapped[bool]
     email: Mapped[bool]
     push: Mapped[bool] = mapped_column(default=False, server_default=false())
+    telegram: Mapped[bool] = mapped_column(default=False, server_default=false())

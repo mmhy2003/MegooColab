@@ -19,4 +19,5 @@ from app.push import models as push_models  # noqa: F401
 from app.sprints import models as sprints_models  # noqa: F401
 from app.tasks import models as tasks_models  # noqa: F401
 from app.teams import models as teams_models  # noqa: F401
+from app.telegram import models as telegram_models  # noqa: F401
 from app.workflow import models as workflow_models  # noqa: F401
