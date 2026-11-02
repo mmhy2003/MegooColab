@@ -17,6 +17,15 @@ describe("RunnerSetup", () => {
     expect(value("4. Start it in this terminal")).toBe("megoocolab-runner run");
   });
 
+  it("tells OMP users how to install OMP and sign in, for their platform", async () => {
+    render(<RunnerSetup hasAgents={false} />);
+    await userEvent.click(screen.getByRole("button", { name: "Windows" }));
+    expect(value("OMP agents only: install OMP")).toBe("irm https://omp.sh/install.ps1 | iex");
+    expect(value("OMP agents only: sign in to your model providers")).toBe("omp auth-broker login");
+    await userEvent.click(screen.getByRole("button", { name: "Linux / macOS" }));
+    expect(value("OMP agents only: install OMP")).toBe("curl -fsSL https://omp.sh/install | sh");
+  });
+
   it("opens on Keep it running once there are agents, and installs and starts the service in one line", async () => {
     render(<RunnerSetup hasAgents />);
     expect(screen.getByRole("tab", { name: "Keep it running" })).toHaveAttribute("aria-selected", "true");

@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
+import { PROGRAM_LABEL } from "@/lib/agents";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import {
@@ -17,10 +18,7 @@ import {
   useTargetAgents,
 } from "@/lib/questions";
 
-const PROGRAMS = [
-  { id: "claude_code", label: "Claude Code" },
-  { id: "codex", label: "Codex" },
-] as const;
+const PROGRAMS = Object.entries(PROGRAM_LABEL).map(([id, label]) => ({ id, label }));
 
 const BODY_MAX = 4000;
 const CONTEXT_MAX = 8000;

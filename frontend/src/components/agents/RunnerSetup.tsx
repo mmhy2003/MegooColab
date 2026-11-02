@@ -15,6 +15,11 @@ export const RUNNER_INSTALL: Record<Platform, string> = {
   windows: "scoop install https://raw.githubusercontent.com/mmhy2003/MegooColab/main/runner/scoop/megoocolab-runner.json",
   unix: "curl -fsSL https://raw.githubusercontent.com/mmhy2003/MegooColab/main/runner/install.sh | sh",
 };
+// OMP serves ACP itself: OMP agents need it installed and signed in on the machine (Node is not needed for them)
+export const OMP_INSTALL: Record<Platform, string> = {
+  windows: "irm https://omp.sh/install.ps1 | iex",
+  unix: "curl -fsSL https://omp.sh/install | sh",
+};
 // re-running the install script replaces the binary in place
 export const RUNNER_UPDATE: Record<Platform, string> = {
   windows: "scoop update megoocolab-runner",
@@ -80,6 +85,9 @@ export function RunnerSetup({ hasAgents }: { hasAgents?: boolean }) {
           <Snippet label="3. Check it's ready" value={`${R} doctor`} />
           <Snippet label="4. Start it in this terminal" value={`${R} run`} />
           <p className={note}>It stops when you close the terminal. To keep it running without one, see Keep it running.</p>
+          <Snippet label="OMP agents only: install OMP" value={OMP_INSTALL[platform]} />
+          <Snippet label="OMP agents only: sign in to your model providers" value="omp auth-broker login" />
+          <p className={note}>OMP 18.12.6 or newer. Claude Code and Codex agents don&apos;t need it.</p>
         </div>
       </TabPanel>
 

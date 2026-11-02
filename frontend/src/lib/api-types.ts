@@ -3529,7 +3529,7 @@ export interface components {
          * AgentProgram
          * @enum {string}
          */
-        AgentProgram: "claude_code" | "codex";
+        AgentProgram: "claude_code" | "codex" | "omp";
         /**
          * AnswerMode
          * @enum {string}

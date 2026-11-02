@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { runReasonText } from "@/lib/agents";
+import { DEFAULT_MODEL, PROGRAM_LABEL, runReasonText } from "@/lib/agents";
+import { preferenceLine } from "@/lib/questions";
+
+describe("OMP", () => {
+  it("is named OMP and starts on the program's own default model", () => {
+    expect(PROGRAM_LABEL.omp).toBe("OMP");
+    expect(DEFAULT_MODEL.omp).toBe("");
+    expect(preferenceLine({ program: "omp", agent: null, if_busy: "wait" })).toBe("For: OMP agents · waits if busy");
+  });
+});
 
 describe("runReasonText", () => {
   it("says what each runner failure code means", () => {

@@ -71,6 +71,7 @@ function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[];
         >
           <option value="claude_code">{PROGRAM_LABEL.claude_code}</option>
           <option value="codex">{PROGRAM_LABEL.codex}</option>
+          <option value="omp">{PROGRAM_LABEL.omp}</option>
         </Select>
         <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Leave blank for a default name" maxLength={200} />
         <MachineField machine={null} tokens={tokens} value={machine} onChange={setMachine} />

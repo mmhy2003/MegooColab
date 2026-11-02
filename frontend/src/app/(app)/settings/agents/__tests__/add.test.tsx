@@ -37,6 +37,24 @@ describe("Add agent", () => {
     });
   });
 
+  it("an OMP agent starts on the program's own default model", async () => {
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => new Response("[]"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <AgentsPage />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add agent" }));
+    await userEvent.selectOptions(screen.getByLabelText("Program"), "omp");
+    expect(screen.getByLabelText("Model")).toHaveValue("");
+    await userEvent.click(screen.getAllByRole("button", { name: "Add agent" }).at(-1)!);
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(([u, init]) => u === "/api/agents" && init?.method === "POST");
+      expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ program: "omp", model: null });
+    });
+  });
+
   it("an emptied model asks for the program's own default", async () => {
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => new Response("[]"));
     vi.stubGlobal("fetch", fetchMock);

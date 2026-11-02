@@ -92,7 +92,7 @@ export function MachineTools({ machine }: { machine: HubMachine }) {
       ) : (
         <>
           <p className="text-xs text-muted-foreground">
-            Installed for your user on this machine, so every agent on it gets them, and so does your own Claude Code or Codex there.
+            Installed for your user on this machine, so every agent on it gets them, and so does your own Claude Code, Codex or OMP there.
           </p>
           {machine.tools.length === 0 ? (
             <p className="text-sm text-muted-foreground">Your Tool Hub is empty. Add an MCP or a skill there first.</p>

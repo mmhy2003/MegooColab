@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { PROGRAM_LABEL } from "@/lib/agents";
 import { api } from "@/lib/api";
 import type { components } from "@/lib/api-types";
 
@@ -68,7 +69,7 @@ export function useTargetAgents(key: string) {
   });
 }
 
-const PROGRAM_NAME: Record<string, string> = { claude_code: "Claude Code", codex: "Codex" };
+const PROGRAM_NAME: Record<string, string> = PROGRAM_LABEL;
 
 /** "For: Claude Code agents · waits if busy"; null for any free agent. */
 export function preferenceLine(p: Question["preference"]): string | null {
