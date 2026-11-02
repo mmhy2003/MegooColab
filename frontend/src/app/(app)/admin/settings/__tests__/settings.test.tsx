@@ -48,10 +48,10 @@ const renderPage = () =>
   );
 
 describe("Admin settings in tabs", () => {
-  it("has six tabs, General first, and no dreaming hour", async () => {
+  it("has seven tabs, General first, and no dreaming hour", async () => {
     renderPage();
     const tabs = await screen.findAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["General", "Email", "New projects", "Tool Hub", "Search", "Rate limits"]);
+    expect(tabs.map((t) => t.textContent)).toEqual(["General", "Email", "Telegram", "New projects", "Tool Hub", "Search", "Rate limits"]);
     expect(await screen.findByLabelText("Organization name")).toBeVisible();
     expect(screen.getByLabelText("Host")).not.toBeVisible();
     expect(screen.queryByLabelText("Dreaming hour (UTC)")).toBeNull(); // moved to AI → Dreaming
