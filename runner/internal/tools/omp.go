@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
 )
@@ -31,11 +33,11 @@ var ompConfigPath = func() (string, error) {
 	if out, ok := ompPaths[key]; ok {
 		return out, nil
 	}
-	out, err := exec.Command("omp", "config", "path").Output()
+	out, err := CommandOutput(OmpTimeout, "omp", "config", "path")
 	if err == nil {
-		ompPaths[key] = string(out)
+		ompPaths[key] = out
 	}
-	return string(out), err
+	return out, err
 }
 
 var (
@@ -43,12 +45,27 @@ var (
 	ompPaths  = map[string]string{}
 )
 
-// OmpAgentDir is the active OMP agent folder: what `omp config path` prints, else OMP's own rule. The root is
-// $PI_CONFIG_DIR or <home>/.omp; a named profile ($OMP_PROFILE, $PI_PROFILE) uses <root>/profiles/<name>/agent;
-// otherwise $PI_CODING_AGENT_DIR or <root>/agent.
+// OmpTimeout bounds each run of omp itself (--version, config path): an omp stuck on a first-run prompt must not
+// hold up the runner's other agents.
+const OmpTimeout = 10 * time.Second
+
+// CommandOutput runs a program and returns its standard output; it is killed after timeout.
+func CommandOutput(timeout time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = time.Second // a child holding the pipe cannot keep Output waiting
+	out, err := cmd.Output()
+	return string(out), err
+}
+
+// OmpAgentDir is the active OMP agent folder: what `omp config path` prints when that is one line naming an
+// existing folder, else OMP's own rule. The root is $PI_CONFIG_DIR or <home>/.omp; a named profile ($OMP_PROFILE,
+// $PI_PROFILE) uses <root>/profiles/<name>/agent; otherwise $PI_CODING_AGENT_DIR or <root>/agent.
 func OmpAgentDir(home string) string {
 	if out, err := ompConfigPath(); err == nil {
-		if dir := strings.TrimSpace(out); filepath.IsAbs(dir) {
+		dir := strings.TrimSpace(out)
+		if info, err := os.Stat(dir); err == nil && info.IsDir() && filepath.IsAbs(dir) && !strings.ContainsAny(dir, "\r\n") {
 			return dir
 		}
 	}

@@ -67,7 +67,7 @@ type Manager struct {
 	early    []string // run ids cancelled before they started, oldest first
 	reported map[string]string
 	efforts  efforts           // each program's models' effort levels, learned on its first run
-	versions map[string]string // `--version` output by program path, run once per path
+	versions map[string]string // `--version` output by program path, size and time: run once per file
 	closed   bool
 	gen      int // connection generation; bumped by StopAll
 	ended    int // highest connection number known to be lost
@@ -94,14 +94,18 @@ func New(send func(any) error, cacheRoot string) *Manager {
 }
 
 func runVersion(path string) (string, error) {
-	out, err := exec.Command(path, "--version").Output()
-	return string(out), err
+	return tools.CommandOutput(tools.OmpTimeout, path, "--version")
 }
 
-// version is RunVersion's output for path, remembered: probes run often and omp starts slowly.
+// version is RunVersion's output for path, remembered while the file stays the same: probes run often and omp
+// starts slowly, and an omp upgraded in place is asked again.
 func (m *Manager) version(path string) (string, error) {
+	key := path
+	if info, err := os.Stat(path); err == nil {
+		key = fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano())
+	}
 	m.mu.Lock()
-	out, ok := m.versions[path]
+	out, ok := m.versions[key]
 	m.mu.Unlock()
 	if ok {
 		return out, nil
@@ -111,7 +115,7 @@ func (m *Manager) version(path string) (string, error) {
 		return "", err
 	}
 	m.mu.Lock()
-	m.versions[path] = out
+	m.versions[key] = out
 	m.mu.Unlock()
 	return out, nil
 }

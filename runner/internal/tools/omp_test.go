@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/coder/acp-go-sdk"
 
@@ -36,6 +37,9 @@ func writeOmpJSON(t *testing.T, home, content string) {
 func TestOmpAgentDirFromOmp(t *testing.T) {
 	home := isolate(t)
 	dir := filepath.Join(home, "elsewhere", "agent")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	ompConfigPath = func() (string, error) { return dir + "\n", nil }
 	if got := OmpAgentDir(home); got != dir {
 		t.Fatalf("got %q, want %q", got, dir)
@@ -43,6 +47,48 @@ func TestOmpAgentDirFromOmp(t *testing.T) {
 	ompConfigPath = func() (string, error) { return "relative/agent", nil } // not a path to trust
 	if got := OmpAgentDir(home); got != filepath.Join(home, ".omp", "agent") {
 		t.Fatalf("relative answer: got %q", got)
+	}
+}
+
+func TestOmpAgentDirRejectsNonFolderAnswers(t *testing.T) {
+	home := isolate(t)
+	dir := filepath.Join(home, "x", "agent")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "config.yml")
+	if err := os.WriteFile(file, []byte("a: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fallback := filepath.Join(home, ".omp", "agent")
+	for _, answer := range []string{
+		dir + "\nA new version of omp is available\n", // not one line
+		file,                                    // a file, not a folder
+		filepath.Join(home, "missing", "agent"), // no such folder
+	} {
+		ompConfigPath = func() (string, error) { return answer, nil }
+		if got := OmpAgentDir(home); got != fallback {
+			t.Errorf("%q: got %q, want the rule's %q", answer, got, fallback)
+		}
+	}
+}
+
+func TestHelperSleep(t *testing.T) {
+	if os.Getenv("MEGOO_HELPER_SLEEP") != "1" {
+		return
+	}
+	time.Sleep(time.Minute)
+}
+
+func TestCommandOutputTimesOut(t *testing.T) {
+	t.Setenv("MEGOO_HELPER_SLEEP", "1")
+	start := time.Now()
+	_, err := CommandOutput(300*time.Millisecond, os.Args[0], "-test.run=^TestHelperSleep$")
+	if err == nil {
+		t.Fatal("a hanging command returned no error")
+	}
+	if took := time.Since(start); took > 15*time.Second {
+		t.Fatalf("took %v", took)
 	}
 }
 
@@ -236,6 +282,16 @@ func TestOmpRunServersWorkspaceHasAll(t *testing.T) {
 func TestOmpRunServersReadOnlyOnlySafe(t *testing.T) {
 	home, m := runServersSetup(t)
 	if got := serverNames(OmpRunServers(m, home, true)); !reflect.DeepEqual(got, []string{"docs"}) {
+		t.Fatalf("servers = %v", got)
+	}
+}
+
+func TestOmpRunServersNeverPassesMegooColab(t *testing.T) {
+	home, m := runServersSetup(t)
+	writeOmpJSON(t, home, `{"mcpServers":{"megoocolab":{"type":"http","url":"https://elsewhere"},"docs":{"type":"http","url":"https://d"}}}`)
+	m.Put(Entry{Program: "omp", Kind: "mcp", Name: "megoocolab", ReadOnlySafe: true})
+	// the run's own server, with its run token, is the only "megoocolab"
+	if got := serverNames(OmpRunServers(m, home, false)); !reflect.DeepEqual(got, []string{"docs"}) {
 		t.Fatalf("servers = %v", got)
 	}
 }

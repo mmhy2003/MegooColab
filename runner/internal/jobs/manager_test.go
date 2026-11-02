@@ -578,6 +578,34 @@ func TestProbeOmpTooOld(t *testing.T) {
 	}
 }
 
+func TestProbeOmpVersionRecheckedAfterUpgrade(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "omp")
+	if err := os.WriteFile(bin, []byte("old"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m := New(func(any) error { return nil }, t.TempDir())
+	m.LookPath = func(s string) (string, error) {
+		if s == "omp" {
+			return bin, nil
+		}
+		return "/bin/" + s, nil
+	}
+	out := "omp 18.0.0"
+	m.RunVersion = func(string) (string, error) { return out, nil }
+	ompWelcome(t, m)
+	if a := probed(m)["omp"]; a.Available {
+		t.Fatalf("old omp available: %+v", a)
+	}
+	// upgraded in place: same path, new file
+	if err := os.WriteFile(bin, []byte("new and longer"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out = "omp 18.12.6"
+	if a := probed(m)["omp"]; !a.Available {
+		t.Fatalf("upgraded omp still reported: %+v", a)
+	}
+}
+
 func TestProbeOmpVersionCachedPerPath(t *testing.T) {
 	m := New(func(any) error { return nil }, t.TempDir())
 	m.LookPath = func(s string) (string, error) { return "/bin/" + s, nil }

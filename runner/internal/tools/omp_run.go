@@ -18,7 +18,8 @@ func OmpRunServers(m *Manifest, home string, readOnly bool) []acp.McpServer {
 	}
 	var names []string
 	for _, e := range m.Entries {
-		if e.Program == "omp" && e.Kind == "mcp" && (e.ReadOnlySafe || !readOnly) {
+		// the run's own server, with its run token, is the only "megoocolab"
+		if e.Program == "omp" && e.Kind == "mcp" && e.Name != megooColabServer && (e.ReadOnlySafe || !readOnly) {
 			names = append(names, e.Name)
 		}
 	}
