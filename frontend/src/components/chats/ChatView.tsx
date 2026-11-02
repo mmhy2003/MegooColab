@@ -6,6 +6,7 @@ import { useMemo, useRef } from "react";
 import { BoardDialog } from "@/components/chats/BoardDialog";
 import { ChatComposer } from "@/components/chats/ChatComposer";
 import { EndChatButton } from "@/components/chats/EndChatButton";
+import { ImageGallery } from "@/components/images/ImageGallery";
 import { RoundDivider } from "@/components/chats/RoundDivider";
 import { ActivityThread } from "@/components/task/ActivityThread";
 import { JumpButtons } from "@/components/task/JumpButtons";
@@ -56,6 +57,12 @@ function RoundThread({ chat, round }: { chat: Chat; round: ChatRound }) {
   const readOnly = !chat.can_act;
   return (
     <div className="space-y-4">
+      {(round.images ?? []).length > 0 && (
+        <section aria-label="Images with the first message">
+          <h3 className="text-xs tracking-wider text-muted-foreground uppercase">Images with the first message</h3>
+          <ImageGallery images={round.images ?? []} />
+        </section>
+      )}
       <ActivityThread
         items={activity.data ?? []}
         columnNames={new Map()}

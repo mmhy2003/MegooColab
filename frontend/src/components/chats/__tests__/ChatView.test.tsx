@@ -72,4 +72,10 @@ describe("ChatView", () => {
     expect(await screen.findByText("waiting: answer the agent's question")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "waiting: answer the agent's question" })).toBeNull();
   });
+
+  it("shows the images sent with a round's first message", async () => {
+    const c = chat();
+    show({ ...c, rounds: [{ ...c.rounds[0], images: [{ id: "i1", filename: "first.png", size: 10 }] }] } as typeof c);
+    expect(await screen.findByRole("button", { name: "Open first.png" })).toBeInTheDocument();
+  });
 });

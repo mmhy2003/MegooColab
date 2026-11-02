@@ -30,6 +30,12 @@ export function uploadImage(file: File): Promise<UploadedImage> {
   return api<UploadedImage>("/api/images", { method: "POST", body: form });
 }
 
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 /** The image's own URL: thumbnails show it in the page (inline), the link downloads it. */
 export const imageUrl = (id: string, inline = true) => `/api/attachments/${id}${inline ? "?inline=1" : ""}`;
 

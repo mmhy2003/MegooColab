@@ -1,11 +1,13 @@
 import { AlertTriangle } from "lucide-react";
 
+import { ImageGallery } from "@/components/images/ImageGallery";
 import { Avatar } from "@/components/ui/Avatar";
 import { Markdown } from "@/components/ui/Markdown";
 import { QuestionCard } from "@/components/workflow/QuestionCard";
 import { ReviewResult } from "@/components/workflow/ReviewFindings";
 import { stateText } from "@/lib/agentMessages";
 import { runReasonText } from "@/lib/agents";
+import type { ImageRef } from "@/lib/images";
 import type { ActivityItem } from "@/lib/types";
 import { escalationReasonText, FINISHING_LABEL, STAGES, type FinishingOption } from "@/lib/workflow";
 
@@ -246,7 +248,7 @@ export function ActivityThread({
         const actor = item.actor?.name ?? (isAgent ? (agentId && agentNames?.get(agentId)) || "Agent" : "Someone");
         if (item.type === "question" && item.question) {
           return (
-            <li key={item.id} className="flex gap-2">
+            <li key={item.id} id={`activity-${item.id}`} className="flex gap-2">
               <Avatar name="Agent" size={24} />
               <QuestionCard item={item} taskKey={taskKey} canAct={canAct} readOnly={readOnly} onAnswered={onAnswered} />
             </li>
@@ -255,7 +257,7 @@ export function ActivityThread({
         if (item.type === "comment") {
           const toAgent = item.to_agent;
           return (
-            <li key={item.id} className="flex gap-2">
+            <li key={item.id} id={`activity-${item.id}`} className="flex gap-2">
               <Avatar name={actor} size={24} />
               <div
                 data-agent-message={toAgent ? "" : undefined}
@@ -273,6 +275,7 @@ export function ActivityThread({
                   {item.edited_at && <span className="ml-1">(edited)</span>}
                 </p>
                 <Markdown>{item.body_md ?? ""}</Markdown>
+                <ImageGallery images={item.images ?? []} />
               </div>
             </li>
           );
@@ -291,7 +294,8 @@ export function ActivityThread({
         const reviewId = kind === "review.result" ? str(data.review_id) : undefined;
         const prUrl = kind === "finish.reported" ? str(data.pr_url) : undefined;
         return (
-          <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind} docVersion={num(data.version)}>
+          <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind} docVersion={num(data.version)}
+            images={item.images}>
             {isSafeUrl(prUrl) && (
               <>
                 {" — "}
@@ -316,6 +320,7 @@ function EventRow({
   violation = false,
   docKind,
   docVersion = 0,
+  images = [],
   children,
 }: {
   at: string;
@@ -325,6 +330,8 @@ function EventRow({
   /** document events link to the design or plan section of the task */
   docKind?: string;
   docVersion?: number;
+  /** sent with it: a change request's */
+  images?: ImageRef[];
   children?: React.ReactNode;
 }) {
   return (
@@ -338,6 +345,7 @@ function EventRow({
         {lead && <span className="text-fg">{lead} </span>}
         {docKind ? <DocText text={text} kind={docKind} version={docVersion} /> : text}
         {children}
+        <ImageGallery images={images} />
       </span>
       <span className="ml-auto whitespace-nowrap">{when(at)}</span>
     </li>

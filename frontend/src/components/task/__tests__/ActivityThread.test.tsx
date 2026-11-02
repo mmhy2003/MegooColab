@@ -289,4 +289,42 @@ describe("ActivityThread workflow events", () => {
       expect(screen.queryByText(/→/)).toBeNull();
     });
   });
+
+  describe("images", () => {
+    const img = (id: string, filename: string) => ({ id, filename, size: 1024 });
+
+    it("shows a comment's images with it, and marks each item so it can be linked to", () => {
+      const withImages: ActivityItem[] = [
+        { type: "comment", id: "c9", at: "2026-10-22T10:01:00Z", actor, body_md: "See these", edited_at: null,
+          images: [img("i1", "one.png"), img("i2", "two.png")] },
+      ];
+      const { container } = render(<ActivityThread items={withImages} columnNames={new Map()} userNames={new Map()} />);
+      expect(screen.getByRole("button", { name: "Open one.png" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Open two.png" })).toBeInTheDocument();
+      expect(container.querySelector("#activity-c9")).not.toBeNull();
+    });
+
+    it("shows a change request's images under it", () => {
+      const rejected: ActivityItem[] = [
+        { type: "event", id: "e9", at: "2026-10-22T10:01:00Z", actor, kind: "document.rejected",
+          data: { kind: "design", version: 1, comment: "like this", document_id: "d1" }, images: [img("i3", "like.png")] },
+      ];
+      render(<ActivityThread items={rejected} columnNames={new Map()} userNames={new Map()} />);
+      expect(screen.getByRole("button", { name: "Open like.png" })).toBeInTheDocument();
+    });
+
+    it("shows an answer's images with the answer", () => {
+      const answered: ActivityItem[] = [
+        { type: "question", id: "q9", at: "2026-10-22T10:01:00Z", actor: null, images: [img("i4", "this.png")],
+          question: { id: "q9", body: "Which one?", choices: [], status: "answered", mockup: null,
+                      answered_by: { id: "u1", name: "Ahmed Ali" }, answer_choice: null, answer_text: "this" } },
+      ];
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ActivityThread items={answered} columnNames={new Map()} userNames={new Map()} taskKey="PAY-1" />
+        </QueryClientProvider>,
+      );
+      expect(screen.getByRole("button", { name: "Open this.png" })).toBeInTheDocument();
+    });
+  });
 });

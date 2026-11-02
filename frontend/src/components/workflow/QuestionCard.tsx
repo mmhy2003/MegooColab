@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ImageAttach, ImageDropZone } from "@/components/images/ImageAttach";
+import { ImageGallery } from "@/components/images/ImageGallery";
 import { Button } from "@/components/ui/Button";
 import { Markdown } from "@/components/ui/Markdown";
 import { api, ApiError } from "@/lib/api";
@@ -185,6 +186,7 @@ export function QuestionCard({
           {q.answer_text}
         </p>
       )}
+      {q.status === "answered" && <ImageGallery images={item.images ?? []} />}
       {error && (
         <p role="alert" className="text-xs text-pink">
           {error}

@@ -246,6 +246,7 @@ export function TaskView({
               <Section title="Attachments">
                 <Attachments
                   items={attachments.data ?? []}
+                  names={userNames}
                   disabled={disabled}
                   onUpload={async (file) => {
                     const form = new FormData();
