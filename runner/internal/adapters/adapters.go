@@ -1,5 +1,6 @@
 // Package adapters knows how to launch the Claude Code and Codex ACP adapters
-// and how to start their sessions with the policy applied.
+// and OMP (which speaks ACP itself), and how to start their sessions with the
+// policy applied.
 package adapters
 
 import (
@@ -15,6 +16,7 @@ import (
 const (
 	ClaudeCode = "claude_code"
 	Codex      = "codex"
+	Omp        = "omp"
 )
 
 // Spec is how to start an adapter process.
@@ -26,7 +28,7 @@ type Spec struct {
 }
 
 // For returns the launch spec for a program. The environment variable
-// MEGOO_ADAPTER_<PROGRAM> (a full command line) replaces the npx command; tests
+// MEGOO_ADAPTER_<PROGRAM> (a full command line) replaces the command; tests
 // and the end-to-end run use it to start a fake agent.
 func For(program string) (Spec, error) {
 	return forOS(runtime.GOOS, program, os.Getenv, exec.LookPath)
@@ -39,6 +41,7 @@ func forOS(goos, program string, getenv func(string) string, lookPath func(strin
 		pkg = "@agentclientprotocol/claude-agent-acp@0.94.0"
 	case Codex:
 		pkg = "@agentclientprotocol/codex-acp@2.3.0" // replaces the deprecated @zed-industries/codex-acp
+	case Omp:
 	default:
 		return Spec{}, fmt.Errorf("adapters: unknown program %q", program)
 	}
@@ -51,6 +54,14 @@ func forOS(goos, program string, getenv func(string) string, lookPath func(strin
 			return Spec{}, fmt.Errorf("adapters: MEGOO_ADAPTER_%s is empty", strings.ToUpper(program))
 		}
 		return Spec{Program: program, Command: words[0], Args: words[1:]}, nil
+	}
+	if program == Omp {
+		// omp serves ACP itself. "write" overrides the person's own approval settings (a global yolo included): every
+		// command asks through session/request_permission, deletes and moves ask with their paths, and new and
+		// edited files are written through the runner's fs/write_text_file, so the runner's policy decides them all.
+		// always-ask is no good: it asks for writes and MCP calls by ACP elicitation, which the runner does not
+		// offer, so OMP denies every file write and MCP call (checked with omp 18.15.0).
+		return Spec{Program: program, Command: "omp", Args: []string{"acp", "--approval-mode", "write"}}, nil
 	}
 	npx := "npx"
 	if goos == "windows" {

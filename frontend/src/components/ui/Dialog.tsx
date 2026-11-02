@@ -16,6 +16,7 @@ export function Dialog({
   role = "dialog",
   bare = false,
   describedBy,
+  phoneFull = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -31,6 +32,8 @@ export function Dialog({
   bare?: boolean;
   /** Id of the element describing the dialog (its question's consequence). */
   describedBy?: string;
+  /** Below md, fill the screen: for a form too long for a phone's small box. */
+  phoneFull?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   // popups opened inside render into the dialog, not under it (see PortalContainer)
@@ -87,7 +90,7 @@ export function Dialog({
         if (dismissible && pressedOutside.current && outside(e)) onClose();
         pressedOutside.current = false;
       }}
-      className={`card fixed inset-0 m-auto focus:outline-none max-h-[90vh] w-[calc(100%-2rem)] overflow-auto p-0 text-fg backdrop:bg-black/40 backdrop:backdrop-blur-sm ${wide ? "max-w-3xl" : "max-w-md"}`}
+      className={`card fixed inset-0 m-auto focus:outline-none max-h-[90vh] w-[calc(100%-2rem)] overflow-auto p-0 text-fg backdrop:bg-black/40 backdrop:backdrop-blur-sm ${wide ? "max-w-3xl" : "max-w-md"} ${phoneFull ? "max-md:m-0 max-md:h-dvh max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none" : ""}`}
     >
       {/* everything in the dialog, its own ✕ tooltip included, renders popups inside it (see PortalContainer) */}
       <PortalContainerContext.Provider value={element}>

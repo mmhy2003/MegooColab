@@ -17,7 +17,7 @@ function type(box: HTMLTextAreaElement, value: string) {
 }
 
 describe("CommentBox", () => {
-  it("inserts a mention token from the picker", async () => {
+  it("shows a picked mention as @Name, and sends its token", async () => {
     const onSubmit = vi.fn(async () => undefined);
     render(<CommentBox users={users} onSubmit={onSubmit} />);
     const box = screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement;
@@ -26,16 +26,18 @@ describe("CommentBox", () => {
     expect(options.map((o) => o.textContent)).toEqual(["Sara Kim", "Sam Lee"]);
     fireEvent.keyDown(box, { key: "ArrowDown" });
     fireEvent.keyDown(box, { key: "Enter" });
-    expect(box.value).toBe(`Thanks @[Sam Lee](user:${users[1].id}) `);
+    expect(box.value).toBe("Thanks @Sam Lee ");
     expect(screen.queryByRole("listbox")).toBeNull();
     type(box, `${box.value}and @ah`);
     fireEvent.click(screen.getByRole("option", { name: "Ahmed Ali" }));
-    expect(box.value).toBe(`Thanks @[Sam Lee](user:${users[1].id}) and @[Ahmed Ali](user:${users[2].id}) `);
+    expect(box.value).toBe("Thanks @Sam Lee and @Ahmed Ali ");
     type(box, `${box.value}@zz`);
     expect(screen.queryByRole("listbox")).toBeNull(); // no match: no picker
     fireEvent.keyDown(box, { key: "Escape" });
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.stringContaining(`@[Ahmed Ali](user:${users[2].id})`), false));
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(`Thanks @[Sam Lee](user:${users[1].id}) and @[Ahmed Ali](user:${users[2].id}) @zz`, false),
+    );
   });
 
   it("an email address does not open the picker", () => {
@@ -79,9 +81,39 @@ describe("CommentBox", () => {
     const box = screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: "Hi @sa there", selectionStart: 6, selectionEnd: 6 } });
     fireEvent.keyDown(box, { key: "Enter" });
-    const token = `@[Sara Kim](user:${users[0].id}) `;
-    expect(box.value).toBe(`Hi ${token} there`);
-    expect(box.selectionStart).toBe(3 + token.length); // not on the next frame: a keystroke may come first
+    expect(box.value).toBe("Hi @Sara Kim  there");
+    expect(box.selectionStart).toBe(3 + "@Sara Kim ".length); // not on the next frame: a keystroke may come first
+  });
+
+  it("highlights each mention in the box", () => {
+    const { container } = render(<CommentBox users={users} onSubmit={vi.fn()} />);
+    const box = screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement;
+    type(box, "Thanks @sa");
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect([...container.querySelectorAll("mark")].map((m) => m.textContent)).toEqual(["@Sara Kim"]);
+    type(box, "Thanks @Sara Ki");
+    expect(container.querySelectorAll("mark")).toHaveLength(0); // cut short: plain text again
+  });
+
+  it("Backspace right after a mention removes the whole name", () => {
+    render(<CommentBox users={users} onSubmit={vi.fn()} />);
+    const box = screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement;
+    type(box, "Thanks @sa");
+    fireEvent.keyDown(box, { key: "Enter" });
+    box.setSelectionRange("Thanks @Sara Kim".length, "Thanks @Sara Kim".length);
+    fireEvent.keyDown(box, { key: "Backspace" });
+    expect(box.value).toBe("Thanks  ");
+  });
+
+  it("a name cut short is sent as plain text", async () => {
+    const onSubmit = vi.fn(async () => undefined);
+    render(<CommentBox users={users} onSubmit={onSubmit} />);
+    const box = screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement;
+    type(box, "Thanks @sa");
+    fireEvent.keyDown(box, { key: "Enter" });
+    type(box, "Thanks @Sara K");
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Thanks @Sara K", false));
   });
 
   describe("to the agent", () => {
@@ -97,11 +129,11 @@ describe("CommentBox", () => {
       expect(options[0].textContent).toContain("laptop-claude");
       expect(options[0].textContent).toContain("agent on this task");
       fireEvent.keyDown(box(), { key: "Enter" });
-      expect(box().value).toBe(`${token} `);
+      expect(box().value).toBe("@laptop-claude ");
       expect(toggle()).toHaveAttribute("aria-checked", "true");
       fireEvent.click(toggle());
       expect(toggle()).toHaveAttribute("aria-checked", "false");
-      expect(box().value).not.toContain("(agent:a1)");
+      expect(box().value).not.toContain("@laptop-claude");
     });
 
     it("the switch on its own sends to the agent without a mention", async () => {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -74,6 +75,7 @@ func newEnvWithCache(t *testing.T, scenario string, maxRuns int, cache string, t
 	e := &env{t: t, repo: gitRepo(t), cache: cache, serveErr: make(chan error, 1)}
 	e.report = filepath.Join(t.TempDir(), "report.json")
 	t.Setenv("MEGOO_ADAPTER_CLAUDE_CODE", `"`+testutil.BuildFakeAgent(t)+`"`)
+	t.Setenv("MEGOO_ADAPTER_OMP", `"`+testutil.BuildFakeAgent(t)+`"`)
 	t.Setenv("FAKEAGENT_SCENARIO", scenario)
 	t.Setenv("FAKEAGENT_REPORT", e.report)
 	e.srv = testserver.New(t, token)
@@ -104,11 +106,14 @@ func newEnvWithCache(t *testing.T, scenario string, maxRuns int, cache string, t
 	return e
 }
 
-func (e *env) welcome(maxRuns int) {
+func (e *env) welcome(maxRuns int) { e.welcomeAs(maxRuns, "claude_code") }
+
+// welcomeAs is welcome with agent-1 as an agent of that program.
+func (e *env) welcomeAs(maxRuns int, program string) {
 	if err := e.srv.Send(protocol.Welcome{
 		Type: protocol.TypeWelcome, UserID: "u1",
 		Agents: []protocol.WelcomeAgent{{
-			AgentID: "agent-1", Name: "A", Program: "claude_code", MaxConcurrentRuns: maxRuns,
+			AgentID: "agent-1", Name: "A", Program: program, MaxConcurrentRuns: maxRuns,
 			Bindings: []protocol.WelcomeBinding{{ProjectKey: "MEG", LocalPath: e.repo}},
 		}},
 	}); err != nil {
@@ -524,6 +529,93 @@ func TestProbeFlagsMissingRepo(t *testing.T) {
 		if a.AgentID == "ok" && (a.Available || len(a.Problems) != 1 || a.Problems[0] != "node not found") {
 			t.Errorf("without node: %+v", a)
 		}
+	}
+}
+
+func ompWelcome(t *testing.T, m *Manager) {
+	t.Helper()
+	repo := gitRepo(t)
+	m.HandleWelcome(protocol.Welcome{Agents: []protocol.WelcomeAgent{
+		{AgentID: "omp", Program: "omp", MaxConcurrentRuns: 1, Bindings: []protocol.WelcomeBinding{{ProjectKey: "A", LocalPath: repo}}},
+		{AgentID: "cc", Program: "claude_code", MaxConcurrentRuns: 1, Bindings: []protocol.WelcomeBinding{{ProjectKey: "A", LocalPath: repo}}},
+	}})
+}
+
+func probed(m *Manager) map[string]protocol.AgentAvailability {
+	got := map[string]protocol.AgentAvailability{}
+	for _, a := range m.Probe() {
+		got[a.AgentID] = a
+	}
+	return got
+}
+
+func TestProbeOmpNeedsOmpNotNode(t *testing.T) {
+	m := New(func(any) error { return nil }, t.TempDir())
+	m.LookPath = func(s string) (string, error) {
+		if s == "omp" {
+			return "/bin/omp", nil
+		}
+		return "", errors.New("missing")
+	}
+	m.RunVersion = func(string) (string, error) { return "18.12.6", nil }
+	ompWelcome(t, m)
+	got := probed(m)
+	if a := got["omp"]; !a.Available || len(a.Problems) != 0 {
+		t.Errorf("omp agent = %+v", a)
+	}
+	if a := got["cc"]; a.Available || !reflect.DeepEqual(a.Problems, []string{"node not found", "npx not found"}) {
+		t.Errorf("claude agent = %+v", a)
+	}
+}
+
+func TestProbeOmpTooOld(t *testing.T) {
+	m := New(func(any) error { return nil }, t.TempDir())
+	m.LookPath = func(s string) (string, error) { return "/bin/" + s, nil }
+	m.RunVersion = func(string) (string, error) { return "omp 18.0.1", nil }
+	ompWelcome(t, m)
+	if a := probed(m)["omp"]; a.Available || !reflect.DeepEqual(a.Problems, []string{"OMP 18.12.6 or newer is needed"}) {
+		t.Errorf("omp agent = %+v", a)
+	}
+}
+
+func TestProbeOmpVersionRecheckedAfterUpgrade(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "omp")
+	if err := os.WriteFile(bin, []byte("old"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m := New(func(any) error { return nil }, t.TempDir())
+	m.LookPath = func(s string) (string, error) {
+		if s == "omp" {
+			return bin, nil
+		}
+		return "/bin/" + s, nil
+	}
+	out := "omp 18.0.0"
+	m.RunVersion = func(string) (string, error) { return out, nil }
+	ompWelcome(t, m)
+	if a := probed(m)["omp"]; a.Available {
+		t.Fatalf("old omp available: %+v", a)
+	}
+	// upgraded in place: same path, new file
+	if err := os.WriteFile(bin, []byte("new and longer"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out = "omp 18.12.6"
+	if a := probed(m)["omp"]; !a.Available {
+		t.Fatalf("upgraded omp still reported: %+v", a)
+	}
+}
+
+func TestProbeOmpVersionCachedPerPath(t *testing.T) {
+	m := New(func(any) error { return nil }, t.TempDir())
+	m.LookPath = func(s string) (string, error) { return "/bin/" + s, nil }
+	calls := 0
+	m.RunVersion = func(string) (string, error) { calls++; return "18.12.6", nil }
+	ompWelcome(t, m)
+	probed(m)
+	probed(m)
+	if calls != 1 {
+		t.Fatalf("omp --version ran %d times", calls)
 	}
 }
 

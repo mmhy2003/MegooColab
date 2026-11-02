@@ -10,7 +10,7 @@ import (
 )
 
 // isolateHome points the home and config folders at a temporary folder, so a push never reaches the real
-// ~/.claude.json or ~/.codex.
+// ~/.claude.json, ~/.codex or ~/.omp.
 func isolateHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
@@ -19,6 +19,11 @@ func isolateHome(t *testing.T) string {
 	t.Setenv("APPDATA", filepath.Join(home, "config"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 	t.Setenv("CODEX_HOME", "")
+	for _, k := range []string{"PI_CONFIG_DIR", "OMP_PROFILE", "PI_PROFILE"} {
+		t.Setenv(k, "")
+	}
+	// OMP's own variable: an omp on the machine and the runner's fallback both answer this folder
+	t.Setenv("PI_CODING_AGENT_DIR", filepath.Join(home, ".omp", "agent"))
 	return home
 }
 

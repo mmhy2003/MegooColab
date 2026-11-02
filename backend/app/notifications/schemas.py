@@ -29,3 +29,4 @@ class NotificationPrefIO(BaseModel):
     in_app: bool
     email: bool
     push: bool = False
+    telegram: bool = False

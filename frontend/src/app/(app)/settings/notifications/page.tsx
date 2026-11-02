@@ -2,6 +2,7 @@
 
 import { NotificationPrefs } from "@/components/notifications/NotificationPrefs";
 import { PushDevices } from "@/components/notifications/PushDevices";
+import { TelegramConnect } from "@/components/notifications/TelegramConnect";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { usePageTitle } from "@/lib/title";
 
@@ -11,9 +12,10 @@ export default function NotificationSettingsPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Notifications"
-        subtitle="Choose what reaches you in the app, by email and as push notifications. Email is sent only when an admin has set up SMTP."
+        subtitle="Choose what reaches you in the app, by email, as push notifications and in Telegram. Email is sent only when an admin has set up SMTP."
       />
       <PushDevices />
+      <TelegramConnect />
       <NotificationPrefs />
     </div>
   );

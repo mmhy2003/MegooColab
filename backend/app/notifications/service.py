@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import Role, User, UserStatus
@@ -14,8 +14,10 @@ from app.core.email import get_mailer
 from app.core.events import Event, publish
 from app.jobs import queue
 from app.notifications.models import DEFAULT_PREFS, Kind, Notification, NotificationPref
+from app.org.models import ORG_SETTINGS_ID, OrgSettings
 from app.push.models import PushSubscription
 from app.projects.access import accessible_project_ids
+from app.telegram.models import TelegramLink
 
 DEDUPE_WINDOW = timedelta(minutes=10)
 
@@ -46,12 +48,19 @@ async def readable_by(db: AsyncSession, user: User, *, task_id: uuid.UUID | None
 
 async def preferences(
     db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind
-) -> dict[uuid.UUID, tuple[bool, bool, bool]]:
-    """(in_app, email, push) per user for this kind."""
+) -> dict[uuid.UUID, tuple[bool, bool, bool, bool]]:
+    """(in_app, email, push, telegram) per user for this kind."""
     ids = list(user_ids)
-    chosen = {p.user_id: (p.in_app, p.email, p.push) for p in (await db.execute(
+    chosen = {p.user_id: (p.in_app, p.email, p.push, p.telegram) for p in (await db.execute(
         select(NotificationPref).where(NotificationPref.user_id.in_(ids), NotificationPref.kind == kind))).scalars()}
     return {uid: chosen.get(uid, DEFAULT_PREFS[kind]) for uid in ids}
+
+
+async def _telegram_recipients(db: AsyncSession, user_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    """Those of these people who linked their Telegram, while the site has a bot."""
+    if not user_ids or not await db.scalar(select(OrgSettings.telegram_token_enc).where(OrgSettings.id == ORG_SETTINGS_ID)):
+        return set()
+    return set((await db.execute(select(TelegramLink.user_id).where(TelegramLink.user_id.in_(user_ids)))).scalars())
 
 
 async def _recent_unread(db: AsyncSession, user_ids: list[uuid.UUID], kind: Kind, task_id: uuid.UUID) -> set[uuid.UUID]:
@@ -83,9 +92,10 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
     prefs = await preferences(db, [u.id for u in recipients], kind)
     title, body, link = title[:200], body[:500], link[:500]
     mail = await get_mailer(db) is not None
+    telegram_to = await _telegram_recipients(db, [u.id for u in recipients if prefs[u.id][3]])
     created = 0
     for user in recipients:
-        in_app, email, push = prefs[user.id]
+        in_app, email, push, telegram = prefs[user.id]
         if in_app:
             db.add(Notification(user_id=user.id, kind=kind, title=title, body=body, link=link, task_id=task_id,
                                 project_id=project_id))
@@ -101,8 +111,27 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
                     select(PushSubscription.id).where(PushSubscription.user_id == user.id))).scalars():
                 await queue.enqueue(db, "notify.push", {"subscription_id": str(sub_id), "title": title, "body": body,
                                                         "link": link})
+        if telegram and user.id in telegram_to:
+            await queue.enqueue(db, "notify.telegram", {"user_id": str(user.id), "title": title, "body": body,
+                                                        "link": link})
     await db.flush()
     return created
+
+
+async def read_by_acting(db: AsyncSession, user_id: uuid.UUID, *, task_id: uuid.UUID | None = None,
+                         link: str | None = None) -> None:
+    """The person did something on a task (or on the question at `link`): their unread notifications about it are
+    read. Only those from before this transaction: one this very action has just raised stays unread."""
+    about = Notification.task_id == task_id if task_id is not None else Notification.link == link
+    done = await db.execute(
+        update(Notification)
+        .where(Notification.user_id == user_id, Notification.read_at.is_(None), about,
+               Notification.created_at < func.now())  # now(): when this transaction began
+        .values(read_at=datetime.now(UTC))
+        .execution_options(synchronize_session=False)
+    )
+    if done.rowcount:
+        await publish(db, Event(type="notification.read", user_id=user_id))
 
 
 MENTION = re.compile(r"@\[([^\]\n]{1,200})\]\(user:([0-9a-f-]{36})\)")

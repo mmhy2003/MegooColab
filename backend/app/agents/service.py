@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import ColumnElement, or_, select, update
+from sqlalchemy import ColumnElement, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
@@ -24,6 +24,8 @@ from app.runner.registry import (
     BRANCH_PROBLEM,
     MODEL_CAPABILITY,
     MODEL_PROBLEM,
+    OMP_CAPABILITY,
+    OMP_PROBLEM,
     WORKFLOW_CAPABILITY,
     WORKFLOW_PROBLEM,
     registry,
@@ -33,9 +35,12 @@ from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
 from app.workflow.models import TaskWorkflow, WorkflowStatus
 
-PROGRAM_LABELS = {AgentProgram.claude_code: "Claude Code", AgentProgram.codex: "Codex"}
-# the model a new agent starts on, unless its owner asks for another (or for the program's own default)
-DEFAULT_MODELS = {AgentProgram.claude_code: "Opus 5.5", AgentProgram.codex: "GPT-6.1 Sol"}
+PROGRAM_LABELS = {AgentProgram.claude_code: "Claude Code", AgentProgram.codex: "Codex", AgentProgram.omp: "OMP"}
+# the model a new agent starts on, unless its owner asks for another (or for the program's own default). OMP works
+# with many providers, so it starts on whatever its owner set up in OMP.
+DEFAULT_MODELS: dict[AgentProgram, str | None] = {
+    AgentProgram.claude_code: "Opus 5.5", AgentProgram.codex: "GPT-6.1 Sol", AgentProgram.omp: None,
+}
 
 # Windows drive (C:\ or C:/), UNC (\\server\share) or POSIX (/...)
 _ABSOLUTE_PATH = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\[^\\/]|/)")
@@ -49,19 +54,32 @@ def is_absolute_path(path: str) -> bool:
     return bool(_ABSOLUTE_PATH.match(path))
 
 
-async def agent_statuses(db: AsyncSession, agent_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
-    """online | busy | offline per agent. busy: it has a running run; online: its machine's live runner
-    reports it available."""
-    ids = set(agent_ids)
-    busy: set[uuid.UUID] = set()
-    if ids:
-        rows = await db.execute(
-            select(AgentRun.agent_id).where(AgentRun.agent_id.in_(ids), AgentRun.status == RunStatus.running)
-        )
-        busy = set(rows.scalars())
+async def running_counts(db: AsyncSession, agent_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """How many running runs each agent has; agents with none are left out."""
+    if not agent_ids:
+        return {}
+    rows = await db.execute(
+        select(AgentRun.agent_id, func.count())
+        .where(AgentRun.agent_id.in_(set(agent_ids)), AgentRun.status == RunStatus.running)
+        .group_by(AgentRun.agent_id)
+    )
+    return dict(rows.all())
+
+
+async def agent_statuses(
+    db: AsyncSession, agent_ids: list[uuid.UUID], limits: dict[uuid.UUID, int] | None = None
+) -> dict[uuid.UUID, str]:
+    """online | busy | offline per agent. busy: it has a running run, or with `limits` (its runs at once) every
+    slot is taken; online: its machine's live runner reports it available."""
+    running = await running_counts(db, agent_ids)
+
+    def busy(agent_id: uuid.UUID) -> bool:
+        n = running.get(agent_id, 0)
+        return n > 0 if limits is None else n >= limits[agent_id]
+
     return {
         agent_id: "busy"
-        if agent_id in busy
+        if busy(agent_id)
         else "online"
         if registry.is_available(agent_id)
         else "offline"
@@ -77,7 +95,9 @@ def runner_info(agent_id: uuid.UUID) -> RunnerInfo | None:
     return RunnerInfo(version=conn.version, os=conn.os or "")
 
 
-def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, chooses: bool = False) -> list[str]:
+def agent_problems(
+    agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, chooses: bool = False, program: str | None = None
+) -> list[str]:
     """What its machine's live runner reports as wrong with the agent (shown to the owner and admins only),
     plus the server's own too-old-runner notices (shown to everyone who can see the agent)."""
     conn = registry.conn_for_agent(agent_id)
@@ -91,6 +111,8 @@ def agent_problems(agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, choos
         problems.append(BRANCH_PROBLEM)
     if chooses and MODEL_CAPABILITY not in conn.capabilities:  # a model or an effort of its own
         problems.append(MODEL_PROBLEM)
+    if program == AgentProgram.omp and OMP_CAPABILITY not in conn.capabilities:
+        problems.append(OMP_PROBLEM)
     return problems
 
 
@@ -235,7 +257,8 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
         if token_ids
         else {}
     )
-    statuses = await agent_statuses(db, list(owner_of))
+    statuses = await agent_statuses(db, list(owner_of), {a.id: a.max_concurrent_runs for a in agents})
+    running = await running_counts(db, list(owner_of))
     allowed = await accessible_project_ids(db, viewer)
     rows = await db.execute(
         select(AgentBinding, Project.key)
@@ -263,7 +286,8 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "max_concurrent_runs": a.max_concurrent_runs,
             "owner": UserOut.model_validate(owners[a.owner_id]),
             "status": statuses[a.id],
-            "problems": agent_problems(a.id, a.owner_id, viewer, bool(a.model or a.effort)),
+            "running": running.get(a.id, 0),
+            "problems": agent_problems(a.id, a.owner_id, viewer, bool(a.model or a.effort), a.program),
             "bindings": bindings.get(a.id, []),
             "runner": runner_info(a.id),
             "machine": _machine(tokens.get(a.runner_token_id), a.owner_id, viewer),

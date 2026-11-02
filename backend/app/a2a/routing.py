@@ -17,14 +17,14 @@ from app.a2a import prompts
 from app.a2a.models import Question, QuestionStatus
 from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agent_runs.tokens import issue_run_token
-from app.agents.models import Agent, AgentBinding
+from app.agents.models import Agent, AgentBinding, AgentProgram
 from app.agents.service import owner_can_access
 from app.audit import service as audit
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.projects.models import Project
 from app.runner.protocol import McpAccess, RunTask
-from app.runner.registry import WORKFLOW_CAPABILITY, registry
+from app.runner.registry import OMP_CAPABILITY, WORKFLOW_CAPABILITY, registry
 
 log = logging.getLogger(__name__)
 
@@ -68,6 +68,8 @@ async def candidates(db: AsyncSession, q: Question) -> list[Agent]:
             continue
         if not registry.agent_supports(a.id, WORKFLOW_CAPABILITY):
             continue
+        if a.program == AgentProgram.omp and not registry.agent_supports(a.id, OMP_CAPABILITY):
+            continue  # its run would wait for a runner that can start OMP, and the question with it
         running = await active_runs(db, a.id)
         if running >= a.max_concurrent_runs:
             continue

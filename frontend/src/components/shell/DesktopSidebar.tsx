@@ -51,7 +51,8 @@ export function DesktopSidebar({ user }: { user: User }) {
             : "w-56 bg-surface-2/60"
         }`}
       >
-        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+        {/* the sidebar scrolls its own links, below the logo */}
+        <div className="min-h-0 flex-1 overflow-hidden">
           <Sidebar user={user} collapsed={collapsed} />
         </div>
         <Hint label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>

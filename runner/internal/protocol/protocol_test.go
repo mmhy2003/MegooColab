@@ -86,7 +86,7 @@ func TestWireFieldNames(t *testing.T) {
 
 func TestListsNeverNull(t *testing.T) {
 	data, _ := json.Marshal(NewHello("1", "linux", "amd64", nil))
-	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1"]}` {
+	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1","omp/1"]}` {
 		t.Fatalf("hello = %s", data)
 	}
 	data, _ = json.Marshal(NewHello("1", "l", "a", []AgentAvailability{{AgentID: "x"}}))

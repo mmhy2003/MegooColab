@@ -1,12 +1,12 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 
 import { Command, CommandItem, CommandList } from "@/components/shadcn/command";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/shadcn/popover";
 import { Button } from "@/components/ui/Button";
-import { agentMentionToken, hasAgentMention, removeAgentMentions } from "@/lib/agentMessages";
-import { mentionToken } from "@/lib/notifications";
+import { hasAgentMention, removeAgentMentions } from "@/lib/agentMessages";
+import { encodeMentions, mentionAt, mentionRanges, type PickedMention } from "@/lib/mentions";
 
 type Person = { id: string; name: string };
 type Option = Person & { agent?: boolean };
@@ -43,8 +43,11 @@ export function CommentBox({
   const [manualOn, setManualOn] = useState(false);
   const [focused, setFocused] = useState(false);
   const [mention, setMention] = useState<{ start: number; end: number; query: string } | null>(null);
+  // who was picked from the list: the box shows `@Name`, and their tokens are written only when it is sent
+  const [picked, setPicked] = useState<PickedMention[]>([]);
   const [active, setActive] = useState(0);
   const box = useRef<HTMLTextAreaElement>(null);
+  const backdrop = useRef<HTMLDivElement>(null);
   const caretAfter = useRef<number | null>(null);
   useLayoutEffect(() => {
     if (caretAfter.current === null) return;
@@ -52,7 +55,9 @@ export function CommentBox({
     caretAfter.current = null;
   }, [body]);
   const tellable = agent !== null && canTellAgent;
-  const toAgent = tellable && (manualOn || hasAgentMention(body, agent.id));
+  const sent = encodeMentions(body, picked);
+  const toAgent = tellable && (manualOn || hasAgentMention(sent, agent.id));
+  const ranges = mentionRanges(body, picked);
   const people: Option[] = tellable ? [{ ...agent, agent: true }, ...users] : users;
   const options = mention ? matching(people, mention.query) : [];
   const picking = options.length > 0;
@@ -65,10 +70,11 @@ export function CommentBox({
 
   const pick = (user: Option) => {
     if (!mention) return;
-    const token = `${user.agent ? agentMentionToken(user) : mentionToken(user)} `;
-    const next = body.slice(0, mention.start) + token + body.slice(mention.end);
-    const caret = mention.start + token.length;
+    const shown = `@${user.name} `;
+    const next = body.slice(0, mention.start) + shown + body.slice(mention.end);
+    const caret = mention.start + shown.length;
     setBody(next);
+    setPicked((p) => (p.some((m) => m.id === user.id) ? p : [...p, { id: user.id, name: user.name, agent: user.agent }]));
     setMention(null);
     caretAfter.current = caret; // placed as soon as the new text renders, before the next keystroke
   };
@@ -82,8 +88,9 @@ export function CommentBox({
         if (!body.trim()) return;
         setBusy(true);
         try {
-          await onSubmit(body, toAgent);
+          await onSubmit(sent, toAgent);
           setBody("");
+          setPicked([]);
           setManualOn(false);
         } finally {
           setBusy(false);
@@ -93,45 +100,76 @@ export function CommentBox({
       {/* the list opens under the comment like a dropdown: no blur, the cursor stays in the comment */}
       <Popover open={picking} onOpenChange={(open) => !open && setMention(null)}>
         <PopoverAnchor asChild>
-          <textarea
-            ref={box}
-            aria-label="Add a comment"
-            placeholder="Add a comment (Markdown supported, @ to mention someone)"
-            // on a phone, an empty box waiting at the bottom is one line: it grows when tapped
-            className={`w-full rounded border bg-surface-2 p-2 text-sm ${toAgent ? "border-violet" : "border-line"} ${
-              focused || body ? "min-h-20" : "h-9 min-h-9 resize-none sm:h-auto sm:min-h-20"
-            }`}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            value={body}
-            aria-autocomplete="list"
-            onChange={(e) => {
-              setBody(e.target.value);
-              track(e.target.value, e.target.selectionStart ?? e.target.value.length);
-            }}
-            onKeyDown={(e) => {
-              if (picking) {
-                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                  e.preventDefault();
-                  const step = e.key === "ArrowDown" ? 1 : -1;
-                  setActive((i) => (i + step + options.length) % options.length);
-                  return;
+          {/* the mentions are highlighted on a copy of the text behind the (transparent) box, laid out the same way */}
+          <div className="relative rounded bg-surface-2">
+            <div
+              ref={backdrop}
+              aria-hidden
+              className="pointer-events-none absolute inset-0 overflow-hidden rounded border border-transparent p-2 text-sm break-words whitespace-pre-wrap text-transparent"
+            >
+              {ranges.map((r, i) => (
+                <Fragment key={r.start}>
+                  {body.slice(i === 0 ? 0 : ranges[i - 1].end, r.start)}
+                  <mark className={`rounded text-transparent ${r.mention.agent ? "bg-violet/30" : "bg-cyan/25"}`}>{body.slice(r.start, r.end)}</mark>
+                </Fragment>
+              ))}
+              {body.slice(ranges.at(-1)?.end ?? 0)}
+              {"\u200b" /* a final newline still takes its line */}
+            </div>
+            <textarea
+              ref={box}
+              aria-label="Add a comment"
+              placeholder="Add a comment (Markdown supported, @ to mention someone)"
+              // on a phone, an empty box waiting at the bottom is one line: it grows when tapped
+              className={`relative block w-full rounded border bg-transparent p-2 text-sm ${toAgent ? "border-violet" : "border-line"} ${
+                focused || body ? "min-h-20" : "h-9 min-h-9 resize-none sm:h-auto sm:min-h-20"
+              }`}
+              onScroll={(e) => {
+                if (backdrop.current) backdrop.current.scrollTop = e.currentTarget.scrollTop;
+              }}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              value={body}
+              aria-autocomplete="list"
+              onChange={(e) => {
+                setBody(e.target.value);
+                track(e.target.value, e.target.selectionStart ?? e.target.value.length);
+              }}
+              onKeyDown={(e) => {
+                if (picking) {
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    const step = e.key === "ArrowDown" ? 1 : -1;
+                    setActive((i) => (i + step + options.length) % options.length);
+                    return;
+                  }
+                  if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
+                    e.preventDefault();
+                    pick(options[Math.min(active, options.length - 1)]);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation(); // closes the list only, not the task drawer around it
+                    setMention(null);
+                    return;
+                  }
                 }
-                if ((e.key === "Enter" && !e.metaKey && !e.ctrlKey) || e.key === "Tab") {
-                  e.preventDefault();
-                  pick(options[Math.min(active, options.length - 1)]);
-                  return;
+                if (e.key === "Backspace") {
+                  const { selectionStart: at, selectionEnd } = e.currentTarget;
+                  const whole = at === selectionEnd ? mentionAt(body, picked, at) : null;
+                  if (whole) {
+                    // a mention goes as one: half a name would be sent as plain text
+                    e.preventDefault();
+                    setBody(body.slice(0, whole.start) + body.slice(whole.end));
+                    caretAfter.current = whole.start;
+                    return;
+                  }
                 }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  e.stopPropagation(); // closes the list only, not the task drawer around it
-                  setMention(null);
-                  return;
-                }
-              }
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
-            }}
-          />
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
+              }}
+            />
+          </div>
         </PopoverAnchor>
         <PopoverContent
           align="start"
@@ -171,7 +209,13 @@ export function CommentBox({
           onClick={() => {
             if (toAgent) {
               setManualOn(false);
-              if (agent) setBody((b) => removeAgentMentions(b, agent.id));
+              if (agent) {
+                // the agent's mentions go, picked ones (shown as @Name) and any typed as a token
+                const mine = mentionRanges(body, picked).filter((r) => r.mention.agent && r.mention.id === agent.id);
+                let next = body;
+                for (const r of [...mine].reverse()) next = next.slice(0, r.start) + next.slice(r.end).replace(/^ /, "");
+                setBody(removeAgentMentions(next, agent.id));
+              }
             } else {
               setManualOn(true);
             }

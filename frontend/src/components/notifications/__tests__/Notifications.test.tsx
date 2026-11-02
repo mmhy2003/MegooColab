@@ -143,6 +143,43 @@ describe("NotificationPrefs", () => {
     expect(JSON.parse(String(put[1]!.body))).toEqual([{ kind: "mentioned", in_app: true, email: false, push: true }]);
   });
 
+  it("a Telegram column only with a bot, disabled until linked", async () => {
+    const prefs = [{ kind: "mentioned", in_app: true, email: false, push: false, telegram: false }];
+    let telegram = { available: false, bot_username: null as string | null, linked: false };
+    mockFetch((url, init) => {
+      if (url === "/api/me/notification-preferences" && !init?.method) return json(prefs);
+      if (url === "/api/me/telegram") return json(telegram);
+      return undefined;
+    });
+    const first = wrap(<NotificationPrefs />);
+    await screen.findByRole("checkbox", { name: "Push: Mentioned in a comment" });
+    await waitFor(() => expect(screen.queryByRole("columnheader", { name: "Telegram" })).toBeNull());
+    first.unmount();
+    telegram = { available: true, bot_username: "megoo_bot", linked: false };
+    wrap(<NotificationPrefs />);
+    const box = await screen.findByRole("checkbox", { name: "Telegram: Mentioned in a comment" });
+    expect(box).toBeDisabled();
+    expect(box).toHaveAttribute("title", "Connect Telegram first");
+  });
+
+  it("ticking Telegram saves it", async () => {
+    const prefs = [{ kind: "mentioned", in_app: true, email: false, push: false, telegram: false }];
+    const fetchMock = mockFetch((url, init) => {
+      if (url === "/api/me/notification-preferences" && !init?.method) return json(prefs);
+      if (url === "/api/me/notification-preferences" && init?.method === "PUT") return json(JSON.parse(String(init.body)));
+      if (url === "/api/me/telegram") return json({ available: true, bot_username: "megoo_bot", linked: true });
+      return undefined;
+    });
+    wrap(<NotificationPrefs />);
+    const box = await screen.findByRole("checkbox", { name: "Telegram: Mentioned in a comment" });
+    await waitFor(() => expect(box).toBeEnabled());
+    fireEvent.click(box);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === "PUT")).toBe(true));
+    const put = fetchMock.mock.calls.find(([, i]) => i?.method === "PUT")!;
+    expect(JSON.parse(String(put[1]!.body))).toEqual([{ kind: "mentioned", in_app: true, email: false, push: false, telegram: true }]);
+    await waitFor(() => expect(box).toBeChecked());
+  });
+
   it("shows a toggle at once, and puts it back when saving fails", async () => {
     const prefs = [{ kind: "assigned", in_app: true, email: true }];
     let fail: (r: Response) => void = () => undefined;

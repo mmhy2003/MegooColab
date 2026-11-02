@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Select } from "@/components/ui/Select";
 import { TabPanel, Tabs, useTabParam } from "@/components/ui/Tabs";
 import { api } from "@/lib/api";
+import { TelegramForm } from "@/components/admin/TelegramForm";
 import { saveAdminSettings, type SettingsPatch, useAdminSettings } from "@/lib/adminSettings";
 import { errorMessage } from "@/lib/errors";
 import type { AdminSettings } from "@/lib/types";
@@ -21,6 +22,7 @@ import { usePageTitle } from "@/lib/title";
 const TABS = [
   { id: "general", label: "General" },
   { id: "email", label: "Email" },
+  { id: "telegram", label: "Telegram" },
   { id: "new-projects", label: "New projects" },
   { id: "tool-hub", label: "Tool Hub" },
   { id: "search", label: "Search" },
@@ -212,6 +214,7 @@ function SettingsTabs() {
         <>
           <TabPanel id="general" active={tab === "general"}><GeneralForm settings={settings.data} /></TabPanel>
           <TabPanel id="email" active={tab === "email"}><EmailForm settings={settings.data} /></TabPanel>
+          <TabPanel id="telegram" active={tab === "telegram"}><TelegramForm /></TabPanel>
           <TabPanel id="new-projects" active={tab === "new-projects"}><DefaultsForm settings={settings.data} /></TabPanel>
           <TabPanel id="tool-hub" active={tab === "tool-hub"}><HubForm settings={settings.data} /></TabPanel>
           <TabPanel id="search" active={tab === "search"}><SearchAdmin /></TabPanel>

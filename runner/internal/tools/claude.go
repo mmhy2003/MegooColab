@@ -42,19 +42,19 @@ func claudeEntry(m *protocol.McpPayload) map[string]any {
 	return e
 }
 
-// editServers decodes ~/.claude.json keeping unrelated keys as raw bytes, lets edit change mcpServers, and
-// encodes it back.
-func editServers(old []byte, edit func(servers map[string]json.RawMessage) error) ([]byte, error) {
+// editServers decodes a JSON file with a top-level mcpServers object (~/.claude.json, OMP's mcp.json) keeping
+// unrelated keys as raw bytes, lets edit change mcpServers, and encodes it back. label names the file in errors.
+func editServers(label string, old []byte, edit func(servers map[string]json.RawMessage) error) ([]byte, error) {
 	doc := map[string]json.RawMessage{}
 	if len(old) > 0 {
 		if err := json.Unmarshal(old, &doc); err != nil {
-			return nil, fmt.Errorf(".claude.json is not valid JSON: %w", err)
+			return nil, fmt.Errorf("%s is not valid JSON: %w", label, err)
 		}
 	}
 	servers := map[string]json.RawMessage{}
 	if raw, ok := doc["mcpServers"]; ok && string(raw) != "null" {
 		if err := json.Unmarshal(raw, &servers); err != nil {
-			return nil, fmt.Errorf(".claude.json mcpServers is not an object: %w", err)
+			return nil, fmt.Errorf("%s mcpServers is not an object: %w", label, err)
 		}
 	}
 	if err := edit(servers); err != nil {
@@ -74,7 +74,7 @@ func (c claudeCode) InstallMCP(home string, t Tool) (string, error) {
 	}
 	entry := claudeEntry(t.Mcp)
 	err := ReplaceFile(claudeJSON(home), func(old []byte) ([]byte, error) {
-		return editServers(old, func(servers map[string]json.RawMessage) error {
+		return editServers(".claude.json", old, func(servers map[string]json.RawMessage) error {
 			raw, err := json.Marshal(entry)
 			servers[t.Name] = raw
 			return err
@@ -91,7 +91,7 @@ func (c claudeCode) RemoveMCP(home, name string) error {
 		return err
 	}
 	return ReplaceFile(claudeJSON(home), func(old []byte) ([]byte, error) {
-		return editServers(old, func(servers map[string]json.RawMessage) error {
+		return editServers(".claude.json", old, func(servers map[string]json.RawMessage) error {
 			delete(servers, name)
 			return nil
 		})
@@ -99,7 +99,12 @@ func (c claudeCode) RemoveMCP(home, name string) error {
 }
 
 func readServers(home string) (map[string]json.RawMessage, error) {
-	st, err := stampOf(claudeJSON(home))
+	return readServersAt(claudeJSON(home), ".claude.json")
+}
+
+// readServersAt is the mcpServers object of the JSON file at path (none when the file does not exist).
+func readServersAt(path, label string) (map[string]json.RawMessage, error) {
+	st, err := stampOf(path)
 	if err != nil || !st.exists {
 		return map[string]json.RawMessage{}, err
 	}
@@ -107,7 +112,7 @@ func readServers(home string) (map[string]json.RawMessage, error) {
 		McpServers map[string]json.RawMessage `json:"mcpServers"`
 	}
 	if err := json.Unmarshal(st.data, &doc); err != nil {
-		return nil, fmt.Errorf(".claude.json is not valid JSON: %w", err)
+		return nil, fmt.Errorf("%s is not valid JSON: %w", label, err)
 	}
 	if doc.McpServers == nil {
 		doc.McpServers = map[string]json.RawMessage{}
@@ -144,6 +149,12 @@ func (claudeCode) ScanMCP(home string) ([]protocol.FoundTool, error) {
 	if err != nil {
 		return nil, err
 	}
+	return scanServers("claude_code", servers), nil
+}
+
+// scanServers reads mcpServers entries in Claude Code's shape (OMP's mcp.json uses the same), MegooColab's own
+// server left out.
+func scanServers(program string, servers map[string]json.RawMessage) []protocol.FoundTool {
 	names := make([]string, 0, len(servers))
 	for n := range servers {
 		names = append(names, n)
@@ -162,7 +173,7 @@ func (claudeCode) ScanMCP(home string) ([]protocol.FoundTool, error) {
 			Args    []string          `json:"args"`
 			Env     map[string]string `json:"env"`
 		}
-		found := protocol.FoundTool{Program: "claude_code", Kind: "mcp", Name: name}
+		found := protocol.FoundTool{Program: program, Kind: "mcp", Name: name}
 		if err := json.Unmarshal(servers[name], &e); err != nil {
 			found.Problem = "unreadable"
 			out = append(out, found)
@@ -181,7 +192,7 @@ func (claudeCode) ScanMCP(home string) ([]protocol.FoundTool, error) {
 		}
 		out = append(out, found)
 	}
-	return out, nil
+	return out
 }
 
 func (claudeCode) ScanSkills(home string) ([]protocol.FoundTool, error) {

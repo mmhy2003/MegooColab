@@ -113,7 +113,8 @@ test("tool hub: push to a machine and see it installed", async ({ page }) => {
     expect(put.ok()).toBeTruthy();
 
     // 1. tick it on the machine and push: the runner installs it into ~/.claude.json
-    await page.goto("/settings/agents");
+    await page.goto("/settings/agents?tab=tools");
+    await page.getByRole("navigation", { name: "Machines", exact: true }).getByRole("button", { name: /^hub-e2e-machine/ }).click();
     const panel = page.getByRole("region", { name: 'Tools on "hub-e2e-machine"' });
     await expect(panel.getByText(/· connected$/)).toBeVisible({ timeout: 30_000 });
     await panel.getByRole("checkbox", { name: "push-e2e" }).check();

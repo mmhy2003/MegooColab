@@ -104,8 +104,8 @@ func TestApplyOnlyListedPrograms(t *testing.T) {
 
 func TestApplyUnknownProgramNotSupported(t *testing.T) {
 	home := isolate(t)
-	results := Apply(home, manifest(t), []string{"omp"}, []Tool{httpTool("ctx", "k")}, nil, nil)
-	if s := statusOf(results, "omp", "ctx"); s != protocol.ToolNotSupported {
+	results := Apply(home, manifest(t), []string{"gemini"}, []Tool{httpTool("ctx", "k")}, nil, nil)
+	if s := statusOf(results, "gemini", "ctx"); s != protocol.ToolNotSupported {
 		t.Fatalf("status = %q", s)
 	}
 }

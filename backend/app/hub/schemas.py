@@ -187,6 +187,7 @@ class HubMachineOut(BaseModel):
     reported_at: datetime | None
     tools: list[HubMachineTool]
     out_of_step: bool
+    runner_version: str | None = None  # the connected runner's version (its hello); None while offline
 
 
 class PushIn(BaseModel):

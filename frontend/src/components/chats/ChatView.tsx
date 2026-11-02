@@ -9,14 +9,14 @@ import { EndChatButton } from "@/components/chats/EndChatButton";
 import { RoundDivider } from "@/components/chats/RoundDivider";
 import { ActivityThread } from "@/components/task/ActivityThread";
 import { DocumentView } from "@/components/workflow/DocumentView";
-import { useAgentRuns } from "@/lib/agents";
+import { PROGRAM_LABEL, useAgentRuns } from "@/lib/agents";
 import { api } from "@/lib/api";
 import { latestRound, stateText, useChat, type Chat, type ChatRound } from "@/lib/chats";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import { useRecordTitle } from "@/lib/title";
 import { useRecordTrail } from "@/lib/trail";
-import type { ActivityItem } from "@/lib/types";
+import type { ActivityItem, AgentProgram } from "@/lib/types";
 import { useWorkflow } from "@/lib/workflow";
 
 const PROGRESS = ["Talk", "Design", "Plan", "Build", "Finish"] as const;
@@ -96,7 +96,7 @@ export function ChatView({ chatId }: { chatId: string }) {
         <span className="rounded border border-cyan px-1.5 text-xs text-cyan-ink">{c.project_key}</span>
         {c.agent && (
           <span className="rounded border border-line px-1.5 text-xs text-muted-foreground">
-            {c.agent.name} · {c.agent.program === "codex" ? "Codex" : "Claude Code"}
+            {c.agent.name} · {PROGRAM_LABEL[c.agent.program as AgentProgram] ?? c.agent.program}
           </span>
         )}
         <span className="text-xs text-muted-foreground">{stateText(c)}</span>

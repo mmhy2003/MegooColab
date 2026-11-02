@@ -15,6 +15,7 @@ from app.auth.models import Role, User
 from app.auth.schemas import UserOut
 from app.chats.models import Chat, ChatStatus
 from app.git.models import PR_MAIN, TaskPullRequest
+from app.notifications import service as notifications
 from app.chats.schemas import (
     BoardDefaults,
     BoardIn,
@@ -385,6 +386,8 @@ async def send_message(db: AsyncSession, user: User, chat: Chat, body: str) -> t
         raise HTTPException(status.HTTP_409_CONFLICT, "chat_ended")
     wf = await engine.lock_task(db, task)
     await engine.require_actor(db, user, task, wf)
+    # replying is acting on the chat: what its latest round told this person is dealt with
+    await notifications.read_by_acting(db, user.id, task_id=task.id)
     project = await db.get(Project, task.project_id)
     key = f"{project.key}-{task.number}"
     what = await intent(db, chat, task, wf)
@@ -439,6 +442,7 @@ async def end_chat(db: AsyncSession, user: User, chat: Chat) -> Chat:
     if task is not None:
         wf = await engine.lock_task(db, task)
         await engine.require_actor(db, user, task, wf)
+        await notifications.read_by_acting(db, user.id, task_id=task.id)
         if wf is not None and wf.status in engine.ACTIVE and wf.needs != Needs.human_code_review:
             await engine.pause(db, user, task)
     chat.status = ChatStatus.ended
@@ -534,6 +538,7 @@ async def decide_board(db: AsyncSession, user: User, chat: Chat, n: int, data: B
     task, _ = await _round_n(db, chat, n)
     wf = await engine.lock_task(db, task)
     await engine.require_actor(db, user, task, wf)
+    await notifications.read_by_acting(db, user.id, task_id=task.id)
     task = await db.get(Task, task.id, populate_existing=True)
     if task.chat_board:
         raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")

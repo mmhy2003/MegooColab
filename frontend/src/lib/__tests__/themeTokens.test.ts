@@ -17,7 +17,7 @@ function tsxFiles(dir: string): string[] {
 describe("theme tokens", () => {
   it("names the muted text colour as shadcn does", () => {
     expect(css).toContain("--muted-foreground: #6b5f99;"); // light
-    expect(css).toContain("--muted-foreground: #8f84c0;"); // dark
+    expect(css).toContain("--muted-foreground: #8e94a3;"); // dark
     expect(css).toContain("--color-muted-foreground: var(--muted-foreground)");
     const stale = tsxFiles(SRC).filter((f) => /\btext-muted\b(?!-)/.test(readFileSync(f, "utf8")));
     expect(stale).toEqual([]);

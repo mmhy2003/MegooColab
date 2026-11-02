@@ -6,6 +6,11 @@ export function McpSetup() {
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const claude = `claude mcp add --transport http megoocolab ${origin}/api/mcp --header "Authorization: Bearer <your token>"`;
   const codex = `[mcp_servers.megoocolab]\nurl = "${origin}/api/mcp"\nbearer_token_env_var = "MEGOOCOLAB_TOKEN"`;
+  const omp = JSON.stringify(
+    { mcpServers: { megoocolab: { type: "http", url: `${origin}/api/mcp`, headers: { Authorization: "Bearer <your token>" } } } },
+    null,
+    2,
+  );
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -16,6 +21,12 @@ export function McpSetup() {
         <Snippet label="Codex config" value={codex} />
         <p className="text-xs text-muted-foreground">
           Add this to <code>~/.codex/config.toml</code>, then set <code>MEGOOCOLAB_TOKEN</code> to your token in the environment.
+        </p>
+      </div>
+      <div className="space-y-1">
+        <Snippet label="OMP config" value={omp} />
+        <p className="text-xs text-muted-foreground">
+          Add this to <code>~/.omp/agent/mcp.json</code> (merge it into <code>mcpServers</code> if the file exists).
         </p>
       </div>
     </div>

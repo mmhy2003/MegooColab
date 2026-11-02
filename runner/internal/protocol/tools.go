@@ -17,6 +17,10 @@ const (
 // tools_report and tools_found, and sends tools_drift after each welcome.
 const CapabilityTools = "tools/1"
 
+// CapabilityOmp is advertised in every hello: the runner starts OMP agents (omp acp), hands their runs the hub's
+// MCP servers, and installs Tool Hub tools for program "omp".
+const CapabilityOmp = "omp/1"
+
 // What became of one tool for one program.
 const (
 	ToolInstalled    = "installed"

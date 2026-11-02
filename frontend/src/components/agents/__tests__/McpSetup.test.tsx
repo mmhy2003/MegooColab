@@ -15,4 +15,14 @@ describe("McpSetup", () => {
     expect(codex).toContain(`url = "${origin}/api/mcp"`);
     expect(codex).toContain('bearer_token_env_var = "MEGOOCOLAB_TOKEN"');
   });
+
+  it("shows the OMP config for ~/.omp/agent/mcp.json", () => {
+    render(<McpSetup />);
+    const origin = window.location.origin;
+    const omp = JSON.parse((screen.getByLabelText("OMP config") as HTMLTextAreaElement).value);
+    expect(omp).toEqual({
+      mcpServers: { megoocolab: { type: "http", url: `${origin}/api/mcp`, headers: { Authorization: "Bearer <your token>" } } },
+    });
+    expect(screen.getAllByText(/~\/\.omp\/agent\/mcp\.json/).length).toBeGreaterThan(0);
+  });
 });

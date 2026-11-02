@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, false, true
+from sqlalchemy import BigInteger, DateTime, String, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, TimestampMixin
@@ -41,3 +41,9 @@ class OrgSettings(TimestampMixin, Base):
     default_commit_docs_to_repo: Mapped[bool] = mapped_column(default=False, server_default=false())
     # Tool Hub: whether people may share tools with everyone on this MegooColab
     hub_share_everyone: Mapped[bool] = mapped_column(default=True, server_default=true())
+    # Telegram: the site's one bot (token encrypted). Its id and username stay when the token is removed, so setting
+    # the same bot again keeps people's links; `telegram_offset` is the next update to read (getUpdates)
+    telegram_token_enc: Mapped[str | None]
+    telegram_bot_id: Mapped[int | None] = mapped_column(BigInteger)
+    telegram_bot_username: Mapped[str | None] = mapped_column(String(100))
+    telegram_offset: Mapped[int | None] = mapped_column(BigInteger)

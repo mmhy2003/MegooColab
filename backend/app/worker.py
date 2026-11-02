@@ -13,7 +13,7 @@ from app.jobs.worker import run_worker
 # job handler modules register themselves on import
 HANDLER_MODULES: tuple[str, ...] = ("app.git.jobs", "app.kb.search", "app.memory.fakes", "app.memory.extract", "app.memory.dream",
                                    "app.notifications.jobs", "app.push.jobs", "app.search.jobs",
-                                   "app.updates.check")
+                                   "app.telegram.jobs", "app.updates.check")
 # run once at start as well as on their schedule (periodic jobs otherwise wait one interval)
 STARTUP_JOBS: tuple[str, ...] = ("updates.check",)
 
@@ -47,7 +47,10 @@ async def _main() -> None:
         with contextlib.suppress(NotImplementedError):  # Windows
             loop.add_signal_handler(sig, stop.set)
     logging.getLogger("app.worker").info("worker started")  # under -m, __name__ is __main__
-    await run_worker(stop)
+    from app.telegram.poller import run_telegram_poller
+
+    # the Telegram long poll waits up to half a minute at a time: beside the job loop, never in its way
+    await asyncio.gather(run_worker(stop), run_telegram_poller(stop))
 
 
 def main() -> None:

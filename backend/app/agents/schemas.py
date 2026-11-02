@@ -84,7 +84,8 @@ class AgentOut(BaseModel):
     answer_mode: AnswerMode
     max_concurrent_runs: int
     owner: UserOut
-    status: str
+    status: str  # busy: every one of its max_concurrent_runs slots is taken
+    running: int = 0  # its running runs; above max_concurrent_runs after the owner lowered it
     problems: list[str] = []
     bindings: list[BindingOut]
     runner: RunnerInfo | None = None  # None while the owner's runner is offline

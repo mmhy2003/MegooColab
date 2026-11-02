@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type Query } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import type { components } from "@/lib/api-types";
@@ -61,8 +61,11 @@ export function sharingLabel(sharing: HubToolSummary["sharing"]): string | null 
   return names.length ? `Shared: ${names.join(", ")}` : "Private";
 }
 
-export function useHubMachines() {
-  return useQuery({ queryKey: hubKeys.machines(), queryFn: () => api<HubMachine[]>("/api/hub/machines") });
+/** My machines; refetchInterval (or a function of the query) while waiting for one to connect. */
+export function useHubMachines(
+  refetchInterval: number | false | ((query: Query<HubMachine[], Error, HubMachine[], readonly unknown[]>) => number | false) = false,
+) {
+  return useQuery({ queryKey: hubKeys.machines(), queryFn: () => api<HubMachine[]>("/api/hub/machines"), refetchInterval });
 }
 
 /** Whether any of my machines doesn't match my library: the sidebar's mark. */
@@ -79,6 +82,18 @@ export function useHubPrefs() {
 }
 
 export const OS_LABEL: Record<string, string> = { windows: "Windows", linux: "Linux", macos: "macOS" };
+
+/** The states a push changes. */
+export const PUSH_STATES = new Set<HubMachineState>(["will_install", "update_ready", "will_remove", "changed", "removed", "waiting"]);
+
+/** A machine in a few words, for the Tools list: what a push would do, or why there is nothing to push. */
+export function machineState(m: HubMachine): string {
+  if (!m.online) return "not connected";
+  const n = m.tools.filter((t) => t.programs.some((p) => p.state && PUSH_STATES.has(p.state))).length;
+  if (n > 0) return `${n} ${n === 1 ? "change" : "changes"} to push`;
+  if (m.pending) return "changes to push";
+  return m.out_of_step ? "needs a look" : "up to date";
+}
 
 /** A machine's state for one tool in one program, in words. */
 export function stateText(state: HubMachineState, program: string, os: string | null | undefined, detail: string): string {

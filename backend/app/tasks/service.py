@@ -161,7 +161,7 @@ async def tasks_out(db: AsyncSession, tasks: list[Task], viewer: User) -> list[T
     agents: dict[uuid.UUID, AssigneeAgentOut] = {}
     if agent_ids:
         rows = list((await db.execute(select(Agent).where(Agent.id.in_(agent_ids)))).scalars())
-        statuses = await agent_statuses(db, [a.id for a in rows])
+        statuses = await agent_statuses(db, [a.id for a in rows], {a.id: a.max_concurrent_runs for a in rows})
         for a in rows:
             agents[a.id] = AssigneeAgentOut(
                 id=a.id, name=a.name, program=a.program, owner_id=a.owner_id, status=statuses[a.id],
@@ -310,6 +310,8 @@ async def record_event(
 ) -> TaskEvent:
     event = TaskEvent(task_id=task.id, actor_user_id=actor_id, kind=kind, data=data or {})
     db.add(event)
+    if actor_id is not None:  # a person acted on the task: what they were told about it is dealt with
+        await notifications.read_by_acting(db, actor_id, task_id=task.id)
     return event
 
 

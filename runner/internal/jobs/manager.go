@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -47,12 +48,13 @@ var safeRunID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 // Manager owns the runs of one runner connection.
 type Manager struct {
 	// Tuning and test hooks; set before Serve.
-	LookPath      func(string) (string, error) // default exec.LookPath
-	Kill          func(*exec.Cmd)              // kills the adapter's process tree; default killTree
-	CancelGrace   time.Duration                // wait after session/cancel before killing; default 10 s
-	ExitGrace     time.Duration                // wait for the adapter to exit after a finished turn; default 2 s
-	FlushInterval time.Duration                // message coalescing interval; 0 keeps the default
-	LogCap        int                          // bytes of adapter output kept per run log; default 5 MiB
+	LookPath      func(string) (string, error)      // default exec.LookPath
+	RunVersion    func(path string) (string, error) // runs `<path> --version`; default exec
+	Kill          func(*exec.Cmd)                   // kills the adapter's process tree; default killTree
+	CancelGrace   time.Duration                     // wait after session/cancel before killing; default 10 s
+	ExitGrace     time.Duration                     // wait for the adapter to exit after a finished turn; default 2 s
+	FlushInterval time.Duration                     // message coalescing interval; 0 keeps the default
+	LogCap        int                               // bytes of adapter output kept per run log; default 5 MiB
 
 	send      func(any) error
 	cacheRoot string
@@ -64,7 +66,8 @@ type Manager struct {
 	runs     map[string]*run
 	early    []string // run ids cancelled before they started, oldest first
 	reported map[string]string
-	efforts  efforts // each program's models' effort levels, learned on its first run
+	efforts  efforts           // each program's models' effort levels, learned on its first run
+	versions map[string]string // `--version` output by program path, size and time: run once per file
 	closed   bool
 	gen      int // connection generation; bumped by StopAll
 	ended    int // highest connection number known to be lost
@@ -76,6 +79,7 @@ func New(send func(any) error, cacheRoot string) *Manager {
 	gitstate.SetHooksDir(filepath.Join(cacheRoot, "empty-hooks"))
 	return &Manager{
 		LookPath:    exec.LookPath,
+		RunVersion:  runVersion,
 		Kill:        killTree,
 		CancelGrace: 10 * time.Second,
 		ExitGrace:   2 * time.Second,
@@ -85,7 +89,35 @@ func New(send func(any) error, cacheRoot string) *Manager {
 		agents:      map[string]protocol.WelcomeAgent{},
 		runs:        map[string]*run{},
 		reported:    map[string]string{},
+		versions:    map[string]string{},
 	}
+}
+
+func runVersion(path string) (string, error) {
+	return tools.CommandOutput(tools.OmpTimeout, path, "--version")
+}
+
+// version is RunVersion's output for path, remembered while the file stays the same: probes run often and omp
+// starts slowly, and an omp upgraded in place is asked again.
+func (m *Manager) version(path string) (string, error) {
+	key := path
+	if info, err := os.Stat(path); err == nil {
+		key = fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano())
+	}
+	m.mu.Lock()
+	out, ok := m.versions[key]
+	m.mu.Unlock()
+	if ok {
+		return out, nil
+	}
+	out, err := m.RunVersion(path)
+	if err != nil {
+		return "", err
+	}
+	m.mu.Lock()
+	m.versions[key] = out
+	m.mu.Unlock()
+	return out, nil
 }
 
 // run is one run in flight.
@@ -315,11 +347,26 @@ func (m *Manager) Probe() []protocol.AgentAvailability {
 }
 
 func (m *Manager) probe() []protocol.AgentAvailability {
-	var shared []string
-	for _, tool := range []string{"node", "npx"} {
-		if _, err := m.LookPath(tool); err != nil {
-			shared = append(shared, tool+" not found")
+	// what each program needs on the machine, checked once per probe: Node for the npx adapters, omp itself for OMP
+	needs := map[string][]string{}
+	program := func(p string) []string {
+		if got, ok := needs[p]; ok {
+			return got
 		}
+		var problems []string
+		if p == adapters.Omp {
+			if pr := adapters.OmpProblem(runtime.GOOS, os.Getenv, m.LookPath, m.version); pr != "" {
+				problems = append(problems, pr)
+			}
+		} else {
+			for _, tool := range []string{"node", "npx"} {
+				if _, err := m.LookPath(tool); err != nil {
+					problems = append(problems, tool+" not found")
+				}
+			}
+		}
+		needs[p] = problems
+		return problems
 	}
 	m.mu.Lock()
 	agents := make([]protocol.WelcomeAgent, 0, len(m.order))
@@ -330,7 +377,7 @@ func (m *Manager) probe() []protocol.AgentAvailability {
 
 	out := make([]protocol.AgentAvailability, 0, len(agents))
 	for _, a := range agents {
-		problems := append([]string{}, shared...)
+		problems := append([]string{}, program(a.Program)...)
 		for _, b := range a.Bindings {
 			if b.LocalPath == "" || !filepath.IsAbs(b.LocalPath) {
 				problems = append(problems, fmt.Sprintf("binding path %q is not an absolute path", b.LocalPath))
@@ -772,8 +819,13 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		opts = append(opts, acpclient.WithFlushInterval(m.FlushInterval))
 	}
 	opts = append(opts, acpclient.WithSecret(r.secret))
+	servers := mcpServers(rs.Mcp)
 	if man, err := tools.LoadManifest(); err == nil {
 		opts = append(opts, acpclient.WithSafeMcpServers(tools.SafeServers(man, agent.Program)))
+		// OMP ignores its own MCP config in ACP mode: its hub servers come with the session
+		if home, err := tools.Home(); err == nil && agent.Program == adapters.Omp {
+			servers = append(servers, tools.OmpRunServers(man, home, kind == policy.ReadOnly)...)
+		}
 	}
 	client := acpclient.New(pol, wt, r.emit, opts...)
 	r.client = client
@@ -789,7 +841,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	}
 	sess, err := openSession(r.ctx, sessionRequest{
 		ac: ac, client: client, caps: initResp.AgentCapabilities, rs: rs, cwd: wt,
-		meta: adapters.SessionMeta(agent.Program, kind, tools.PluginDir(m.cacheRoot)), servers: mcpServers(rs.Mcp), log: logf,
+		meta: adapters.SessionMeta(agent.Program, kind, tools.PluginDir(m.cacheRoot)), servers: servers, log: logf,
 	})
 	if err != nil {
 		return fail("session_failed", err)

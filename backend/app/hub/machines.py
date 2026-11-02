@@ -12,7 +12,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import delete, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.models import Agent
+from app.agents.models import Agent, AgentProgram
 from app.auth.models import PersonalAccessToken, TokenScope, User
 from app.core.events import Event, publish
 from app.hub import rules, service
@@ -38,7 +38,7 @@ from app.runner.protocol import (
     ToolsPush,
     ToolsReport,
 )
-from app.runner.registry import RunnerClosed, RunnerConn, registry
+from app.runner.registry import OMP_CAPABILITY, RunnerClosed, RunnerConn, registry
 
 TOOLS_CAPABILITY = "tools/1"
 # the runner reads a frame of 64 MiB at most; a push stays well below
@@ -82,8 +82,13 @@ async def _agents(db: AsyncSession, token_id: uuid.UUID) -> list[Agent]:
 
 
 async def machine_programs(db: AsyncSession, token_id: uuid.UUID) -> list[str]:
-    """The programs of the agents linked to the machine: a push installs into these only."""
-    return sorted({a.program for a in await _agents(db, token_id)})
+    """The programs of the agents linked to the machine: a push installs into these only. OMP only for a runner
+    that can install for it (omp/1); while the machine is offline the push waits, and is built again on delivery."""
+    conn = registry.conn_for_token(token_id)
+    programs = {a.program for a in await _agents(db, token_id)}
+    if conn is not None and OMP_CAPABILITY not in conn.capabilities:
+        programs.discard(AgentProgram.omp)
+    return sorted(programs)
 
 
 def secrets_missing(tool: HubTool) -> bool:
@@ -288,7 +293,7 @@ def _state(tool: HubTool | None, inst: HubInstall | None, ticked: bool, os_: str
 async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) -> HubMachineOut:
     machine = await db.get(HubMachine, token.id)
     agents = await _agents(db, token.id)
-    programs = sorted({a.program for a in agents})
+    programs = await machine_programs(db, token.id)  # what a push installs into: OMP only on a runner with omp/1
     conn = _conn(token)
     library = list((await db.execute(
         select(HubTool).where(HubTool.owner_id == user.id).order_by(HubTool.name, HubTool.id))).scalars())
@@ -338,4 +343,5 @@ async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) 
         reported_at=machine.reported_at if machine else None,
         tools=rows,
         out_of_step=out_of_step,
+        runner_version=conn.version if conn is not None else None,
     )

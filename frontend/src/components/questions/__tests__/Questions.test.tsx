@@ -154,6 +154,7 @@ describe("AskQuestion: who answers", () => {
       "Any free agent",
       "Any Claude Code agent",
       "Any Codex agent",
+      "Any OMP agent",
       "Mona's Claude Code · free",
       "Sam's Claude Code · busy",
       "Mona's Codex · free",

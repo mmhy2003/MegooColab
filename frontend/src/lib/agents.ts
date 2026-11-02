@@ -9,12 +9,15 @@ export type AgentStatus = "online" | "busy" | "offline";
 export const PROGRAM_LABEL: Record<AgentProgram, string> = {
   claude_code: "Claude Code",
   codex: "Codex",
+  omp: "OMP",
 };
 
-/** The model a new agent starts on (the server's DEFAULT_MODELS); its owner can pick another or none. */
+/** The model a new agent starts on (the server's DEFAULT_MODELS; "" is the program's own default); its owner can
+ * pick another or none. OMP works with many providers, so it starts on what its owner set up in OMP. */
 export const DEFAULT_MODEL: Record<AgentProgram, string> = {
   claude_code: "Opus 5.5",
   codex: "GPT-6.1 Sol",
+  omp: "",
 };
 
 /** A model name as an id, as the runner compares them: "GPT-6.1 Sol" and "gpt-6.1-sol" are the same model. */

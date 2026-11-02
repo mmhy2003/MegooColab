@@ -247,6 +247,8 @@ async def _address_to_agent(db, user: User, task: Task, comment: Comment) -> Non
 @router.post("/api/tasks/{key}/comments", status_code=status.HTTP_201_CREATED)
 async def add_comment(key: str, body: CommentIn, user: AuthedUser, db: DbSession) -> CommentOut:
     comment = await create_comment(db, user, key, body.body_md, to_agent=body.to_agent)
+    # here, not in create_comment: an agent's comment through MCP is not its owner acting
+    await notifications.read_by_acting(db, user.id, task_id=comment.task_id)
     out = comment_out(comment)
     if body.to_agent:
         from app.workflow.instructions import steer_after_commit  # local: the workflow imports this module

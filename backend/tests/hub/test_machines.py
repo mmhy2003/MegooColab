@@ -256,3 +256,11 @@ async def test_windows_os_command(client, db, conns):
     r = await _push(client, lin, [t["id"]])
     assert cl.socket.pushes()[0]["tools"] == []
     assert _state(r.json(), "x") == "not_available"
+
+
+async def test_machine_reports_runner_version(client, db, conns):
+    user = await _me(client, db)
+    token_id = await _machine(client, db)
+    assert (await _machines(client))[0]["runner_version"] is None
+    conns(token_id, user).version = "0.5.0"
+    assert (await _machines(client))[0]["runner_version"] == "0.5.0"

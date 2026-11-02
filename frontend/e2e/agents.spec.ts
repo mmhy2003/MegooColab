@@ -132,17 +132,19 @@ test("agents end to end", async ({ browser, request }) => {
   await page.getByRole("button", { name: "Add agent" }).click();
   await page.getByRole("dialog").getByLabel("Machine").selectOption({ label: "Laptop runner" });
   await page.getByRole("dialog").getByRole("button", { name: "Add agent" }).click();
-  await expect(page.getByRole("heading", { name: AGENT_NAME })).toBeVisible();
-  await page.getByRole("button", { name: "Add project" }).click();
-  await page.getByLabel("Project").selectOption("AGT");
-  await page.getByLabel("Local path").fill(repo);
-  await page.getByRole("button", { name: "Save bindings" }).click();
-  await expect(page.getByLabel("Local path")).toHaveValue(repo);
-  await expect(page.getByText("Offline", { exact: true })).toBeVisible(); // not the Runner card's troubleshooting note
+  // the new agent is the one shown
+  const details = page.getByRole("region", { name: AGENT_NAME });
+  await expect(details).toBeVisible();
+  await details.getByRole("button", { name: "Add project" }).click();
+  await details.getByLabel("Project").selectOption("AGT");
+  await details.getByLabel("Folder").fill(repo);
+  await details.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(details.getByTitle(repo)).toBeVisible();
+  await expect(details.getByText("Offline", { exact: true })).toBeVisible();
 
   // 4-5. start the runner; the agent is online within 5 s
   launch(token);
-  await expect(page.getByText("Online")).toBeVisible({ timeout: 5_000 });
+  await expect(details.getByText("Online", { exact: true })).toBeVisible({ timeout: 5_000 });
   await shot(page, "agents-settings");
   const agents = await (await page.request.get("/api/agents/mine")).json();
   const agentId: string = agents[0].id;

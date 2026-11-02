@@ -3206,6 +3206,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/telegram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Bot */
+        get: operations["get_bot_api_admin_telegram_get"];
+        /** Put Bot */
+        put: operations["put_bot_api_admin_telegram_put"];
+        post?: never;
+        /** Delete Bot */
+        delete: operations["delete_bot_api_admin_telegram_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/telegram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Telegram */
+        get: operations["my_telegram_api_me_telegram_get"];
+        put?: never;
+        post?: never;
+        /** Disconnect */
+        delete: operations["disconnect_api_me_telegram_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/telegram/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make Link */
+        post: operations["make_link_api_me_telegram_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3309,6 +3363,11 @@ export interface components {
             owner: components["schemas"]["UserOut"];
             /** Status */
             status: string;
+            /**
+             * Running
+             * @default 0
+             */
+            running: number;
             /**
              * Problems
              * @default []
@@ -3483,6 +3542,11 @@ export interface components {
             /** Status */
             status: string;
             /**
+             * Running
+             * @default 0
+             */
+            running: number;
+            /**
              * Problems
              * @default []
              */
@@ -3519,7 +3583,7 @@ export interface components {
          * AgentProgram
          * @enum {string}
          */
-        AgentProgram: "claude_code" | "codex";
+        AgentProgram: "claude_code" | "codex" | "omp";
         /**
          * AnswerMode
          * @enum {string}
@@ -4537,6 +4601,8 @@ export interface components {
             tools: components["schemas"]["HubMachineTool"][];
             /** Out Of Step */
             out_of_step: boolean;
+            /** Runner Version */
+            runner_version?: string | null;
         };
         /** HubMachineTool */
         HubMachineTool: {
@@ -5075,6 +5141,15 @@ export interface components {
             /** Link */
             link: string;
         };
+        /** MyTelegramOut */
+        MyTelegramOut: {
+            /** Available */
+            available: boolean;
+            /** Bot Username */
+            bot_username: string | null;
+            /** Linked */
+            linked: boolean;
+        };
         /** Named */
         Named: {
             /**
@@ -5163,6 +5238,11 @@ export interface components {
              * @default false
              */
             push: boolean;
+            /**
+             * Telegram
+             * @default false
+             */
+            telegram: boolean;
         };
         /** Numbers */
         Numbers: {
@@ -5372,6 +5452,11 @@ export interface components {
             owner: components["schemas"]["UserOut"];
             /** Status */
             status: string;
+            /**
+             * Running
+             * @default 0
+             */
+            running: number;
             /**
              * Problems
              * @default []
@@ -6648,6 +6733,21 @@ export interface components {
              * @default false
              */
             is_member: boolean;
+        };
+        /** TelegramBotIn */
+        TelegramBotIn: {
+            /** Token */
+            token: string;
+        };
+        /** TelegramBotOut */
+        TelegramBotOut: {
+            /** Bot Username */
+            bot_username: string | null;
+        };
+        /** TelegramLinkUrl */
+        TelegramLinkUrl: {
+            /** Url */
+            url: string;
         };
         /** TestEmailIn */
         TestEmailIn: {
@@ -14093,6 +14193,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UpdatesOut"];
+                };
+            };
+        };
+    };
+    get_bot_api_admin_telegram_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramBotOut"];
+                };
+            };
+        };
+    };
+    put_bot_api_admin_telegram_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelegramBotIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramBotOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_bot_api_admin_telegram_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    my_telegram_api_me_telegram_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyTelegramOut"];
+                };
+            };
+        };
+    };
+    disconnect_api_me_telegram_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    make_link_api_me_telegram_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramLinkUrl"];
                 };
             };
         };
