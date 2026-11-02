@@ -335,6 +335,14 @@ handle their credentials), then with the runner built from the branch:
 - [ ] The chosen model and effort apply. If OMP's config options lack the categories, add id matching in
   `configSelector` with `TestConfigSelectorMatchesOmpIds` (Review Focus 3).
 - [ ] A hub skill and a hub MCP server pushed to the machine work in a run.
+- [ ] *(final review)* `omp acp` really ignores `mcp.json`: push a hub MCP **not** marked safe, start a read-only run,
+  and confirm its tools are absent. If present, start OMP with its own MCP config off and test it.
+- [ ] *(final review)* With `--approval-mode always-ask`, does OMP ask before MCP tool calls? If so, note the title
+  shape and make `acpclient` recognise MegooColab's own tools and safe hub servers in it (exact server prefix, no
+  command), with tests, so `submit_design` / `submit_answer` / `ask_human` work in read-only runs.
+- [ ] *(final review)* Compare OMP's settings before and after a first run, with and without a chosen model, and
+  time that first run: if the model/effort sweep changes the person's own OMP default or takes long, skip the sweep
+  for `omp` and learn levels only for the model in use, with a test.
 - [ ] Ledger every finding as a ruling; commit any fix with its test (`fix(runner): …`).
 
 If the owner declines, ledger it, and list these checks in the final message as still to do before release.
