@@ -343,4 +343,5 @@ async def machine_out(db: AsyncSession, user: User, token: PersonalAccessToken) 
         reported_at=machine.reported_at if machine else None,
         tools=rows,
         out_of_step=out_of_step,
+        runner_version=conn.version if conn is not None else None,
     )

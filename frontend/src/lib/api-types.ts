@@ -4547,6 +4547,8 @@ export interface components {
             tools: components["schemas"]["HubMachineTool"][];
             /** Out Of Step */
             out_of_step: boolean;
+            /** Runner Version */
+            runner_version?: string | null;
         };
         /** HubMachineTool */
         HubMachineTool: {
