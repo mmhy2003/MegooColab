@@ -9,12 +9,12 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-import { hubKeys, useHubMachines } from "@/lib/hub";
+import { hubKeys } from "@/lib/hub";
 import { qk } from "@/lib/queries";
 import { both, detectPlatform, loginCommand, OMP_INSTALL, R, RELEASES, RUNNER_INSTALL, type Platform } from "@/lib/runner";
 
-// how often the machines are asked for while waiting for the new runner
-const WAIT_MS = 3_000;
+/** A runner token made in Add a machine: shown once, so it is kept by the Runner tab, not by these steps. */
+export type MadeToken = { id: string; name: string; secret: string };
 
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -31,16 +31,26 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 }
 
 /** Setting the runner up on a new machine: name it (which makes its runner token), install, sign in with that token,
- * check it and keep it running, then wait for it to connect. The token lives only here: it is shown once. */
-export function AddMachine({ onAddAgent }: { onAddAgent: (machine: string) => void }) {
+ * check it and keep it running, then wait for it to connect. */
+export function AddMachine({
+  made,
+  connected,
+  onMade,
+  onAddAgent,
+  onAnother,
+}: {
+  made: MadeToken | null;
+  connected: boolean;
+  onMade: (token: MadeToken) => void;
+  onAddAgent: (machine: string) => void;
+  /** start over for another machine, once this one has connected */
+  onAnother: () => void;
+}) {
   const client = useQueryClient();
   const [platform, setPlatform] = useState<Platform>(detectPlatform);
   const [name, setName] = useState("");
-  const [made, setMade] = useState<{ id: string; name: string; secret: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const machines = useHubMachines(made ? WAIT_MS : false);
-  const connected = !!made && !!machines.data?.some((m) => m.token_id === made.id && m.online);
   const note = "text-xs text-muted-foreground";
 
   const make = async () => {
@@ -51,7 +61,7 @@ export function AddMachine({ onAddAgent }: { onAddAgent: (machine: string) => vo
         method: "POST",
         json: { name: name.trim(), scopes: ["runner"], expires_in_days: null },
       });
-      setMade({ id: res.token.id, name: res.token.name, secret: res.secret });
+      onMade({ id: res.token.id, name: res.token.name, secret: res.secret });
       await Promise.all([
         client.invalidateQueries({ queryKey: qk.tokens() }),
         client.invalidateQueries({ queryKey: hubKeys.machines() }),
@@ -125,6 +135,7 @@ export function AddMachine({ onAddAgent }: { onAddAgent: (machine: string) => vo
         (connected ? (
           <div className="flex flex-wrap items-center gap-2 rounded border border-green/50 p-3">
             <span className="flex-1 text-sm text-green-ink">Connected</span>
+            <Button variant="ghost" onClick={onAnother}>Set up another machine</Button>
             <Button onClick={() => onAddAgent(made.id)}>Add an agent on it</Button>
           </div>
         ) : (

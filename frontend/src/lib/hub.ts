@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type Query } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import type { components } from "@/lib/api-types";
@@ -61,8 +61,10 @@ export function sharingLabel(sharing: HubToolSummary["sharing"]): string | null 
   return names.length ? `Shared: ${names.join(", ")}` : "Private";
 }
 
-/** My machines; refetchInterval while waiting for one to connect. */
-export function useHubMachines(refetchInterval: number | false = false) {
+/** My machines; refetchInterval (or a function of the query) while waiting for one to connect. */
+export function useHubMachines(
+  refetchInterval: number | false | ((query: Query<HubMachine[], Error, HubMachine[], readonly unknown[]>) => number | false) = false,
+) {
   return useQuery({ queryKey: hubKeys.machines(), queryFn: () => api<HubMachine[]>("/api/hub/machines"), refetchInterval });
 }
 

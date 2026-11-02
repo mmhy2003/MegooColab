@@ -35,11 +35,15 @@ export function ProjectBindings({
   const [editing, setEditing] = useState<{ key: string; folder: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // what the last save stored, until the agent's refetched bindings replace it: the next change builds on it even
+  // when that refetch fails
+  const [last, setLast] = useState<{ from: Binding[]; bindings: Binding[] } | null>(null);
+  const bindings = last && last.from === agent.bindings ? last.bindings : agent.bindings;
 
   const nameOf = new Map(projects.map((p) => [p.key, p.name]));
-  const bound = new Set(agent.bindings.map((b) => b.project_key));
+  const bound = new Set(bindings.map((b) => b.project_key));
   const label = (b: Binding) => [b.project_key, nameOf.get(b.project_key)].filter(Boolean).join(" ");
-  const sorted = [...agent.bindings].sort((a, b) => a.project_key.localeCompare(b.project_key));
+  const sorted = [...bindings].sort((a, b) => a.project_key.localeCompare(b.project_key));
   const q = query.trim().toLowerCase();
   const matches = q
     ? sorted.filter((b) => `${label(b)}\n${b.local_path ?? ""}`.toLowerCase().includes(q))
@@ -52,6 +56,11 @@ export function ProjectBindings({
     setError(null);
     try {
       await api(`/api/agents/${agent.id}/bindings`, { method: "PUT", json: { bindings: next } });
+      const id = new Map(bindings.map((b) => [b.project_key, b.project_id]));
+      setLast({
+        from: agent.bindings,
+        bindings: next.map((n) => ({ project_id: id.get(n.project_ref) ?? n.project_ref, project_key: n.project_ref, local_path: n.local_path })),
+      });
       await onSaved();
       return true;
     } catch (err) {
@@ -61,14 +70,19 @@ export function ProjectBindings({
       setSaving(false);
     }
   };
-  const saved = () => agent.bindings.map((b) => ({ project_ref: b.project_key, local_path: b.local_path ?? "" }));
+  const saved = () => bindings.map((b) => ({ project_ref: b.project_key, local_path: b.local_path ?? "" }));
 
   const addRow = async () => {
     if (!adding) return;
     const folder = adding.folder.trim();
     if (!adding.project) return setError("Choose a project.");
     if (!isAbsolutePath(folder)) return setError(BAD_PATH);
-    if (await save([...saved(), { project_ref: adding.project, local_path: folder }])) setAdding(null);
+    if (await save([...saved(), { project_ref: adding.project, local_path: folder }])) {
+      // the new line shows, wherever it sorts and whatever was searched
+      setQuery("");
+      setAll(true);
+      setAdding(null);
+    }
   };
   const saveEdit = async () => {
     if (!editing) return;
@@ -86,9 +100,9 @@ export function ProjectBindings({
   return (
     <div className="space-y-2">
       {dialog}
-      <h3 className="text-xs tracking-wider text-muted-foreground uppercase">Projects ({agent.bindings.length})</h3>
+      <h3 className="text-xs tracking-wider text-muted-foreground uppercase">Projects ({bindings.length})</h3>
       <div className="flex items-end gap-2">
-        {agent.bindings.length > 0 && (
+        {bindings.length > 0 && (
           <div className="min-w-0 flex-1">
             <Input label="Search projects" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Key, name or folder" />
           </div>
@@ -129,7 +143,7 @@ export function ProjectBindings({
           {alert}
         </div>
       )}
-      {agent.bindings.length === 0 && !adding && <p className="text-sm text-muted-foreground">Not working on any project yet.</p>}
+      {bindings.length === 0 && !adding && <p className="text-sm text-muted-foreground">Not working on any project yet.</p>}
       {q && matches.length === 0 && <p className="text-sm text-muted-foreground">No project matches.</p>}
       <ul className="divide-y divide-line rounded border border-line empty:hidden">
         {lines.map((b) =>

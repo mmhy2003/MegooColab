@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
-import { AddMachine } from "@/components/agents/AddMachine";
+import { AddMachine, type MadeToken } from "@/components/agents/AddMachine";
 import { RunnerCommands } from "@/components/agents/RunnerCommands";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { ListDetail, ListRow, pickChosen, useChosenParam } from "@/components/ui/ListDetail";
@@ -13,6 +14,8 @@ import { useMe } from "@/lib/me";
 import type { AgentProgram } from "@/lib/types";
 
 const NEW = "new";
+// how often the machines are asked for while waiting for a new machine's runner
+const WAIT_MS = 3_000;
 const osLabel = (os: string | null | undefined) => (os ? OS_LABEL[os] ?? os : null);
 const agentCount = (n: number) => `${n} ${n === 1 ? "agent" : "agents"}`;
 
@@ -50,15 +53,32 @@ function MachineDetails({ machine }: { machine: HubMachine }) {
 
 /** My agents' Runner tab: your machines with their runner, and setting the runner up on a new one. */
 export function RunnerTab({ onAddAgent }: { onAddAgent: (machine: string) => void }) {
-  const machines = useHubMachines();
+  // the token Add a machine made: kept here, so it outlives the steps' place on the page (the new token becomes a
+  // machine at once, and the person may look at another machine meanwhile); only leaving the page loses it
+  const [made, setMade] = useState<MadeToken | null>(null);
+  const isOnline = (list: HubMachine[] | undefined) => !!made && !!list?.some((m) => m.token_id === made.id && m.online);
+  const machines = useHubMachines((q) => (made && !isOnline(q.state.data) ? WAIT_MS : false));
   const me = useMe().data?.id ?? "";
   const [id, choose] = useChosenParam("machine");
   const list = machines.data ?? [];
-  const adding = id === NEW || (machines.data !== undefined && list.length === 0);
+  const connected = isOnline(machines.data);
+  const adding = id === NEW || (machines.data !== undefined && list.length === 0) || (id === null && !!made);
+  const addMachine = (
+    <AddMachine
+      made={made}
+      connected={connected}
+      onMade={setMade}
+      onAnother={() => setMade(null)}
+      onAddAgent={(machine) => {
+        setMade(null);
+        onAddAgent(machine);
+      }}
+    />
+  );
   const { shown, chosen } = pickChosen(adding ? [] : list, id, (m) => m.token_id);
   if (machines.error) return <p role="alert" className="text-sm text-pink">{errorMessage(machines.error)}</p>;
   if (!machines.data) return null;
-  if (list.length === 0) return <AddMachine onAddAgent={onAddAgent} />;
+  if (list.length === 0) return addMachine;
   return (
     <ListDetail
       listLabel="Machines"
@@ -97,7 +117,7 @@ export function RunnerTab({ onAddAgent }: { onAddAgent: (machine: string) => voi
           </li>
         </ul>
       }
-      detail={adding ? <AddMachine onAddAgent={onAddAgent} /> : shown && <MachineDetails key={shown.token_id} machine={shown} />}
+      detail={adding ? addMachine : shown && <MachineDetails key={shown.token_id} machine={shown} />}
     />
   );
 }

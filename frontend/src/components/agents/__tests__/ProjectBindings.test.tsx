@@ -135,3 +135,26 @@ describe("ProjectBindings", () => {
     expect(screen.getByText("Not working on any project yet.")).toBeInTheDocument();
   });
 });
+
+describe("ProjectBindings after a save", () => {
+  it("builds the next save on the last one even when the agent was not refetched", async () => {
+    vi.stubGlobal("fetch", vi.fn<Fetch>(async () => new Response("{}")));
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn<Fetch>>;
+    const projects = [...PROJECTS, { id: "p3", key: "API", name: "Public API" }] as unknown as Project[];
+    // onSaved refetches nothing: the props keep the bindings from before the first save
+    render(<ProjectBindings agent={agentWith([PAY])} projects={projects} onSaved={vi.fn(async () => undefined)} />);
+    await add("WEB", "/srv/web");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove WEB" })).toBeInTheDocument());
+    await add("API", "/srv/api");
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([, i]) => i?.method === "PUT")).toHaveLength(2));
+    const last = fetchMock.mock.calls.filter(([, i]) => i?.method === "PUT").at(-1)!;
+    expect(JSON.parse(String(last[1]?.body)).bindings.map((b: { project_ref: string }) => b.project_ref)).toEqual(["PAY", "WEB", "API"]);
+  });
+
+  it("shows a just-added project even past the first ten or outside a search", async () => {
+    show(MANY);
+    await userEvent.type(screen.getByLabelText("Search projects"), "q13");
+    await add("PAY", "C:\\code\\payments");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove PAY" })).toBeInTheDocument());
+  });
+});
