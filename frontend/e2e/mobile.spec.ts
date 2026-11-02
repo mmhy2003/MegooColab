@@ -66,7 +66,8 @@ test("every page fits a 280-pixel screen", async ({ page }) => {
     headers: WEB,
   })).json();
   await page.request.put(`/api/agents/${agent.id}/bindings`, {
-    data: { bindings: [{ project_ref: "MOB", local_path: "/work/mob" }] },
+    // a long folder: My agents keeps it on one line, cut short
+    data: { bindings: [{ project_ref: "MOB", local_path: `C:\\${"a-rather-long-folder-name\\".repeat(8)}mob`.slice(0, 200) }] },
     headers: WEB,
   });
   const question = await (await page.request.post("/api/questions", {
@@ -78,7 +79,8 @@ test("every page fits a 280-pixel screen", async ({ page }) => {
     "/",
     "/projects", "/projects/MOB/board", "/projects/MOB/backlog", "/projects/MOB/tasks/1", "/projects/MOB/reports",
     "/projects/MOB/settings", "/teams", `/teams/${team.id}`, "/kb", "/memory", "/questions", "/search?q=task",
-    `/questions/${question.id}`, "/notifications", "/settings/profile", "/settings/tokens", "/settings/agents", "/settings/notifications",
+    `/questions/${question.id}`, "/notifications", "/settings/profile", "/settings/tokens", "/settings/agents", `/settings/agents?agent=${agent.id}`,
+    "/settings/agents?tab=tools", "/settings/agents?tab=runner&machine=new", "/settings/notifications",
     "/admin/users", "/admin/agents", "/admin/settings", "/admin/methodology", "/admin/ai", "/admin/git", "/admin/audit",
   ];
   const problems: Record<string, string[]> = {};
@@ -121,4 +123,39 @@ test("every page fits a 280-pixel screen", async ({ page }) => {
   const title = page.getByRole("textbox", { name: "Title" });
   await expect(title).toHaveValue(/must wrap on a narrow phone screen/);
   expect(await title.evaluate((el) => el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+});
+
+test("my agents on a phone: list, details, Back", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await setupOrSignIn(page);
+  const name = "Phone agent";
+  const agent = await (await page.request.post("/api/agents", { data: { program: "claude_code", name }, headers: WEB })).json();
+  try {
+    await page.goto("/settings/agents");
+    const list = page.getByRole("navigation", { name: "Agents", exact: true });
+    const details = page.getByRole("region", { name });
+    const row = list.getByRole("button", { name: new RegExp(`^${name}`) });
+    await expect(row).toBeVisible();
+    await expect(details).toBeHidden();
+
+    // tapping the agent opens its details full screen; the browser's Back returns to the list
+    await row.click();
+    await expect(details).toBeVisible();
+    await expect(list).toBeHidden();
+    expect(await overflow(page)).toEqual([]);
+    await page.goBack();
+    await expect(row).toBeVisible();
+    await expect(details).toBeHidden();
+
+    // and so does the page's own Back
+    await row.click();
+    await expect(details).toBeVisible();
+    await page.getByRole("button", { name: "‹ Agents" }).click();
+    await expect(row).toBeVisible();
+    await expect(details).toBeHidden();
+    expect(await overflow(page)).toEqual([]);
+  } finally {
+    // later specs expect the admin's agents as they left them
+    await page.request.delete(`/api/agents/${agent.id}`, { headers: WEB });
+  }
 });

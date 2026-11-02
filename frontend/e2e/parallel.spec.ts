@@ -70,8 +70,8 @@ test("an agent works on three chats at once, and its limit can be raised and low
       await post(request, "/api/chats", { project_key: "PAR", agent_id: agent.id, message });
     }
     await expect.poll(async () => (await mine()).running, { timeout: 30_000 }).toBe(1);
-    await page.goto("/settings/agents");
-    const card = page.getByRole("listitem").filter({ has: page.getByRole("heading", { name: AGENT_NAME }) });
+    await page.goto(`/settings/agents?agent=${agent.id}`);
+    const card = page.getByRole("region", { name: AGENT_NAME });
     await expect(card.getByText("1 of 1 running")).toBeVisible();
     await expect(card.getByText("Busy")).toBeVisible();
 

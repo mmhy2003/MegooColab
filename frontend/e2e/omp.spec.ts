@@ -69,9 +69,10 @@ test("an OMP agent answers a chat and gets its hub tools", async ({ page }) => {
       url: BASE, token, home, adapterOverride: bins.fakeAgent, scenario: SCENARIO, runnerBin: bins.runner,
       env: { PI_CODING_AGENT_DIR: agentDir, OMP_PROFILE: "", PI_PROFILE: "", PI_CONFIG_DIR: "" },
     });
-    await page.goto("/settings/agents");
-    const card = page.getByRole("listitem").filter({ has: page.getByRole("heading", { name: AGENT_NAME }) });
-    await expect(card.getByText("OMP", { exact: true })).toBeVisible();
+    await page.goto(`/settings/agents?agent=${agent.id}`);
+    const card = page.getByRole("region", { name: AGENT_NAME });
+    // the program badge, in the header: the OMP project's line below may read "OMP" too
+    await expect(card.getByText("OMP", { exact: true }).first()).toBeVisible();
     await expect(card.getByText("Online")).toBeVisible({ timeout: 20_000 });
 
     // 2. a chat on it reaches the agent
@@ -92,7 +93,8 @@ test("an OMP agent answers a chat and gets its hub tools", async ({ page }) => {
       headers: WEB,
     });
     expect(skill.ok(), await skill.text()).toBeTruthy();
-    await page.goto("/settings/agents");
+    await page.goto("/settings/agents?tab=tools");
+    await page.getByRole("navigation", { name: "Machines", exact: true }).getByRole("button", { name: new RegExp(`^${MACHINE}`) }).click();
     const panel = page.getByRole("region", { name: `Tools on "${MACHINE}"` });
     await expect(panel.getByText(/· connected$/)).toBeVisible({ timeout: 30_000 });
     await panel.getByRole("checkbox", { name: "omp-docs" }).check();

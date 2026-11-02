@@ -299,28 +299,37 @@ test("workflow end to end", async ({ browser }) => {
   await page.getByRole("button", { name: "Done" }).click();
 
   await page.goto("/settings/agents");
-  const agentHeading = page.getByRole("heading", { name: AGENT_NAME });
-  await expect(page.getByRole("button", { name: "Add project" }).or(page.getByText("No agents yet."))).toBeVisible();
-  if (!(await agentHeading.isVisible())) {
+  const details = page.getByRole("region", { name: AGENT_NAME });
+  const list = page.getByRole("navigation", { name: "Agents", exact: true });
+  await expect(list.or(page.getByText("No agents yet."))).toBeVisible();
+  const row = list.getByRole("button", { name: new RegExp(`^${AGENT_NAME}`) });
+  if ((await row.count()) > 0) await row.first().click();
+  else {
     await page.getByRole("button", { name: "Add agent" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Add agent" }).click();
-    await expect(agentHeading).toBeVisible();
+    await expect(details).toBeVisible();
   }
   // The agents spec, when it ran first on this stack, added the agent with a binding to a repository it has
   // since deleted. The runner reports an agent with any broken binding as unavailable, so bind WFL alone.
-  while ((await page.getByRole("button", { name: /^Remove row / }).count()) > 0) {
-    await page.getByRole("button", { name: /^Remove row / }).first().click();
+  const remove = details.getByRole("button", { name: /^Remove [A-Z0-9]+$/ });
+  while ((await remove.count()) > 0) {
+    const label = (await remove.first().getAttribute("aria-label"))!;
+    await remove.first().click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
+    // each removal saves before the next can start: wait for its line to go
+    await expect(details.getByRole("button", { name: label, exact: true })).toHaveCount(0);
   }
-  await page.getByRole("button", { name: "Add project" }).click();
-  await page.getByLabel("Project").selectOption("WFL");
-  await page.getByLabel("Local path").fill(repo);
-  await page.getByRole("button", { name: "Save bindings" }).click();
-  await expect(page.getByLabel("Local path")).toHaveValue(repo);
+  await expect(details.getByText("Not working on any project yet.")).toBeVisible();
+  await details.getByRole("button", { name: "Add project" }).click();
+  await details.getByLabel("Project").selectOption("WFL");
+  await details.getByLabel("Folder").fill(repo);
+  await details.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(details.getByTitle(repo)).toBeVisible();
   // the agent runs on the machine of the token it is linked to
-  await page.getByLabel("Machine", { exact: true }).selectOption({ label: "Workflow runner" });
-  await expect(page.getByText("on Workflow runner")).toBeVisible();
+  await details.getByLabel("Machine", { exact: true }).selectOption({ label: "Workflow runner" });
+  await expect(page.getByRole("navigation", { name: "Agents", exact: true }).getByText(/^Workflow runner · /)).toBeVisible();
   launch(token);
-  await expect(page.getByText("Online")).toBeVisible({ timeout: 10_000 });
+  await expect(details.getByText("Online", { exact: true })).toBeVisible({ timeout: 10_000 });
   const agentId: string = (await (await page.request.get("/api/agents/mine")).json())[0].id;
   const worktree = join(home, "cache", "megoocolab", "worktrees", agentId, KEY);
 
