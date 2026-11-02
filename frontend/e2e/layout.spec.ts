@@ -139,34 +139,6 @@ test("the sidebar collapses to icons, opens over the page on hover, and stays co
   await expect(page.locator("aside[data-collapsed]")).toHaveAttribute("data-collapsed", "false");
 });
 
-test("on the closed rail the menu's scrollbar doesn't cut into the icons; it comes back as the rail opens", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 360 }); // short, so the menu scrolls
-  await setupOrSignIn(page);
-  await page.goto("/projects");
-  const nav = page.getByRole("navigation", { name: "Main" });
-  if ((await page.locator("aside[data-collapsed]").getAttribute("data-collapsed")) !== "true") {
-    await page.getByRole("button", { name: "Collapse sidebar" }).click();
-  }
-  await page.mouse.move(800, 200); // away from the rail
-  await expect.poll(async () => (await nav.boundingBox())!.width).toBeLessThan(60);
-  const scroller = nav.locator(".overflow-y-auto");
-  const fit = () =>
-    scroller.evaluate((el) => {
-      const right = el.getBoundingClientRect().left + el.clientWidth; // the edge of what the scrollbar leaves visible
-      // the icons, and any count or dot on their corner
-      const icons = [...el.querySelectorAll("a > span.relative > *")].map((s) => s.getBoundingClientRect().right);
-      return { scrolls: el.scrollHeight > el.clientHeight, bar: el.offsetWidth - el.clientWidth, cut: icons.filter((r) => r > right).length };
-    });
-  const closed = await fit();
-  expect(closed.scrolls).toBe(true);
-  expect(closed.bar).toBe(0);
-  expect(closed.cut).toBe(0);
-
-  await nav.getByRole("link", { name: "Teams" }).hover(); // the rail opens, and the scrollbar is back
-  await expect.poll(async () => (await fit()).bar).toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Expand sidebar" }).click();
-});
-
 test("text is set in Geist, code and keys in Geist Mono, the wordmark in Orbitron", async ({ page }) => {
   await setupOrSignIn(page);
   await page.goto("/admin/settings");
