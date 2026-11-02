@@ -118,7 +118,7 @@ test("notifications reach the right people", async ({ browser }) => {
   await box.fill("Please check the wording @Be");
   // the list opens over the page, outside the drawer's own box
   await page.getByRole("listbox", { name: "Mention someone" }).getByRole("option", { name: BEA.name }).click();
-  await expect(box).toHaveValue(`Please check the wording @[${BEA.name}](user:${bea.id}) `);
+  await expect(box).toHaveValue(`Please check the wording @${BEA.name} `); // the box shows the name; the token goes on sending
   await drawer.getByRole("button", { name: "Comment" }).click();
   await expect(drawer.getByText(`@${BEA.name}`)).toBeVisible();
   await post(request, "/api/tasks/NOT-1/comments", { body_md: `FYI @[${OUT.name}](user:${otto.id})` });
