@@ -3,7 +3,13 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useRef } from "react";
 
-export type TabDef<T extends string> = { id: T; label: string; /** unsaved changes in this tab */ mark?: boolean };
+export type TabDef<T extends string> = {
+  id: T;
+  label: string;
+  /** a dot after the label: unsaved changes in this tab, unless markLabel says what else it means */
+  mark?: boolean;
+  markLabel?: string;
+};
 
 /** The open tab lives in the address (?tab=…), so a link or a reload lands on it. A missing or unknown tab opens the
  * first. Pages using this wrap their content in <Suspense> (useSearchParams). */
@@ -57,7 +63,7 @@ export function Tabs<T extends string>({
             id={`tab-${t.id}`}
             aria-controls={`panel-${t.id}`}
             aria-selected={selected}
-            aria-label={t.mark ? `${t.label} (unsaved changes)` : undefined}
+            aria-label={t.mark ? `${t.label} (${t.markLabel ?? "unsaved changes"})` : undefined}
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(t.id)}
             onKeyDown={(e) => {

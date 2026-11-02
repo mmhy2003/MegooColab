@@ -1,259 +1,102 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
 
-import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
-import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
-import { BindingEditor } from "@/components/agents/BindingEditor";
-import { HubMachines } from "@/components/hub/HubMachines";
-import { MachineField } from "@/components/agents/MachineField";
-import { ModelField } from "@/components/agents/ModelField";
-import { RUNS_HELP, RunsField, RunsInput, parseRuns, runsLabel } from "@/components/agents/RunsField";
+import { AddAgentDialog } from "@/components/agents/AddAgentDialog";
+import { AgentsTab } from "@/components/agents/AgentsTab";
+import { usableRunnerTokens } from "@/components/agents/MachineField";
 import { RunnerSetup } from "@/components/agents/RunnerSetup";
-import { Badge } from "@/components/ui/Badge";
-import { Button, buttonClass } from "@/components/ui/Button";
-import { Dialog } from "@/components/ui/Dialog";
-import { Input } from "@/components/ui/Input";
+import { HubMachines } from "@/components/hub/HubMachines";
+import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Select } from "@/components/ui/Select";
+import { TabPanel, Tabs, useTabParam } from "@/components/ui/Tabs";
 import { api } from "@/lib/api";
-import { ANSWER_MODE_HELP, COMMON_EFFORTS, DEFAULT_MODEL, PROGRAM_LABEL } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
+import { hubKeys, useHubSummary } from "@/lib/hub";
 import { qk } from "@/lib/queries";
-import type { AccessToken, Agent, AgentProgram, AnswerMode, Project } from "@/lib/types";
-import { useConfirm } from "@/components/ui/ConfirmDialog";
+import type { AccessToken, Agent, Project } from "@/lib/types";
 import { usePageTitle } from "@/lib/title";
 
-function AddAgentDialog({ tokens, onClose, onCreated }: { tokens: AccessToken[]; onClose: () => void; onCreated: () => void }) {
-  const [program, setProgram] = useState<AgentProgram>("claude_code");
-  const [machine, setMachine] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [answerMode, setAnswerMode] = useState<AnswerMode>("manual");
-  const [model, setModel] = useState(DEFAULT_MODEL.claude_code);
-  const [effort, setEffort] = useState("");
-  const [runs, setRuns] = useState("1");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+const TAB_IDS = ["agents", "tools", "runner"] as const;
+type Tab = (typeof TAB_IDS)[number];
 
-  return (
-    <Dialog open title="Add agent" onClose={onClose}>
-      <form
-        className="space-y-3"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
-          setError(null);
-          try {
-            await api("/api/agents", {
-              method: "POST",
-              json: {
-                program, name: name.trim() || null, answer_mode: answerMode, runner_token_id: machine,
-                model: model.trim() || null, effort: effort || null, max_concurrent_runs: parseRuns(runs),
-              },
-            });
-            onCreated();
-          } catch (err) {
-            setError(errorMessage(err));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <Select
-          label="Program"
-          value={program}
-          onChange={(e) => {
-            const next = e.target.value as AgentProgram;
-            setProgram(next);
-            setModel(DEFAULT_MODEL[next]);
-          }}
-        >
-          <option value="claude_code">{PROGRAM_LABEL.claude_code}</option>
-          <option value="codex">{PROGRAM_LABEL.codex}</option>
-          <option value="omp">{PROGRAM_LABEL.omp}</option>
-        </Select>
-        <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Leave blank for a default name" maxLength={200} />
-        <MachineField machine={null} tokens={tokens} value={machine} onChange={setMachine} />
-        <div>
-          <Input label="Model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Program default" maxLength={100} />
-          <p className="mt-1 text-xs text-muted-foreground">Leave it empty to use the program&apos;s own default. You can change it later.</p>
-        </div>
-        <div>
-          <Select label="Effort" value={effort} onChange={(e) => setEffort(e.target.value)}>
-            <option value="">Model default</option>
-            {COMMON_EFFORTS.map((l) => (
-              <option key={l.value} value={l.value}>{l.name}</option>
-            ))}
-          </Select>
-          <p className="mt-1 text-xs text-muted-foreground">The levels each model supports are listed after the agent&apos;s first run.</p>
-        </div>
-        <div>
-          <Select label="Answer mode" value={answerMode} onChange={(e) => setAnswerMode(e.target.value as AnswerMode)}>
-            <option value="manual">Manual</option>
-            <option value="auto">Auto</option>
-          </Select>
-          <p className="mt-1 text-xs text-muted-foreground">{ANSWER_MODE_HELP[answerMode]}</p>
-        </div>
-        <div>
-          <RunsInput value={runs} onChange={setRuns} />
-          <p className="mt-1 text-xs text-muted-foreground">{RUNS_HELP}</p>
-        </div>
-        {error && <p role="alert" className="text-sm text-pink">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={busy || parseRuns(runs) === null}>Add agent</Button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
-
-function AgentCard({
-  agent,
-  projects,
-  tokens,
-  onChanged,
-}: {
-  agent: Agent;
-  projects: Project[];
-  tokens: AccessToken[];
-  onChanged: () => void;
-}) {
-  const { ask, dialog } = useConfirm();
-  const [error, setError] = useState<string | null>(null);
-  const runs = runsLabel(agent.running ?? 0, agent.max_concurrent_runs);
-  return (
-    <>
-      <li className="card space-y-3 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="flex-1 text-sm font-bold">{agent.name}</h3>
-          <Badge>{PROGRAM_LABEL[agent.program]}</Badge>
-          <AgentStatusDot status={agent.status} />
-          {runs && <span className="text-xs text-muted-foreground">{runs}</span>}
-          {agent.machine && <span className="text-xs text-muted-foreground">on {agent.machine.name}</span>}
-          <RunnerUpdateArrow runner={agent.runner} ownerId={agent.owner.id} />
-          <Button
-            variant="danger"
-            aria-label={`Delete ${agent.name}`}
-            onClick={async () => {
-              if (!(await ask({ tone: "danger", title: `Delete ${agent.name}?`, text: "Its runner stops taking work for it, and it is unassigned from its tasks.", ok: "Delete" }))) return;
-              try {
-                await api(`/api/agents/${agent.id}`, { method: "DELETE" });
-                onChanged();
-              } catch (err) {
-                setError(errorMessage(err));
-              }
-            }}
-          >
-            Delete
-          </Button>
-        </div>
-        <MachineField
-          machine={agent.machine ?? null}
-          tokens={tokens}
-          value={agent.machine?.token_id ?? null}
-          onChange={async (tokenId) => {
-            setError(null);
-            try {
-              await api(`/api/agents/${agent.id}`, { method: "PATCH", json: { runner_token_id: tokenId } });
-              onChanged();
-            } catch (err) {
-              setError(errorMessage(err));
-            }
-          }}
-        />
-        <ModelField
-          model={agent.model ?? null}
-          effort={agent.effort ?? null}
-          knownModels={agent.known_models}
-          onSave={async (choice) => {
-            setError(null);
-            try {
-              await api(`/api/agents/${agent.id}`, { method: "PATCH", json: choice });
-              onChanged();
-            } catch (err) {
-              setError(errorMessage(err));
-            }
-          }}
-        />
-        <RunsField
-          key={agent.max_concurrent_runs}
-          max={agent.max_concurrent_runs}
-          running={agent.running ?? 0}
-          onSave={async (runs) => {
-            setError(null);
-            try {
-              await api(`/api/agents/${agent.id}`, { method: "PATCH", json: { max_concurrent_runs: runs } });
-              onChanged();
-            } catch (err) {
-              setError(errorMessage(err));
-            }
-          }}
-        />
-        {error && <p role="alert" className="text-sm text-pink">{error}</p>}
-        <BindingEditor agent={agent} projects={projects} onSaved={onChanged} />
-      </li>
-      {dialog}
-    </>
-  );
-}
-
-export default function AgentsPage() {
-  usePageTitle("My agents");
+function MyAgents() {
   const client = useQueryClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const [tab, setTab] = useTabParam<Tab>(TAB_IDS);
   const [adding, setAdding] = useState(false);
   const agents = useQuery({ queryKey: qk.agents(), queryFn: () => api<Agent[]>("/api/agents/mine") });
   const projects = useQuery({ queryKey: qk.projects(), queryFn: () => api<Project[]>("/api/projects") });
   const tokens = useQuery({ queryKey: qk.tokens(), queryFn: () => api<AccessToken[]>("/api/tokens") });
-  const refresh = () => {
-    void client.invalidateQueries({ queryKey: qk.agents() });
-    return client.invalidateQueries({ queryKey: qk.tokens() });  // tokens list their linked agents
-  };
+  const summary = useHubSummary();
+  const refresh = () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: qk.agents() }),
+      client.invalidateQueries({ queryKey: qk.tokens() }), // tokens list their linked agents
+      client.invalidateQueries({ queryKey: hubKeys.machines() }), // machines list their agents
+    ]);
 
   return (
-    <div className="space-y-8">
-      <div>
-        <PageHeader
-          title="My agents"
-          subtitle="Register the coding agents on your computer and tell each one where a project's repository lives."
-          actions={
-            <>
-              <a href="#runner" className={buttonClass("ghost")}>Runner commands</a>
-              <Button onClick={() => setAdding(true)}>Add agent</Button>
-            </>
-          }
-        />
+    <div className="space-y-4">
+      <PageHeader
+        title="My agents"
+        subtitle="Register the coding agents on your computer and tell each one where a project's repository lives."
+        actions={<Button onClick={() => setAdding(true)}>Add agent</Button>}
+      />
+      <Tabs
+        label="My agents"
+        tabs={[
+          { id: "agents", label: "Agents" },
+          { id: "tools", label: "Tools", mark: !!summary.data?.out_of_step, markLabel: "machines out of step" },
+          { id: "runner", label: "Runner" },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      <TabPanel id="agents" active={tab === "agents"}>
         {agents.error && <p role="alert" className="text-sm text-pink">{errorMessage(agents.error)}</p>}
-        <ul className="space-y-3">
-          {agents.data?.map((a) => (
-            // keyed by bindings so the editor resets when the saved bindings change
-            <AgentCard
-              key={`${a.id}:${a.bindings.map((b) => `${b.project_id}=${b.local_path}`).join("|")}`}
-              agent={a}
-              projects={projects.data ?? []}
-              tokens={tokens.data ?? []}
-              onChanged={refresh}
-            />
-          ))}
-          {agents.data?.length === 0 && <li className="card px-3 py-6 text-center text-sm text-muted-foreground">No agents yet.</li>}
-        </ul>
-      </div>
-      <HubMachines />
-      <section id="runner" aria-labelledby="runner-heading" className="card scroll-mt-4 space-y-3 p-4">
-        <h2 id="runner-heading" className="text-sm font-bold text-cyan-ink">Runner</h2>
-        <RunnerSetup hasAgents={(agents.data?.length ?? 0) > 0} />
-      </section>
+        {agents.data && (
+          <AgentsTab
+            agents={agents.data}
+            projects={projects.data ?? []}
+            tokens={tokens.data ?? []}
+            hasMachines={usableRunnerTokens(tokens.data ?? []).length > 0}
+            onChanged={refresh}
+          />
+        )}
+      </TabPanel>
+      <TabPanel id="tools" active={tab === "tools"}>
+        <HubMachines />
+      </TabPanel>
+      <TabPanel id="runner" active={tab === "runner"}>
+        <section aria-labelledby="runner-heading" className="card space-y-3 p-4">
+          <h2 id="runner-heading" className="text-sm font-bold text-cyan-ink">Runner</h2>
+          <RunnerSetup hasAgents={(agents.data?.length ?? 0) > 0} />
+        </section>
+      </TabPanel>
       {adding && (
         <AddAgentDialog
           tokens={tokens.data ?? []}
           onClose={() => setAdding(false)}
-          onCreated={async () => {
+          onCreated={async (agent) => {
             setAdding(false);
+            router.push(`${pathname}?tab=agents&agent=${agent.id}`, { scroll: false });
             await refresh();
           }}
         />
       )}
     </div>
+  );
+}
+
+export default function AgentsPage() {
+  usePageTitle("My agents");
+  return (
+    <Suspense>
+      <MyAgents />
+    </Suspense>
   );
 }

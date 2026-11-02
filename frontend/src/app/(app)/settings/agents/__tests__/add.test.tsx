@@ -3,7 +3,12 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }), usePathname: () => "/settings/agents" }));
+const push = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push, replace: vi.fn() }),
+  usePathname: () => "/settings/agents",
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 import AgentsPage from "@/app/(app)/settings/agents/page";
 
@@ -73,6 +78,23 @@ describe("Add agent", () => {
   });
 });
 
+describe("A new agent", () => {
+  it("a new agent is chosen once added", async () => {
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url, init) =>
+      url === "/api/agents" && init?.method === "POST" ? new Response(JSON.stringify({ id: "new1" }), { status: 201 }) : new Response("[]"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <AgentsPage />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add agent" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Add agent" }).at(-1)!);
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/settings/agents?tab=agents&agent=new1", { scroll: false }));
+  });
+});
+
 describe("Runs at once", () => {
   function renderPage(agents: unknown[] = []) {
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url, init) => {
@@ -108,7 +130,7 @@ describe("Runs at once", () => {
       model: null, effort: null, known_models: [],
     };
     const fetchMock = renderPage([agent]);
-    expect(await screen.findByText("1 of 3 running")).toBeInTheDocument();
+    expect(await screen.findAllByText("1 of 3 running")).not.toHaveLength(0);
     expect(screen.getByLabelText("Runs at once")).toHaveValue(3);
     await userEvent.click(screen.getByRole("button", { name: "Fewer runs at once" }));
     await userEvent.click(screen.getByRole("button", { name: "Save runs at once" }));
