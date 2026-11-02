@@ -28,4 +28,18 @@ describe("ChatsPage", () => {
     expect(await screen.findByRole("dialog", { name: "New chat" })).toBeInTheDocument();
     expect(screen.getByLabelText("Message")).toBeVisible();
   });
+
+  it("scrolls the chat list on its own, under the project filter", async () => {
+    const chats = [{ id: "c1", project_key: "PAY", title: "Fix empty email", state: "talking", can_act: true, rounds: [] }];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(url.includes("/api/chats") ? chats : []), { status: 200 })));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ChatsPage />
+      </QueryClientProvider>,
+    );
+    const list = await screen.findByRole("list");
+    expect(list.closest(".overflow-y-auto")).not.toBeNull();
+    expect(screen.getByLabelText("Project").closest(".overflow-y-auto")).toBeNull();
+  });
 });
