@@ -14,8 +14,6 @@ from app.agents.service import can_use_agent, is_usable_binding, owner_can_acces
 from app.auth.models import Role, User
 from app.auth.schemas import UserOut
 from app.chats.models import Chat, ChatStatus
-from app.git.models import PR_MAIN, TaskPullRequest
-from app.notifications import service as notifications
 from app.chats.schemas import (
     BoardDefaults,
     BoardIn,
@@ -26,6 +24,9 @@ from app.chats.schemas import (
     Intent,
     RoundOut,
 )
+from app.git.models import PR_MAIN, TaskPullRequest
+from app.images.support import agent_takes_images, task_takes_images
+from app.notifications import service as notifications
 from app.projects.access import accessible_project_ids, get_project_for
 from app.projects.models import BoardColumn, ColumnCategory, Project, ProjectRepository
 from app.runner.registry import registry
@@ -310,6 +311,7 @@ async def chat_out(db: AsyncSession, chat: Chat, viewer: User | None) -> ChatOut
         started_by=UserOut.model_validate(starter) if starter else None,
         created_at=chat.created_at, last_activity_at=chat.last_activity_at, state=state, can_act=acting,
         intent=await intent(db, chat, latest, latest_wf) if acting else "closed", rounds=out_rounds,
+        takes_images=await task_takes_images(db, latest) if latest is not None else await agent_takes_images(db, agent),
     )
 
 

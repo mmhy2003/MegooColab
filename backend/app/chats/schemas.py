@@ -82,3 +82,4 @@ class ChatOut(BaseModel):
     intent: Intent = "closed"
     can_act: bool
     rounds: list[RoundOut]
+    takes_images: bool = False  # its messages may carry images (the latest round's agent can be sent them)

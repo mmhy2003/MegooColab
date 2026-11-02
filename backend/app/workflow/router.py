@@ -12,6 +12,7 @@ from app.auth.deps import AdminUser, AuthedUser
 from app.auth.models import User
 from app.core.db import DbSession
 from app.core.text import NoNulStr
+from app.images.support import task_takes_images
 from app.kb import filing
 from app.projects.access import get_project_for
 from app.projects.models import Project
@@ -207,6 +208,7 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
             state = "pending"
         steps.append(WorkflowStepOut(n=n, title=step.get("title", ""), state=state))
     return WorkflowOut(
+        takes_images=await task_takes_images(db, task),
         kb_documents=await filing.kb_documents(db, task.id),
         driver=wf.driver,
         stage=wf.stage,
