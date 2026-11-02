@@ -19,13 +19,13 @@ the server sends OMP runs and pushes only to runners with it. The web app adds O
 - Program id `omp`, label `OMP` (server `AgentProgram.omp`, runner `adapters.Omp`, web `PROGRAM_LABEL.omp`).
 - Minimum OMP version **18.12.6**. Problems, verbatim: `omp not found`, `OMP 18.12.6 or newer is needed`,
   `omp found but cannot be started; reinstall with the OMP installer`.
-- Launch: `omp acp --approval-mode always-ask` (every run). `MEGOO_ADAPTER_OMP` replaces the whole command line, as the
+- Launch: `omp acp --approval-mode write` (every run; Task 7 found `always-ask` denies every file write and MCP call). `MEGOO_ADAPTER_OMP` replaces the whole command line, as the
   other programs' overrides do, and then no `omp` availability/version check is made.
 - Runner capability `omp/1`. Server problem for an OMP agent on a runner without it, verbatim:
   `Update the runner to use OMP agents.`
 - **No `--tools` list** (the spec's fallback, decided while planning): OMP validates `--tools` against exact tool
   names, and MCP tools are named `mcp__<server>_<tool>`, unknown before launch, so a list would cut off MegooColab's
-  and the hub's MCP tools. Read-only runs rely on the forced approval (`always-ask` prompts for every write and exec),
+  and the hub's MCP tools. Read-only runs rely on the forced approval (`write` asks for every command, delete and move),
   the runner's permission policy (read-only commands only), OMP's writes going through the runner's
   `fs/write_text_file` (refused in read-only runs), and the repository check after the run.
 - On Windows `exec.LookPath("omp")` finds `omp.exe` or `omp.cmd` through PATHEXT and Go starts either directly (as the

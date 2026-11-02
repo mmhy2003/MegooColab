@@ -56,9 +56,12 @@ func forOS(goos, program string, getenv func(string) string, lookPath func(strin
 		return Spec{Program: program, Command: words[0], Args: words[1:]}, nil
 	}
 	if program == Omp {
-		// omp serves ACP itself. always-ask makes it ask for every write and command, whatever the person's own
-		// approval settings say, so the runner's policy decides.
-		return Spec{Program: program, Command: "omp", Args: []string{"acp", "--approval-mode", "always-ask"}}, nil
+		// omp serves ACP itself. "write" overrides the person's own approval settings (a global yolo included): every
+		// command asks through session/request_permission, deletes and moves ask with their paths, and new and
+		// edited files are written through the runner's fs/write_text_file, so the runner's policy decides them all.
+		// always-ask is no good: it asks for writes and MCP calls by ACP elicitation, which the runner does not
+		// offer, so OMP denies every file write and MCP call (checked with omp 18.15.0).
+		return Spec{Program: program, Command: "omp", Args: []string{"acp", "--approval-mode", "write"}}, nil
 	}
 	npx := "npx"
 	if goos == "windows" {

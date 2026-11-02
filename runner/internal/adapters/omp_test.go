@@ -14,13 +14,13 @@ func version(out string) func(string) (string, error) {
 	return func(string) (string, error) { return out, nil }
 }
 
-func TestForOmpStartsAcpWithAskingApprovals(t *testing.T) {
+func TestForOmpStartsAcpAskingForCommands(t *testing.T) {
 	for _, goos := range []string{"windows", "linux", "darwin"} {
 		s, err := forOS(goos, Omp, noEnv, okLook)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if s.Program != Omp || s.Command != "omp" || !reflect.DeepEqual(s.Args, []string{"acp", "--approval-mode", "always-ask"}) {
+		if s.Program != Omp || s.Command != "omp" || !reflect.DeepEqual(s.Args, []string{"acp", "--approval-mode", "write"}) {
 			t.Fatalf("%s: spec = %+v", goos, s)
 		}
 	}

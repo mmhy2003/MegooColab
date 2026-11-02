@@ -76,6 +76,10 @@ tasks, chats and questions exactly as a Claude Code or Codex agent does, with th
   npx are not required for OMP.
 - **Approval**: every OMP run is started with flags that make OMP ask for every gated tool, overriding the person's
   own approval settings, so the runner's existing permission policy decides (as it does for the other programs).
+  *(Checked against omp 18.15.0: that is `--approval-mode write`. Commands, deletes and moves ask through
+  `session/request_permission`; new and edited files are written through the runner's `fs/write_text_file`.
+  `always-ask` asks for writes and MCP calls by ACP elicitation, which the runner does not offer, so OMP denied
+  every file write and MCP call under it.)*
 - **Read-only runs** are started with a `--tools` list that drops OMP's file-changing tools (edit, write, delete,
   move, and any code-running tool other than the shell), the way Claude Code's read-only runs drop its edit tools.
   **The shell (`bash`) stays**: the runner's read-only policy lets through only read-only commands
