@@ -112,30 +112,33 @@ function HubLink({ onNavigate, collapsed }: { onNavigate?: () => void; collapsed
 
 export function Sidebar({ user, onNavigate, collapsed }: { user: User; onNavigate?: () => void; collapsed?: boolean }) {
   return (
-    // p-2 and the links' px-3 put the icons in the middle of the collapsed rail (w-14), so they stay put as it opens
-    <nav aria-label="Main" className="flex h-full flex-col gap-1 p-2">
+    // p-2 and the links' px-3 put the icons in the middle of the collapsed rail (w-14), so they stay put as it opens.
+    // Only the links scroll: the logo stays at the top however long the menu is.
+    <nav aria-label="Main" className="flex h-full flex-col p-2">
       {/* text-base and px-2: the logo and the name fit the 14rem sidebar on one line */}
-      <Link href="/" className="mb-4 px-2 py-2 text-base no-underline" onClick={onNavigate}>
+      <Link href="/" className="mb-4 shrink-0 px-2 py-2 text-base no-underline" onClick={onNavigate}>
         <Brand logoSize={28} nameClassName={collapsed ? LABEL_HIDDEN : ""} />
       </Link>
-      <DashboardLink onNavigate={onNavigate} collapsed={collapsed} />
-      {MAIN.map((item) =>
-        item === CHATS ? (
-          <ChatsLink key={item.href} onNavigate={onNavigate} collapsed={collapsed} />
-        ) : item === HUB ? (
-          <HubLink key={item.href} onNavigate={onNavigate} collapsed={collapsed} />
-        ) : (
-          <NavLink key={item.href} item={item} onNavigate={onNavigate} collapsed={collapsed} />
-        ),
-      )}
-      {user.role === "admin" && (
-        <>
-          <p className={`mt-6 mb-1 px-3 text-[11px] tracking-widest whitespace-nowrap text-muted-foreground uppercase ${collapsed ? LABEL_HIDDEN : ""}`}>Admin</p>
-          {ADMIN.map((item) => (
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto">
+        <DashboardLink onNavigate={onNavigate} collapsed={collapsed} />
+        {MAIN.map((item) =>
+          item === CHATS ? (
+            <ChatsLink key={item.href} onNavigate={onNavigate} collapsed={collapsed} />
+          ) : item === HUB ? (
+            <HubLink key={item.href} onNavigate={onNavigate} collapsed={collapsed} />
+          ) : (
             <NavLink key={item.href} item={item} onNavigate={onNavigate} collapsed={collapsed} />
-          ))}
-        </>
-      )}
+          ),
+        )}
+        {user.role === "admin" && (
+          <>
+            <p className={`mt-6 mb-1 px-3 text-[11px] tracking-widest whitespace-nowrap text-muted-foreground uppercase ${collapsed ? LABEL_HIDDEN : ""}`}>Admin</p>
+            {ADMIN.map((item) => (
+              <NavLink key={item.href} item={item} onNavigate={onNavigate} collapsed={collapsed} />
+            ))}
+          </>
+        )}
+      </div>
     </nav>
   );
 }

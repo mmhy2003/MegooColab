@@ -30,6 +30,14 @@ afterEach(() => {
 });
 
 describe("Sidebar", () => {
+  it("keeps the logo out of the menu's scrolling area", () => {
+    mockFetch(() => undefined);
+    wrap(<Sidebar user={member} />);
+    const links = within(screen.getByRole("navigation", { name: "Main" })).getAllByRole("link");
+    expect(links[0].closest(".overflow-y-auto")).toBeNull();
+    expect(links[1].closest(".overflow-y-auto")).not.toBeNull();
+  });
+
   it("puts Dashboard first with the need-you badge", async () => {
     mockFetch((url) => (url === "/api/dashboard/count" ? json({ needs_you: 3 }) : undefined));
     wrap(<Sidebar user={member} />);

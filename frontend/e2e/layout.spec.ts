@@ -26,6 +26,33 @@ test("the sidebar and the header stay put while the page scrolls", async ({ page
   expect((await header.boundingBox())!.y).toBe(0);
 });
 
+test("the logo stays at the top of the sidebar while its menu scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 360 }); // short, so the menu itself scrolls
+  await setupOrSignIn(page);
+  await page.goto("/");
+  const sidebar = page.getByRole("navigation", { name: "Main" });
+  const logo = sidebar.getByRole("link", { name: "MEGOOCOLAB" });
+  await expect(logo).toBeInViewport();
+  const top = (await logo.boundingBox())!.y;
+  // the last menu link, scrolled into view, scrolls the menu, not the logo
+  const last = sidebar.getByRole("link").last();
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeInViewport();
+  await expect(logo).toBeInViewport({ ratio: 1 });
+  expect((await logo.boundingBox())!.y).toBe(top);
+
+  // the phone menu too
+  await page.setViewportSize({ width: 375, height: 360 });
+  await page.getByRole("button", { name: "Open menu" }).click();
+  const menu = page.getByRole("dialog", { name: "Menu" });
+  const phoneLogo = menu.getByRole("link", { name: "MEGOOCOLAB" });
+  const phoneTop = (await phoneLogo.boundingBox())!.y;
+  await menu.getByRole("link").last().scrollIntoViewIfNeeded();
+  await expect(menu.getByRole("link").last()).toBeInViewport();
+  await expect(phoneLogo).toBeInViewport({ ratio: 1 });
+  expect((await phoneLogo.boundingBox())!.y).toBe(phoneTop);
+});
+
 test("scrollbars stay hidden until the pointer is over the area, then show in cyan", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 400 }); // short, so the sidebar itself scrolls
   await setupOrSignIn(page);
