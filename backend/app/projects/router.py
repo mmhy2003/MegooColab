@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.a2a.models import Question
 from app.agent_runs.service import stop_runs_before_delete
+from app.agents.models import Agent
 from app.audit import service as audit
 from app.auth.deps import AuthedUser
 from app.auth.models import Role
@@ -92,7 +93,7 @@ async def create_project(body: ProjectIn, user: AuthedUser, db: DbSession) -> Pr
     org = await db.get(OrgSettings, ORG_SETTINGS_ID)
     if org is not None:  # ADM-1: the organization's defaults for new projects
         project.finishing_option = org.default_finishing_option
-        project.require_human_code_review = org.default_require_human_code_review
+        project.pr_review = org.default_pr_review
         project.sprints_enabled = org.default_sprints_enabled
         project.commit_docs_to_repo = org.default_commit_docs_to_repo
     db.add(project)
@@ -123,8 +124,12 @@ async def update_project(ref: str, body: ProjectPatch, user: AuthedUser, db: DbS
         project.sprints_enabled = body.sprints_enabled
     if body.finishing_option is not None:
         project.finishing_option = body.finishing_option
-    if body.require_human_code_review is not None:
-        project.require_human_code_review = body.require_human_code_review
+    if body.pr_review is not None:
+        project.pr_review = body.pr_review
+    if "pr_reviewer_agent_id" in body.model_fields_set:
+        if body.pr_reviewer_agent_id is not None and await db.get(Agent, body.pr_reviewer_agent_id) is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_agent")
+        project.pr_reviewer_agent_id = body.pr_reviewer_agent_id
     if body.commit_docs_to_repo is not None:
         project.commit_docs_to_repo = body.commit_docs_to_repo
     if body.send_back_on_changes_requested is not None:

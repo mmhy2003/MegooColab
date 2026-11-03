@@ -36,7 +36,7 @@ class OrgSettings(TimestampMixin, Base):
     # ADM-1: what a new project starts with
     default_finishing_option: Mapped[str] = mapped_column(String(20), default="pull_request",
                                                           server_default="pull_request")
-    default_require_human_code_review: Mapped[bool] = mapped_column(default=False, server_default=false())
+    default_pr_review: Mapped[str] = mapped_column(String(10), default="none", server_default="none")
     default_sprints_enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
     default_commit_docs_to_repo: Mapped[bool] = mapped_column(default=False, server_default=false())
     # Tool Hub: whether people may share tools with everyone on this MegooColab

@@ -14,7 +14,7 @@ from app.projects.models import Project
 from tests.factories import login, make_team, make_user
 from tests.org.test_org_settings import SMTP, _setup_org
 
-DEFAULTS = {"finishing_option": "keep_branch", "require_human_code_review": True, "sprints_enabled": False,
+DEFAULTS = {"finishing_option": "keep_branch", "pr_review": "human", "sprints_enabled": False,
             "commit_docs_to_repo": True}
 
 
@@ -29,7 +29,7 @@ async def test_settings_round_trip_and_validation(client, db):
     await _admin(client, db)
     body = (await client.get("/api/admin/settings")).json()
     assert body["dreaming"] == {"enabled": True, "hour_utc": None}
-    assert body["project_defaults"] == {"finishing_option": "pull_request", "require_human_code_review": False,
+    assert body["project_defaults"] == {"finishing_option": "pull_request", "pr_review": "none",
                                         "sprints_enabled": True, "commit_docs_to_repo": False}
     r = await client.put("/api/admin/settings", json={"name": "Acme", "smtp": SMTP,
                                                       "dreaming": {"enabled": False, "hour_utc": 5},
@@ -55,8 +55,8 @@ async def test_new_project_takes_org_defaults(client, db):
     r = await client.post("/api/projects", json={"key": "NEW", "name": "New", "team_ids": [str(team.id)]})
     assert r.status_code == 201, r.text
     new = (await db.execute(select(Project).where(Project.key == "NEW"))).scalar_one()
-    assert (new.finishing_option, new.require_human_code_review, new.sprints_enabled, new.commit_docs_to_repo) == (
-        "keep_branch", True, False, True)
+    assert (new.finishing_option, new.pr_review, new.sprints_enabled, new.commit_docs_to_repo) == (
+        "keep_branch", "human", False, True)
     old_row = (await db.execute(select(Project).where(Project.key == "OLD"))).scalar_one()
     assert (old_row.finishing_option, old_row.sprints_enabled) == ("pull_request", True)  # unchanged
 

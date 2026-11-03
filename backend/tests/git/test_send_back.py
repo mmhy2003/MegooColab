@@ -39,7 +39,7 @@ async def _world(client, db, *, kind="github", on=True) -> tuple[World, ProjectR
     await methodology.seed_defaults(db)
     project = (await db.execute(select(Project).where(Project.key == "PAY"))).scalar_one()
     project.send_back_on_changes_requested = on
-    project.require_human_code_review = True
+    project.pr_review = "human"
     conn = GitConnection(name="Host", kind=kind, base_url=w.base, token_enc=encrypt("t"))
     agent = Agent(owner_id=manager.id, name="laptop-claude", program="claude_code")
     db.add_all([conn, agent])

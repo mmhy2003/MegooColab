@@ -107,7 +107,7 @@ async def _to_finish_reviewed(db, tc, *, review=True, link=None):
     if link is not None:
         link()
     if review:
-        _patch_project(tc, require_human_code_review=True)
+        _patch_project(tc, pr_review="human")
     await _review(final, "approved")
     await _finish(b.manager.id, final, "completed")
     run = await _last(b.task_id)

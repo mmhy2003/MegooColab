@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.core.text import NoNulStr
-from app.projects.models import ColumnCategory, ProjectStatus, RepoProvider
+from app.projects.models import ColumnCategory, ProjectStatus, PrReview, RepoProvider
 from app.workflow.models import FinishingOption
 
 ProjectKey = Annotated[str, StringConstraints(pattern=r"^[A-Z][A-Z0-9]{1,9}$")]
@@ -24,7 +24,8 @@ class ProjectPatch(BaseModel):
     description: NoNulStr | None = None
     sprints_enabled: bool | None = None
     finishing_option: FinishingOption | None = None
-    require_human_code_review: bool | None = None
+    pr_review: PrReview | None = None
+    pr_reviewer_agent_id: uuid.UUID | None = None  # sent as null: the task's own agent reviews
     send_back_on_changes_requested: bool | None = None
     commit_docs_to_repo: bool | None = None
     team_ids: list[uuid.UUID] | None = Field(default=None, min_length=1)
@@ -37,7 +38,8 @@ class ProjectOut(BaseModel):
     description: str
     sprints_enabled: bool
     finishing_option: FinishingOption
-    require_human_code_review: bool
+    pr_review: PrReview
+    pr_reviewer_agent_id: uuid.UUID | None
     send_back_on_changes_requested: bool
     commit_docs_to_repo: bool
     team_ids: list[uuid.UUID]

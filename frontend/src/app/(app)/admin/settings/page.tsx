@@ -16,7 +16,15 @@ import { TelegramForm } from "@/components/admin/TelegramForm";
 import { saveAdminSettings, type SettingsPatch, useAdminSettings } from "@/lib/adminSettings";
 import { errorMessage } from "@/lib/errors";
 import type { AdminSettings } from "@/lib/types";
-import { DOCS_HELP, FINISHING_HELP, FINISHING_LABEL, REVIEW_HELP, type FinishingOption } from "@/lib/workflow";
+import {
+  DOCS_HELP,
+  FINISHING_HELP,
+  FINISHING_LABEL,
+  PR_REVIEW_HELP,
+  PR_REVIEW_LABEL,
+  type FinishingOption,
+  type PrReview,
+} from "@/lib/workflow";
 import { usePageTitle } from "@/lib/title";
 
 const TABS = [
@@ -163,12 +171,16 @@ function DefaultsForm({ settings }: { settings: AdminSettings }) {
         ))}
       </Select>
       <p className="text-xs text-muted-foreground">{FINISHING_HELP[defaults.finishing_option]}</p>
-      <div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={defaults.require_human_code_review} onChange={(e) => set({ require_human_code_review: e.target.checked })} /> Require a human code review
-        </label>
-        <p className="ml-6 text-xs text-muted-foreground">{REVIEW_HELP}</p>
-      </div>
+      <Select
+        label="Default pull request review"
+        value={defaults.pr_review}
+        onChange={(e) => set({ pr_review: e.target.value as PrReview })}
+      >
+        {(Object.keys(PR_REVIEW_LABEL) as PrReview[]).map((r) => (
+          <option key={r} value={r}>{PR_REVIEW_LABEL[r]}</option>
+        ))}
+      </Select>
+      <p className="text-xs text-muted-foreground">{PR_REVIEW_HELP[defaults.pr_review as PrReview]}</p>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={defaults.sprints_enabled} onChange={(e) => set({ sprints_enabled: e.target.checked })} /> Sprints
       </label>

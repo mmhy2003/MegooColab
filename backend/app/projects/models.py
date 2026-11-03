@@ -24,6 +24,14 @@ class ProjectStatus(StrEnum):
     archived = "archived"
 
 
+class PrReview(StrEnum):
+    """Who reviews a task's pull request before it is Done (piece 4): nobody, a person, or an agent that merges it."""
+
+    none = "none"
+    human = "human"
+    agent = "agent"
+
+
 class RepoProvider(StrEnum):
     github = "github"
     gitlab = "gitlab"
@@ -52,7 +60,9 @@ class Project(IdMixin, TimestampMixin, Base):
     finishing_option: Mapped[FinishingOption] = mapped_column(
         String(20), default=FinishingOption.pull_request, server_default=FinishingOption.pull_request.value
     )
-    require_human_code_review: Mapped[bool] = mapped_column(default=False, server_default=false())
+    pr_review: Mapped[PrReview] = mapped_column(String(10), default=PrReview.none, server_default="none")
+    # with an agent review: the reviewing agent; None is the task's own agent in a fresh session
+    pr_reviewer_agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"))
     # a "changes requested" review or a /fix comment on the task's pull request sends the task back to its agent
     send_back_on_changes_requested: Mapped[bool] = mapped_column(default=False, server_default=false())
     commit_docs_to_repo: Mapped[bool] = mapped_column(default=False, server_default=false())

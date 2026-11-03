@@ -147,7 +147,7 @@ test("a pull request followed through a git connection", async ({ browser }) => 
   const team = await post<{ id: string }>(request, "/api/teams", { name: "Git Team", description: "" });
   await post(request, "/api/projects", { key: "GIT", name: "Git Demo", description: "", team_ids: [team.id] });
   const patched = await request.patch("/api/projects/GIT", {
-    data: { sprints_enabled: false, require_human_code_review: true, send_back_on_changes_requested: true },
+    data: { sprints_enabled: false, pr_review: "human", send_back_on_changes_requested: true },
     headers: WEB,
   });
   expect(patched.ok()).toBeTruthy();

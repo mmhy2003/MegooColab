@@ -118,11 +118,21 @@ export const FINISHING_HELP: Record<FinishingOption, string> = {
     "pushed: what happens next is up to you.",
 };
 
-/** The human code review setting, on and off. */
-export const REVIEW_HELP =
-  "On: the work always ends as a pull request, whatever the finishing option says, and the task waits in code review " +
-  "until the pull request is merged (MegooColab notices when the repository is connected, or someone clicks Mark " +
-  "merged). Off: the task moves to Done as soon as the agent finishes.";
+/** Who reviews a task's pull request (piece 4): the choices and what each does. */
+export type PrReview = "none" | "human" | "agent";
+export const PR_REVIEW_LABEL: Record<PrReview, string> = { none: "None", human: "Human", agent: "Agent" };
+export const PR_REVIEW_HELP: Record<PrReview, string> = {
+  none: "The task moves to Done as soon as the agent finishes; nobody reviews the pull request first.",
+  human:
+    "The task waits until a person merges the pull request (MegooColab notices when the repository is connected, or " +
+    "someone clicks Mark merged).",
+  agent:
+    "An agent reviews the pull request on the host, and merges it when it approves; changes it asks for go back to " +
+    "the task's agent (at most 3 rounds, then it asks you).",
+};
+/** Human and Agent always end the work as a pull request. */
+export const PR_REVIEW_FORCES_PR = "With Human or Agent, the work always ends as a pull request, whatever the finishing option says.";
+export const OWN_AGENT_REVIEWS = "The task's own agent (fresh session)";
 
 /** The send-back setting (piece 3): what a review or a /fix comment on the task's pull request does. */
 export const SEND_BACK_HELP =

@@ -36,7 +36,7 @@ from app.core.events import Event, publish
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.access import can_manage_project, project_team_ids
-from app.projects.models import BoardColumn, Project
+from app.projects.models import BoardColumn, Project, PrReview
 from app.tasks.models import Task, TaskEvent, TaskType
 from app.tasks.service import apply_column, end_position, record_event
 from app.teams.service import user_team_ids
@@ -158,7 +158,9 @@ async def record_workflow_event(
     event = await record_event(db, task, actor_id, kind, data or {})
     await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
     if task.chat_id is not None:
-        from app.chats.service import touch  # local: the chats modules import the engine
+        from app.chats.service import (
+            touch,  # local: the chats modules import the engine
+        )
 
         await touch(db, task.chat_id)
     return event
@@ -291,7 +293,9 @@ async def wait_for(db: AsyncSession, wf: TaskWorkflow, needs: Needs, *, actor_id
     key = f"{project.key}-{task.number}"
     recipients, link = [owner, task.assignee_user_id], f"/projects/{project.key}/board?task={key}"
     if task.in_chat:  # a chat round: the person who started the chat follows it, in the chat
-        from app.chats.service import chat_people  # local: the chats modules import the engine
+        from app.chats.service import (
+            chat_people,  # local: the chats modules import the engine
+        )
 
         recipients, link = await chat_people(db, task)
     await notifications.notify(
@@ -355,10 +359,21 @@ async def _implementer_reports(
 # When the Done stage begins, finish.enter_done freezes the effective option into wf.finishing_override and records
 # wf.finish_requires_human_review, so later project changes do not affect the run.
 def requires_human_review(project: Project, wf: TaskWorkflow) -> bool:
-    """The frozen requirement; a Done-stage row from before it existed falls back to the live setting."""
+    """The task waits on its pull request (a person's or an agent's review). The frozen requirement; a Done-stage row
+    from before it existed falls back to the live setting."""
     if wf.stage == Stage.done and wf.finish_requires_human_review is not None:
         return wf.finish_requires_human_review
-    return bool(project.require_human_code_review)
+    return pr_review_mode(project, wf) != PrReview.none
+
+
+def pr_review_mode(project: Project, wf: TaskWorkflow) -> PrReview:
+    """Who reviews the pull request: frozen when the Done stage began, else the project's setting. A row frozen
+    before piece 4 has only the yes/no: yes was a person."""
+    if wf.stage == Stage.done and wf.finish_requires_human_review is not None:
+        if wf.finish_pr_review:
+            return PrReview(wf.finish_pr_review)
+        return PrReview.human if wf.finish_requires_human_review else PrReview.none
+    return PrReview(project.pr_review)
 
 
 UNKNOWN_START = "unknown — deliver into the branch the task branch was created from (git merge-base helps)"
@@ -377,7 +392,7 @@ def finishing_option(project: Project, wf: TaskWorkflow) -> FinishingOption:
     """WF-6a/6b: human code review forces a pull request; else the task's override; else the project's option."""
     if wf.stage == Stage.done and wf.finish_requires_human_review is not None:  # frozen when Done began
         return FinishingOption(wf.finishing_override)
-    if project.require_human_code_review:
+    if PrReview(project.pr_review) != PrReview.none:
         return FinishingOption.pull_request
     return FinishingOption(wf.finishing_override or project.finishing_option)
 

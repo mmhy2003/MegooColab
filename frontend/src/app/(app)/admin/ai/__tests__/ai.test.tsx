@@ -15,7 +15,7 @@ const SETTINGS = {
   name: "Acme",
   smtp: { host: null, port: null, user: null, from: null, tls: true, password_set: false },
   dreaming: { enabled: true, hour_utc: null },
-  project_defaults: { finishing_option: "pull_request", require_human_code_review: false, sprints_enabled: true, commit_docs_to_repo: false },
+  project_defaults: { finishing_option: "pull_request", pr_review: "none", sprints_enabled: true, commit_docs_to_repo: false },
 };
 
 let fetchMock: ReturnType<typeof vi.fn<(url: string, init?: RequestInit) => Promise<Response>>>;

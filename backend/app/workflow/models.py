@@ -130,6 +130,8 @@ class TaskWorkflow(Base):
     back_merge_pr_url: Mapped[str | None] = mapped_column(String(1000))
     # frozen when the Done stage begins: was human code review required (WF-6a)? None before that
     finish_requires_human_review: Mapped[bool | None]
+    # frozen with it: who reviews the pull request (piece 4: none, human or agent)
+    finish_pr_review: Mapped[str | None] = mapped_column(String(10))
     # changes requested on the pull request (piece 3): fix rounds used on `pr_fix_pr_url`, and what asked last
     pr_fix_rounds: Mapped[int] = mapped_column(default=0, server_default="0")
     pr_fix_pr_url: Mapped[str | None] = mapped_column(String(1000))

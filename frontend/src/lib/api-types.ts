@@ -1954,6 +1954,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{key}/workflow/send-back/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Send Back
+         * @description Don't send back: stop the fix run a review on the pull request started, and wait for the merge again.
+         */
+        post: operations["cancel_send_back_api_tasks__key__workflow_send_back_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{key}/workflow/finishing": {
         parameters: {
             query?: never;
@@ -5623,6 +5643,12 @@ export interface components {
             pinned: boolean;
         };
         /**
+         * PrReview
+         * @description Who reviews a task's pull request before it is Done (piece 4): nobody, a person, or an agent that merges it.
+         * @enum {string}
+         */
+        PrReview: "none" | "human" | "agent";
+        /**
          * Preference
          * @description Who the asker wants to answer; with if_busy "wait" the question waits for them.
          */
@@ -5725,11 +5751,8 @@ export interface components {
         ProjectDefaults: {
             /** @default pull_request */
             finishing_option: components["schemas"]["FinishingOption"];
-            /**
-             * Require Human Code Review
-             * @default false
-             */
-            require_human_code_review: boolean;
+            /** @default none */
+            pr_review: components["schemas"]["PrReview"];
             /**
              * Sprints Enabled
              * @default true
@@ -5780,8 +5803,9 @@ export interface components {
             /** Sprints Enabled */
             sprints_enabled: boolean;
             finishing_option: components["schemas"]["FinishingOption"];
-            /** Require Human Code Review */
-            require_human_code_review: boolean;
+            pr_review: components["schemas"]["PrReview"];
+            /** Pr Reviewer Agent Id */
+            pr_reviewer_agent_id: string | null;
             /** Send Back On Changes Requested */
             send_back_on_changes_requested: boolean;
             /** Commit Docs To Repo */
@@ -5804,8 +5828,9 @@ export interface components {
             /** Sprints Enabled */
             sprints_enabled?: boolean | null;
             finishing_option?: components["schemas"]["FinishingOption"] | null;
-            /** Require Human Code Review */
-            require_human_code_review?: boolean | null;
+            pr_review?: components["schemas"]["PrReview"] | null;
+            /** Pr Reviewer Agent Id */
+            pr_reviewer_agent_id?: string | null;
             /** Send Back On Changes Requested */
             send_back_on_changes_requested?: boolean | null;
             /** Commit Docs To Repo */
@@ -12028,6 +12053,37 @@ export interface operations {
                 "application/json": components["schemas"]["HumanReviewIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_send_back_api_tasks__key__workflow_send_back_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
