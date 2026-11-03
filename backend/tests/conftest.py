@@ -2,19 +2,25 @@ import asyncio
 import os
 import tempfile
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 # Only TEST_DATABASE_URL (or the default test DB) decides the database; an exported DATABASE_URL
 # is overwritten. The session fixture below drops the public schema, so refuse any non-test DB.
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://megoo:megoo@localhost:5433/megoo_test"
 )
+# `pytest -n <N>` (pytest-xdist): each worker gets a database of its own (megoo_gw0_test, ...), made on first use,
+# so tests running side by side never share tables
 _db_name = urlsplit(TEST_DATABASE_URL).path.rsplit("/", 1)[-1]
-if not _db_name.endswith("_test"):
+if not _db_name.endswith("_test"):  # checked as configured, before a worker's name is derived from it
     raise RuntimeError(
         f"Refusing to run tests: database name {_db_name!r} does not end in '_test' "
         "(the suite drops the public schema). Fix TEST_DATABASE_URL."
     )
+_worker = os.environ.get("PYTEST_XDIST_WORKER")
+if _worker:
+    _parts = urlsplit(TEST_DATABASE_URL)
+    TEST_DATABASE_URL = urlunsplit(_parts._replace(path=f"/{_db_name.removesuffix('_test')}_{_worker}_test"))
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789abcdef")
 os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
@@ -32,11 +38,18 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
+from pwdlib import PasswordHash
+from pwdlib.hashers.argon2 import Argon2Hasher
 from sqlalchemy import text
 
 import app.models
+from app.core import security
 from app.core.db import Base, SessionLocal, engine
 from app.main import create_app
+
+# Tests hash passwords with the cheapest Argon2 settings: production's (memory- and time-hard on purpose) made
+# every user a test creates cost a noticeable slice of a second. Hashes still verify the same way.
+security._password_hash = PasswordHash((Argon2Hasher(time_cost=1, memory_cost=1024, parallelism=1),))
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -47,12 +60,31 @@ def _alembic_config() -> Config:
     return cfg
 
 
+async def _fresh_database() -> None:
+    """An xdist worker's database is dropped and made again: one lock, where DROP SCHEMA ... CASCADE takes one per
+    table, index and sequence, and 16 workers doing that at once exhaust Postgres's shared lock table."""
+    import asyncpg
+
+    url = engine.url
+    conn = await asyncpg.connect(
+        user=url.username, password=url.password, host=url.host, port=url.port, database="postgres"
+    )
+    try:
+        await conn.execute(f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)')
+        await conn.execute(f'CREATE DATABASE "{url.database}"')
+    finally:
+        await conn.close()
+
+
 @pytest.fixture(scope="session", autouse=True)
 async def _migrated_database():
     assert engine.url.database and engine.url.database.endswith("_test"), engine.url.database
-    async with engine.begin() as conn:
-        await conn.execute(text("DROP SCHEMA public CASCADE"))
-        await conn.execute(text("CREATE SCHEMA public"))
+    if _worker:
+        await _fresh_database()
+    else:
+        async with engine.begin() as conn:
+            await conn.execute(text("DROP SCHEMA public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
     # env.py calls asyncio.run(), so run it off the test loop
     await asyncio.to_thread(command.upgrade, _alembic_config(), "head")
     yield
