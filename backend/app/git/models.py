@@ -54,3 +54,13 @@ class TaskPullRequest(TimestampMixin, Base):
     failures: Mapped[int] = mapped_column(default=0, server_default="0")
     next_check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GitDelivery(Base):
+    """A webhook delivery already handled, by the id its host gives it: a repeat (the host retrying) is ignored.
+    Kept for a few days."""
+
+    __tablename__ = "git_deliveries"
+
+    delivery_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint, false
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, IdMixin, TimestampMixin
@@ -95,6 +96,12 @@ class ProjectRepository(IdMixin, TimestampMixin, Base):
     connection_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("git_connections.id", ondelete="SET NULL"), index=True
     )
+    # its own webhook: the secret (made on first use), the webhook MegooColab created on the host, and whether
+    # deliveries to its own address arrive (the last one, and whether its signature was wrong)
+    webhook_secret_enc: Mapped[str | None] = mapped_column(Text)
+    webhook_hook_id: Mapped[str | None] = mapped_column(String(64))
+    webhook_last_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    webhook_failing: Mapped[bool] = mapped_column(default=False, server_default=false())
 
 
 class Label(IdMixin, Base):

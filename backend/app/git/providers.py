@@ -101,6 +101,14 @@ def repo_path(repo_url: str) -> str | None:
     return path if "/" in path else None
 
 
+# the hosted services: a connection to one needs no address of its own
+HOSTED: dict[GitKind, str] = {GitKind.github: "https://github.com", GitKind.gitlab: "https://gitlab.com"}
+
+
+def is_hosted(conn: GitConnection) -> bool:
+    return HOSTED.get(GitKind(conn.kind)) == conn.base_url.rstrip("/").lower()
+
+
 def api_base(conn: GitConnection) -> str:
     kind = GitKind(conn.kind)
     if kind == GitKind.github:

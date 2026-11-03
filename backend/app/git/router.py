@@ -22,7 +22,9 @@ from app.git.schemas import (
     GitConnectionOut,
     GitConnectionPatch,
     GitConnectionTest,
+    WaitingRepo,
 )
+from app.projects.models import Project, ProjectRepository
 from app.ratelimit import guards
 from app.ratelimit.clientip import client_ip
 
@@ -30,9 +32,20 @@ router = APIRouter(prefix="/api/admin/git-connections", tags=["git"])
 names_router = APIRouter(prefix="/api/git/connections", tags=["git"])
 
 
-def _out(c: GitConnection) -> GitConnectionOut:
-    return GitConnectionOut(id=c.id, name=c.name, kind=c.kind, base_url=c.base_url, token_set=bool(c.token_enc),
-                            webhook_secret_set=bool(c.webhook_secret_enc))
+async def _out(db, c: GitConnection) -> GitConnectionOut:
+    waiting: list[WaitingRepo] = []
+    if c.webhook_secret_enc:
+        # before the shared secret goes: the repositories still relying on it (nothing at their own address yet)
+        rows = await db.execute(
+            select(Project.key, ProjectRepository.name)
+            .join(Project, Project.id == ProjectRepository.project_id)
+            .where(ProjectRepository.connection_id == c.id, ProjectRepository.webhook_last_at.is_(None))
+            .order_by(Project.key, ProjectRepository.name)
+        )
+        waiting = [WaitingRepo(project_key=k, name=n) for k, n in rows.all()]
+    return GitConnectionOut(id=c.id, name=c.name, kind=c.kind, base_url=c.base_url, hosted=providers.is_hosted(c),
+                            token_set=bool(c.token_enc), webhook_secret_set=bool(c.webhook_secret_enc),
+                            waiting_repositories=waiting)
 
 
 async def _connection(db, connection_id: uuid.UUID) -> GitConnection:
@@ -53,7 +66,7 @@ async def _flush_unique(db) -> None:
 @router.get("")
 async def list_connections(db: DbSession, _admin: AdminUser) -> list[GitConnectionOut]:
     rows = await db.execute(select(GitConnection).order_by(GitConnection.created_at, GitConnection.name))
-    return [_out(c) for c in rows.scalars()]
+    return [await _out(db, c) for c in rows.scalars()]
 
 
 @names_router.get("")
@@ -65,14 +78,13 @@ async def connection_names(db: DbSession, _user: AuthedUser) -> list[ConnectionR
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_connection(body: GitConnectionIn, db: DbSession, admin: AdminUser) -> GitConnectionOut:
-    c = GitConnection(name=body.name, kind=body.kind, base_url=body.base_url, token_enc=encrypt(body.token),
-                      webhook_secret_enc=encrypt(body.webhook_secret) if body.webhook_secret else None,
-                      created_by=admin.id)
+    c = GitConnection(name=body.name, kind=body.kind, base_url=body.base_url or providers.HOSTED[body.kind],
+                      token_enc=encrypt(body.token), created_by=admin.id)
     db.add(c)
     await _flush_unique(db)
     await audit.record(db, "git.connection.created", actor_id=admin.id, target_type="git_connection", target_id=c.id,
                        data={"name": c.name, "kind": str(c.kind), "base_url": c.base_url})
-    return _out(c)
+    return await _out(db, c)
 
 
 @router.patch("/{connection_id}")
@@ -92,7 +104,7 @@ async def update_connection(
     await _flush_unique(db)
     await audit.record(db, "git.connection.updated", actor_id=admin.id, target_type="git_connection", target_id=c.id,
                        data={"fields": sorted(fields)})  # names only, never the values
-    return _out(c)
+    return await _out(db, c)
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
