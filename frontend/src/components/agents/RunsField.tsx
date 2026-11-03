@@ -4,10 +4,10 @@ import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 
-export const MAX_RUNS = 3;
+export const MAX_RUNS = 5;
 
 export const RUNS_HELP =
-  "How many tasks and chats this agent works on at the same time, 1 to 3. Each is its own Claude Code, Codex or OMP session, so more runs use more of your machine and your plan's limits. You can change it later.";
+  "How many tasks and chats this agent works on at the same time, 1 to 5. Each is its own Claude Code, Codex or OMP session, so more runs use more of your machine and your plan's limits. You can change it later.";
 
 /** The whole number typed, if it is 1 to MAX_RUNS. */
 export function parseRuns(text: string): number | null {

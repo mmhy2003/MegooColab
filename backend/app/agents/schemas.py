@@ -7,7 +7,7 @@ from app.agents.models import AgentProgram, AnswerMode
 from app.auth.schemas import UserOut
 from app.core.text import NoNulStr
 
-MaxRuns = Annotated[int, Field(ge=1, le=3)]
+MaxRuns = Annotated[int, Field(ge=1, le=5)]
 # a model name or alias ("opus", "gpt-5-codex"); blank is no choice: the program's own default
 ModelName = Annotated[NoNulStr, Field(max_length=100), AfterValidator(lambda v: v.strip() or None)]
 # a thinking effort ("high"); blank is the model's own default
