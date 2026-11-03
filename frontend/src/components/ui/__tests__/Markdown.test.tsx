@@ -4,6 +4,15 @@ import { describe, expect, it } from "vitest";
 import { Markdown } from "@/components/ui/Markdown";
 
 describe("Markdown", () => {
+  it("wraps long words anywhere and marks code blocks and tables as sideways scrollers", () => {
+    const { container } = render(
+      <Markdown>{"Text\n\n```ts\nconst x = 1;\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |"}</Markdown>,
+    );
+    expect(container.firstElementChild).toHaveClass("wrap-anywhere");
+    expect(container.querySelector("pre")).toHaveAttribute("data-scroll-x");
+    expect(container.querySelector("table")!.closest("[data-scroll-x]")).not.toBeNull();
+  });
+
   it("renders a remote image as a plain link, never loading it", () => {
     const { container } = render(<Markdown>{"![diagram](https://evil.example/x.png)"}</Markdown>);
     expect(container.querySelector("img")).toBeNull();

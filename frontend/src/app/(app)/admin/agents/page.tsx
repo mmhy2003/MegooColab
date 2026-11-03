@@ -6,6 +6,7 @@ import { AdminOnly } from "@/components/admin/AdminOnly";
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ScrollX } from "@/components/ui/ScrollX";
 import { api } from "@/lib/api";
 import { effortName, PROGRAM_LABEL } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
@@ -19,7 +20,7 @@ function AdminAgentsPageContent() {
     <div>
       <PageHeader title="Agents" subtitle="Every agent registered in this workspace." />
       {agents.error && <p role="alert" className="mb-2 text-sm text-pink">{errorMessage(agents.error)}</p>}
-      <div className="card overflow-x-auto">
+      <ScrollX className="card">
         <table className="w-full text-left text-sm">
           <thead className="text-xs tracking-wider text-muted-foreground uppercase">
             <tr className="border-b border-line">
@@ -55,7 +56,7 @@ function AdminAgentsPageContent() {
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollX>
     </div>
   );
 }

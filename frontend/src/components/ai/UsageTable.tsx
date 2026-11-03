@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+import { ScrollX } from "@/components/ui/ScrollX";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queries";
 import type { AiUsageRow } from "@/lib/types";
@@ -35,7 +36,7 @@ export function UsageTable() {
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No AI calls yet.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <ScrollX>
           <table className="w-full text-sm">
             <thead className="text-left text-xs tracking-wider text-muted-foreground uppercase">
               <tr>
@@ -76,7 +77,7 @@ export function UsageTable() {
               </tr>
             </tfoot>
           </table>
-        </div>
+        </ScrollX>
       )}
     </section>
   );

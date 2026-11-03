@@ -3,6 +3,7 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
+import { ScrollX } from "@/components/ui/ScrollX";
 import { splitMermaid } from "@/lib/mermaid";
 
 /** Title lookups for [[doc:…]] links: readable documents carry their title; others render as restricted. */
@@ -101,12 +102,12 @@ function CodeBlock({ node, children, ...rest }: ComponentProps<"pre"> & { node?:
       const segments = splitMermaid(text);
       if (segments.some((s) => s.kind === "diagram")) {
         return segments.map((s, i) =>
-          s.kind === "diagram" ? <MermaidDiagram key={i} source={s.source} /> : <pre key={i}><code>{s.text}</code></pre>,
+          s.kind === "diagram" ? <MermaidDiagram key={i} source={s.source} /> : <pre key={i} data-scroll-x><code>{s.text}</code></pre>,
         );
       }
     }
   }
-  return <pre {...rest}>{children}</pre>;
+  return <pre data-scroll-x {...rest}>{children}</pre>;
 }
 
 /** Renders user/agent Markdown. Raw HTML is never rendered (react-markdown's default). With `wiki`, Knowledge
@@ -114,7 +115,7 @@ function CodeBlock({ node, children, ...rest }: ComponentProps<"pre"> & { node?:
  * Mentions render as `@Name`. Tables get a grid and scroll sideways; Mermaid diagrams are drawn (MermaidDiagram). */
 export function Markdown({ children, wiki }: { children: string; wiki?: WikiTitles }) {
   return (
-    <div className="prose-megoo text-sm leading-relaxed break-words [&_a]:underline [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1 [&_h1]:text-lg [&_h2]:text-base [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-surface-2 [&_pre]:p-3 [&_table]:border-collapse [&_td]:border [&_td]:border-line [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:align-top [&_th]:border [&_th]:border-line [&_th]:bg-surface-2 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:align-top [&_ul]:list-disc">
+    <div className="prose-megoo text-sm leading-relaxed wrap-anywhere [&_a]:underline [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1 [&_h1]:text-lg [&_h2]:text-base [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-surface-2 [&_pre]:p-3 [&_table]:border-collapse [&_td]:border [&_td]:border-line [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:align-top [&_th]:border [&_th]:border-line [&_th]:bg-surface-2 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:align-top [&_ul]:list-disc">
       <ReactMarkdown
         remarkPlugins={wiki ? [remarkGfm, remarkMentions(), remarkWikiLinks(wiki)] : [remarkGfm, remarkMentions()]}
         // data: images are the only ones that may render inline; the default transform would strip them
@@ -123,9 +124,9 @@ export function Markdown({ children, wiki }: { children: string; wiki?: WikiTitl
           pre: CodeBlock,
           // a wide table scrolls inside its box instead of widening the page
           table: ({ children, className }) => (
-            <div className="my-2 overflow-x-auto">
+            <ScrollX className="my-2">
               <table className={className}>{children}</table>
-            </div>
+            </ScrollX>
           ),
           // agent-written text must not make the browser fetch remote images (tracking, exfiltration)
           img: ({ src, alt }) =>

@@ -158,7 +158,7 @@ export function McpForm({
       </div>
       <div>
         <p className="text-xs tracking-wider text-muted-foreground uppercase">What others get</p>
-        <pre className="mt-1 overflow-x-auto rounded bg-surface-2 p-2 text-xs">{preview(spec)}</pre>
+        <pre data-scroll-x className="mt-1 overflow-x-auto rounded bg-surface-2 p-2 text-xs">{preview(spec)}</pre>
       </div>
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}
       <div className="flex justify-end">

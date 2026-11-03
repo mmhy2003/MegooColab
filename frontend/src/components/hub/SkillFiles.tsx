@@ -31,7 +31,7 @@ export function SkillFiles({ tool }: { tool: HubTool }) {
         file.data.text === null || file.data.text === undefined ? (
           <p className="text-sm text-muted-foreground">Can&apos;t show this file.</p>
         ) : (
-          <pre className="max-h-96 overflow-auto rounded bg-surface-2 p-2 text-xs">{file.data.text}</pre>
+          <pre data-scroll-x className="max-h-96 overflow-auto rounded bg-surface-2 p-2 text-xs">{file.data.text}</pre>
         )
       )}
     </div>

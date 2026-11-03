@@ -20,7 +20,7 @@ function lines(op: Exclude<DiffOp, { op: "collapsed" }>): Line[] {
 /** A line diff between two revisions. Changes are marked with + and − as well as colour. */
 export function DiffView({ ops }: { ops: DiffOp[] }) {
   return (
-    <div className="overflow-x-auto rounded border border-line font-mono text-xs" role="list" aria-label="Changes">
+    <div data-scroll-x className="overflow-x-auto rounded border border-line font-mono text-xs" role="list" aria-label="Changes">
       {ops.map((op, i) =>
         op.op === "collapsed" ? (
           <div key={i} role="listitem" className="bg-surface-2 px-3 py-1 text-center text-muted-foreground">

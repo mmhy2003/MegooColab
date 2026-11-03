@@ -72,7 +72,7 @@ export function ColumnEditor({
     <>
       <div className="space-y-4">
         {error && <p role="alert" className="text-sm text-pink">{error}</p>}
-        <ol className="flex gap-3 overflow-x-auto pb-2">
+        <ol data-scroll-x className="flex gap-3 overflow-x-auto pb-2">
           {columns.map((col, i) => (
             <li key={col.id} className="card w-52 shrink-0 space-y-2 p-3">
               {!canEdit ? (

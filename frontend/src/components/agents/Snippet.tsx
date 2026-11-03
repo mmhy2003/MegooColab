@@ -17,7 +17,7 @@ export function Snippet({ value, label }: { value: string; label: string }) {
           value={value}
           aria-label={label}
           wrap="off"
-          className="min-w-0 flex-1 resize-none overflow-x-auto rounded border border-line bg-surface-2 px-2 py-1.5 font-mono text-xs"
+          data-scroll-x className="min-w-0 flex-1 resize-none overflow-x-auto rounded border border-line bg-surface-2 px-2 py-1.5 font-mono text-xs"
           onFocus={(e) => e.target.select()}
         />
         <Hint label={copied ? `${label} copied` : `Copy ${label}`}>

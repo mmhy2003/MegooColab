@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { ScrollX } from "@/components/ui/ScrollX";
 import { errorMessage } from "@/lib/errors";
 import {
   KIND_LABELS,
@@ -42,7 +43,7 @@ export function NotificationPrefs() {
   return (
     <div className="space-y-2">
       {/* four or five columns: on a narrow phone the table scrolls inside its card instead of widening the page */}
-      <div className="card max-w-xl overflow-x-auto">
+      <ScrollX className="card max-w-xl">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-muted-foreground">
@@ -82,7 +83,7 @@ export function NotificationPrefs() {
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollX>
       {save.error && <p role="alert" className="text-sm text-pink">{errorMessage(save.error)}</p>}
     </div>
   );
