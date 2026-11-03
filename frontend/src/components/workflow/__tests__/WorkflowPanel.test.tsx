@@ -338,7 +338,8 @@ describe("WorkflowPanel: sent back by a review on the pull request", () => {
     } as Partial<Workflow>);
 
   it("says who asked, who is fixing and the round, and Don't send back stops it", async () => {
-    const fetchMock = setup(fixing(), { post: new Response(JSON.stringify(fixing()), { status: 200 }) });
+    const fixRun = { id: "r1", status: "running", workflow_role: "pr_fix", policy: "workspace", step: null };
+    const fetchMock = setup(fixing(), { post: new Response(JSON.stringify(fixing()), { status: 200 }), runs: [fixRun] });
     expect(await screen.findByText("Changes requested on PR #42 by rev · Ann's Codex is fixing them · round 2 of 3")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Don't send back" }));
     const confirm = await screen.findByRole("alertdialog");
@@ -346,6 +347,18 @@ describe("WorkflowPanel: sent back by a review on the pull request", () => {
     await waitFor(() =>
       expect(fetchMock.mock.calls.some(([u, i]) => String(u) === "/api/tasks/PAY-1/workflow/send-back/cancel" && i?.method === "POST")).toBe(true),
     );
+  });
+
+  it("follows the fix run itself: a retried fix shows, a stale request on another run doesn't", async () => {
+    const trigger = { kind: "fix_comment", by: "mo", pr_number: 42, excerpt: "/fix it", round: 3 };
+    const fixRun = { id: "r1", status: "running", workflow_role: "pr_fix", policy: "workspace", step: null };
+    setup(wf({ stage: "done", status: "running", pr_fix_rounds: 3, pr_fix_trigger: trigger } as Partial<Workflow>), { runs: [fixRun] });
+    expect(await screen.findByText(/by mo · Ann's Codex is fixing them · round 3 of 3/)).toBeInTheDocument();
+    cleanup();
+    const buildRun = { id: "r2", status: "running", workflow_role: "implement", policy: "workspace", step: 1 };
+    setup(wf({ stage: "build", status: "running", pr_fix_rounds: 3, pr_fix_trigger: trigger } as Partial<Workflow>), { runs: [buildRun] });
+    await screen.findAllByText(/Build/);
+    expect(screen.queryByRole("button", { name: "Don't send back" })).toBeNull();
   });
 
   it("shows nothing of the kind outside a fix round", async () => {

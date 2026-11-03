@@ -100,8 +100,9 @@ export function WorkflowPanel({
   const { status } = wf;
   const latest = runs.data?.[0];
   const escalating = status === "waiting_human" && wf.needs === "escalation";
-  // a review on the pull request sent the task back: its agent is fixing what was asked (piece 3)
-  const fixTrigger = status === "running" && wf.stage === "build" ? wf.pr_fix_trigger : null;
+  // a review on the pull request sent the task back: its agent's fix run is what is running (piece 3); a retried
+  // fix keeps the Done stage, and an old request never speaks for another run
+  const fixTrigger = status === "running" && latest?.workflow_role === "pr_fix" ? wf.pr_fix_trigger : null;
   // set_finishing needs a started workflow and is closed from done on
   const showFinishing = agentDriven && status !== "idle" && status !== "finished" && wf.stage !== "done";
   const showChecklist = unassigned && !agent && wf.can_set_manual && !disabled && status !== "running" && status !== "waiting_human";

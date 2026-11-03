@@ -3,6 +3,7 @@ task's `megoo/<KEY>` branch, a pull request seen opened from it, or a tracked on
 run on the task for its pushes and new pull requests, else the host's person) and becomes one `git.*` entry; a
 review's line comments are folded into the review's entry."""
 
+import logging
 import re
 from datetime import UTC, datetime, timedelta
 
@@ -18,6 +19,8 @@ from app.git.events import GitEvent
 from app.git.models import GitConnection, GitKind, GitPrLink, TaskPullRequest
 from app.projects.models import Project, ProjectRepository
 from app.tasks.models import Task, TaskEvent
+
+log = logging.getLogger(__name__)
 
 AGENT_WINDOW = timedelta(minutes=5)
 _TASK_BRANCH = re.compile(r"^megoo/([A-Za-z][A-Za-z0-9]{1,9}-\d{1,9})(?:-|$)")
@@ -189,7 +192,11 @@ async def record(db: AsyncSession, conn: GitConnection, events: list[GitEvent], 
             await record_workflow_event(db, task, None, ev.kind, base)
         written += 1
         if trigger is not None:
-            await send_back.consider(db, task, trigger)
+            try:  # sending back never costs the event its Activity entry
+                async with db.begin_nested():
+                    await send_back.consider(db, task, trigger)
+            except Exception:
+                log.exception("git: sending task %s back failed", task.id)
     return written
 
 

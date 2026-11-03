@@ -330,3 +330,65 @@ async def test_dont_send_back_needs_a_fix_running(client, db):
     await _world(client, db)
     r = await client.post("/api/tasks/PAY-1/workflow/send-back/cancel")
     assert r.status_code == 409 and r.json()["detail"] == "no_fix_running"
+
+
+# -- the final review's findings ---------------------------------------------------------------------------------
+
+
+async def _merged(task_id) -> None:
+    """The host merged the pull request while the fix ran: the refresh stored it, but the workflow was busy."""
+    async with SessionLocal() as s:
+        await s.execute(update(TaskPullRequest).where(TaskPullRequest.task_id == task_id).values(state="merged"))
+        await s.commit()
+
+
+async def test_dont_send_back_after_the_pr_merged_finishes(client, db):
+    w, repo, task = await _world(client, db)
+    await _send(client, w, repo, "pull_request_review", _review(w))
+    await _merged(task.id)
+    assert (await client.post("/api/tasks/PAY-1/workflow/send-back/cancel")).status_code == 200
+    assert (await _wf(task.id)).status == "finished"
+
+
+async def test_accept_after_the_pr_merged_finishes(client, db):
+    from app.auth.models import User
+
+    _, _, task = await _world(client, db)
+    async with SessionLocal() as s:
+        await s.execute(update(TaskWorkflow).values(status="waiting_human", needs="escalation",
+                                                    escalation_reason="pr_fix_rounds_exhausted", stage="build"))
+        await s.commit()
+    await _merged(task.id)
+    async with SessionLocal() as s:
+        await engine.decide_escalation(s, await s.get(User, await _owner(task)), await s.get(Task, task.id), "accept")
+        await s.commit()
+    assert (await _wf(task.id)).status == "finished"
+
+
+async def test_retry_after_the_rounds_runs_the_latest_request(client, db):
+    from app.auth.models import User
+
+    w, repo, task = await _world(client, db)
+    for n in range(3):
+        await _send(client, w, repo, "pull_request_review", _review(w, review_id=300 + n))
+        await _back_to_waiting(task.id)
+    await _send(client, w, repo, "pull_request_review", _review(w, review_id=400, body="One more thing"))
+    async with SessionLocal() as s:
+        await engine.decide_escalation(s, await s.get(User, await _owner(task)), await s.get(Task, task.id), "retry")
+        await s.commit()
+    runs = await _fix_runs(task.id)
+    assert len(runs) == 4
+    latest = max(runs, key=lambda r: r.created_at)
+    assert 'rev asked: "One more thing"' in latest.prompt
+    assert (await _wf(task.id)).pr_fix_rounds == 3
+
+
+async def test_a_review_stays_in_activity_when_the_task_cannot_be_sent_back(client, db):
+    w, repo, task = await _world(client, db)
+    async with SessionLocal() as s:  # the agent was unassigned while the pull request waited
+        await s.execute(update(Task).where(Task.id == task.id).values(assignee_agent_id=None))
+        await s.commit()
+    await _send(client, w, repo, "pull_request_review", _review(w))
+    assert len(await _kinds(task.id, "git.reviewed")) == 1
+    assert await _kinds(task.id, "pr.sent_back") == []
+    assert (await _wf(task.id)).status == "waiting_human"

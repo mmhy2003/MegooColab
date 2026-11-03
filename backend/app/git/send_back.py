@@ -56,6 +56,8 @@ async def consider(db: AsyncSession, task: Task, trigger: Trigger) -> str:
         return "ignored:not_waiting"
     if not _same(trigger.pr_url, wf.pr_url):
         return "ignored:other_pr"
+    if task.assignee_agent_id is None or await engine.active_run(db, task.id) is not None:
+        return "ignored:cannot_run"  # no agent to send it back to, or a run still on its way out
     if not _same(wf.pr_fix_pr_url, wf.pr_url):  # a new pull request: its rounds start again
         wf.pr_fix_rounds, wf.pr_fix_pr_url = 0, wf.pr_url
     wf.pr_fix_trigger = {**asdict(trigger), "round": min(wf.pr_fix_rounds + 1, MAX_PR_FIX_ROUNDS)}
@@ -138,6 +140,15 @@ async def _accept_back_to_waiting(db: AsyncSession, wf, task: Task, user) -> Non
 
     await engine.set_stage(db, wf, task, Stage.done)
     await engine.wait_for(db, wf, Needs.human_code_review, actor_id=user.id)
+    await _settle(db, wf, task)
+
+
+async def _settle(db: AsyncSession, wf, task: Task) -> None:
+    """Back to waiting for the merge: a pull request merged or closed meanwhile (while the workflow was busy, so
+    nothing acted on it) moves on at once."""
+    from app.git import service as git  # local: service imports the workflow
+
+    await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))
 
 
 async def cancel(db: AsyncSession, user, task: Task) -> None:
@@ -158,6 +169,7 @@ async def cancel(db: AsyncSession, user, task: Task) -> None:
     await engine.wait_for(db, wf, Needs.human_code_review, actor_id=user.id)
     await engine.record_workflow_event(db, task, user.id, "pr.send_back_cancelled", {"pr_url": wf.pr_url})
     await runs.cancel_run(db, user, run)
+    await _settle(db, wf, task)
 
 
 def _register() -> None:
