@@ -58,7 +58,7 @@ function ResultItem({ hit }: { hit: Hit }) {
   const [open, setOpen] = useState(false);
   const label = KIND_LABELS[hit.kind as SearchKind] ?? hit.kind;
   return (
-    <article className="space-y-0.5 border-b border-line py-2 text-sm">
+    <article className="space-y-0.5 border-b border-line py-2 text-sm wrap-anywhere">
       <p className="text-xs text-muted-foreground">
         {label}
         {hit.project_key && hit.kind !== "project" ? ` · ${hit.project_key}` : ""}
@@ -138,6 +138,12 @@ export function SearchResults({ params, onChange }: { params: SearchParams; onCh
     change({ [name]: list.includes(value) ? list.filter((v) => v !== value) : [...list, value] } as Partial<SearchParams>);
   };
   const taskOnly = TASK_ONLY.filter((n) => params[n].length > 0);
+  // on a phone the filters fold behind a button, so the results start at the top; it counts what is set
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const setCount =
+    (["kind", "project", "status", "assignee", "type", "label"] as const).reduce((n, name) => n + params[name].length, 0) +
+    (params.updated ? 1 : 0) +
+    (params.meaning ? 1 : 0);
 
   return (
     <div className="space-y-4">
@@ -151,7 +157,15 @@ export function SearchResults({ params, onChange }: { params: SearchParams; onCh
         <input aria-label="Search" className={`${FIELD} w-full`} value={draft} onChange={(e) => setDraft(e.target.value)} />
       </form>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-[14rem_minmax(0,1fr)]">
-        <aside aria-label="Filters" className="space-y-4">
+        <button
+          type="button"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen(!filtersOpen)}
+          className="justify-self-start rounded border border-line px-3 py-1.5 text-sm md:hidden"
+        >
+          {setCount > 0 ? `Filters (${setCount})` : "Filters"}
+        </button>
+        <aside aria-label="Filters" className={`space-y-4 ${filtersOpen ? "" : "max-md:hidden"}`}>
           <FilterGroup
             title="Kind"
             options={Object.entries(facets?.kind ?? {}).map(([k, n]) => ({ value: k, label: KIND_LABELS[k as SearchKind] ?? k, count: n }))}
