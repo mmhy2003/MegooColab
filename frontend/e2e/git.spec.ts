@@ -31,6 +31,7 @@ const IMPLEMENT = "# Build: implement one plan step";
 const STEP_REVIEW = "# Build: review one implemented step";
 const FINAL_REVIEW = "# Review: final review of the whole change";
 const FINISH = "# Finish: verify and integrate the finished work";
+const PR_FIX = "# Fix: address the changes requested on the pull request";
 
 /** The whole workflow for one task, finishing with a pull request at `prUrl`. */
 function workflowFor(key: string, prUrl: string) {
@@ -47,6 +48,13 @@ function workflowFor(key: string, prUrl: string) {
     onPrompt(STEP_REVIEW, mcp("submit_review", { key, verdict: "approved", findings: [] })),
     onPrompt(FINAL_REVIEW, mcp("submit_review", { key, verdict: "approved", findings: [] })),
     onPrompt(FINISH, mcp("report_finish", { key, outcome: "pr_opened", branch: `megoo/${key}`, pr_url: prUrl, tests_passed: true })),
+    // a review on the pull request sent the task back: fix, commit (the push has nowhere to go here), report
+    onPrompt(
+      PR_FIX,
+      { write: { path: `${key}-fix.txt`, content: "backed off\n" } },
+      { commit: { message: `${key}: back off between retries`, all: true } },
+      mcp("report_pr_fix", { key, summary: "Added a back-off", tests_passed: true }),
+    ),
   );
 }
 
@@ -139,7 +147,7 @@ test("a pull request followed through a git connection", async ({ browser }) => 
   const team = await post<{ id: string }>(request, "/api/teams", { name: "Git Team", description: "" });
   await post(request, "/api/projects", { key: "GIT", name: "Git Demo", description: "", team_ids: [team.id] });
   const patched = await request.patch("/api/projects/GIT", {
-    data: { sprints_enabled: false, require_human_code_review: true },
+    data: { sprints_enabled: false, require_human_code_review: true, send_back_on_changes_requested: true },
     headers: WEB,
   });
   expect(patched.ok()).toBeTruthy();
@@ -220,7 +228,8 @@ test("a pull request followed through a git connection", async ({ browser }) => 
     commits: [{ message: "GIT-1: do it" }] });
   await send("pull_request", { action: "opened", number: 1, pull_request: pr1, sender: { login: "admin-gh" } });
   await send("pull_request_review", { action: "submitted", pull_request: pr1, sender: { login: "rev" },
-    review: { id: 5, state: "changes_requested", body: "Add a back-off", html_url: `${prUrl(1)}#review-5` } });
+    review: { id: 5, state: "changes_requested", body: "Add a back-off", html_url: `${prUrl(1)}#review-5`,
+      author_association: "COLLABORATOR" } });
   const activity = (text: string) => drawer.getByRole("listitem").filter({ hasText: text });
   await expect(activity("pushed 1 commit to megoo/GIT-1")).toBeVisible({ timeout: 15_000 });
   await expect(activity("pushed 1 commit to megoo/GIT-1")).toContainText(AGENT_NAME);
@@ -228,6 +237,12 @@ test("a pull request followed through a git connection", async ({ browser }) => 
   await expect(activity("opened PR #1 · megoo/GIT-1 → main")).toContainText(AGENT_NAME);
   await expect(activity("requested changes on PR #1")).toContainText("rev");
   await expect(activity("requested changes on PR #1")).toContainText("Add a back-off");
+  // the project sends the task back on changes requested: the agent fixes it, and the task waits for the merge again
+  await expect(activity("Sent back to its agent: changes requested on PR #1 by rev (round 1 of 3)")).toBeVisible({ timeout: 15_000 });
+  await expect(activity("Fixed and pushed to PR #1 (round 1 of 3)")).toBeVisible({ timeout: 60_000 });
+  await expect(activity("Fixed and pushed to PR #1 (round 1 of 3)")).toContainText("Added a back-off");
+  await expect(panel.getByRole("button", { name: "Mark merged" })).toBeVisible({ timeout: 15_000 });
+  expect((await get<Workflow>(request, `/api/tasks/${FIRST}/workflow`)).needs).toBe("human_code_review");
 
   // 4. someone merges it on the git host; the signed webhook makes MegooColab look, and the task is done
   fake.prs.set(1, { state: "closed", merged: true, checks: "success", reviews: [{ state: "APPROVED", login: "rev" }] });
