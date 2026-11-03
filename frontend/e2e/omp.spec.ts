@@ -78,7 +78,8 @@ test("an OMP agent answers a chat and gets its hub tools", async ({ page }) => {
     // 2. a chat on it reaches the agent
     const chat = await post<{ id: string }>(request, "/api/chats", { project_key: "OMP", agent_id: agent.id, message: "Say hello" });
     await page.goto(`/chats/${chat.id}`);
-    await expect(page.getByRole("main").getByText(`${AGENT_NAME} · OMP`)).toBeVisible();
+    // the header names the agent and its program (exactly: a phone shows them on one line with the project instead)
+    await expect(page.getByRole("main").getByText(`${AGENT_NAME} · OMP`, { exact: true })).toBeVisible();
     await expect(page.getByRole("main").getByText("Hello from OMP")).toBeVisible({ timeout: 30_000 });
 
     // 3. a pushed MCP server and skill land in the OMP agent folder

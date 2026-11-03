@@ -31,14 +31,14 @@ export function TaskRow({
       className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-surface px-2 py-1.5 text-sm last:border-0"
     >
       {!disabled && (
-        <button type="button" className="cursor-grab text-muted-foreground" aria-label={`Drag ${task.key}`} {...attributes} {...listeners}>
+        <button type="button" className="inline-flex min-h-8 min-w-8 cursor-grab items-center justify-center text-muted-foreground" aria-label={`Drag ${task.key}`} {...attributes} {...listeners}>
           <GripVertical size={14} aria-hidden />
         </button>
       )}
       <Icon size={12} className="text-muted-foreground" aria-hidden />
       <span className="w-16 shrink-0 text-xs text-muted-foreground">{task.key}</span>
-      {/* at least 10rem: on a phone the title moves to its own line and wraps; wider, it stays on one line */}
-      <button type="button" className="min-w-40 flex-1 text-left break-words hover:text-cyan-ink sm:truncate" onClick={() => onOpen(task.key)}>
+      {/* on a phone the title takes its own line, wrapped, and the key, points and Move go under it; wider, one line */}
+      <button type="button" className="min-w-40 flex-1 text-left wrap-anywhere hover:text-cyan-ink max-sm:order-first max-sm:basis-full sm:truncate" onClick={() => onOpen(task.key)}>
         {task.title}
       </button>
       <span className={`text-[11px] ${task.column_category === "done" ? "text-green-ink" : "text-muted-foreground"}`}>
@@ -48,7 +48,7 @@ export function TaskRow({
       {!disabled && (
         <select
           aria-label={`Move ${task.key} to`}
-          className="rounded border border-line bg-surface-2 px-1 py-0.5 text-xs"
+          className="min-h-8 rounded border border-line bg-surface-2 px-1 py-0.5 text-xs"
           value=""
           onChange={(e) => e.target.value && onMove(task.key, e.target.value)}
         >

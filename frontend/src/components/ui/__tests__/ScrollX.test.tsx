@@ -39,6 +39,13 @@ describe("ScrollX", () => {
     expect(screen.getByLabelText("Wide")).toHaveAttribute("data-scroll-x");
   });
 
+  it("contains positioned content, so a screen-reader label far along can't widen the page", () => {
+    // an absolutely placed child's box is its nearest positioned ancestor: the scroller itself must be one, or the
+    // child escapes the scroller's clipping (the board's column labels did, widening a phone's page to 1006 px)
+    render(<ScrollX label="Wide">x</ScrollX>);
+    expect(screen.getByLabelText("Wide")).toHaveClass("relative");
+  });
+
   it("can be a nav landmark", () => {
     render(<ScrollX as="nav" label="Project">x</ScrollX>);
     expect(screen.getByRole("navigation", { name: "Project" })).toHaveAttribute("data-scroll-x");

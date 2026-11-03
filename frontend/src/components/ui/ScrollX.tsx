@@ -44,7 +44,8 @@ export function ScrollX({
         data-scroll-x
         aria-label={label}
         onScroll={measure}
-        className={`max-w-full min-w-0 overflow-x-auto ${innerClassName}`}
+        // relative: positioned content (an sr-only label far along a row) is clipped by the scroller, not the page
+        className={`relative max-w-full min-w-0 overflow-x-auto ${innerClassName}`}
       >
         {children}
       </Tag>

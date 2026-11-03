@@ -80,6 +80,12 @@ afterEach(() => {
 });
 
 describe("MethodologyEditor", () => {
+  it("the editor uses the full width on phones", async () => {
+    setup();
+    const region = await screen.findByRole("region", { name: "plan" });
+    expect(region.parentElement).toHaveClass("max-md:border-0", "max-md:p-0");
+  });
+
   it("shows one tab per stage, each with its keys and versions", async () => {
     setup();
     await screen.findByRole("region", { name: "plan" });

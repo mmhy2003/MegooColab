@@ -94,10 +94,15 @@ describe("the Knowledge Base reader", () => {
   it("the search box searches this space", async () => {
     show(<KbDocumentPage />);
     const box = await screen.findByRole("searchbox", { name: "Search the Knowledge Base" });
-    expect(box).toHaveAttribute("placeholder", "Search the Knowledge Base…");
+    expect(box).toHaveAttribute("placeholder", "Search…"); // fits a phone; the box keeps its full name
     fireEvent.change(box, { target: { value: "retry policy" } });
     fireEvent.submit(box);
     expect(push).toHaveBeenCalledWith("/kb/search?q=retry+policy&space=s1");
+  });
+
+  it("the Space choice stays inside a phone", async () => {
+    show(<KbSearchPage />);
+    expect(await screen.findByRole("combobox", { name: "Space" })).toHaveClass("min-w-0", "max-w-full");
   });
 
   it("the tree folds away while editing", async () => {

@@ -295,6 +295,8 @@ function AdminUsersPageContent() {
                       <Badge tone={STATUS_TONE[u.status]}>{u.status}</Badge>
                     </td>
                     <td className="px-3 py-2 max-md:order-2 max-md:p-0">
+                      {/* the card has no column headers: it names the two values itself */}
+                      <span className="text-xs text-muted-foreground md:hidden">Two-factor: </span>
                       {how ? (
                         <span className="inline-flex flex-col items-start">
                           <Badge tone="green">● On</Badge>
@@ -305,6 +307,7 @@ function AdminUsersPageContent() {
                       )}
                     </td>
                     <td className={`px-3 py-2 whitespace-nowrap max-md:order-2 max-md:p-0 max-md:text-xs ${d?.last_login_at ? "" : "text-muted-foreground"}`}>
+                      {d && <span className="md:hidden">Last seen: </span>}
                       {d ? lastSignIn(d.last_login_at) : ""}
                     </td>
                     <td className="px-3 py-2 text-right max-md:order-1 max-md:ml-auto max-md:p-0">

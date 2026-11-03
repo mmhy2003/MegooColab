@@ -232,7 +232,7 @@ export function MethodologyEditor({ stage, onStage }: { stage: MethodologyStage;
       />
       {STAGE_CARDS.map((s) => (
         <TabPanel key={s.id} id={s.id} active={s.id === stage}>
-          <div className="card space-y-3 p-4">
+          <div className="card space-y-3 p-4 max-md:border-0 max-md:bg-transparent max-md:p-0 max-md:shadow-none">
             {s.keys.map((k) => {
               const item = byKey.get(k);
               return item ? <KeyEditor key={k} item={item} names={names} onDirty={onDirty} /> : null;

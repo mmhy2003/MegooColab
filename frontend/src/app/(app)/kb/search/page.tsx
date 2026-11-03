@@ -61,7 +61,7 @@ function KbSearch() {
         />
         <select
           aria-label="Space"
-          className="rounded border border-line bg-surface-2 px-2 py-2 text-sm text-fg"
+          className="max-w-full min-w-0 rounded border border-line bg-surface-2 px-2 py-2 text-sm text-fg"
           value={draftSpace}
           onChange={(e) => setDraftSpace(e.target.value)}
         >

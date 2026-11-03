@@ -28,7 +28,7 @@ export function KbSearchBox({ spaceId }: { spaceId: string }) {
         <input
           type="search"
           aria-label="Search the Knowledge Base"
-          placeholder="Search the Knowledge Base…"
+          placeholder="Search…"
           maxLength={500}
           className="w-full rounded border border-line bg-surface-2 py-1.5 pr-2 pl-7 text-sm text-fg placeholder:text-muted-foreground focus:border-cyan focus:outline-none"
           value={q}
