@@ -129,6 +129,10 @@ class TaskWorkflow(Base):
     back_merge_pr_url: Mapped[str | None] = mapped_column(String(1000))
     # frozen when the Done stage begins: was human code review required (WF-6a)? None before that
     finish_requires_human_review: Mapped[bool | None]
+    # changes requested on the pull request (piece 3): fix rounds used on `pr_fix_pr_url`, and what asked last
+    pr_fix_rounds: Mapped[int] = mapped_column(default=0, server_default="0")
+    pr_fix_pr_url: Mapped[str | None] = mapped_column(String(1000))
+    pr_fix_trigger: Mapped[dict | None] = mapped_column(JSONB)
     # role-or-"implement:<n>" -> ACP session id
     sessions: Mapped[dict] = mapped_column(MutableDict.as_mutable(JSONB), default=dict)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

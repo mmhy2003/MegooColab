@@ -151,3 +151,18 @@ async def test_repositories_and_labels_crud(client, db):
     assert (await client.post("/api/projects/PAY/labels", json={"name": "bug", "color": "#000000"})).status_code == 409
     assert (await client.post("/api/projects/PAY/labels", json={"name": "x", "color": "red"})).status_code == 422
     assert [l["name"] for l in (await client.get("/api/projects/PAY/labels")).json()] == ["bug"]
+
+
+async def test_send_back_setting_defaults_off_and_patches(client, client_factory, db):
+    """Piece 3: a project chooses whether changes requested on its pull requests send the task back to its agent."""
+    _, team = await _manager_with_team(client, db)
+    created = (await _create(client, team)).json()
+    assert created["send_back_on_changes_requested"] is False
+    r = await client.patch("/api/projects/PAY", json={"send_back_on_changes_requested": True})
+    assert r.status_code == 200 and r.json()["send_back_on_changes_requested"] is True
+    assert (await client.get("/api/projects/PAY")).json()["send_back_on_changes_requested"] is True
+    v = await make_user(db, role=Role.viewer)
+    await client.put(f"/api/teams/{team.id}/members", json={"user_ids": await _member_ids(client, team) + [str(v.id)]})
+    vc = client_factory()
+    await login(vc, v)
+    assert (await vc.patch("/api/projects/PAY", json={"send_back_on_changes_requested": False})).status_code == 403

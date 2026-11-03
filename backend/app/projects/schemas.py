@@ -25,6 +25,7 @@ class ProjectPatch(BaseModel):
     sprints_enabled: bool | None = None
     finishing_option: FinishingOption | None = None
     require_human_code_review: bool | None = None
+    send_back_on_changes_requested: bool | None = None
     commit_docs_to_repo: bool | None = None
     team_ids: list[uuid.UUID] | None = Field(default=None, min_length=1)
 
@@ -37,6 +38,7 @@ class ProjectOut(BaseModel):
     sprints_enabled: bool
     finishing_option: FinishingOption
     require_human_code_review: bool
+    send_back_on_changes_requested: bool
     commit_docs_to_repo: bool
     team_ids: list[uuid.UUID]
     status: ProjectStatus

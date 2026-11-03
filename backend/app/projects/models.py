@@ -53,6 +53,8 @@ class Project(IdMixin, TimestampMixin, Base):
         String(20), default=FinishingOption.pull_request, server_default=FinishingOption.pull_request.value
     )
     require_human_code_review: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # a "changes requested" review or a /fix comment on the task's pull request sends the task back to its agent
+    send_back_on_changes_requested: Mapped[bool] = mapped_column(default=False, server_default=false())
     commit_docs_to_repo: Mapped[bool] = mapped_column(default=False, server_default=false())
     status: Mapped[ProjectStatus] = mapped_column(
         String(20), default=ProjectStatus.active, server_default=ProjectStatus.active.value

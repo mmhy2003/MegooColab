@@ -127,6 +127,8 @@ async def update_project(ref: str, body: ProjectPatch, user: AuthedUser, db: DbS
         project.require_human_code_review = body.require_human_code_review
     if body.commit_docs_to_repo is not None:
         project.commit_docs_to_repo = body.commit_docs_to_repo
+    if body.send_back_on_changes_requested is not None:
+        project.send_back_on_changes_requested = body.send_back_on_changes_requested
     if body.team_ids is not None:
         new_ids = set(body.team_ids)
         added = new_ids - await service.project_team_ids(db, project.id)

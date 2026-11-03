@@ -9,11 +9,12 @@ import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { Project } from "@/lib/types";
-import { DOCS_HELP, FINISHING_HELP, FINISHING_LABEL, REVIEW_HELP } from "@/lib/workflow";
+import { DOCS_HELP, FINISHING_HELP, FINISHING_LABEL, REVIEW_HELP, SEND_BACK_HELP } from "@/lib/workflow";
 
 const FINISHING: Project["finishing_option"][] = ["pull_request", "merge_local", "keep_branch"];
 const REVIEW_LABEL = "Require human code review before Done";
 const DOCS_LABEL = "Also commit design and plan to the repo";
+const SEND_BACK_LABEL = "Send the task back when changes are requested on its pull request";
 
 const yesNo = (on: boolean) => (on ? "On" : "Off");
 
@@ -23,6 +24,7 @@ export function WorkflowSettings({ project, canEdit }: { project: Project; canEd
     finishing_option: project.finishing_option,
     require_human_code_review: project.require_human_code_review,
     commit_docs_to_repo: project.commit_docs_to_repo,
+    send_back_on_changes_requested: project.send_back_on_changes_requested,
   });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -38,6 +40,11 @@ export function WorkflowSettings({ project, canEdit }: { project: Project; canEd
           <div className="text-xs tracking-wider text-muted-foreground uppercase">{REVIEW_LABEL}</div>
           <div>{yesNo(project.require_human_code_review)}</div>
           <p className="text-xs text-muted-foreground">{REVIEW_HELP}</p>
+        </div>
+        <div>
+          <div className="text-xs tracking-wider text-muted-foreground uppercase">{SEND_BACK_LABEL}</div>
+          <div>{yesNo(project.send_back_on_changes_requested)}</div>
+          <p className="text-xs text-muted-foreground">{SEND_BACK_HELP}</p>
         </div>
         <div>
           <div className="text-xs tracking-wider text-muted-foreground uppercase">{DOCS_LABEL}</div>
@@ -88,6 +95,17 @@ export function WorkflowSettings({ project, canEdit }: { project: Project; canEd
           {REVIEW_LABEL}
         </label>
         <p className="ml-6 text-xs text-muted-foreground">{REVIEW_HELP}</p>
+      </div>
+      <div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={form.send_back_on_changes_requested}
+            onChange={(e) => setForm({ ...form, send_back_on_changes_requested: e.target.checked })}
+          />
+          {SEND_BACK_LABEL}
+        </label>
+        <p className="ml-6 text-xs text-muted-foreground">{SEND_BACK_HELP}</p>
       </div>
       <div>
         <label className="flex items-center gap-2 text-sm">

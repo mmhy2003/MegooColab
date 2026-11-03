@@ -208,6 +208,8 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
             state = "pending"
         steps.append(WorkflowStepOut(n=n, title=step.get("title", ""), state=state))
     return WorkflowOut(
+        pr_fix_rounds=wf.pr_fix_rounds,
+        pr_fix_trigger=wf.pr_fix_trigger,
         takes_images=await task_takes_images(db, task),
         kb_documents=await filing.kb_documents(db, task.id),
         driver=wf.driver,

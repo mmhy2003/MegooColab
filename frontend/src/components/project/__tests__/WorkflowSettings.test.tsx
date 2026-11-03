@@ -12,6 +12,7 @@ const project = {
   finishing_option: "pull_request",
   require_human_code_review: false,
   commit_docs_to_repo: false,
+  send_back_on_changes_requested: false,
 } as Project;
 
 function setup(canEdit: boolean, reply: Response = new Response("{}", { status: 200 }), shown: Project = project) {
@@ -51,7 +52,21 @@ describe("Workflow settings", () => {
       finishing_option: "merge_local",
       require_human_code_review: true,
       commit_docs_to_repo: false,
+      send_back_on_changes_requested: false,
     });
+  });
+
+  it("the send-back checkbox saves and explains itself", async () => {
+    const fetchMock = setup(true);
+    const box = screen.getByLabelText("Send the task back when changes are requested on its pull request");
+    expect(screen.getByText(/A 'changes requested' review, or a comment starting with \/fix, sends the task back to its agent\./)).toHaveTextContent(
+      "A 'changes requested' review, or a comment starting with /fix, sends the task back to its agent. The agent fixes the code and pushes to the same pull request. At most 3 rounds, then it asks you. On GitLab, use a /fix comment.",
+    );
+    fireEvent.click(box);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Saved.")).toBeInTheDocument();
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({ send_back_on_changes_requested: true });
   });
 
   it("shows the options with their labels and help text", () => {

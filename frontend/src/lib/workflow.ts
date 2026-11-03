@@ -122,6 +122,11 @@ export const REVIEW_HELP =
   "until the pull request is merged (MegooColab notices when the repository is connected, or someone clicks Mark " +
   "merged). Off: the task moves to Done as soon as the agent finishes.";
 
+/** The send-back setting (piece 3): what a review or a /fix comment on the task's pull request does. */
+export const SEND_BACK_HELP =
+  "A 'changes requested' review, or a comment starting with /fix, sends the task back to its agent. The agent fixes " +
+  "the code and pushes to the same pull request. At most 3 rounds, then it asks you. On GitLab, use a /fix comment.";
+
 /** The commit-the-documents setting, on and off. */
 export const DOCS_HELP =
   "On: the approved design and plan are added to the task's branch as files (docs/superpowers/specs/KEY-design.md " +

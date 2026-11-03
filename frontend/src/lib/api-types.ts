@@ -5782,6 +5782,8 @@ export interface components {
             finishing_option: components["schemas"]["FinishingOption"];
             /** Require Human Code Review */
             require_human_code_review: boolean;
+            /** Send Back On Changes Requested */
+            send_back_on_changes_requested: boolean;
             /** Commit Docs To Repo */
             commit_docs_to_repo: boolean;
             /** Team Ids */
@@ -5804,6 +5806,8 @@ export interface components {
             finishing_option?: components["schemas"]["FinishingOption"] | null;
             /** Require Human Code Review */
             require_human_code_review?: boolean | null;
+            /** Send Back On Changes Requested */
+            send_back_on_changes_requested?: boolean | null;
             /** Commit Docs To Repo */
             commit_docs_to_repo?: boolean | null;
             /** Team Ids */
@@ -7510,6 +7514,15 @@ export interface components {
              * @default false
              */
             can_act: boolean;
+            /**
+             * Pr Fix Rounds
+             * @default 0
+             */
+            pr_fix_rounds: number;
+            /** Pr Fix Trigger */
+            pr_fix_trigger?: {
+                [key: string]: unknown;
+            } | null;
             finishing_option: components["schemas"]["FinishingOption"];
             /**
              * Takes Images

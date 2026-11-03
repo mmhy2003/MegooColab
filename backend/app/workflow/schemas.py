@@ -57,6 +57,9 @@ class KbFiled(BaseModel):
 
 
 class WorkflowOut(TaskWorkflowOut):
+    # changes requested on the pull request (piece 3): rounds used, and what asked last
+    pr_fix_rounds: int = 0
+    pr_fix_trigger: dict | None = None
     finishing_option: FinishingOption  # the effective option
     takes_images: bool = False  # messages to its agent may carry images (app.images.support)
     finishing_forced: bool = False  # human code review forces a pull request
