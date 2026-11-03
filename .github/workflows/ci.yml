@@ -58,7 +58,8 @@ jobs:
           for i in $(seq 30); do docker exec valkey valkey-cli -a megoo-dev-valkey --no-auth-warning ping | grep -q PONG && exit 0; sleep 1; done
           exit 1
       - run: uv sync --frozen
-      - run: uv run pytest -q
+      # one worker per CPU, each on its own copy of a database migrated once (tests/conftest.py)
+      - run: uv run pytest -q -n auto
 
   frontend:
     runs-on: ubuntu-latest
