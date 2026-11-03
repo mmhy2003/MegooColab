@@ -60,33 +60,65 @@ def _alembic_config() -> Config:
     return cfg
 
 
-async def _fresh_database() -> None:
-    """An xdist worker's database is dropped and made again: one lock, where DROP SCHEMA ... CASCADE takes one per
-    table, index and sequence, and 16 workers doing that at once exhaust Postgres's shared lock table."""
+_TEMPLATE_LOCK = 4_242_017  # pg_advisory_lock key: one worker at a time builds or copies the template
+
+
+async def _worker_database() -> None:
+    """An xdist worker's database is a copy of a template migrated once per run. Sixteen workers each migrating a
+    fresh database at once exhaust Postgres's shared lock table; copying a template takes a handful of locks. The
+    template is rebuilt only when the migrations' head moved."""
     import asyncpg
+    from alembic.script import ScriptDirectory
+
+    from app.core.config import get_settings
 
     url = engine.url
-    conn = await asyncpg.connect(
-        user=url.username, password=url.password, host=url.host, port=url.port, database="postgres"
-    )
+    template = f"{_db_name.removesuffix('_test')}_template_test"
+
+    def connect(database: str):
+        return asyncpg.connect(user=url.username, password=url.password, host=url.host, port=url.port,
+                               database=database)
+
+    head = ScriptDirectory.from_config(_alembic_config()).get_current_head()
+    admin = await connect("postgres")
     try:
-        await conn.execute(f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)')
-        await conn.execute(f'CREATE DATABASE "{url.database}"')
+        await admin.execute("SELECT pg_advisory_lock($1)", _TEMPLATE_LOCK)
+        current = None
+        if await admin.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", template):
+            conn = await connect(template)
+            try:
+                if await conn.fetchval("SELECT to_regclass('alembic_version')"):
+                    current = await conn.fetchval("SELECT version_num FROM alembic_version")
+            finally:
+                await conn.close()
+        if current != head:
+            await admin.execute(f'DROP DATABASE IF EXISTS "{template}" WITH (FORCE)')
+            await admin.execute(f'CREATE DATABASE "{template}"')
+            settings = get_settings()  # env.py migrates the database the settings name
+            before = settings.database_url
+            settings.database_url = before.rsplit("/", 1)[0] + f"/{template}"
+            try:
+                await asyncio.to_thread(command.upgrade, _alembic_config(), "head")
+            finally:
+                settings.database_url = before
+        await admin.execute(f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)')
+        await admin.execute(f'CREATE DATABASE "{url.database}" TEMPLATE "{template}"')
     finally:
-        await conn.close()
+        await admin.execute("SELECT pg_advisory_unlock($1)", _TEMPLATE_LOCK)
+        await admin.close()
 
 
 @pytest.fixture(scope="session", autouse=True)
 async def _migrated_database():
     assert engine.url.database and engine.url.database.endswith("_test"), engine.url.database
     if _worker:
-        await _fresh_database()
+        await _worker_database()
     else:
         async with engine.begin() as conn:
             await conn.execute(text("DROP SCHEMA public CASCADE"))
             await conn.execute(text("CREATE SCHEMA public"))
-    # env.py calls asyncio.run(), so run it off the test loop
-    await asyncio.to_thread(command.upgrade, _alembic_config(), "head")
+        # env.py calls asyncio.run(), so run it off the test loop
+        await asyncio.to_thread(command.upgrade, _alembic_config(), "head")
     yield
 
 
