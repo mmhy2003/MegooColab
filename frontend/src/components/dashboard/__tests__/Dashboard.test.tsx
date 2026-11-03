@@ -41,6 +41,19 @@ afterEach(() => {
 });
 
 describe("Dashboard", () => {
+  it("on a phone, Needs you comes before the numbers", async () => {
+    mockFetch();
+    const { container } = wrap(<Dashboard user={member} />);
+    await screen.findByText("Refund flow for partial orders");
+    // one Needs you; on a phone the page is one flex column and it is ordered first, above the numbers
+    expect(screen.getAllByRole("region", { name: "Needs you" })).toHaveLength(1);
+    expect(container.querySelector("[data-needs]")).toHaveClass("max-md:order-first");
+    expect(container.querySelector("[data-kpis]")).not.toHaveClass("max-md:order-first");
+    // its grids step aside on a phone, so the order applies across the page
+    expect(container.querySelector("[data-needs]")!.parentElement).toHaveClass("max-md:contents");
+    expect(container.querySelector("[data-needs]")!.parentElement!.parentElement).toHaveClass("max-md:contents");
+  });
+
   it("asks for My teams by default and remembers a new choice", async () => {
     const fetchMock = mockFetch();
     wrap(<Dashboard user={member} />);

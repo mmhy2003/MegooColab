@@ -13,6 +13,12 @@ const brief = (over: Partial<ChatBrief> = {}): ChatBrief => ({
 });
 
 describe("ChatsCard", () => {
+  it("the status side is capped so the name keeps its room", () => {
+    render(<ChatsCard chats={[brief()]} />);
+    const status = screen.getByText("waiting: approve the plan");
+    expect(status).toHaveClass("max-w-[45%]", "truncate");
+  });
+
   it("lists open chats with what each is doing, and links to all chats and a new one", () => {
     render(<ChatsCard chats={[brief(), brief({ id: "c2", title: "Bump axios", project_key: "WEB", state: "building", current_step: 2, steps_total: 3 })]} />);
     const card = screen.getByRole("region", { name: "Chats" });
