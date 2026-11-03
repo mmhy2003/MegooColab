@@ -61,18 +61,20 @@ TOOL_ROLES: dict[str, frozenset[RunRole]] = {
     # a reviewer never asks: it judges what is there
     "ask_human": frozenset({
         RunRole.brainstorm, RunRole.plan, RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish,
+        RunRole.pr_fix,
     }),
     "submit_design": frozenset({RunRole.brainstorm}),
     "submit_plan": frozenset({RunRole.plan}),
     "complete_step": frozenset({RunRole.implement, RunRole.step_fix}),
     "submit_review": frozenset({RunRole.step_review, RunRole.final_review}),
     "report_finish": frozenset({RunRole.finish}),
+    "report_pr_fix": frozenset({RunRole.pr_fix}),
     "show_mockup": frozenset({RunRole.brainstorm}),  # also the session resumed to revise a design
     # reviewers judge records; their read-only sessions cannot run the tests
-    "record_decision": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish}),
-    "record_tests": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish}),
+    "record_decision": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish, RunRole.pr_fix}),
+    "record_tests": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish, RunRole.pr_fix}),
 }
-RUNNER_ONLY = frozenset({"submit_review", "report_finish"})  # connect-only workflows have no such runs
+RUNNER_ONLY = frozenset({"submit_review", "report_finish", "report_pr_fix"})  # connect-only workflows have no such runs
 
 RUN_NEXT: dict[RunRole, str] = {
     RunRole.brainstorm: "Ask questions with ask_human, show screens with show_mockup, then submit_design.",
@@ -83,6 +85,8 @@ RUN_NEXT: dict[RunRole, str] = {
     RunRole.final_review: "Review the whole change, then call submit_review with your verdict and findings.",
     RunRole.final_fix: "Fix the final review's findings and run the tests; your run ends when you are done.",
     RunRole.finish: "Re-verify the tests, perform the finishing option ({option}), then call report_finish.",
+    RunRole.pr_fix: "Fix what was asked on the pull request, run the tests, push to the same branch, then call "
+    "report_pr_fix.",
 }
 WAIT_NEXT: dict[Needs, str] = {
     Needs.question: "Wait for the human's answer (it appears in get_task), then call get_workflow again.",
@@ -347,6 +351,17 @@ def register_workflow_tools(mcp: MCPServer) -> None:
                                        back_merge_branch, back_merge_pr_url)
             return {"outcome": outcome, "branch": branch, "tests_passed": tests_passed,
                     "back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url}
+
+    @mcp.tool()
+    async def report_pr_fix(key: str, summary: str, tests_passed: bool) -> dict[str, Any]:
+        """Report a fix round on the pull request, after pushing to the same branch: a short summary of what you
+        changed (and what you declined), and whether the full test suite passed."""
+        from app.git import send_back  # local: the git modules import the workflow
+
+        async with tool_session() as (db, user):
+            task = await _task(db, user, key, "report_pr_fix", write=True)
+            await send_back.report_fix(db, await live_run(db, task), summary, tests_passed)
+            return {"summary": summary, "tests_passed": tests_passed}
 
 
 async def _record_target(db: AsyncSession, user: User, task: Task) -> tuple[AgentRun | None, TaskWorkflow]:

@@ -51,7 +51,7 @@ REPORTS_CHARS = 8_000
 
 BUILD_ROLES = {
     RunRole.implement, RunRole.step_review, RunRole.step_fix,
-    RunRole.final_review, RunRole.final_fix, RunRole.finish,
+    RunRole.final_review, RunRole.final_fix, RunRole.finish, RunRole.pr_fix,
 }
 STEP_ROLES = {RunRole.implement, RunRole.step_fix, RunRole.step_review}
 FIX_ROLES = {RunRole.step_fix, RunRole.final_fix}

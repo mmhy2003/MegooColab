@@ -233,3 +233,78 @@ async def test_a_trigger_dispatches_the_fix_run(client, db, monkeypatch):
     monkeypatch.setattr(engine, "dispatch_queued", spy)
     await _send(client, w, repo, "pull_request_review", _review(w))
     assert seen[:1] == [True]  # the delivery's own call found the queued run (dispatching may call it again)
+
+
+# -- the fix run (Task 3) ------------------------------------------------------------------------------------
+
+
+async def _owner(task) -> "uuid.UUID":
+    async with SessionLocal() as s:
+        return await s.scalar(select(Agent.owner_id).where(Agent.id == task.assignee_agent_id))
+
+
+async def _report(run, summary="Added a back-off", tests_passed=True) -> None:
+    from app.git import send_back
+
+    async with SessionLocal() as s:
+        await s.execute(update(AgentRun).where(AgentRun.id == run.id).values(status="running"))
+        await send_back.report_fix(s, await s.get(AgentRun, run.id), summary, tests_passed)
+        await s.commit()
+
+
+async def test_fix_run_prompt_names_the_pr_and_the_request(client, db):
+    w, repo, task = await _world(client, db)
+    await _send(client, w, repo, "pull_request_review", _review(w, body="Add a <back-off>"))
+    (run,) = await _fix_runs(task.id)
+    assert run.prompt.startswith("# Fix: address the changes requested on the pull request")
+    assert "## Changes requested on the pull request" in run.prompt
+    assert f"Pull request: {w.pr_url} (branch {BRANCH}) · round 1 of 3" in run.prompt
+    assert 'rev asked: "Add a &lt;back-off&gt;"' in run.prompt and '<untrusted source="pull request review">' in run.prompt
+
+
+async def test_fix_reported_with_passing_tests_waits_for_the_merge_again(client, db):
+    from tests.workflow.test_engine import _finish
+
+    w, repo, task = await _world(client, db)
+    await _send(client, w, repo, "pull_request_review", _review(w))
+    (run,) = await _fix_runs(task.id)
+    await _report(run)
+    await _finish(await _owner(task), run)
+    wf = await _wf(task.id)
+    assert (wf.stage, wf.status, wf.needs) == ("done", "waiting_human", "human_code_review")
+    (pushed,) = await _kinds(task.id, "pr.fix_pushed")
+    assert {k: pushed.data[k] for k in ("pr_url", "pr_number", "round", "of", "summary")} == {
+        "pr_url": w.pr_url, "pr_number": 1, "round": 1, "of": 3, "summary": "Added a back-off"}
+
+
+async def test_fix_without_a_report_nudges_then_escalates(client, db):
+    from tests.workflow.test_engine import _finish
+
+    w, repo, task = await _world(client, db)
+    await _send(client, w, repo, "pull_request_review", _review(w))
+    (run,) = await _fix_runs(task.id)
+    await _finish(await _owner(task), run)
+    runs = await _fix_runs(task.id)
+    assert len(runs) == 2  # the nudge
+    nudge = next(r for r in runs if r.id != run.id)
+    await _report(nudge, tests_passed=False)
+    await _finish(await _owner(task), nudge)
+    wf = await _wf(task.id)
+    assert (wf.needs, wf.escalation_reason) == ("escalation", "pr_fix_incomplete")
+
+
+async def test_accept_returns_to_waiting_for_the_merge(client, db):
+    from app.auth.models import User
+
+    _, _, task = await _world(client, db)
+    for reason in ("pr_fix_rounds_exhausted", "pr_fix_incomplete"):
+        async with SessionLocal() as s:
+            await s.execute(update(TaskWorkflow).values(status="waiting_human", needs="escalation",
+                                                        escalation_reason=reason, stage="build"))
+            await s.commit()
+        async with SessionLocal() as s:
+            user = await s.get(User, await _owner(task))
+            await engine.decide_escalation(s, user, await s.get(Task, task.id), "accept")
+            await s.commit()
+        wf = await _wf(task.id)
+        assert (wf.stage, wf.status, wf.needs) == ("done", "waiting_human", "human_code_review"), reason

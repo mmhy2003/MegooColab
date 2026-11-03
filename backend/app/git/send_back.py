@@ -14,6 +14,8 @@ from app.projects.models import Project
 from app.tasks.models import Task
 
 MAX_PR_FIX_ROUNDS = 3
+MAX_SUMMARY = 2000
+PR_FIX_NUDGE = "Fix what was asked on the pull request, run the tests, push to the same branch, then call report_pr_fix."
 # GitHub says how the author relates to the repository; only people who can write to it may send a task back
 WRITE_ACCESS = ("OWNER", "MEMBER", "COLLABORATOR")
 _FIX = re.compile(r"^\s*/fix(?:\s|$)", re.IGNORECASE)
@@ -69,3 +71,82 @@ async def consider(db: AsyncSession, task: Task, trigger: Trigger) -> str:
     owner = await db.scalar(select(Agent.owner_id).where(Agent.id == task.assignee_agent_id))
     await engine.enqueue(db, wf, task, RunRole.pr_fix, requested_by=owner)
     return "sent_back"
+
+
+def prompt_section(wf) -> str:
+    """The fix run's own section: the pull request, its branch, the round, and what was asked (from the host: untrusted)."""
+    from app.workflow.context import (
+        wrap_untrusted,  # local: the workflow imports the git modules
+    )
+
+    t = wf.pr_fix_trigger or {}
+    asked = f'{t.get("by") or "A reviewer"} asked: "{t.get("excerpt") or ""}"' + (f" at {t['where']}" if t.get("where") else "")
+    return (
+        "## Changes requested on the pull request\n"
+        f"Pull request: {wf.pr_url} (branch {wf.branch}) · round {wf.pr_fix_rounds} of {MAX_PR_FIX_ROUNDS}\n"
+        + wrap_untrusted("pull request review", asked)
+    )
+
+
+async def report_fix(db: AsyncSession, run, summary: str, tests_passed: bool) -> None:
+    """A fix run reports its round: what it changed and whether the full test suite passed. A later report from the
+    same run replaces it. The caller commits."""
+    from fastapi import HTTPException, status
+
+    from app.core.text import strip_nul
+    from app.workflow import build  # local: the workflow imports the git modules
+    from app.workflow.models import RunRole
+
+    await build.lock_run_role(db, run, (RunRole.pr_fix,))
+    if not isinstance(tests_passed, bool) or not isinstance(summary, str):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_fix_report")
+    run.step_result = {"summary": strip_nul(summary)[:MAX_SUMMARY], "tests_passed": tests_passed}
+    await db.flush()
+
+
+async def _handle_pr_fix(db: AsyncSession, wf, task: Task, run) -> None:
+    """The fix run ended: pushed with passing tests, the workflow waits for the merge again; otherwise one nudge,
+    then the human decides."""
+    from app.git import service as git  # local: service imports the workflow
+    from app.workflow import engine, finish
+    from app.workflow.models import Needs, Stage
+
+    if await finish._asked_or_answered(db, wf, task, run):
+        return
+    result = run.step_result or {}
+    if result.get("tests_passed") is True:
+        await engine.set_stage(db, wf, task, Stage.done)
+        await engine.record_workflow_event(db, task, None, "pr.fix_pushed", {
+            "pr_url": wf.pr_url, "pr_number": (wf.pr_fix_trigger or {}).get("pr_number"), "round": wf.pr_fix_rounds,
+            "of": MAX_PR_FIX_ROUNDS, "summary": result.get("summary") or "",
+        })
+        await engine.wait_for(db, wf, Needs.human_code_review)
+        await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))
+        return
+    if not wf.nudged:
+        wf.nudged = True
+        await engine.rerun(db, wf, task, last=run, requested_by=await engine.owner_id(db, run), resume_kind="nudge",
+                           payload=PR_FIX_NUDGE)
+    else:
+        await engine.escalate(db, wf, "pr_fix_incomplete")
+
+
+async def _accept_back_to_waiting(db: AsyncSession, wf, task: Task, user) -> None:
+    """The human accepts the pull request as it is: the workflow waits for its merge again, without a fix."""
+    from app.workflow import engine
+    from app.workflow.models import Needs, Stage
+
+    await engine.set_stage(db, wf, task, Stage.done)
+    await engine.wait_for(db, wf, Needs.human_code_review, actor_id=user.id)
+
+
+def _register() -> None:
+    from app.workflow import engine
+    from app.workflow.models import RunRole
+
+    engine.ROLE_HANDLERS[RunRole.pr_fix] = _handle_pr_fix
+    engine.ACCEPT_HANDLERS["pr_fix_rounds_exhausted"] = _accept_back_to_waiting
+    engine.ACCEPT_HANDLERS["pr_fix_incomplete"] = _accept_back_to_waiting
+
+
+_register()

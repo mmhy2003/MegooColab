@@ -415,6 +415,10 @@ async def enqueue(
     if role == RunRole.finish:
         option = finishing_option(await db.get(Project, task.project_id), wf)
         extra = [f"## Finishing\nFinishing option: {option.value}\n{delivery_lines(task)}"]
+    if role == RunRole.pr_fix:
+        from app.git import send_back  # local: the git modules import this one
+
+        extra = [send_back.prompt_section(wf)]
     from app.workflow import (
         records as run_records,  # local: records imports this module
     )
