@@ -10,9 +10,10 @@ import { pullRequestDelivery, startFakeGit, type FakeGit } from "./helpers/fakeG
 import { buildBinaries, mcp, onPrompt, mintLinkedRunnerToken, startRunner, type RunnerHandle } from "./helpers/runner";
 
 /**
- * End-to-end test of Plan 7's git integration: a GitHub Enterprise connection (a fake one on the host) follows
- * the pull request the agent's Finish run opens; a signed webhook about the merge finishes the task, a forged
- * one is refused, and a closed pull request escalates. Needs the Go toolchain and git on the PATH, and a fresh
+ * End-to-end test of the git integration: a self-hosted GitHub connection (a fake GitHub Enterprise on the host),
+ * a repository picked from its list with its own webhook made by Create it for me, the pull request the agent's
+ * Finish run opens followed; a webhook signed with the repository's secret about the merge finishes the task, a
+ * forged one is refused, and a closed pull request escalates. Needs the Go toolchain and git on the PATH, and a fresh
  * stack (see README "Git and notifications end-to-end tests"). Project key GIT.
  */
 
@@ -20,7 +21,6 @@ const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
 const WEB = { "X-Megoo-Client": "web" };
 const AGENT_NAME = `${ADMIN.name}'s Claude Code`;
 const TOKEN = "ghp_e2eFakeReadOnlyToken";
-const SECRET = "e2e-webhook-secret";
 const FIRST = "GIT-1"; // its plan's one step becomes GIT-2
 const SECOND = "GIT-3";
 
@@ -114,26 +114,28 @@ test("a pull request followed through a git connection", async ({ browser }) => 
   await setupOrSignIn(page);
   const request = page.request;
 
-  // 1. Admin → Git: a GitHub Enterprise connection with a token and a webhook secret; Test shows the login
+  // 1. Admin → Git: a self-hosted GitHub connection, its address and a token, no webhook secret; Test shows the login
   await page.goto("/admin/git");
   await page.getByRole("button", { name: "Add connection" }).click();
+  await page.getByRole("group", { name: "Kind" }).getByRole("button", { name: "GitHub" }).click();
+  await page.getByRole("group", { name: "Where" }).getByRole("button", { name: "Self-hosted" }).click();
+  await page.getByLabel("Server address").fill(fake.baseUrl);
   await page.getByLabel("Name").fill("Fake GHE");
-  await page.getByLabel("Kind").selectOption("github");
-  await page.getByLabel("Base URL").fill(fake.baseUrl);
-  await page.getByLabel("Token").fill(TOKEN);
-  await page.getByLabel("Webhook secret").fill(SECRET);
+  await page.getByLabel("Access token").fill(TOKEN);
   await page.getByRole("button", { name: "Save" }).click();
   const row = page.getByRole("listitem").filter({ hasText: "Fake GHE" });
   await expect(row).toBeVisible();
   await expect(page.getByText(TOKEN)).toHaveCount(0);
   await row.getByRole("button", { name: "Test" }).click();
   await expect(row.getByText("Connected as fake-bot")).toBeVisible({ timeout: 15_000 });
-  type Conn = { id: string; name: string; token_set: boolean };
+  type Conn = { id: string; name: string; token_set: boolean; hosted: boolean };
   const conn = (await get<Conn[]>(request, "/api/admin/git-connections")).find((c) => c.name === "Fake GHE")!;
   expect(conn.token_set).toBe(true);
-  await expect(row.getByLabel("Webhook URL")).toHaveValue(`${BASE}/api/git/webhooks/${conn.id}`);
+  expect(conn.hosted).toBe(false);
+  await expect(row.getByLabel("Webhook URL")).toHaveCount(0);
 
-  // 2. project GIT requires a human code review; its repository is linked to the connection in Settings
+  // 2. project GIT requires a human code review; in Settings its repository is picked from the connection's list,
+  // and Create it for me makes the repository's own webhook on the host
   const team = await post<{ id: string }>(request, "/api/teams", { name: "Git Team", description: "" });
   await post(request, "/api/projects", { key: "GIT", name: "Git Demo", description: "", team_ids: [team.id] });
   const patched = await request.patch("/api/projects/GIT", {
@@ -141,13 +143,30 @@ test("a pull request followed through a git connection", async ({ browser }) => 
     headers: WEB,
   });
   expect(patched.ok()).toBeTruthy();
-  await post(request, "/api/projects/GIT/repositories", { name: "r", url: `${fake.baseUrl}/o/r`, provider: "github" });
   await page.goto("/projects/GIT/settings");
   await page.getByRole("tab", { name: "Repositories" }).click();
-  await page.getByLabel("Connection for r").selectOption({ label: "Fake GHE" });
-  await expect
-    .poll(async () => (await get<{ connection: { name: string } | null }[]>(request, "/api/projects/GIT/repositories"))[0].connection?.name)
-    .toBe("Fake GHE");
+  await page.getByLabel("Provider").selectOption({ label: "Fake GHE" });
+  await page.getByLabel("Repository", { exact: true }).fill("r");
+  await page.getByRole("list", { name: "Repositories" }).getByRole("button", { name: /o\/r/ }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  type RepoRow = { id: string; name: string; url: string; connection: { name: string } | null; webhook_status: string };
+  await expect.poll(async () => (await get<RepoRow[]>(request, "/api/projects/GIT/repositories"))[0]?.connection?.name).toBe("Fake GHE");
+  const linked = (await get<RepoRow[]>(request, "/api/projects/GIT/repositories"))[0];
+  expect(linked).toMatchObject({ name: "o/r", url: `${fake.baseUrl}/o/r`, webhook_status: "not_set_up" });
+  await page.getByRole("button", { name: "Set up webhook" }).click();
+  const hookDialog = page.getByRole("dialog", { name: "Webhook for o/r" });
+  await hookDialog.getByRole("button", { name: "Create it for me" }).click();
+  await expect(hookDialog.getByText("Created on GitHub.")).toBeVisible({ timeout: 15_000 });
+  const hookUrl = `/api/git/webhooks/repos/${linked.id}`;
+  expect(fake.hooks.size).toBe(1);
+  const [made] = [...fake.hooks.values()];
+  expect(made.url.endsWith(hookUrl), made.url).toBe(true);
+  // a delivery signed with the repository's own secret: the webhook reads as working
+  const ping = pullRequestDelivery(99, made.secret);
+  expect((await request.post(hookUrl, { data: ping.body, headers: ping.headers })).status()).toBe(204);
+  await expect(hookDialog.getByText(/^Webhook working/)).toBeVisible({ timeout: 15_000 });
+  await hookDialog.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText(/^Webhook working/)).toBeVisible();
 
   // the admin's agent, bound to GIT alone, and the runner with both tasks' scenarios
   type Agent = { id: string; name: string };
@@ -192,8 +211,8 @@ test("a pull request followed through a git connection", async ({ browser }) => 
 
   // 4. someone merges it on the git host; the signed webhook makes MegooColab look, and the task is done
   fake.prs.set(1, { state: "closed", merged: true, checks: "success", reviews: [{ state: "APPROVED", login: "rev" }] });
-  const delivery = pullRequestDelivery(1, SECRET);
-  const hook = await request.post(`/api/git/webhooks/${conn.id}`, { data: delivery.body, headers: delivery.headers });
+  const delivery = pullRequestDelivery(1, made.secret);
+  const hook = await request.post(hookUrl, { data: delivery.body, headers: delivery.headers });
   expect(hook.status()).toBe(204);
   await expect(panel.getByRole("link", { name: "PR merged" })).toBeVisible({ timeout: 30_000 });
   await expect(panel.getByText("Finished", { exact: true })).toBeVisible({ timeout: 30_000 });
@@ -202,8 +221,8 @@ test("a pull request followed through a git connection", async ({ browser }) => 
 
   // 5. a delivery with a wrong signature, or none, is refused and changes nothing
   const forged = pullRequestDelivery(1, "not-the-secret");
-  expect((await request.post(`/api/git/webhooks/${conn.id}`, { data: forged.body, headers: forged.headers })).status()).toBe(401);
-  const unsigned = await request.post(`/api/git/webhooks/${conn.id}`, {
+  expect((await request.post(hookUrl, { data: forged.body, headers: forged.headers })).status()).toBe(401);
+  const unsigned = await request.post(hookUrl, {
     data: forged.body,
     headers: { "content-type": "application/json" },
   });

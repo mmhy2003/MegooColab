@@ -3,9 +3,9 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 /**
- * A GitHub Enterprise stand-in on the host: the REST API under /api/v3 that MegooColab reads pull requests with
- * (backend/app/git/providers.py), for one repository `o/r`, with state the test changes. The stack reaches it as
- * http://host.docker.internal:<port> (deploy/docker-compose.yml extra_hosts).
+ * A GitHub Enterprise stand-in on the host: the REST API under /api/v3 that MegooColab lists repositories, reads
+ * pull requests and manages webhooks with (backend/app/git/providers.py), for one repository `o/r`, with state the
+ * test changes. The stack reaches it as http://host.docker.internal:<port> (deploy/docker-compose.yml extra_hosts).
  */
 
 export type FakePr = {
@@ -22,6 +22,8 @@ export type FakeGit = {
   baseUrl: string;
   token: string;
   prs: Map<number, FakePr>;
+  /** `o/r`'s webhooks by id, as MegooColab created or updated them */
+  hooks: Map<string, { url: string; secret: string }>;
   /** every API path asked for, in order */
   requests: string[];
   close(): Promise<void>;
@@ -32,16 +34,45 @@ const SHA = (n: number) => `${String(n).repeat(40)}`.slice(0, 40);
 export async function startFakeGit(token: string): Promise<FakeGit> {
   const prs = new Map<number, FakePr>();
   const requests: string[] = [];
-  const server: Server = createServer((req, res) => {
+  const hooks = new Map<string, { url: string; secret: string }>();
+  let nextHook = 1;
+  const server: Server = createServer(async (req, res) => {
     const path = (req.url ?? "").split("?")[0];
     requests.push(path);
     const send = (status: number, body: unknown) => {
       res.writeHead(status, { "content-type": "application/json" });
-      res.end(JSON.stringify(body));
+      res.end(body === null ? undefined : JSON.stringify(body));
     };
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    const config = () => (JSON.parse(raw || "{}") as { config: { url: string; secret: string } }).config;
+    const hookOut = (id: string) => ({ id: Number(id), config: { url: hooks.get(id)!.url } });
     if (req.headers.authorization !== `Bearer ${token}`) return send(401, { message: "Bad credentials" });
     if (path === "/api/v3/user") return send(200, { login: "fake-bot" });
-    let m = /^\/api\/v3\/repos\/o\/r\/pulls\/(\d+)(\/reviews)?$/.exec(path);
+    if (path === "/api/v3/user/repos") {
+      const page = Number(new URL(req.url ?? "", "http://x").searchParams.get("page") ?? "1");
+      return send(200, page === 1 ? [{ full_name: "o/r", html_url: `${baseUrl}/o/r`, default_branch: "main" }] : []);
+    }
+    if (path === "/api/v3/repos/o/r/hooks") {
+      if (req.method === "POST") {
+        const id = String(nextHook++);
+        hooks.set(id, { url: config().url, secret: config().secret });
+        return send(201, hookOut(id));
+      }
+      return send(200, [...hooks.keys()].map(hookOut));
+    }
+    let m = /^\/api\/v3\/repos\/o\/r\/hooks\/(\d+)$/.exec(path);
+    if (m) {
+      const id = m[1];
+      if (!hooks.has(id)) return send(404, { message: "Not Found" });
+      if (req.method === "DELETE") {
+        hooks.delete(id);
+        return send(204, null);
+      }
+      hooks.set(id, { url: config().url, secret: config().secret });
+      return send(200, hookOut(id));
+    }
+    m = /^\/api\/v3\/repos\/o\/r\/pulls\/(\d+)(\/reviews)?$/.exec(path);
     if (m) {
       const n = Number(m[1]);
       const pr = prs.get(n);
@@ -66,11 +97,13 @@ export async function startFakeGit(token: string): Promise<FakeGit> {
   });
   await new Promise<void>((done) => server.listen(0, "0.0.0.0", done));
   const port = (server.address() as AddressInfo).port;
+  const baseUrl = `http://host.docker.internal:${port}`;
   return {
     port,
-    baseUrl: `http://host.docker.internal:${port}`,
+    baseUrl,
     token,
     prs,
+    hooks,
     requests,
     close: () => new Promise<void>((done) => server.close(() => done())),
   };
