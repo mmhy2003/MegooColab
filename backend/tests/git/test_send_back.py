@@ -403,3 +403,19 @@ async def test_a_workflow_never_started_reads_zero_rounds(client, db):
     r = await client.get("/api/tasks/PAY-1/workflow")
     assert r.status_code == 200, r.text
     assert (r.json()["pr_fix_rounds"], r.json()["pr_fix_trigger"], r.json()["status"]) == (0, None, "idle")
+
+
+async def test_the_agent_review_copy_is_not_shown_or_a_trigger(client, db):
+    """What the agent reviewer posted (marked) comes back by webhook: not shown again, never a send-back."""
+    w, repo, task = await _world(client, db)
+    mark = "\n<!-- megoo:agent-review -->"
+    line = _line(w, review_id=77)
+    line["comment"]["body"] += mark
+    review = _review(w, review_id=77, body="Verdict: changes requested" + mark)
+    await _send(client, w, repo, "pull_request_review_comment", line)
+    await _send(client, w, repo, "pull_request_review", review)
+    await _send(client, w, repo, "issue_comment", _comment("/fix the timeout" + mark))
+    async with SessionLocal() as s:
+        kinds = (await s.execute(select(TaskEvent.kind).where(TaskEvent.task_id == task.id,
+                                                              TaskEvent.kind.like("git.%")))).scalars().all()
+    assert kinds == [] and await _kinds(task.id, "pr.sent_back") == []

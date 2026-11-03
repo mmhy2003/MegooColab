@@ -107,6 +107,8 @@ async def record(db: AsyncSession, conn: GitConnection, events: list[GitEvent], 
     for ev in events:
         if own is not None and ev.path.lower() != own.lower():
             continue
+        if ev.data.get("agent_review"):  # the agent reviewer's own post: its report is on the task already
+            continue
         link = None if ev.number is None else await db.get(GitPrLink, (conn.id, ev.path, ev.number))
         task, by_branch = None, False
         if key := task_key_of(ev.branch):

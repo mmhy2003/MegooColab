@@ -155,3 +155,18 @@ def test_gitlab_note_edits_and_system_notes_are_nothing():
     assert len(gl({**note, "action": "create"})) == 1 and len(gl(note)) == 1
     assert gl({**note, "action": "update"}) == []
     assert gl({**note, "system": True}) == []
+
+
+def test_the_marker_is_found_past_the_excerpt():
+    """The agent reviewer ends what it posts with a marker; a long body is cut for the excerpt, the marker is still seen."""
+    body = "Verdict: changes requested\n" + "x" * 500 + "\n<!-- megoo:agent-review -->"
+    who = {"sender": {"login": "mo"}, "repository": REPO}
+    (r,) = _gh("pull_request_review", {"action": "submitted", **who, "pull_request": PR,
+                                       "review": {"id": 9, "state": "commented", "body": body}})
+    assert r.data["agent_review"] is True and "megoo" not in r.data["excerpt"]
+    (c,) = _gh("issue_comment", {"action": "created", **who, "issue": {"number": 42, "pull_request": {}},
+                                 "comment": {"body": "ok\n<!-- megoo:agent-review -->"}})
+    assert c.data["agent_review"] is True
+    (plain,) = _gh("issue_comment", {"action": "created", **who, "issue": {"number": 42, "pull_request": {}},
+                                     "comment": {"body": "ok"}})
+    assert "agent_review" not in plain.data

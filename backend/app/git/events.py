@@ -55,6 +55,19 @@ def _who(name: object, login: object) -> dict | None:
     return {"name": name or login, "login": login} if name or login else None
 
 
+AGENT_MARK = "<!-- megoo:agent-review -->"
+
+
+def _said(body: object) -> tuple[str, dict]:
+    """A comment or review body's excerpt, without the agent reviewer's marker, and {"agent_review": True} when the
+    marker is there (piece 4: MegooColab's own review coming back by webhook). Read from the whole body, before the
+    excerpt cuts it."""
+    if not isinstance(body, str):
+        return "", {}
+    marked = AGENT_MARK in body
+    return excerpt(body.replace(AGENT_MARK, "")), ({"agent_review": True} if marked else {})
+
+
 def _association(item: dict) -> dict:
     """GitHub's author_association (OWNER, MEMBER, COLLABORATOR...), when the payload has it."""
     value = _str(item.get("author_association"))
@@ -109,8 +122,8 @@ def _github_like(kind: GitKind, event: str, p: dict) -> list[GitEvent]:
         number = _int(issue.get("number"))
         if not on_pr or number is None:
             return []
-        data = {"url": _str(comment.get("html_url")), "excerpt": excerpt(comment.get("body")),
-                **_association(comment)}
+        said, mark = _said(comment.get("body"))
+        data = {"url": _str(comment.get("html_url")), "excerpt": said, **_association(comment), **mark}
         return [GitEvent("git.commented", path, number, None, actor, data)]
     if event == "pull_request_review" and action == "submitted" and number and actor:
         review = _dict(p.get("review"))
@@ -118,28 +131,29 @@ def _github_like(kind: GitKind, event: str, p: dict) -> list[GitEvent]:
             return []
         state = str(review.get("state") or "").lower()
         verdict = state if state in ("approved", "changes_requested") else "commented"
-        body = excerpt(review.get("body"))
-        if verdict == "commented" and not body:
+        body, mark = _said(review.get("body"))
+        if verdict == "commented" and not body and not mark:
             return []  # only its line comments carry anything, and they are folded into it
         review_id = review.get("id")
         data = {"review_id": None if review_id is None else str(review_id), "verdict": verdict, "excerpt": body,
-                "url": _str(review.get("html_url")), **_association(review)}
+                "url": _str(review.get("html_url")), **_association(review), **mark}
         return [GitEvent("git.reviewed", path, number, branch, actor, data)]
     if event == "pull_request_review_comment" and action == "created" and number and actor:
         comment = _dict(p.get("comment"))
         review_id = comment.get("pull_request_review_id")
         if review_id is None:
             return []
+        said, mark = _said(comment.get("body"))
         data = {"review_id": str(review_id), "file": _str(comment.get("path")),
                 "line": _int(comment.get("line")) or _int(comment.get("original_line")),
-                "excerpt": excerpt(comment.get("body")), "url": _str(comment.get("html_url"))}
+                "excerpt": said, "url": _str(comment.get("html_url")), **mark}
         return [GitEvent("git.review_comment", path, number, branch, actor, data)]
     # Gitea's X-Gitea-Event names a review pull_request_approved / _rejected / _comment; X-Gitea-Event-Type (and
     # older docs) say pull_request_review_*: both are read
     verdict = _GITEA_REVIEWS.get(event.replace("pull_request_review_", "pull_request_"))
     if kind == GitKind.gitea and verdict and number and actor:
-        data = {"review_id": None, "verdict": verdict, "excerpt": excerpt(_dict(p.get("review")).get("content")),
-                "url": _str(pr.get("html_url"))}
+        said, mark = _said(_dict(p.get("review")).get("content"))
+        data = {"review_id": None, "verdict": verdict, "excerpt": said, "url": _str(pr.get("html_url")), **mark}
         return [GitEvent("git.reviewed", path, number, branch, actor, data)]
     return []
 
@@ -205,7 +219,8 @@ def _gitlab(event: str, p: dict) -> list[GitEvent]:
         number = _int(mr.get("iid"))
         if number is None:
             return []
-        data = {"url": _str(attrs.get("url")), "excerpt": excerpt(attrs.get("note"))}
+        said, mark = _said(attrs.get("note"))
+        data = {"url": _str(attrs.get("url")), "excerpt": said, **mark}
         position = _dict(attrs.get("position"))
         if _str(position.get("new_path")):
             data |= {"file": position["new_path"], "line": _int(position.get("new_line"))}
