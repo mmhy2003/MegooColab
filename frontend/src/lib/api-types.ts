@@ -3281,6 +3281,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/images/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Unsent Image
+         * @description Takes back an image added to a message that was not sent (taken out of the box): only its uploader's, and
+         *     only while unsent. A sent one is a task attachment, deleted there.
+         */
+        delete: operations["delete_unsent_image_api_images__image_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runner/images/{image_id}": {
         parameters: {
             query?: never;
@@ -4843,6 +4864,8 @@ export interface components {
              * @default
              */
             model: string;
+            /** Effort */
+            effort?: ("none" | "low" | "medium" | "high" | "max") | null;
         };
         /** JobModelOut */
         JobModelOut: {
@@ -4852,6 +4875,8 @@ export interface components {
             provider_id: string | null;
             /** Model */
             model: string;
+            /** Effort */
+            effort?: ("none" | "low" | "medium" | "high" | "max") | null;
         };
         /** JobOut */
         JobOut: {
@@ -14479,6 +14504,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ImageOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_unsent_image_api_images__image_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -1,5 +1,6 @@
 import uuid
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -29,15 +30,21 @@ class ProviderOut(BaseModel):
     has_key: bool
 
 
+# how hard a thinking model thinks: none turns thinking off; absent leaves the model's own default
+Effort = Literal["none", "low", "medium", "high", "max"]
+
+
 class JobModelIn(BaseModel):
     provider_id: uuid.UUID | None
     model: NoNulStr = Field(default="", max_length=200)
+    effort: Effort | None = None
 
 
 class JobModelOut(BaseModel):
     job: str
     provider_id: uuid.UUID | None
     model: str
+    effort: Effort | None = None
 
 
 class TestResult(BaseModel):

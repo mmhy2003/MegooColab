@@ -74,6 +74,18 @@ async def _resolve(db: AsyncSession, job: str) -> tuple[str, AiProvider] | None:
     return full_model_name(row[1].kind, row[0].model), row[1]
 
 
+def effort_args(kind: str, effort: str | None) -> dict:
+    """What tells a thinking model how hard to think: nothing when the job leaves it to the model. LiteLLM maps
+    reasoning_effort per provider, but for DeepSeek only to thinking on or off; DeepSeek's own reasoning_effort in
+    the body carries the level."""
+    if effort is None:
+        return {}
+    args: dict = {"reasoning_effort": effort}
+    if kind == "deepseek":
+        args["extra_body"] = {"reasoning_effort": effort}
+    return args
+
+
 async def configured_model(db: AsyncSession, job: str) -> str | None:
     """The admin's configured model, regardless of fake mode."""
     resolved = await _resolve(db, job)
@@ -186,6 +198,7 @@ async def complete(
         raise AiNotConfigured(job)
     model, provider = resolved
     api_key = decrypt(provider.api_key_enc) if provider.api_key_enc else None
+    setting = await db.get(AiJobModel, job)
 
     import litellm
 
@@ -193,6 +206,7 @@ async def complete(
         response = await litellm.acompletion(
             model=model, messages=messages, api_key=api_key, api_base=provider.api_base, timeout=timeout,
             max_tokens=max_tokens, response_format={"type": "json_object"},
+            **effort_args(provider.kind, setting.effort if setting else None),
             # jobs retry at job level, and a request (ask the memory) must not wait through SDK retries
             max_retries=0,
         )

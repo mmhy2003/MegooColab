@@ -118,6 +118,37 @@ describe("JobModels", () => {
   });
 });
 
+describe("JobModels thinking effort", () => {
+  it("sets how hard a chat job's model thinks; an embedding model has no such choice", async () => {
+    const fetchMock = mockFetch((url, init) => {
+      if (url === "/api/admin/ai/providers") return json([{ id: "p1", name: "DeepSeek", kind: "deepseek", api_base: null, has_key: true }]);
+      if (url === "/api/admin/ai/jobs") {
+        return json([
+          { job: "embeddings", provider_id: "p1", model: "e", effort: null },
+          { job: "dreaming", provider_id: "p1", model: "deepseek-v4.1-flash", effort: null },
+        ]);
+      }
+      if (init?.method === "PUT") return json({ job: "dreaming", provider_id: "p1", model: "deepseek-v4.1-flash", effort: "low" });
+      return undefined;
+    });
+    wrap(<JobModels />);
+    const dreaming = (await screen.findByText("Dreaming")).closest("form")!;
+    const embeddings = screen.getByText("Embeddings").closest("form")!;
+    expect(within(embeddings).queryByLabelText("Thinking effort")).toBeNull();
+    const effort = within(dreaming).getByLabelText("Thinking effort");
+    expect(effort).toHaveValue("");
+    expect(Array.from((effort as HTMLSelectElement).options).map((o) => o.text)).toEqual([
+      "Model default", "None", "Low", "Medium", "High", "Max",
+    ]);
+    fireEvent.change(effort, { target: { value: "low" } });
+    fireEvent.click(within(dreaming).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, i]) => i?.method === "PUT")).toBe(true));
+    const put = fetchMock.mock.calls.find(([, i]) => i?.method === "PUT")!;
+    expect(put[0]).toBe("/api/admin/ai/jobs/dreaming");
+    expect(JSON.parse(put[1]!.body as string)).toEqual({ provider_id: "p1", model: "deepseek-v4.1-flash", effort: "low" });
+  });
+});
+
 describe("JobModels after saving", () => {
   it("keeps the saved message when the refetched job comes back", async () => {
     let saved = { job: "embeddings", provider_id: null as string | null, model: "" };

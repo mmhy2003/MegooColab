@@ -27,7 +27,19 @@ const JOB_TEXT: Record<string, { label: string; help: string }> = {
   answering: { label: "Answering", help: "Answers questions asked of the memory." },
 };
 
-/** Which provider and model each AI job uses (MEM-10). */
+// how hard a thinking model thinks for a job; the model's own default sends nothing
+const EFFORTS = [
+  ["", "Model default"],
+  ["none", "None"],
+  ["low", "Low"],
+  ["medium", "Medium"],
+  ["high", "High"],
+  ["max", "Max"],
+] as const;
+const EFFORT_HELP =
+  "For a thinking model: its reasoning counts against the reply's length, so a long job (Dreaming) may need Low. None turns thinking off.";
+
+/** Which provider and model each AI job uses (MEM-10), and how hard a thinking model thinks for it. */
 export function JobModels() {
   const providers = useQuery({ queryKey: qk.aiProviders(), queryFn: () => api<AiProvider[]>("/api/admin/ai/providers") });
   const jobs = useQuery({ queryKey: qk.aiJobs(), queryFn: () => api<AiJobModel[]>("/api/admin/ai/jobs") });
@@ -51,15 +63,19 @@ function JobRow({ job, providers }: { job: AiJobModel; providers: AiProvider[] }
   const client = useQueryClient();
   const [providerId, setProviderId] = useState(job.provider_id ?? "");
   const [model, setModel] = useState(job.model);
+  const [effort, setEffort] = useState(job.effort ?? "");
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const text = JOB_TEXT[job.job] ?? { label: job.job, help: "" };
+  // an embedding model doesn't think
+  const thinks = job.job !== "embeddings";
   // when the saved values change (after a save, or someone else's), the fields follow them
-  const saved = `${job.provider_id ?? ""}|${job.model}`;
+  const saved = `${job.provider_id ?? ""}|${job.model}|${job.effort ?? ""}`;
   const [synced, setSynced] = useState(saved);
   if (synced !== saved) {
     setSynced(saved);
     setProviderId(job.provider_id ?? "");
     setModel(job.model);
+    setEffort(job.effort ?? "");
   }
 
   return (
@@ -71,7 +87,7 @@ function JobRow({ job, providers }: { job: AiJobModel; providers: AiProvider[] }
         try {
           await api(`/api/admin/ai/jobs/${job.job}`, {
             method: "PUT",
-            json: { provider_id: providerId || null, model: model.trim() },
+            json: { provider_id: providerId || null, model: model.trim(), ...(thinks ? { effort: effort || null } : {}) },
           });
           setStatus({ ok: true, text: "Saved." });
           await client.invalidateQueries({ queryKey: ["ai"] });
@@ -92,6 +108,18 @@ function JobRow({ job, providers }: { job: AiJobModel; providers: AiProvider[] }
           ))}
         </Select>
         <Input label="Model" maxLength={200} value={model} onChange={(e) => setModel(e.target.value)} />
+        {thinks && (
+          <div className="space-y-1">
+            <Select label="Thinking effort" value={effort} onChange={(e) => setEffort(e.target.value as typeof effort)}>
+              {EFFORTS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-muted-foreground">{EFFORT_HELP}</p>
+          </div>
+        )}
       </div>
       {status && (
         <p role="status" className={`text-sm break-words ${status.ok ? "text-green-ink" : "text-pink"}`}>
