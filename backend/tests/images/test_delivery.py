@@ -4,7 +4,7 @@ downloadable by that runner while its run is running."""
 import time
 import uuid
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from app.agent_runs.models import AgentRun
 from app.agent_runs.service import dispatch_pending
@@ -103,12 +103,9 @@ async def test_fresh_run_carries_newest_ten(db, tc_factory):
     assert "[6 images attached: new-0.png" in start["prompt"]  # named on its message too
 
 
-async def _worked_on(comment_id: str) -> None:
-    from app.tasks.models import Comment
-
-    async with SessionLocal() as s:
-        await s.execute(update(Comment).where(Comment.id == uuid.UUID(comment_id)).values(delivery="given_at_start"))
-        await s.commit()
+def _worked(ws, run_id: str) -> None:
+    """The agent said something in the run: it had what the run's start gave it."""
+    ws.send_json({"type": "run_update", "run_id": run_id, "seq": 1, "kind": "message", "data": {"text": "on it"}})
 
 
 async def test_resumed_answer_carries_only_its_images(db, tc_factory):
@@ -118,12 +115,12 @@ async def test_resumed_answer_carries_only_its_images(db, tc_factory):
     with tc.websocket_connect(URL, headers=token["headers"]) as ws:
         _online(tc, ws, agent, token)
         seen = _img(tc)
-        first = _tell(tc, task, [seen])
+        _tell(tc, task, [seen])
         run = tc.portal.call(_queue_workflow_run, task["key"])
         _start_frame(ws)
+        _worked(ws, run)  # the agent had it (a run that did nothing would hand it out again)
         ws.send_json({"type": "run_finished", "run_id": run, "outcome": "completed", "summary": "ok"})
         _wait_run(tc, task, run, "completed")
-        tc.portal.call(_worked_on, first)  # the agent had it (a run that did nothing would hand it out again)
         new = _img(tc)
         _tell(tc, task, [new], "and this")
         tc.portal.call(_queue_workflow_run, task["key"], "Carry on.")
@@ -161,6 +158,7 @@ async def test_old_runner_gets_names_not_images(db, tc_factory):
         _tell(tc, task, [img])
         run = tc.portal.call(_queue_workflow_run, task["key"])
         _start_frame(ws)
+        _worked(ws, run)
         ws.send_json({"type": "run_finished", "run_id": run, "outcome": "completed", "summary": "ok"})
         _wait_run(tc, task, run, "completed")
     with tc.websocket_connect(URL, headers=token["headers"]) as ws:
@@ -271,6 +269,63 @@ async def test_steer_with_images_waits_without_capability(db, tc_factory, monkey
         assert _start_frame(ws)["run_id"] == run
         monkeypatch.setattr(links, "task_takes_images", AsyncMock(return_value=True))
         cid = _tell(tc, task, [_img(tc)], "while you work")
+        items = tc.get(f"/api/tasks/{task['key']}/activity").json()
+        assert next(i for i in items if i["id"] == cid)["to_agent"]["state"] == "waiting"
+        ws.send_json({"type": "run_finished", "run_id": run, "outcome": "completed", "summary": "ok"})
+        _wait_run(tc, task, run, "completed")  # the next frame would have been the steer otherwise
+
+
+async def test_a_run_that_never_worked_hands_its_images_back(db, tc_factory):
+    """The run failed before the agent did anything: its images count as never had, so the retry (even a resumed
+    session) carries them again."""
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        _online(tc, ws, agent, token)
+        img = _img(tc, "bug.png")
+        _tell(tc, task, [img])
+        run = tc.portal.call(_queue_workflow_run, task["key"])
+        _start_frame(ws)
+        ws.send_json({"type": "run_finished", "run_id": run, "outcome": "failed", "summary": "", "error": "session_failed"})
+        _wait_run(tc, task, run, "failed")
+        _until(lambda: tc.portal.call(_row, img).delivered_at is None, "the image still counts as delivered")
+        tc.portal.call(_queue_workflow_run, task["key"], "Try again.")
+        start = _start_frame(ws)
+    assert [i["id"] for i in start["images"]] == [img]
+
+
+async def test_a_run_carries_at_most_its_byte_budget(db, tc_factory, monkeypatch):
+    """However many fit the count, the images of one run stay within MAX_IMAGE_BYTES_PER_RUN: the newest that fit go,
+    the rest are named as left out."""
+    from app.images import files
+
+    monkeypatch.setattr(files, "MAX_IMAGE_BYTES_PER_RUN", 3 * len(PNG))
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        _online(tc, ws, agent, token)
+        ids = [_img(tc, f"p{i}.png") for i in range(5)]
+        _tell(tc, task, ids)
+        tc.portal.call(_queue_workflow_run, task["key"])
+        start = _start_frame(ws)
+    assert [i["id"] for i in start["images"]] == ids[2:]
+    assert "(2 more images on " in start["prompt"]
+
+
+async def test_a_steer_over_the_byte_budget_waits_for_the_next_run(db, tc_factory, monkeypatch):
+    from app.images import files
+
+    monkeypatch.setattr(files, "MAX_IMAGE_BYTES_PER_RUN", len(PNG))
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        _online(tc, ws, agent, token)
+        run = tc.portal.call(_queue_workflow_run, task["key"])
+        _start_frame(ws)
+        cid = _tell(tc, task, [_img(tc), _img(tc)], "two at once")
         items = tc.get(f"/api/tasks/{task['key']}/activity").json()
         assert next(i for i in items if i["id"] == cid)["to_agent"]["state"] == "waiting"
         ws.send_json({"type": "run_finished", "run_id": run, "outcome": "completed", "summary": "ok"})

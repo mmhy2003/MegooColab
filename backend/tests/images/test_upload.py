@@ -92,3 +92,21 @@ async def test_cleanup_removes_day_old_unsent(client, db):
     await db.commit()
     assert {r.id for r in await _rows(db)} == {fresh.id, linked.id}
     assert not old_path.exists() and fresh_path.exists()
+
+
+async def test_an_unsent_image_can_be_taken_back(client, db, member, client_factory):
+    r = await client.post("/api/images", files={"file": ("a.png", PNG, "image/png")})
+    image_id = r.json()["id"]
+    (row,) = await _rows(db)
+    path = _stored(row)
+    assert (await client.delete(f"/api/images/{image_id}")).status_code == 204
+    assert await _rows(db) == [] and not path.exists()
+    assert (await client.delete(f"/api/images/{image_id}")).status_code == 404
+
+
+async def test_only_its_uploader_takes_an_unsent_image_back(client, db, member, client_factory):
+    image_id = (await client.post("/api/images", files={"file": ("a.png", PNG, "image/png")})).json()["id"]
+    other = client_factory()
+    await login(other, await make_user(db))
+    assert (await other.delete(f"/api/images/{image_id}")).status_code == 404
+    assert len(await _rows(db)) == 1

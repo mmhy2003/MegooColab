@@ -106,6 +106,9 @@ export function useImageDraft(disabledReason?: string): ImageDraft {
     [disabledReason],
   );
   const remove = useCallback((key: string) => {
+    const gone = live.current.find((i) => i.key === key);
+    // taken back on the server too, so it doesn't count against the unsent images a person may hold
+    if (gone?.id) void api(`/api/images/${gone.id}`, { method: "DELETE" }).catch(() => undefined);
     setItems((all) => {
       all.filter((i) => i.key === key).forEach((i) => revoke(i.preview));
       return all.filter((i) => i.key !== key);

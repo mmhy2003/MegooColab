@@ -11,6 +11,9 @@ from pydantic import BaseModel, ConfigDict
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_IMAGES_PER_MESSAGE = 6
 MAX_IMAGES_PER_RUN = 10  # in one run's prompt, or one MCP call
+# and at most this many bytes of them in one prompt, steer or MCP call: base64 adds a third, and model APIs cap
+# a request's size
+MAX_IMAGE_BYTES_PER_RUN = 20 * 1024 * 1024
 CHUNK = 1024 * 1024
 HEAD = 16  # enough bytes to recognise every accepted type
 

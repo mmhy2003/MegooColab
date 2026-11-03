@@ -51,3 +51,14 @@ async def upload_image(file: UploadFile, user: AuthedUser, db: DbSession) -> Ima
     db.add(att)
     await db.flush()
     return ImageOut.model_validate(att)
+
+
+@router.delete("/api/images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_unsent_image(image_id: uuid.UUID, user: AuthedUser, db: DbSession) -> None:
+    """Takes back an image added to a message that was not sent (taken out of the box): only its uploader's, and
+    only while unsent. A sent one is a task attachment, deleted there."""
+    att = await db.get(Attachment, image_id)
+    if att is None or att.task_id is not None or att.uploaded_by != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
+    (Path(get_settings().upload_dir) / att.storage_key).unlink(missing_ok=True)
+    await db.delete(att)

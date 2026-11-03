@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import AgentRun
 from app.auth.models import User
-from app.images.files import AGENT_KINDS, MAX_IMAGES_PER_RUN, MessageKind
+from app.images import files
+from app.images.files import AGENT_KINDS, MessageKind
 from app.runner.protocol import RunImage
 from app.tasks.models import Attachment, Task
 
@@ -72,11 +73,26 @@ async def images_for_mcp(db: AsyncSession, task: Task) -> tuple[list[Attachment]
     return await _choose(db, pool)
 
 
+def within_budget(atts: Sequence[Attachment]) -> bool:
+    """One steer's images fit what a single prompt may carry."""
+    return sum(a.size for a in atts) <= files.MAX_IMAGE_BYTES_PER_RUN
+
+
 async def _choose(db: AsyncSession, pool: list[Attachment]) -> tuple[list[Attachment], str | None]:
-    chosen = pool[-MAX_IMAGES_PER_RUN:]
+    """The newest images that fit the count and the byte budget, oldest first, and the section naming them."""
+    chosen: list[Attachment] = []
+    total = 0
+    for a in reversed(pool):
+        if len(chosen) == files.MAX_IMAGES_PER_RUN:
+            break
+        if total + a.size <= files.MAX_IMAGE_BYTES_PER_RUN:
+            chosen.append(a)
+            total += a.size
+    chosen.reverse()
     if not chosen:
         return [], None
-    left_out = Counter(a.message_id for a in pool[: len(pool) - len(chosen)])
+    taken = {a.id for a in chosen}
+    left_out = Counter(a.message_id for a in pool if a.id not in taken)
     names = {
         u.id: u.name
         for u in (await db.execute(select(User).where(User.id.in_({a.uploaded_by for a in pool if a.uploaded_by}))))

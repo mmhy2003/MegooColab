@@ -203,8 +203,10 @@ async def steer_after_commit(comment_id: uuid.UUID) -> None:
             or run.agent_id != task.assignee_agent_id
             or conn is None
             or STEER_CAPABILITY not in conn.capabilities
-            # a runner that can't show images would hand over the words without them: it waits for the next run
+            # a runner that can't show images would hand over the words without them, and images over one prompt's
+            # budget can't go at once: either way it waits for the next run
             or (images and IMAGES_CAPABILITY not in conn.capabilities)
+            or not image_delivery.within_budget(images)
         ):
             await db.commit()
             return
@@ -263,6 +265,14 @@ async def release_on_run_end(db: AsyncSession, run: AgentRun) -> None:
     states = [Delivery.sending]
     if not await _agent_worked(db, run):
         states.append(Delivery.given_at_start)
+        # the images its start delivered for the first time were never seen either: the next run carries them again
+        # (a run that never started sent none)
+        if run.started_at is not None:
+            for a in (await db.execute(select(Attachment).where(
+                Attachment.sent_run_id == run.id, Attachment.delivered_at.is_not(None),
+                Attachment.delivered_at >= run.started_at,
+            ).with_for_update())).scalars():
+                a.delivered_at = None
     rows = (await db.execute(
         select(Comment).where(Comment.delivery_run_id == run.id, Comment.delivery.in_(states)).with_for_update()
     )).scalars().all()

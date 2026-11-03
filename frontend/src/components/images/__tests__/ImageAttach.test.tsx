@@ -20,13 +20,19 @@ function Box({ disabledReason, onIds }: { disabledReason?: string; onIds?: (ids:
 
 let uploads = 0;
 let release: (() => void) | null = null;
+let deleted: string[] = [];
 
 beforeEach(() => {
   uploads = 0;
   release = null;
+  deleted = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "DELETE") {
+        deleted.push(url);
+        return new Response(null, { status: 204 });
+      }
       expect(url).toBe("/api/images");
       expect(init?.body).toBeInstanceOf(FormData);
       const name = ((init!.body as FormData).get("file") as File).name;
@@ -97,6 +103,7 @@ describe("ImageAttach", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove a.png" }));
     expect(screen.queryByRole("button", { name: "Remove a.png" })).toBeNull();
     expect(ids).toEqual(["img-2"]);
+    await waitFor(() => expect(deleted).toEqual(["/api/images/img-1"])); // taken back on the server too
   });
 
   it("keeps Send off while an upload is in flight", async () => {
