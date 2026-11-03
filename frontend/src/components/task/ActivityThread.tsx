@@ -1,4 +1,13 @@
-import { AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle,
+  CircleCheck,
+  CircleX,
+  GitCommitHorizontal,
+  GitMerge,
+  GitPullRequestArrow,
+  GitPullRequestClosed,
+  MessageSquare,
+} from "lucide-react";
 
 import { ImageGallery } from "@/components/images/ImageGallery";
 import { Avatar } from "@/components/ui/Avatar";
@@ -7,6 +16,7 @@ import { QuestionCard } from "@/components/workflow/QuestionCard";
 import { ReviewResult } from "@/components/workflow/ReviewFindings";
 import { stateText } from "@/lib/agentMessages";
 import { runReasonText } from "@/lib/agents";
+import { describeGitEvent, type GitLine } from "@/lib/gitActivity";
 import type { ImageRef } from "@/lib/images";
 import type { ActivityItem } from "@/lib/types";
 import { escalationReasonText, FINISHING_LABEL, STAGES, type FinishingOption } from "@/lib/workflow";
@@ -286,6 +296,8 @@ export function ActivityThread({
           const column = columnNames.get(str(data.to_column) ?? "") ?? "another column";
           return <EventRow key={item.id} at={item.at} text={`Moved to ${column} by the workflow`} />;
         }
+        const git = describeGitEvent(kind, data);
+        if (git) return <GitEventRow key={item.id} at={item.at} line={git} />;
         const text = describeEvent(kind, data, { columnNames, userNames, agentNames }, !!item.actor);
         if (kind === "enforcement.violation") return <EventRow key={item.id} at={item.at} text={text} violation />;
         const isWorkflowKind = /^(workflow|escalation|document|step|review|finish|finishing|human_review)[._]/.test(kind);
@@ -346,6 +358,55 @@ function EventRow({
         {docKind ? <DocText text={text} kind={docKind} version={docVersion} /> : text}
         {children}
         <ImageGallery images={images} />
+      </span>
+      <span className="ml-auto whitespace-nowrap">{when(at)}</span>
+    </li>
+  );
+}
+
+const GIT_ICON: Record<GitLine["icon"], { Icon: typeof GitMerge; tone: string }> = {
+  push: { Icon: GitCommitHorizontal, tone: "text-cyan-ink" },
+  opened: { Icon: GitPullRequestArrow, tone: "text-cyan-ink" },
+  comment: { Icon: MessageSquare, tone: "text-muted-foreground" },
+  approved: { Icon: CircleCheck, tone: "text-green-ink" },
+  changes: { Icon: CircleX, tone: "text-pink" },
+  reviewed: { Icon: MessageSquare, tone: "text-muted-foreground" },
+  "checks-passed": { Icon: CircleCheck, tone: "text-green-ink" },
+  "checks-failed": { Icon: CircleX, tone: "text-pink" },
+  merged: { Icon: GitMerge, tone: "text-violet" },
+  closed: { Icon: GitPullRequestClosed, tone: "text-pink" },
+};
+
+/** A pull request or branch event: who (an agent tagged as one), what (linked to the host), the host, and an
+ * excerpt quoted as plain text. */
+function GitEventRow({ at, line }: { at: string; line: GitLine }) {
+  const { Icon, tone } = GIT_ICON[line.icon];
+  return (
+    <li className="flex items-start gap-2 pl-1 text-xs text-muted-foreground">
+      <Icon size={12} aria-hidden className={`mt-0.5 shrink-0 ${tone}`} />
+      <span className="min-w-0 flex-1 break-words">
+        {line.lead && (
+          <span className="text-fg" title={line.login ? `${line.login}${line.host ? ` on ${line.host}` : ""}` : undefined}>
+            {line.lead}
+          </span>
+        )}
+        {line.lead && line.agent && <span className="ml-1 rounded-full border border-violet/50 px-1.5 text-violet">agent</span>}
+        {line.lead && " "}
+        {line.href ? (
+          <a href={line.href} target="_blank" rel="noopener noreferrer" className="text-fg hover:underline">
+            {line.text}
+          </a>
+        ) : (
+          line.text
+        )}
+        {line.host && <span className="ml-1.5 rounded border border-line px-1 text-[0.65rem]">{line.host}</span>}
+        {line.detail && <span className="ml-1.5">{line.detail}</span>}
+        {(line.quote || line.where) && (
+          <span className="mt-1 block border-l-2 border-line pl-2">
+            {line.where && <span className="mr-1 font-mono">{line.where}</span>}
+            {line.quote}
+          </span>
+        )}
       </span>
       <span className="ml-auto whitespace-nowrap">{when(at)}</span>
     </li>
