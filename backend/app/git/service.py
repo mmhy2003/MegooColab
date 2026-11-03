@@ -25,7 +25,7 @@ from app.git import providers
 from app.git.models import PR_BACK_MERGE, PR_MAIN, GitConnection, TaskPullRequest
 from app.jobs import queue
 from app.projects.models import ProjectRepository
-from app.tasks.models import Task
+from app.tasks.models import Task, TaskEvent
 
 POLL_SECONDS = 120
 POLL_LIMIT = 50
@@ -151,12 +151,38 @@ async def apply_status(
     row.last_checked_at = _now()
     row.next_check_at = _now() + timedelta(seconds=POLL_SECONDS)
     await db.flush()
+    await _record_checks(db, task, row, status)
     if not changed:
         return
     await engine.record_workflow_event(db, task, None, "pr.status",
                                        {"state": status.state, "checks": status.checks, "review": status.review})
     if wf is not None:
         await settle_done(db, wf, task, await pull_requests_of_task(db, task_id))
+
+
+async def _record_checks(db: AsyncSession, task: Task, row: TaskPullRequest, status: providers.PrStatus) -> None:
+    """The task's Activity says when a pull request's checks finish: once per head commit and result."""
+    from app.workflow import engine  # local: the workflow imports this module
+
+    if status.checks not in ("success", "failure") or not status.head_sha or row.connection_id is None:
+        return
+    result = "passed" if status.checks == "success" else "failed"
+    seen = await db.execute(
+        select(TaskEvent.id).where(
+            TaskEvent.task_id == task.id,
+            TaskEvent.kind == "git.checks",
+            TaskEvent.data["head_sha"].astext == status.head_sha,
+            TaskEvent.data["result"].astext == result,
+        ).limit(1)
+    )
+    if seen.first() is not None:
+        return
+    conn = await db.get(GitConnection, row.connection_id)
+    ref = None if conn is None else providers.parse_pr_url(row.url, conn)
+    await engine.record_workflow_event(db, task, None, "git.checks", {
+        "host": None if conn is None else conn.kind, "actor": None,
+        "pr": {"number": None if ref is None else ref.number, "url": row.url},
+        "result": result, "head_sha": status.head_sha})
 
 
 async def settle_done(db: AsyncSession, wf, task: Task, rows: list[TaskPullRequest]) -> bool:

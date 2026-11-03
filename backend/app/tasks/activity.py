@@ -8,7 +8,8 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, tuple_
+from sqlalchemy import exists, func, select, tuple_
+from sqlalchemy.orm import aliased
 
 from app.auth.deps import AuthedUser
 from app.auth.models import Role, User
@@ -135,8 +136,21 @@ async def activity_items(
     db, task: Task, limit: int = 50, before: datetime | None = None, before_id: uuid.UUID | None = None
 ) -> list[ActivityItem]:
     c_stmt = select(Comment).where(Comment.task_id == task.id)
-    # the question item shows its own asked/answered state, so those events are not repeated
-    e_stmt = select(TaskEvent).where(TaskEvent.task_id == task.id, TaskEvent.kind.not_like("question.%"))
+    # the question item shows its own asked/answered state, so those events are not repeated; the pull request's
+    # bare state changes are shown by the badge and the git.* entries; a merge or close the webhook named stands
+    # in for the poll's nameless one
+    named = aliased(TaskEvent)
+    same_pr = exists().where(
+        named.task_id == TaskEvent.task_id,
+        named.kind == func.replace(TaskEvent.kind, "pr.", "git.pr_"),
+        func.rtrim(named.data["pr"]["url"].astext, "/") == func.rtrim(TaskEvent.data["url"].astext, "/"),
+    )
+    e_stmt = select(TaskEvent).where(
+        TaskEvent.task_id == task.id,
+        TaskEvent.kind.not_like("question.%"),
+        TaskEvent.kind != "pr.status",
+        ~(TaskEvent.kind.in_(("pr.merged", "pr.closed")) & same_pr),
+    )
     q_stmt = select(WorkflowQuestion).where(WorkflowQuestion.task_id == task.id)
     if before and before_id:
         # (at, id) cursor: items written in one transaction share a timestamp

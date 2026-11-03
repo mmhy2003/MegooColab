@@ -207,3 +207,59 @@ async def test_a_repeated_delivery_records_once(client, db):
     await _send(client, repo, "push", _push(), delivery="same")
     await _send(client, repo, "push", _push(), delivery="same")
     assert len(await _git(task.id)) == 1
+
+
+# -- checks, and one line per merge or close ----------------------------------------------------------------------
+
+
+async def _apply(task_id, checks: str, sha: str | None) -> None:
+    from app.git import providers, service
+
+    async with SessionLocal() as s:
+        status = providers.PrStatus(state="open", checks=checks, review="none", merged_at=None, head_sha=sha)
+        await service.apply_status(s, task_id, "main", status)
+        await s.commit()
+
+
+async def test_checks_record_once_per_head_and_result(client, db):
+    conn, _, task, _ = await _world(client, db)
+    async with SessionLocal() as s:
+        s.add(TaskPullRequest(task_id=task.id, url=PR["html_url"], connection_id=conn.id, state="open"))
+        await s.commit()
+    for checks, sha in [("pending", "a"), ("success", "a"), ("success", "a"), ("pending", "b"), ("failure", "b")]:
+        await _apply(task.id, checks, sha)
+    entries = [e.data for e in await _git(task.id) if e.kind == "git.checks"]
+    assert [(e["result"], e["head_sha"]) for e in entries] == [("passed", "a"), ("failed", "b")]
+    assert entries[0]["pr"] == {"number": 1, "url": PR["html_url"]} and entries[0]["host"] == "github"
+    assert entries[0]["actor"] is None
+
+
+async def _feed(client, key="PAY-1") -> list[str]:
+    r = await client.get(f"/api/tasks/{key}/activity")
+    assert r.status_code == 200, r.text
+    return [i["kind"] for i in r.json() if i["type"] == "event"]
+
+
+async def _add(task, kind: str, data: dict, ago: int) -> None:
+    async with SessionLocal() as s:
+        s.add(TaskEvent(task_id=task.id, kind=kind, data=data, created_at=datetime.now(UTC) - timedelta(seconds=ago)))
+        await s.commit()
+
+
+async def test_pr_status_is_not_in_activity(client, db):
+    _, _, task, _ = await _world(client, db)
+    await _add(task, "pr.status", {"state": "open", "checks": "pending", "review": "none"}, 5)
+    assert "pr.status" not in await _feed(client)
+
+
+async def test_one_merge_line_whichever_comes_first(client, db):
+    _, _, task, _ = await _world(client, db)
+    url = PR["html_url"]
+    await _add(task, "pr.merged", {"url": url}, 30)  # the poll first
+    assert "pr.merged" in await _feed(client)  # poll only: the nameless line stays
+    await _add(task, "git.pr_merged", {"pr": {"number": 1, "url": url + "/"}, "actor": {"kind": "person", "name": "mo"}}, 20)
+    assert [k for k in await _feed(client) if "merged" in k] == ["git.pr_merged"]
+    await _add(task, "pr.closed", {"url": "https://github.com/acme/pay/pull/2", "kind": "main"}, 10)  # webhook-less close
+    await _add(task, "git.pr_closed", {"pr": {"number": 3, "url": "https://github.com/acme/pay/pull/3"}}, 9)
+    await _add(task, "pr.closed", {"url": "https://github.com/acme/pay/pull/3", "kind": "main"}, 8)  # then the poll
+    assert [k for k in await _feed(client) if "closed" in k] == ["pr.closed", "git.pr_closed"]
