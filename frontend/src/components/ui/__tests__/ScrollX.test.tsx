@@ -13,25 +13,40 @@ function size(el: HTMLElement, { scrollWidth, clientWidth, scrollLeft = 0 }: { s
   fireEvent.scroll(el);
 }
 
-const fade = (container: HTMLElement, side: "start" | "end") => container.querySelector(`[data-fade="${side}"]`) as HTMLElement;
+// the edges with more to see; the fade is a mask on the scroller, so it shows whatever is behind (the page's grid)
+const more = (el: HTMLElement) => el.getAttribute("data-more");
 
 describe("ScrollX", () => {
-  it("shows the end fade while more is hidden, and the start fade once scrolled", () => {
-    const { container } = render(<ScrollX label="Wide">wide content</ScrollX>);
+  it("fades the end while more is hidden, and the start once scrolled", () => {
+    render(<ScrollX label="Wide">wide content</ScrollX>);
     const box = screen.getByLabelText("Wide");
     size(box, { scrollWidth: 500, clientWidth: 280 });
-    expect(fade(container, "end")).not.toHaveClass("hidden");
-    expect(fade(container, "start")).toHaveClass("hidden");
+    expect(more(box)).toBe("end");
+    expect(box.style.maskImage).toContain("transparent 100%");
+    size(box, { scrollWidth: 500, clientWidth: 280, scrollLeft: 110 });
+    expect(more(box)).toBe("both");
     size(box, { scrollWidth: 500, clientWidth: 280, scrollLeft: 220 });
-    expect(fade(container, "start")).not.toHaveClass("hidden");
-    expect(fade(container, "end")).toHaveClass("hidden");
+    expect(more(box)).toBe("start");
+    expect(box.style.maskImage).toContain("transparent 0");
   });
 
   it("no fade when it all fits", () => {
-    const { container } = render(<ScrollX label="Wide">fits</ScrollX>);
-    size(screen.getByLabelText("Wide"), { scrollWidth: 280, clientWidth: 280 });
-    expect(fade(container, "start")).toHaveClass("hidden");
-    expect(fade(container, "end")).toHaveClass("hidden");
+    render(<ScrollX label="Wide">fits</ScrollX>);
+    const box = screen.getByLabelText("Wide");
+    size(box, { scrollWidth: 280, clientWidth: 280 });
+    expect(more(box)).toBeNull();
+    expect(box.style.maskImage).toBe("");
+  });
+
+  it("a tab bar also shows › while more tabs hide", () => {
+    const { container } = render(<ScrollX label="Tabs" chevron>tabs</ScrollX>);
+    const box = screen.getByLabelText("Tabs");
+    const chevron = () => container.querySelector("[data-chevron]");
+    size(box, { scrollWidth: 500, clientWidth: 280 });
+    expect(chevron()).not.toBeNull();
+    expect(chevron()).toHaveAttribute("aria-hidden", "true");
+    size(box, { scrollWidth: 500, clientWidth: 280, scrollLeft: 220 });
+    expect(chevron()).toBeNull();
   });
 
   it("marks its scroller with data-scroll-x and the given label", () => {

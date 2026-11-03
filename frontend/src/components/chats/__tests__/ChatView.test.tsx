@@ -42,8 +42,9 @@ describe("ChatView", () => {
     show(chat({ rounds: [{ ...r, stage: "design" }] }));
     await userEvent.click(await screen.findByRole("button", { name: "Chat actions" }));
     expect(await screen.findByRole("menuitem", { name: "End chat" })).toBeInTheDocument();
-    const steps = screen.getByRole("button", { name: /Design · step 2 of 5/ });
+    const steps = screen.getByRole("button", { name: "Design · step 2 of 5" }); // the ▾ is not read out
     expect(steps).toHaveAttribute("aria-expanded", "false");
+    expect(steps).toHaveClass("min-h-8"); // tap-sized
     await userEvent.click(steps);
     expect(steps).toHaveAttribute("aria-expanded", "true");
     expect(screen.getAllByRole("list", { name: "Progress" }).length).toBe(2); // the phone's, and the desktop row

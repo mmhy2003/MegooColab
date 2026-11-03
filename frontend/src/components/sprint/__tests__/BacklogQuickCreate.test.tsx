@@ -1,9 +1,16 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BacklogQuickCreate } from "@/components/sprint/BacklogQuickCreate";
 
+afterEach(cleanup);
+
 describe("BacklogQuickCreate", () => {
+  it("its type choice is tap-sized", () => {
+    render(<BacklogQuickCreate onCreate={vi.fn()} />);
+    expect(screen.getByRole("combobox", { name: "New item type" })).toHaveClass("min-h-8");
+  });
+
   it("creates backlog items of any type, epics included", async () => {
     const onCreate = vi.fn().mockResolvedValue(undefined);
     render(<BacklogQuickCreate onCreate={onCreate} />);

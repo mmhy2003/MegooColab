@@ -85,7 +85,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
           <span className="text-muted-foreground">{p.key}</span> <span className="text-cyan-ink glow-cyan">{p.name}</span>
         </h1>
         {/* on a narrow phone the tabs scroll sideways instead of widening the page, the edge faded where more hide */}
-        <ScrollX as="nav" label="Project" className="max-w-full" innerClassName="flex gap-1">
+        <ScrollX as="nav" label="Project" chevron className="max-w-full" innerClassName="flex gap-1">
           {tabs.map((t) => {
             const active = pathname.startsWith(t.href);
             return (

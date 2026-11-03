@@ -55,8 +55,8 @@ function PhoneProgress({ round }: { round?: ChatRound }) {
   const at = STEP_OF[round?.stage ?? "brainstorm"] ?? 0;
   return (
     <div className="space-y-1.5 md:hidden">
-      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="text-xs text-muted-foreground hover:text-fg">
-        {finished ? "Finished" : `${PROGRESS[at]} · step ${at + 1} of ${PROGRESS.length}`} {open ? "▴" : "▾"}
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="min-h-8 text-xs text-muted-foreground hover:text-fg">
+        {finished ? "Finished" : `${PROGRESS[at]} · step ${at + 1} of ${PROGRESS.length}`} <span aria-hidden>{open ? "▴" : "▾"}</span>
       </button>
       {open && <ChatProgress round={round} />}
     </div>

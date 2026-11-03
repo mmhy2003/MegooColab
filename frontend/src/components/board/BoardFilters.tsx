@@ -33,19 +33,19 @@ export function BoardFilters({
           onChange={(e) => onChange({ ...value, q: e.target.value || undefined })}
         />
       </label>
-      <select aria-label="Filter by assignee" className={FIELD} value={value.assignee ?? ""} onChange={(e) => onChange({ ...value, assignee: e.target.value || undefined })}>
+      <select aria-label="Filter by assignee" className={`${FIELD} max-w-full min-w-0`} value={value.assignee ?? ""} onChange={(e) => onChange({ ...value, assignee: e.target.value || undefined })}>
         <option value="">Anyone</option>
         {users.map((u) => (
           <option key={u.id} value={u.id}>{u.name}</option>
         ))}
       </select>
-      <select aria-label="Filter by label" className={FIELD} value={value.label ?? ""} onChange={(e) => onChange({ ...value, label: e.target.value || undefined })}>
+      <select aria-label="Filter by label" className={`${FIELD} max-w-full min-w-0`} value={value.label ?? ""} onChange={(e) => onChange({ ...value, label: e.target.value || undefined })}>
         <option value="">Any label</option>
         {labels.map((l) => (
           <option key={l.id} value={l.id}>{l.name}</option>
         ))}
       </select>
-      <select aria-label="Filter by epic" className={FIELD} value={value.epic ?? ""} onChange={(e) => onChange({ ...value, epic: e.target.value || undefined })}>
+      <select aria-label="Filter by epic" className={`${FIELD} max-w-full min-w-0`} value={value.epic ?? ""} onChange={(e) => onChange({ ...value, epic: e.target.value || undefined })}>
         <option value="">Any epic</option>
         {epics.map((t) => (
           <option key={t.id} value={t.id}>{t.key} {t.title}</option>

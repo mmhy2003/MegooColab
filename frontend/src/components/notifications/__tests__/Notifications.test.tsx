@@ -102,6 +102,8 @@ describe("NotificationPrefs", () => {
     expect(table).toHaveClass("max-md:block");
     expect(table.querySelector("thead")).toHaveClass("max-md:hidden");
     expect(email.closest("td")).toHaveAttribute("data-label", "Email");
+    // the whole cell is the tap target on a phone, not the 13 px box
+    expect(email.closest("label")).toHaveClass("max-md:min-h-8", "max-md:min-w-8");
   });
 
   it("toggles in-app and email per kind", async () => {

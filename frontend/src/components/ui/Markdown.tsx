@@ -125,7 +125,9 @@ export function Markdown({ children, wiki }: { children: string; wiki?: WikiTitl
           // a wide table scrolls inside its box instead of widening the page
           table: ({ children, className }) => (
             <ScrollX className="my-2">
-              <table className={className}>{children}</table>
+              {/* break-word, not the prose's anywhere: anywhere lowers the cells' minimum width and squeezes a wide
+                  table into the box instead of letting it scroll */}
+              <table className={`wrap-break-word ${className ?? ""}`}>{children}</table>
             </ScrollX>
           ),
           // agent-written text must not make the browser fetch remote images (tracking, exfiltration)

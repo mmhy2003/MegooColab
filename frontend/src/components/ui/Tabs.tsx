@@ -50,7 +50,7 @@ export function Tabs<T extends string>({
   };
   const at = tabs.findIndex((t) => t.id === value);
   return (
-    <ScrollX className="mb-4 border-b border-line">
+    <ScrollX chevron className="mb-4 border-b border-line">
       <div role="tablist" aria-label={label} className="flex gap-1">
         {tabs.map((t) => {
           const selected = t.id === value;

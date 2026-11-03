@@ -50,9 +50,11 @@ export function PhoneComposer({ children, label }: { children: React.ReactNode; 
           if (e.key === "Escape" && open) close();
         }}
         onBlur={(e) => {
-          // tapping away from an empty comment folds it back; one with text stays open
-          if (!open || form.current?.contains(e.relatedTarget as Node | null)) return;
-          if (!textarea()?.value.trim()) close();
+          // tapping away from an empty comment folds it back; one with text or images stays open. The window losing
+          // focus (a file chooser opening, another app) is not tapping away.
+          if (!open || form.current?.contains(e.relatedTarget as Node | null) || !document.hasFocus()) return;
+          const images = form.current?.querySelector('[aria-label="Images to send"] li');
+          if (!textarea()?.value.trim() && !images) close();
         }}
       >
         {children}

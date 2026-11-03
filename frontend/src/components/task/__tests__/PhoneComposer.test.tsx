@@ -1,11 +1,18 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommentBox } from "@/components/task/CommentBox";
 import { PhoneComposer } from "@/components/task/PhoneComposer";
 
-afterEach(cleanup);
+// jsdom's window never has focus; a page being tapped does
+beforeEach(() => {
+  vi.spyOn(document, "hasFocus").mockReturnValue(true);
+});
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 function show(onSubmit = vi.fn(async () => {})) {
   render(
@@ -51,6 +58,29 @@ describe("PhoneComposer", () => {
     await userEvent.type(box, "keep me");
     await userEvent.click(screen.getByRole("button", { name: "elsewhere" }));
     expect(isOpen(form)).toBe(true);
+  });
+
+  it("stays open while the window loses focus (a file chooser opening)", async () => {
+    const { form } = show();
+    await userEvent.click(screen.getByRole("button", { name: "Add a comment…" }));
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    fireEvent.blur(screen.getByRole("textbox", { name: "Add a comment" }), { relatedTarget: null });
+    expect(isOpen(form)).toBe(true);
+  });
+
+  it("an attached image counts as something written: tapping away keeps it open", async () => {
+    render(
+      <>
+        <button type="button">away</button>
+        <PhoneComposer label="Note…">
+          <textarea aria-label="Note" />
+          <ul aria-label="Images to send"><li>shot.png</li></ul>
+        </PhoneComposer>
+      </>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Note…" }));
+    await userEvent.click(screen.getByRole("button", { name: "away" }));
+    expect(screen.getByRole("textbox", { name: "Note" }).closest("[data-phone-form]")).not.toHaveClass("max-md:hidden");
   });
 
   it("closes after sending", async () => {
