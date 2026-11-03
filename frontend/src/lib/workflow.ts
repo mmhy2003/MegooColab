@@ -85,6 +85,9 @@ export const ESCALATION_REASON_TEXT: Record<string, string> = {
   engine_error: "MegooColab hit an internal error handling the last run.",
   pr_fix_rounds_exhausted: "Changes were requested again after 3 fix rounds.",
   pr_fix_incomplete: "The fix run ended without pushing a fix with passing tests.",
+  agent_merge_failed: "The agent approved the pull request but couldn't merge it.",
+  agent_review_incomplete: "The reviewer ended its run without a verdict.",
+  agent_review_unavailable: "The chosen reviewer can't work on this repository.",
 };
 
 export function escalationReasonText(code: string | null): string {
@@ -94,7 +97,8 @@ export function escalationReasonText(code: string | null): string {
 
 /** "Accept" is offered only where treating the work as passed makes sense. */
 export const ACCEPTABLE_REASONS = ["review_rounds_exhausted", "final_review_not_clean", "enforcement_violation", "pr_closed",
-  "back_merge_pr_closed", "pr_fix_rounds_exhausted", "pr_fix_incomplete"];
+  "back_merge_pr_closed", "pr_fix_rounds_exhausted", "pr_fix_incomplete", "agent_merge_failed", "agent_review_incomplete",
+  "agent_review_unavailable"];
 
 export const FINISHING_LABEL: Record<FinishingOption, string> = {
   merge_local: "Merge locally",

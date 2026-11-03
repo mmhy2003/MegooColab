@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ActivityThread } from "@/components/task/ActivityThread";
@@ -349,5 +349,28 @@ describe("ActivityThread: a task sent back by its pull request", () => {
     expect(screen.getByText("Added a <b>back-off</b>")).toBeInTheDocument();
     expect(text[3]).toContain("Ahmed Ali stopped the fix: back to waiting for the merge");
     expect(text[0]).not.toContain("Someone");
+  });
+});
+
+describe("ActivityThread: the agent's review of the pull request", () => {
+  const at = "2026-11-03T11:00:00Z";
+  const reviewed = (data: Record<string, unknown>): ActivityItem => ({
+    type: "event", id: String(Math.random()), at, actor: null, kind: "pr.agent_reviewed",
+    data: { pr_number: 42, agent_name: "review-bot", agent_id: "a9", summary: "Two <b>things</b>", findings: 3, ...data },
+  });
+  it("says what the reviewer decided, led by the agent with its tag", () => {
+    render(<ActivityThread columnNames={new Map()} userNames={new Map()} items={[
+      reviewed({ verdict: "approved", merged: true }),
+      reviewed({ verdict: "approved", merged: false, merge_error: "Required review missing" }),
+      reviewed({ verdict: "changes_requested", merged: false }),
+    ]} />);
+    const rows = screen.getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("review-bot");
+    expect(within(rows[0]).getByText("agent")).toBeInTheDocument();
+    expect(rows[0]).toHaveTextContent("approved PR #42 and merged it");
+    expect(rows[1]).toHaveTextContent("approved PR #42 (not merged: Required review missing)");
+    expect(rows[2]).toHaveTextContent("requested changes on PR #42 · 3 findings");
+    expect(within(rows[2]).getByText("Two <b>things</b>")).toBeInTheDocument();
+    expect(rows[2]).not.toHaveTextContent("Someone");
   });
 });

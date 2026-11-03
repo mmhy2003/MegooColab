@@ -367,3 +367,12 @@ describe("WorkflowPanel: sent back by a review on the pull request", () => {
     expect(screen.queryByRole("button", { name: "Don't send back" })).toBeNull();
   });
 });
+
+describe("WorkflowPanel: an agent reviewing the pull request", () => {
+  it("names the reviewer and the pull request while its review run goes", async () => {
+    const run = { id: "r9", status: "running", workflow_role: "pr_review", policy: "read_only", step: null,
+      agent: { id: "a9", name: "review-bot" } };
+    setup(wf({ stage: "done", status: "running", pr_url: "https://github.com/acme/pay/pull/42", branch: "megoo/PAY-1-x" }), { runs: [run] });
+    expect(await screen.findByText("review-bot is reviewing PR #42")).toBeInTheDocument();
+  });
+});

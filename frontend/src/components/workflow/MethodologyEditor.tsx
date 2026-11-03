@@ -24,7 +24,7 @@ const STAGE_CARDS: { id: MethodologyStage; label: string; keys: string[] }[] = [
   { id: "plan", label: "Plan", keys: ["plan"] },
   { id: "build", label: "Build", keys: ["build_implement", "build_step_review", "build_step_fix"] },
   { id: "review", label: "Review", keys: ["review_final", "review_fix"] },
-  { id: "done", label: "Done", keys: ["finish", "pr_fix"] },
+  { id: "done", label: "Done", keys: ["finish", "pr_fix", "pr_review"] },
 ];
 
 const mqk = {

@@ -68,6 +68,20 @@ export function describeGitEvent(kind: string, data: Data): GitLine | null {
       href: safe(data.url), quote: null, where: null, detail: null,
     };
   }
+  if (kind === "pr.agent_reviewed") {
+    // the agent's review of the pull request (piece 4), from its own report
+    const n = num(data.pr_number);
+    const pr = n ? `PR #${n}` : "the pull request";
+    const findings = num(data.findings) ?? 0;
+    const approved = data.verdict === "approved";
+    const text = approved
+      ? data.merged ? `approved ${pr} and merged it` : `approved ${pr} (not merged: ${str(data.merge_error) ?? "no reason given"})`
+      : `requested changes on ${pr} · ${findings} finding${findings === 1 ? "" : "s"}`;
+    return {
+      icon: approved ? (data.merged ? "merged" : "approved") : "changes", lead: str(data.agent_name) ?? "The reviewer",
+      agent: true, login: null, text, host: null, href: safe(data.pr_url), quote: str(data.summary), where: null, detail: null,
+    };
+  }
   if (!kind.startsWith("git.")) return null;
   const actor = data.actor ? obj(data.actor) : null;
   const pr = data.pr ? obj(data.pr) : null;

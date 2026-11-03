@@ -17,6 +17,7 @@ const KEYS: [string, string][] = [
   ["review_fix", "review"],
   ["finish", "done"],
   ["pr_fix", "done"],
+  ["pr_review", "done"],
 ];
 
 /** The page keeps the open stage in the address; here it is plain state, starting on Plan. */
@@ -99,7 +100,7 @@ describe("MethodologyEditor", () => {
       "build_implement", "build_step_review", "build_step_fix",
     ]);
     fireEvent.click(screen.getByRole("tab", { name: "Done" }));
-    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual(["finish", "pr_fix"]);
+    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual(["finish", "pr_fix", "pr_review"]);
   });
 
   it("marks a stage with unsaved edits and keeps them when switching tabs", async () => {
