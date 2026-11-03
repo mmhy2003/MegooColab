@@ -31,7 +31,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const GHE = { id: "c1", name: "GHE", kind: "github", base_url: "https://ghe.example", token_set: true, webhook_secret_set: true };
+const GHE = {
+  id: "c1", name: "GHE", kind: "github", base_url: "https://ghe.example", hosted: false, token_set: true,
+  webhook_secret_set: false, waiting_repositories: [],
+};
+
+const kind = (name: string) => within(screen.getByRole("group", { name: "Kind" })).getByRole("button", { name });
+const where = (name: string) => within(screen.getByRole("group", { name: "Where" })).getByRole("button", { name });
 
 describe("GitConnections", () => {
   it("creates, tests and never shows the token", async () => {
@@ -44,12 +50,12 @@ describe("GitConnections", () => {
     });
     wrap(<GitConnections />);
     const row = (await screen.findByText("GHE")).closest("li")!;
-    expect((within(row).getByLabelText("Webhook URL") as HTMLInputElement).value).toMatch(/\/api\/git\/webhooks\/c1$/);
+    expect(within(row).queryByLabelText("Webhook URL")).toBeNull(); // each repository has its own now
     fireEvent.click(within(row).getByRole("button", { name: "Test" }));
     expect(await within(row).findByText("Connected as octocat")).toBeInTheDocument();
 
     fireEvent.click(within(row).getByRole("button", { name: "Edit" }));
-    const token = screen.getByLabelText("Token") as HTMLInputElement;
+    const token = screen.getByLabelText("Access token") as HTMLInputElement;
     expect(token.value).toBe("");
     expect(token).toHaveAttribute("placeholder", "••••");
     expect(token).toHaveAttribute("type", "password");
@@ -60,15 +66,74 @@ describe("GitConnections", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add connection" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Lab" } });
-    fireEvent.change(screen.getByLabelText("Kind"), { target: { value: "gitlab" } });
-    fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "https://gitlab.example" } });
-    fireEvent.change(screen.getByLabelText("Token"), { target: { value: "glpat-secret" } });
+    fireEvent.click(kind("GitLab"));
+    fireEvent.click(where("Self-hosted"));
+    fireEvent.change(screen.getByLabelText("Server address"), { target: { value: "https://gitlab.example" } });
+    fireEvent.change(screen.getByLabelText("Access token"), { target: { value: "glpat-secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(sent(fetchMock, "POST").some((c) => c.url === "/api/admin/git-connections")).toBe(true));
     expect(sent(fetchMock, "POST").find((c) => c.url === "/api/admin/git-connections")!.body).toEqual({
-      name: "Lab", kind: "gitlab", base_url: "https://gitlab.example", token: "glpat-secret", webhook_secret: "",
+      name: "Lab", kind: "gitlab", base_url: "https://gitlab.example", token: "glpat-secret",
     });
     expect(screen.queryByDisplayValue("glpat-secret")).toBeNull(); // the form closed and forgot it
+  });
+
+  it("asks for a server address only when self-hosted, and never for a webhook secret", async () => {
+    mockFetch((url) => (url === "/api/admin/git-connections" ? json([]) : undefined));
+    wrap(<GitConnections />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add connection" }));
+    expect(kind("GitHub")).toHaveAttribute("aria-pressed", "true");
+    expect(where("GitHub.com")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByLabelText("Server address")).toBeNull();
+    expect(screen.queryByLabelText(/Webhook secret/)).toBeNull();
+    fireEvent.click(where("Self-hosted"));
+    expect(screen.getByLabelText("Server address")).toBeInTheDocument();
+    fireEvent.click(kind("Gitea / Forgejo"));
+    expect(screen.queryByRole("group", { name: "Where" })).toBeNull(); // always self-hosted
+    expect(screen.getByLabelText("Server address")).toBeInTheDocument();
+  });
+
+  it("a hosted provider sends no address", async () => {
+    const fetchMock = mockFetch((url, init) => {
+      if (url === "/api/admin/git-connections" && !init?.method) return json([]);
+      if (init?.method === "POST") return json({ ...GHE, id: "c3" }, 201);
+      return undefined;
+    });
+    wrap(<GitConnections />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add connection" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "GitHub" } });
+    fireEvent.change(screen.getByLabelText("Access token"), { target: { value: "ghp_x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent(fetchMock, "POST")).toHaveLength(1));
+    expect(sent(fetchMock, "POST")[0].body).toEqual({ name: "GitHub", kind: "github", token: "ghp_x" });
+  });
+
+  it("the token says what access it needs, per kind", async () => {
+    mockFetch((url) => (url === "/api/admin/git-connections" ? json([]) : undefined));
+    wrap(<GitConnections />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add connection" }));
+    fireEvent.click(kind("GitLab"));
+    expect(screen.getByText(/read_api/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "How to make one" })).toHaveAttribute("href", expect.stringContaining("gitlab"));
+  });
+
+  it("a provider with the old shared secret lists the repositories still on it and asks before removing it", async () => {
+    const old = { ...GHE, webhook_secret_set: true, waiting_repositories: [{ project_key: "PAY", name: "acme/pay" }] };
+    const fetchMock = mockFetch((url, init) => {
+      if (url === "/api/admin/git-connections" && !init?.method) return json([old]);
+      if (init?.method === "PATCH") return json({ ...old, webhook_secret_set: false, waiting_repositories: [] });
+      return undefined;
+    });
+    wrap(<GitConnections />);
+    const row = (await screen.findByText("GHE")).closest("li")!;
+    expect(within(row).getByText(/still has a shared webhook secret/)).toBeInTheDocument();
+    expect(within(row).getByText("PAY · acme/pay")).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole("button", { name: "Remove shared secret" }));
+    const confirm = await screen.findByRole("alertdialog");
+    expect(confirm).toHaveTextContent(/would stop getting updates/);
+    fireEvent.click(within(confirm).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(sent(fetchMock, "PATCH")).toHaveLength(1));
+    expect(sent(fetchMock, "PATCH")[0].body).toEqual({ webhook_secret: "" });
   });
 });
 

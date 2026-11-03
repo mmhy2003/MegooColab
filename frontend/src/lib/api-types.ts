@@ -1170,6 +1170,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{ref}/repositories/choices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Repository Choices
+         * @description The repositories a connection's token can see, for a manager adding one to the project. A provider's refusal
+         *     comes back as 502 with its code (unauthorized, forbidden, unreachable…); the token never does.
+         */
+        get: operations["repository_choices_api_projects__ref__repositories_choices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{ref}/repositories": {
         parameters: {
             query?: never;
@@ -1204,6 +1225,61 @@ export interface paths {
         head?: never;
         /** Update Repository */
         patch: operations["update_repository_api_projects__ref__repositories__repo_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{ref}/repositories/{repo_id}/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Repository Webhook */
+        get: operations["repository_webhook_api_projects__ref__repositories__repo_id__webhook_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/repositories/{repo_id}/webhook/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Repository Webhook Secret */
+        get: operations["repository_webhook_secret_api_projects__ref__repositories__repo_id__webhook_secret_get"];
+        put?: never;
+        /** Renew Repository Webhook Secret */
+        post: operations["renew_repository_webhook_secret_api_projects__ref__repositories__repo_id__webhook_secret_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/repositories/{repo_id}/webhook/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install Repository Webhook
+         * @description Create it for me: refused plainly (forbidden, not_found, unauthorized, unreachable…) when the host won't.
+         */
+        post: operations["install_repository_webhook_api_projects__ref__repositories__repo_id__webhook_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{ref}/labels": {
@@ -2972,6 +3048,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/git/webhooks/repos/{repo_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive Repository Webhook
+         * @description A repository's own webhook: verified with its own secret, and its status kept (working, or failing on a bad
+         *     signature) so the project's settings can show whether its webhook works.
+         */
+        post: operations["receive_repository_webhook_api_git_webhooks_repos__repo_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/notifications": {
         parameters: {
             query?: never;
@@ -4573,14 +4670,9 @@ export interface components {
             name: string;
             kind: components["schemas"]["GitKind"];
             /** Base Url */
-            base_url: string;
+            base_url?: string | null;
             /** Token */
             token: string;
-            /**
-             * Webhook Secret
-             * @default
-             */
-            webhook_secret: string;
         };
         /** GitConnectionOut */
         GitConnectionOut: {
@@ -4594,10 +4686,20 @@ export interface components {
             kind: components["schemas"]["GitKind"];
             /** Base Url */
             base_url: string;
+            /**
+             * Hosted
+             * @default false
+             */
+            hosted: boolean;
             /** Token Set */
             token_set: boolean;
             /** Webhook Secret Set */
             webhook_secret_set: boolean;
+            /**
+             * Waiting Repositories
+             * @default []
+             */
+            waiting_repositories: components["schemas"]["WaitingRepo"][];
         };
         /** GitConnectionPatch */
         GitConnectionPatch: {
@@ -5966,6 +6068,25 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** RepoChoiceOut */
+        RepoChoiceOut: {
+            /** Path */
+            path: string;
+            /** Url */
+            url: string;
+            /** Default Branch */
+            default_branch: string | null;
+        };
+        /**
+         * RepoChoicesOut
+         * @description A page of the repositories a connection's token can see, to add one to a project.
+         */
+        RepoChoicesOut: {
+            /** Items */
+            items: components["schemas"]["RepoChoiceOut"][];
+            /** More */
+            more: boolean;
+        };
         /** RepoConnection */
         RepoConnection: {
             /**
@@ -6006,6 +6127,16 @@ export interface components {
             /** Default Branch */
             default_branch: string;
             connection?: components["schemas"]["RepoConnection"] | null;
+            /**
+             * Webhook Status
+             * @default not_set_up
+             * @enum {string}
+             */
+            webhook_status: "not_set_up" | "working" | "failing";
+            /** Webhook Last At */
+            webhook_last_at?: string | null;
+            /** Warning */
+            warning?: string | null;
         };
         /** RepoPatch */
         RepoPatch: {
@@ -7295,6 +7426,53 @@ export interface components {
             committed_points: number;
             /** Completed Points */
             completed_points: number;
+        };
+        /** WaitingRepo */
+        WaitingRepo: {
+            /** Project Key */
+            project_key: string;
+            /** Name */
+            name: string;
+        };
+        /** WebhookInstallOut */
+        WebhookInstallOut: {
+            /** Installed */
+            installed: boolean;
+        };
+        /**
+         * WebhookOut
+         * @description A repository's Webhook dialog: where its host posts, and how it is going. Never the secret.
+         */
+        WebhookOut: {
+            /** Url */
+            url: string;
+            /** Kind */
+            kind: string;
+            /** Hook Page Url */
+            hook_page_url: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_set_up" | "working" | "failing";
+            /** Last At */
+            last_at: string | null;
+            /** Installed */
+            installed: boolean;
+            /** Public Url Is Default */
+            public_url_is_default: boolean;
+        };
+        /** WebhookRenewOut */
+        WebhookRenewOut: {
+            /** Secret */
+            secret: string;
+            /** Host Updated */
+            host_updated: boolean | null;
+        };
+        /** WebhookSecretOut */
+        WebhookSecretOut: {
+            /** Secret */
+            secret: string;
         };
         /** Who */
         Who: {
@@ -9935,6 +10113,41 @@ export interface operations {
             };
         };
     };
+    repository_choices_api_projects__ref__repositories_choices_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                q?: string;
+                page?: number;
+            };
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoChoicesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_repositories_api_projects__ref__repositories_get: {
         parameters: {
             query?: never;
@@ -10054,6 +10267,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RepoOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    repository_webhook_api_projects__ref__repositories__repo_id__webhook_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    repository_webhook_secret_api_projects__ref__repositories__repo_id__webhook_secret_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSecretOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    renew_repository_webhook_secret_api_projects__ref__repositories__repo_id__webhook_secret_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookRenewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    install_repository_webhook_api_projects__ref__repositories__repo_id__webhook_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookInstallOut"];
                 };
             };
             /** @description Validation Error */
@@ -13972,6 +14313,35 @@ export interface operations {
             header?: never;
             path: {
                 connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    receive_repository_webhook_api_git_webhooks_repos__repo_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo_id: string;
             };
             cookie?: never;
         };

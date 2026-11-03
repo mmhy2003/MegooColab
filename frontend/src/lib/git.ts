@@ -33,13 +33,36 @@ export function useConnectionNames() {
   return useQuery({ queryKey: gitKeys.names(), queryFn: () => api<ConnectionRef[]>("/api/git/connections") });
 }
 
-export function webhookUrl(connectionId: string): string {
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
-  return `${origin}/api/git/webhooks/${connectionId}`;
-}
+/** The hosted services: a connection to one needs no address of its own. Gitea and Forgejo are always self-hosted. */
+export const HOSTED: Partial<Record<GitKind, { label: string; url: string }>> = {
+  github: { label: "GitHub.com", url: "https://github.com" },
+  gitlab: { label: "GitLab.com", url: "https://gitlab.com" },
+};
+
+/** What the access token needs, per host. */
+export const TOKEN_HELP: Record<GitKind, string> = {
+  github:
+    "Read access to your repositories and pull requests: a fine-grained token with Contents, Metadata and Pull " +
+    "requests (read), or a classic token with repo. Optional, for one-click webhook setup: Webhooks (read and write), " +
+    "or admin:repo_hook. Optional, for an agent to review and merge: Pull requests and Contents (read and write).",
+  gitlab:
+    "Read access to your repositories and merge requests: the read_api scope. Optional, for one-click webhook setup: " +
+    "the api scope, with Maintainer on the project. Optional, for an agent to review and merge: api, with Developer " +
+    "or more.",
+  gitea:
+    "Read access to your repositories (read:repository). Optional, for one-click webhook setup: write:repository. " +
+    "Optional, for an agent to review and merge: write:repository.",
+};
+
+export const TOKEN_DOCS: Record<GitKind, string> = {
+  github: "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
+  gitlab: "https://docs.gitlab.com/user/profile/personal_access_tokens/",
+  gitea: "https://docs.gitea.com/development/api-usage",
+};
 
 const TEST_ERRORS: Record<string, string> = {
   unauthorized: "The git host refused the token.",
+  forbidden: "The token isn't allowed to do this.",
   bad_token: "The saved token can't be used (the server's SECRET_KEY changed, or it has odd characters). Save it again.",
   not_found: "Not found: check the base URL.",
   rate_limited: "The git host is rate-limiting this token. Try again later.",
