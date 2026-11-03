@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
 import { AddAgentDialog } from "@/components/agents/AddAgentDialog";
@@ -26,6 +26,7 @@ function MyAgents() {
   const client = useQueryClient();
   const router = useRouter();
   const pathname = usePathname();
+  const params = useSearchParams();
   const [tab, setTab] = useTabParam<Tab>(TAB_IDS);
   // Add agent is open, with the machine to start on (from a just-connected machine in the Runner tab)
   const [adding, setAdding] = useState<{ machine: string | null } | null>(null);
@@ -40,23 +41,30 @@ function MyAgents() {
       client.invalidateQueries({ queryKey: hubKeys.machines() }), // machines list their agents
     ]);
 
+  // on a phone an agent's or a machine's details take the screen, with their own Back: the page's header and tabs
+  // would only repeat above them
+  const detail = params.has("agent") || params.has("machine");
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="My agents"
-        subtitle="Register the coding agents on your computer and tell each one where a project's repository lives."
-        actions={<Button onClick={() => setAdding({ machine: null })}>Add agent</Button>}
-      />
-      <Tabs
-        label="My agents"
-        tabs={[
-          { id: "agents", label: "Agents" },
-          { id: "tools", label: "Tools", mark: !!summary.data?.out_of_step, markLabel: "machines out of step" },
-          { id: "runner", label: "Runner" },
-        ]}
-        value={tab}
-        onChange={setTab}
-      />
+      <div className={detail ? "max-md:hidden" : "max-md:[&_p]:hidden"}>
+        <PageHeader
+          title="My agents"
+          subtitle="Register the coding agents on your computer and tell each one where a project's repository lives."
+          actions={<Button onClick={() => setAdding({ machine: null })}>Add agent</Button>}
+        />
+      </div>
+      <div className={detail ? "max-md:hidden" : undefined}>
+        <Tabs
+          label="My agents"
+          tabs={[
+            { id: "agents", label: "Agents" },
+            { id: "tools", label: "Tools", mark: !!summary.data?.out_of_step, markLabel: "machines out of step" },
+            { id: "runner", label: "Runner" },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
+      </div>
       <TabPanel id="agents" active={tab === "agents"}>
         {agents.error && <p role="alert" className="text-sm text-pink">{errorMessage(agents.error)}</p>}
         {agents.data && (

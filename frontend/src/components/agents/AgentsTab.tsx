@@ -47,7 +47,8 @@ function AgentDetails({
   return (
     <section aria-labelledby={headingId} className="card min-w-0 space-y-4 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 id={headingId} className="min-w-0 flex-1 truncate text-sm font-bold">{agent.name}</h2>
+        {/* on a phone the name has the line to itself; the badge, status and menu go under it */}
+        <h2 id={headingId} className="min-w-0 flex-1 text-sm font-bold wrap-anywhere max-md:basis-full md:truncate">{agent.name}</h2>
         <Badge>{PROGRAM_LABEL[agent.program]}</Badge>
         <AgentStatusDot status={agent.status} />
         {runs && <span className="text-xs text-muted-foreground">{runs}</span>}

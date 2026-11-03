@@ -72,6 +72,15 @@ const sent = (method: string) => {
 };
 
 describe("AgentsTab", () => {
+  it("the agent's name has its own line on phones", async () => {
+    search = `agent=${AGENTS[0].id}`;
+    show();
+    const name = await screen.findByRole("heading", { level: 2, name: AGENTS[0].name });
+    expect(name).toHaveClass("max-md:basis-full", "wrap-anywhere");
+    expect(name).not.toHaveClass("truncate");
+    search = "";
+  });
+
   it("lists each agent with its machine and project count", () => {
     show();
     const list = screen.getByRole("navigation", { name: "Agents" });

@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { isAbsolutePath } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import type { Agent, Project } from "@/lib/types";
+import { middleTruncate } from "@/lib/paths";
 
 type Binding = Agent["bindings"][number];
 
@@ -101,7 +102,8 @@ export function ProjectBindings({
     <div className="space-y-2">
       {dialog}
       <h3 className="text-xs tracking-wider text-muted-foreground uppercase">Projects ({bindings.length})</h3>
-      <div className="flex items-end gap-2">
+      {/* on a narrow phone the search takes the row and Add project goes under it */}
+      <div className="flex items-end gap-2 max-sm:flex-col max-sm:items-stretch">
         {bindings.length > 0 && (
           <div className="min-w-0 flex-1">
             <Input label="Search projects" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Key, name or folder" />
@@ -165,8 +167,9 @@ export function ProjectBindings({
               className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 px-2 py-1.5 md:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto]"
             >
               <span className="truncate text-sm font-bold">{label(b)}</span>
+              {/* cut in the middle, so the end of the path (the folder that matters) stays; the whole of it on hover */}
               <span title={b.local_path ?? ""} className="truncate font-mono text-xs text-muted-foreground max-md:col-start-1 max-md:row-start-2">
-                {b.local_path}
+                {middleTruncate(b.local_path ?? "", 40)}
               </span>
               <span className="flex gap-1 max-md:row-span-2 max-md:col-start-2 max-md:row-start-1">
                 <button

@@ -46,6 +46,20 @@ async function add(project: string, folder: string) {
 }
 
 describe("ProjectBindings", () => {
+  it("Search projects stacks above Add project on phones", () => {
+    show(MANY);
+    const row = screen.getByRole("button", { name: "Add project" }).parentElement!;
+    expect(row).toContainElement(screen.getByLabelText("Search projects"));
+    expect(row).toHaveClass("max-sm:flex-col");
+  });
+
+  it("a long folder is cut in the middle, the full path in its title", () => {
+    const deep = "C:\\Users\\someone\\Projects\\clients\\acme\\checkout-service";
+    show([{ ...PAY, local_path: deep }]);
+    const folder = screen.getByTitle(deep);
+    expect(folder).toHaveTextContent("C:\\…\\clients\\acme\\checkout-service"); // 40 characters at most
+  });
+
   it("adds a project in one row and saves at once", async () => {
     const { fetchMock, onSaved } = show([PAY]);
     await add("WEB", "/home/me/web");
