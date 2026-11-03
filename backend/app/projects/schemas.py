@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -118,6 +118,10 @@ class RepoOut(BaseModel):
     provider: RepoProvider
     default_branch: str
     connection: RepoConnection | None = None
+    # its own webhook: not_set_up (nothing received at its own address yet), working, or failing (the last delivery's
+    # signature was wrong)
+    webhook_status: Literal["not_set_up", "working", "failing"] = "not_set_up"
+    webhook_last_at: datetime | None = None
 
 
 class LabelIn(BaseModel):

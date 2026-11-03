@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import service as audit
+from app.core.config import get_settings
 from app.git import providers
 from app.git.models import PR_BACK_MERGE, PR_MAIN, GitConnection, TaskPullRequest
 from app.jobs import queue
@@ -208,3 +209,13 @@ async def rows_for_delivery(
             if row.task_id not in out:
                 out.append(row.task_id)
     return out
+
+
+def webhook_url(repo_id: uuid.UUID) -> str:
+    """A repository's own webhook address, as its host must reach it."""
+    return f"{get_settings().public_url.rstrip('/')}/api/git/webhooks/repos/{repo_id}"
+
+
+def shared_webhook_url(connection_id: uuid.UUID) -> str:
+    """A connection's old shared webhook address (before repositories had their own)."""
+    return f"{get_settings().public_url.rstrip('/')}/api/git/webhooks/{connection_id}"

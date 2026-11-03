@@ -246,6 +246,8 @@ async def _repo_out(db: AsyncSession, repo: ProjectRepository) -> RepoOut:
     out = RepoOut.model_validate(repo)
     conn = await db.get(GitConnection, repo.connection_id) if repo.connection_id else None
     out.connection = RepoConnection(id=conn.id, name=conn.name) if conn is not None else None
+    if conn is not None:
+        out.webhook_status = "failing" if repo.webhook_failing else "working" if repo.webhook_last_at else "not_set_up"
     return out
 
 
