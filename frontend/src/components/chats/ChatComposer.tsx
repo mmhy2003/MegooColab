@@ -60,15 +60,19 @@ export function ChatComposer({ chat, agentRunning }: { chat: Chat; agentRunning:
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit();
           }}
-          className="block min-h-20 w-full rounded border border-line bg-surface-2 p-2 text-sm"
+          // a phone starts it at two lines and lets it grow with the text, up to about five
+          className="block min-h-20 w-full rounded border border-line bg-surface-2 p-2 text-sm max-md:max-h-32 max-md:min-h-[3.25rem] max-md:[field-sizing:content]"
         />
       </ImageDropZone>
-      <ImageAttach draft={images} />
-      <div className="flex items-center gap-3">
-        <p className="text-xs text-muted-foreground">{intentText(chat, agentRunning)}</p>
-        <Button type="submit" className="ml-auto" disabled={busy || !body.trim() || images.uploading}>
-          Send
-        </Button>
+      {/* on a phone one row: the image button, the line saying what the message does, Send */}
+      <div data-composer-row className="max-md:flex max-md:items-end max-md:gap-2">
+        <ImageAttach draft={images} compact />
+        <div className="flex min-w-0 items-center gap-3 max-md:flex-1 md:mt-2">
+          <p className="min-w-0 text-xs text-muted-foreground max-md:truncate">{intentText(chat, agentRunning)}</p>
+          <Button type="submit" className="ml-auto shrink-0" disabled={busy || !body.trim() || images.uploading}>
+            Send
+          </Button>
+        </div>
       </div>
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}
     </form>

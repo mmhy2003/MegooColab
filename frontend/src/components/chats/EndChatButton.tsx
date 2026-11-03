@@ -9,8 +9,9 @@ import { api } from "@/lib/api";
 import type { Chat } from "@/lib/chats";
 import { errorMessage } from "@/lib/errors";
 
-/** Ends the chat for good. While the agent works it asks first: ending stops it. */
-export function EndChatButton({ chat, agentRunning }: { chat: Chat; agentRunning: boolean }) {
+/** Ending the chat for good, for the End chat button and the phone's ⋯ menu. While the agent works it asks first:
+ * ending stops it. Render `dialog` (the question) and `error` where the control is. */
+export function useEndChat(chat: Chat, agentRunning: boolean) {
   const client = useQueryClient();
   const { ask, dialog } = useConfirm();
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +32,12 @@ export function EndChatButton({ chat, agentRunning }: { chat: Chat; agentRunning
       setError(errorMessage(err));
     }
   };
+  return { end, dialog, error };
+}
+
+/** Ends the chat for good. */
+export function EndChatButton({ chat, agentRunning }: { chat: Chat; agentRunning: boolean }) {
+  const { end, dialog, error } = useEndChat(chat, agentRunning);
   return (
     <>
       <Button variant="ghost" onClick={() => void end()}>

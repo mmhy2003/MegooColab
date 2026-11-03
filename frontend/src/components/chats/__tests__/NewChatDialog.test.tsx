@@ -41,6 +41,12 @@ afterEach(() => {
 });
 
 describe("NewChatDialog", () => {
+  it("its selects stay inside the dialog", () => {
+    renderDialog();
+    expect(screen.getByLabelText("Project")).toHaveClass("min-w-0");
+    expect(screen.getByLabelText("Agent")).toHaveClass("min-w-0");
+  });
+
   it("needs a message, and sends any free agent by default", async () => {
     const posted = renderDialog("PAY");
     const send = screen.getByRole("button", { name: "Start chat" });

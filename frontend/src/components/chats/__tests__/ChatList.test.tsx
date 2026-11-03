@@ -8,6 +8,15 @@ import { intentText, stateText } from "@/lib/chats";
 afterEach(cleanup);
 
 
+describe("ChatList", () => {
+  it("a long title stays inside: two lines, wrapping anywhere", () => {
+    render(<ChatList chats={[chat({ title: `see ${"https://git.example.com/a/very/long/path/".repeat(4)}` })]} showProject />);
+    const title = screen.getByText(/^see https/);
+    expect(title).toHaveClass("line-clamp-2", "wrap-anywhere");
+    expect(title).not.toHaveClass("truncate");
+  });
+});
+
 describe("chat copy", () => {
   it.each([
     ["talking", {}, "talking"],

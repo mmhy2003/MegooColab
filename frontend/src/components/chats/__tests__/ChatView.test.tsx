@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatView } from "@/components/chats/ChatView";
@@ -36,6 +37,34 @@ afterEach(() => {
 });
 
 describe("ChatView", () => {
+  it("the phone header folds End chat into a menu and the steps into one line", async () => {
+    const r = chat().rounds[0];
+    show(chat({ rounds: [{ ...r, stage: "design" }] }));
+    await userEvent.click(await screen.findByRole("button", { name: "Chat actions" }));
+    expect(await screen.findByRole("menuitem", { name: "End chat" })).toBeInTheDocument();
+    const steps = screen.getByRole("button", { name: /Design · step 2 of 5/ });
+    expect(steps).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(steps);
+    expect(steps).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByRole("list", { name: "Progress" }).length).toBe(2); // the phone's, and the desktop row
+  });
+
+  it("on a phone the message box grows with the text and the image button sits beside Send", async () => {
+    show(chat());
+    const box = await screen.findByRole("textbox", { name: "Message laptop-claude" });
+    expect(box).toHaveClass("max-md:[field-sizing:content]", "max-md:max-h-32");
+    const images = screen.getByRole("button", { name: "Add images" });
+    const send = screen.getByRole("button", { name: "Send" });
+    // one row on a phone: the image button and Send share a parent row
+    expect(images.closest("[data-composer-row]")).toContainElement(send);
+  });
+
+  it("the header names project, agent and program on one line", async () => {
+    show(chat());
+    const line = await screen.findByText("PAY · laptop-claude · Claude Code");
+    expect(line).toHaveClass("truncate");
+  });
+
   it("gives a long title its own lines, cut after two, and the whole of it on hover", async () => {
     show(chat({ title: LONG }));
     const title = await screen.findByRole("heading", { level: 2, name: LONG });

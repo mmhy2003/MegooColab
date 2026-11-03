@@ -1,7 +1,6 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState } from "react";
 
@@ -17,8 +16,9 @@ import { errorMessage } from "@/lib/errors";
 import { useProjects } from "@/lib/project";
 
 /** The Chats page (every project, with a filter) and a project's Chats tab (that project only): the chats down the
- * side, the open one beside them. On a phone, one or the other. They fill the window down to its bottom, so the page
- * stays put: the list scrolls on its own, and so does the open chat's conversation. */
+ * side, the open one beside them. On a phone, one or the other, and an open chat takes the whole screen (its ‹ goes
+ * back to the list). They fill the window down to its bottom, so the page stays put: the list scrolls on its own, and
+ * so does the open chat's conversation. */
 export function ChatsPage(props: { projectKey?: string; chatId?: string }) {
   return (
     <Suspense>
@@ -44,13 +44,19 @@ function Chats({ projectKey, chatId }: { projectKey?: string; chatId?: string })
   return (
     <div className="space-y-4">
       {!projectKey && (
-        <PageHeader title="Chats" subtitle="Talk to an agent about a project: it takes the work through design, plan, build and finish." actions={newChat} />
+        <div className={chatId ? "max-md:hidden" : undefined}>
+          <PageHeader title="Chats" subtitle="Talk to an agent about a project: it takes the work through design, plan, build and finish." actions={newChat} />
+        </div>
       )}
-      <div ref={area} className="grid grid-rows-[minmax(0,1fr)] gap-4 md:grid-cols-[18rem_minmax(0,1fr)]">
-        <aside className={`card min-h-0 flex-col gap-3 p-3 ${chatId ? "hidden md:flex" : "flex"}`}>
+      {/* one column that may shrink on a phone: a long title or link can't widen the page */}
+      <div ref={area} className="grid grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-4 md:grid-cols-[18rem_minmax(0,1fr)]">
+        <aside className={`card min-h-0 min-w-0 flex-col gap-3 p-3 ${chatId ? "hidden md:flex" : "flex"}`}>
           <div className="shrink-0">
             {projectKey ? (
-              newChat
+              <div className="flex items-center gap-2">
+                <h2 className="flex-1 text-base font-bold text-cyan-ink">Chats</h2>
+                {newChat}
+              </div>
             ) : (
               <Select label="Project" value={filter} onChange={(e) => setFilter(e.target.value)}>
                 <option value="">All projects</option>
@@ -67,12 +73,7 @@ function Chats({ projectKey, chatId }: { projectKey?: string; chatId?: string })
             {chats.data && <ChatList chats={chats.data} selected={chatId} showProject={!project} />}
           </div>
         </aside>
-        <section className={chatId ? "flex min-h-0 flex-col gap-2" : "hidden md:block"}>
-          {chatId && (
-            <Link href={projectKey ? `/projects/${projectKey}/chats` : "/chats"} className="shrink-0 text-sm md:hidden">
-              ← All chats
-            </Link>
-          )}
+        <section className={chatId ? "flex min-h-0 min-w-0 flex-col gap-2" : "hidden min-w-0 md:block"}>
           {chatId ? (
             <div className="min-h-0 flex-1">
               <ChatView chatId={chatId} />

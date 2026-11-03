@@ -6,7 +6,8 @@ import { type ReactNode, useRef, useState } from "react";
 import { ACCEPTED_IMAGES, type ImageDraft, MAX_IMAGES } from "@/lib/images";
 
 /** The message box's Add images button, the images added so far (✕ takes one out) and what was refused. */
-export function ImageAttach({ draft }: { draft: ImageDraft }) {
+/** `compact`: on a phone the button is its icon alone (its name stays "Add images"), to share a row with Send. */
+export function ImageAttach({ draft, compact = false }: { draft: ImageDraft; compact?: boolean }) {
   const input = useRef<HTMLInputElement>(null);
   const n = draft.items.length;
   return (
@@ -38,9 +39,11 @@ export function ImageAttach({ draft }: { draft: ImageDraft }) {
           type="button"
           disabled={!!draft.disabledReason || n >= MAX_IMAGES}
           onClick={() => input.current?.click()}
-          className="inline-flex items-center gap-1.5 rounded border border-line px-2 py-1 text-xs text-fg hover:border-cyan disabled:cursor-not-allowed disabled:opacity-50"
+          className={`inline-flex items-center gap-1.5 rounded border border-line px-2 py-1 text-xs text-fg hover:border-cyan disabled:cursor-not-allowed disabled:opacity-50 ${
+            compact ? "max-md:size-8 max-md:justify-center max-md:p-0" : ""
+          }`}
         >
-          <ImagePlus size={14} aria-hidden /> Add images
+          <ImagePlus size={14} aria-hidden /> <span className={compact ? "max-md:sr-only" : undefined}>Add images</span>
         </button>
         {n > 0 && <span>{n} of {MAX_IMAGES}</span>}
         {draft.disabledReason && <span>{draft.disabledReason}</span>}

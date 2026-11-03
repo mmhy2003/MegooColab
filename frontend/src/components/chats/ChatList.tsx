@@ -19,7 +19,7 @@ export function ChatList({ chats, selected, showProject }: { chats: Chat[]; sele
                 c.id === selected ? "bg-surface-2 shadow-[inset_2px_0_0_var(--cyan)]" : ""
               }`}
             >
-              <span className="block truncate text-sm">{c.title}</span>
+              <span className="line-clamp-2 block text-sm wrap-anywhere">{c.title}</span>
               <span className={`block truncate text-xs ${tone}`}>
                 {showProject && `${c.project_key} · `}
                 {stateText(c)}
