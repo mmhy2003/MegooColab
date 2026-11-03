@@ -15,6 +15,7 @@ import { qk } from "@/lib/queries";
 import type { AgentRun, ProjectAgent } from "@/lib/types";
 import {
   ACCEPTABLE_REASONS,
+  FINISHING_HELP,
   FINISHING_LABEL,
   STAGES,
   branchLine,
@@ -185,6 +186,7 @@ export function WorkflowPanel({
                   <option key={o} value={o}>{FINISHING_LABEL[o]}</option>
                 ))}
               </select>
+              <span className="block">{FINISHING_HELP[wf.finishing_option]}</span>
             </label>
           ) : (
             <p className="text-xs text-muted-foreground">

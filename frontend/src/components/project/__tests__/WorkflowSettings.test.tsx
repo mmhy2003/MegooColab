@@ -56,11 +56,21 @@ describe("Workflow settings", () => {
 
   it("shows the options with their labels and help text", () => {
     setup(true);
-    expect(screen.getByRole("option", { name: "Push and open a PR/MR" })).toHaveValue("pull_request");
+    expect(screen.getByRole("option", { name: "Push and open a pull request" })).toHaveValue("pull_request");
     expect(screen.getByRole("option", { name: "Merge locally" })).toHaveValue("merge_local");
     expect(screen.getByRole("option", { name: "Keep the branch" })).toHaveValue("keep_branch");
-    expect(screen.getByText("Agents open a PR/MR and wait for a person to approve it before Done.")).toBeInTheDocument();
-    expect(screen.getByText("Also commits the approved design and plan under docs/superpowers/ in the task branch.")).toBeInTheDocument();
+    expect(screen.getByText(/the work always ends as a pull request, whatever the finishing option says/)).toBeInTheDocument();
+    expect(screen.getByText(/docs\/superpowers\/specs\/KEY-design\.md/)).toBeInTheDocument();
+  });
+
+  it("says what the chosen finishing option does, and follows the choice", () => {
+    setup(true);
+    expect(screen.getByText(/pushes the task's branch and opens a pull request/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Default finishing option"), { target: { value: "merge_local" } });
+    expect(screen.getByText(/in your own checkout on the agent's machine/)).toBeInTheDocument();
+    expect(screen.queryByText(/opens a pull request \(a merge request on GitLab\)/)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Default finishing option"), { target: { value: "keep_branch" } });
+    expect(screen.getByText(/leaves the finished work committed on its own branch/)).toBeInTheDocument();
   });
 
   it("is read-only text for people who cannot manage", () => {
@@ -68,7 +78,8 @@ describe("Workflow settings", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
-    expect(screen.getByText("Push and open a PR/MR")).toBeInTheDocument();
+    expect(screen.getByText("Push and open a pull request")).toBeInTheDocument();
+    expect(screen.getByText(/pushes the task's branch and opens a pull request/)).toBeInTheDocument();
   });
 
   it("shows the server error", async () => {

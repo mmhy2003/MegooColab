@@ -96,9 +96,37 @@ export const ACCEPTABLE_REASONS = ["review_rounds_exhausted", "final_review_not_
 
 export const FINISHING_LABEL: Record<FinishingOption, string> = {
   merge_local: "Merge locally",
-  pull_request: "Open a pull request",
+  pull_request: "Push and open a pull request",
   keep_branch: "Keep the branch",
 };
+
+/** What each finishing option does, once the work is built, reviewed and its tests pass again; shown under the
+ * choice wherever it is made (a project's settings, the defaults for new projects, one task). */
+export const FINISHING_HELP: Record<FinishingOption, string> = {
+  pull_request:
+    "The agent pushes the task's branch and opens a pull request (a merge request on GitLab) into the branch the task " +
+    "started from. Nothing is merged: you review and merge it on GitHub, GitLab or Gitea. On a plain git server, " +
+    "which has no pull requests, it only pushes the branch.",
+  merge_local:
+    "The agent merges the task's branch into the branch it started from, in your own checkout on the agent's machine, " +
+    "then runs the tests again on the merged result. Nothing is pushed: you push when you're ready. If your checkout " +
+    "has uncommitted changes, it asks you before touching anything.",
+  keep_branch:
+    "The agent leaves the finished work committed on its own branch on the agent's machine. Nothing is merged or " +
+    "pushed: what happens next is up to you.",
+};
+
+/** The human code review setting, on and off. */
+export const REVIEW_HELP =
+  "On: the work always ends as a pull request, whatever the finishing option says, and the task waits in code review " +
+  "until the pull request is merged (MegooColab notices when the repository is connected, or someone clicks Mark " +
+  "merged). Off: the task moves to Done as soon as the agent finishes.";
+
+/** The commit-the-documents setting, on and off. */
+export const DOCS_HELP =
+  "On: the approved design and plan are added to the task's branch as files (docs/superpowers/specs/KEY-design.md " +
+  "and docs/superpowers/plans/KEY-plan.md), so they travel with the code into the merge or the pull request. Off: " +
+  "they stay in MegooColab only.";
 
 /** Where the work starts and is delivered (Branch from): recorded once the task's branch exists, else a preview. */
 /** `toldAgent`: a started connect-only workflow, whose agent makes its own branch and never reports where it started. */

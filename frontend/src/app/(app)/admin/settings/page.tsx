@@ -16,7 +16,7 @@ import { TelegramForm } from "@/components/admin/TelegramForm";
 import { saveAdminSettings, type SettingsPatch, useAdminSettings } from "@/lib/adminSettings";
 import { errorMessage } from "@/lib/errors";
 import type { AdminSettings } from "@/lib/types";
-import { FINISHING_LABEL, type FinishingOption } from "@/lib/workflow";
+import { DOCS_HELP, FINISHING_HELP, FINISHING_LABEL, REVIEW_HELP, type FinishingOption } from "@/lib/workflow";
 import { usePageTitle } from "@/lib/title";
 
 const TABS = [
@@ -162,15 +162,22 @@ function DefaultsForm({ settings }: { settings: AdminSettings }) {
           <option key={o} value={o}>{FINISHING_LABEL[o]}</option>
         ))}
       </Select>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={defaults.require_human_code_review} onChange={(e) => set({ require_human_code_review: e.target.checked })} /> Require a human code review
-      </label>
+      <p className="text-xs text-muted-foreground">{FINISHING_HELP[defaults.finishing_option]}</p>
+      <div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={defaults.require_human_code_review} onChange={(e) => set({ require_human_code_review: e.target.checked })} /> Require a human code review
+        </label>
+        <p className="ml-6 text-xs text-muted-foreground">{REVIEW_HELP}</p>
+      </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={defaults.sprints_enabled} onChange={(e) => set({ sprints_enabled: e.target.checked })} /> Sprints
       </label>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={defaults.commit_docs_to_repo} onChange={(e) => set({ commit_docs_to_repo: e.target.checked })} /> Commit design and plan documents to the repository
-      </label>
+      <div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={defaults.commit_docs_to_repo} onChange={(e) => set({ commit_docs_to_repo: e.target.checked })} /> Commit design and plan documents to the repository
+        </label>
+        <p className="ml-6 text-xs text-muted-foreground">{DOCS_HELP}</p>
+      </div>
       <p className="text-xs text-muted-foreground">Existing projects keep their own settings.</p>
       <StatusLine status={status} />
       <Button type="submit">Save</Button>

@@ -78,6 +78,17 @@ describe("Admin settings in tabs", () => {
     expect(panel.getByLabelText("Send a test email to")).toBeInTheDocument();
   });
 
+  it("New projects says what each default does", async () => {
+    search = "tab=new-projects";
+    renderPage();
+    const panel = within(await screen.findByRole("tabpanel", { name: "New projects" }));
+    expect(panel.getByText(/pushes the task's branch and opens a pull request/)).toBeInTheDocument();
+    fireEvent.change(panel.getByLabelText("Default finishing option"), { target: { value: "keep_branch" } });
+    expect(panel.getByText(/leaves the finished work committed on its own branch/)).toBeInTheDocument();
+    expect(panel.getByText(/the work always ends as a pull request/)).toBeInTheDocument();
+    expect(panel.getByText(/so they travel with the code/)).toBeInTheDocument();
+  });
+
   it("New projects saves the defaults only", async () => {
     search = "tab=new-projects";
     renderPage();

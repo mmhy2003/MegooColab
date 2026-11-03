@@ -9,16 +9,11 @@ import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { Project } from "@/lib/types";
+import { DOCS_HELP, FINISHING_HELP, FINISHING_LABEL, REVIEW_HELP } from "@/lib/workflow";
 
-const FINISHING: { value: Project["finishing_option"]; label: string }[] = [
-  { value: "pull_request", label: "Push and open a PR/MR" },
-  { value: "merge_local", label: "Merge locally" },
-  { value: "keep_branch", label: "Keep the branch" },
-];
+const FINISHING: Project["finishing_option"][] = ["pull_request", "merge_local", "keep_branch"];
 const REVIEW_LABEL = "Require human code review before Done";
-const REVIEW_HELP = "Agents open a PR/MR and wait for a person to approve it before Done.";
 const DOCS_LABEL = "Also commit design and plan to the repo";
-const DOCS_HELP = "Also commits the approved design and plan under docs/superpowers/ in the task branch.";
 
 const yesNo = (on: boolean) => (on ? "On" : "Off");
 
@@ -36,7 +31,8 @@ export function WorkflowSettings({ project, canEdit }: { project: Project; canEd
       <section aria-label="Workflow" className="card max-w-xl space-y-3 p-4 text-sm">
         <div>
           <div className="text-xs tracking-wider text-muted-foreground uppercase">Default finishing option</div>
-          <div>{FINISHING.find((f) => f.value === project.finishing_option)?.label}</div>
+          <div>{FINISHING_LABEL[project.finishing_option]}</div>
+          <p className="text-xs text-muted-foreground">{FINISHING_HELP[project.finishing_option]}</p>
         </div>
         <div>
           <div className="text-xs tracking-wider text-muted-foreground uppercase">{REVIEW_LABEL}</div>
@@ -75,11 +71,13 @@ export function WorkflowSettings({ project, canEdit }: { project: Project; canEd
         onChange={(e) => setForm({ ...form, finishing_option: e.target.value as Project["finishing_option"] })}
       >
         {FINISHING.map((f) => (
-          <option key={f.value} value={f.value}>
-            {f.label}
+          <option key={f} value={f}>
+            {FINISHING_LABEL[f]}
           </option>
         ))}
       </Select>
+      {/* what the chosen option does: it follows the choice */}
+      <p className="-mt-2 text-xs text-muted-foreground">{FINISHING_HELP[form.finishing_option]}</p>
       <div>
         <label className="flex items-center gap-2 text-sm">
           <input

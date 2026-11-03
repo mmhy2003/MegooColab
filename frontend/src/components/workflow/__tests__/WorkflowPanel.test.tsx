@@ -150,13 +150,15 @@ describe("WorkflowPanel", () => {
   it("shows the finishing select before done", async () => {
     setup(wf({ stage: "build", status: "running" }));
     expect(await screen.findByLabelText("Finishing option")).toBeInTheDocument();
+    // what the chosen option does, under the choice
+    expect(screen.getByText(/pushes the task's branch and opens a pull request/)).toBeInTheDocument();
   });
 
   it("finishing select hidden at done", async () => {
     setup(wf({ stage: "done", status: "running" }));
     await screen.findByText(/Running: Done/);
     expect(screen.queryByLabelText("Finishing option")).not.toBeInTheDocument();
-    expect(screen.getByText("Open a pull request")).toBeInTheDocument();
+    expect(screen.getByText("Push and open a pull request")).toBeInTheDocument();
   });
 
   it("shows the status line and Pause while running", async () => {
@@ -243,7 +245,7 @@ describe("WorkflowPanel", () => {
     setup(wf());
     await screen.findByRole("button", { name: "Start" });
     expect(screen.queryByLabelText("Finishing option")).not.toBeInTheDocument();
-    expect(screen.getByText("Open a pull request")).toBeInTheDocument();
+    expect(screen.getByText("Push and open a pull request")).toBeInTheDocument();
   });
 
   it("explains a forced finishing option instead of offering a select", async () => {
