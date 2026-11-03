@@ -133,6 +133,8 @@ describe("JobModels thinking effort", () => {
     });
     wrap(<JobModels />);
     const dreaming = (await screen.findByText("Dreaming")).closest("form")!;
+    // one job's help never names another, so a job's form can be found by its name alone
+    expect(screen.getAllByText(/Dreaming/)).toHaveLength(1);
     const embeddings = screen.getByText("Embeddings").closest("form")!;
     expect(within(embeddings).queryByLabelText("Thinking effort")).toBeNull();
     const effort = within(dreaming).getByLabelText("Thinking effort");

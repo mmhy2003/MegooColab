@@ -2,18 +2,16 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { BoardDialog } from "@/components/chats/BoardDialog";
 import { ChatBack } from "@/components/chats/ChatBack";
 import { ChatComposer } from "@/components/chats/ChatComposer";
 import { EndChatButton, useEndChat } from "@/components/chats/EndChatButton";
-import { ImageGallery } from "@/components/images/ImageGallery";
 import { RoundDivider } from "@/components/chats/RoundDivider";
+import { RoundSections } from "@/components/chats/RoundSections";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/shadcn/dropdown-menu";
-import { ActivityThread } from "@/components/task/ActivityThread";
 import { JumpButtons } from "@/components/task/JumpButtons";
-import { DocumentView } from "@/components/workflow/DocumentView";
 import { PROGRAM_LABEL, useAgentRuns } from "@/lib/agents";
 import { api } from "@/lib/api";
 import { latestRound, stateText, useChat, WAITING, type Chat, type ChatRound } from "@/lib/chats";
@@ -22,7 +20,6 @@ import { qk } from "@/lib/queries";
 import { useRecordTitle } from "@/lib/title";
 import { useRecordTrail } from "@/lib/trail";
 import type { ActivityItem, AgentProgram } from "@/lib/types";
-import { useWorkflow } from "@/lib/workflow";
 
 const PROGRESS = ["Talk", "Design", "Plan", "Build", "Finish"] as const;
 const STEP_OF: Record<string, number> = { brainstorm: 0, design: 1, plan: 2, build: 3, review: 3, done: 4 };
@@ -84,48 +81,9 @@ function ChatMenu({ chat, agentRunning }: { chat: Chat; agentRunning: boolean })
   );
 }
 
-/** One round's conversation: what was said and done, its questions, and its design and plan with their buttons. */
-function RoundThread({ chat, round }: { chat: Chat; round: ChatRound }) {
-  const activity = useQuery({
-    queryKey: qk.activity(round.key),
-    queryFn: () => api<ActivityItem[]>(`/api/tasks/${round.key}/activity?limit=200`),
-  });
-  const workflow = useWorkflow(round.key);
-  const agentNames = useMemo(() => new Map(chat.agent ? [[chat.agent.id, chat.agent.name]] : []), [chat.agent]);
-  const docs = workflow.data?.documents ?? [];
-  const readOnly = !chat.can_act;
-  return (
-    <div className="space-y-4">
-      {(round.images ?? []).length > 0 && (
-        <section aria-label="Images with the first message">
-          <h3 className="text-xs tracking-wider text-muted-foreground uppercase">Images with the first message</h3>
-          <ImageGallery images={round.images ?? []} />
-        </section>
-      )}
-      <ActivityThread
-        items={activity.data ?? []}
-        columnNames={new Map()}
-        userNames={new Map()}
-        agentNames={agentNames}
-        taskKey={round.key}
-        canAct={workflow.data?.can_act === true && chat.status === "open"}
-        readOnly={readOnly}
-      />
-      {(["design", "plan"] as const).map(
-        (kind) =>
-          docs.some((d) => d.kind === kind) && (
-            <section key={kind} aria-label={kind === "design" ? "Design" : "Plan"} className="rounded border border-violet/50 bg-violet/5 p-3">
-              <h3 className="mb-2 text-xs tracking-wider text-muted-foreground uppercase">{kind === "design" ? "Design" : "Plan"}</h3>
-              <DocumentView taskKey={round.key} kind={kind} disabled={readOnly || chat.status !== "open"} />
-            </section>
-          ),
-      )}
-    </div>
-  );
-}
-
 /**
- * A chat: its rounds as one conversation, the progress of the latest, and the message box at the bottom. It fills
+ * A chat: its rounds one after another, each laid out as a task's page is (RoundSections: subtasks, design, plan,
+ * questions, attachments, then its conversation), the progress of the latest, and the message box at the bottom. It fills
  * the height it is given: the header stays at the top and the message box at the bottom, only the conversation
  * scrolls between them, with a task's corner buttons (back to top, the latest, what waits on the viewer).
  */
@@ -200,12 +158,14 @@ export function ChatView({ chatId }: { chatId: string }) {
         <PhoneProgress round={latest} />
       </header>
       <div className="relative min-h-0 flex-1">
-        <div ref={scrollRef} data-thread className="h-full overflow-y-auto px-4 py-3 wrap-anywhere max-md:px-3">
+        {/* relative: what is positioned inside (screen reader text in a round's parts) is held in it too; otherwise it
+            would stretch the page instead of this scroller */}
+        <div ref={scrollRef} data-thread className="relative h-full overflow-y-auto px-4 py-3 wrap-anywhere max-md:px-3">
           <div className="space-y-2">
             {c.rounds.map((r) => (
               <div key={r.key}>
                 {c.rounds.length > 1 && <RoundDivider round={r} canEdit={c.can_act && r === latest} />}
-                <RoundThread chat={c} round={r} />
+                <RoundSections chat={c} round={r} latest={r === latest} />
               </div>
             ))}
           </div>

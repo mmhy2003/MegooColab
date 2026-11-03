@@ -19,7 +19,13 @@ function show(c: Chat) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
-      const body = url.includes("/activity") || url.includes("/agent-runs") ? [] : url.includes("/workflow") ? {} : c;
+      // the round's own parts (RoundSections) as a task's: empty lists, no documents, no decisions
+      const lists = ["/activity", "/agent-runs", "/questions", "/attachments", "/mockups", "/api/projects/", "/api/users"];
+      const body = lists.some((l) => url.includes(l))
+        ? []
+        : url.includes("/workflow") ? {} : url.includes("/records") ? { decisions: [] }
+        : url.startsWith("/api/tasks/") ? { id: "t7", key: "PAY-7", subtask_count: 0, subtask_done_count: 0 }
+        : c;
       return new Response(JSON.stringify(body), { status: 200 });
     }),
   );
@@ -83,6 +89,8 @@ describe("ChatView", () => {
       return el;
     });
     expect(thread).toHaveClass("overflow-y-auto");
+    // and holds what is positioned inside it (screen-reader text in its parts), or that would stretch the page
+    expect(thread).toHaveClass("relative");
     expect(thread).not.toContainElement(screen.getByRole("heading", { level: 2 }));
     expect(thread).not.toContainElement(screen.getByRole("textbox", { name: "Message laptop-claude" }));
   });

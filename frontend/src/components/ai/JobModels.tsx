@@ -37,7 +37,7 @@ const EFFORTS = [
   ["max", "Max"],
 ] as const;
 const EFFORT_HELP =
-  "For a thinking model: its reasoning counts against the reply's length, so a long job (Dreaming) may need Low. None turns thinking off.";
+  "For a thinking model: its reasoning counts against the reply's length, so a job with long replies may need Low. None turns thinking off.";
 
 /** Which provider and model each AI job uses (MEM-10), and how hard a thinking model thinks for it. */
 export function JobModels() {

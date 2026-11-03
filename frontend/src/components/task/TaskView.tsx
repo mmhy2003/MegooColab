@@ -35,20 +35,12 @@ import { Description } from "./Description";
 import { JumpButtons, useLiftAbove } from "./JumpButtons";
 import { Links } from "./Links";
 import { PhoneComposer } from "./PhoneComposer";
+import { Section } from "./Section";
 import { Subtasks } from "./Subtasks";
 import { TaskFields } from "./TaskFields";
 import { TaskTitle } from "./TaskTitle";
 
 const ACTIVITY_PAGE = 50;
-
-function Section({ title, id, children }: { title: string; id?: string; children: React.ReactNode }) {
-  return (
-    <section id={id} className="space-y-2">
-      <h3 className="text-[11px] tracking-widest text-muted-foreground uppercase">{title}</h3>
-      {children}
-    </section>
-  );
-}
 
 export function TaskView({
   taskKey,
