@@ -66,6 +66,7 @@ class RunRole(StrEnum):
     final_fix = "final_fix"
     finish = "finish"
     pr_fix = "pr_fix"  # changes requested on the pull request (piece 3): fix, push to the same branch
+    pr_review = "pr_review"  # an agent reviews the pull request on the host and merges it (piece 4)
 
 
 class FinishingOption(StrEnum):

@@ -69,12 +69,13 @@ TOOL_ROLES: dict[str, frozenset[RunRole]] = {
     "submit_review": frozenset({RunRole.step_review, RunRole.final_review}),
     "report_finish": frozenset({RunRole.finish}),
     "report_pr_fix": frozenset({RunRole.pr_fix}),
+    "submit_pr_review": frozenset({RunRole.pr_review}),
     "show_mockup": frozenset({RunRole.brainstorm}),  # also the session resumed to revise a design
     # reviewers judge records; their read-only sessions cannot run the tests
     "record_decision": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish, RunRole.pr_fix}),
     "record_tests": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish, RunRole.pr_fix}),
 }
-RUNNER_ONLY = frozenset({"submit_review", "report_finish", "report_pr_fix"})  # connect-only workflows have no such runs
+RUNNER_ONLY = frozenset({"submit_review", "report_finish", "report_pr_fix", "submit_pr_review"})  # connect-only workflows have no such runs
 
 RUN_NEXT: dict[RunRole, str] = {
     RunRole.brainstorm: "Ask questions with ask_human, show screens with show_mockup, then submit_design.",
@@ -87,6 +88,8 @@ RUN_NEXT: dict[RunRole, str] = {
     RunRole.finish: "Re-verify the tests, perform the finishing option ({option}), then call report_finish.",
     RunRole.pr_fix: "Fix what was asked on the pull request, run the tests, push to the same branch, then call "
     "report_pr_fix.",
+    RunRole.pr_review: "Review the pull request on the host, post your review (merge it when you approve), then call "
+    "submit_pr_review.",
 }
 WAIT_NEXT: dict[Needs, str] = {
     Needs.question: "Wait for the human's answer (it appears in get_task), then call get_workflow again.",
@@ -362,6 +365,21 @@ def register_workflow_tools(mcp: MCPServer) -> None:
             task = await _task(db, user, key, "report_pr_fix", write=True)
             await send_back.report_fix(db, await live_run(db, task), summary, tests_passed)
             return {"summary": summary, "tests_passed": tests_passed}
+
+    @mcp.tool()
+    async def submit_pr_review(
+        key: str, verdict: str, summary: str, findings: list[dict[str, Any]] | None = None, merged: bool = False,
+        merge_error: str | None = None,
+    ) -> dict[str, Any]:
+        """Report your review of the pull request, after posting it on the host: `verdict` approved or
+        changes_requested, a short summary, up to 50 findings {severity (critical, important or minor), file, line,
+        summary}, and for an approval whether you merged it (`merged`, with `merge_error` when the host refused)."""
+        from app.git import agent_review  # local: the git modules import the workflow
+
+        async with tool_session() as (db, user):
+            task = await _task(db, user, key, "submit_pr_review", write=True)
+            await agent_review.report(db, await live_run(db, task), verdict, summary, findings or [], merged, merge_error)
+            return {"verdict": verdict, "merged": merged and verdict == "approved"}
 
 
 async def _record_target(db: AsyncSession, user: User, task: Task) -> tuple[AgentRun | None, TaskWorkflow]:

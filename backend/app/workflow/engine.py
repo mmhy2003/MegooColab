@@ -74,9 +74,11 @@ ROLE_POLICY: dict[RunRole, RunPolicy] = {
     RunRole.final_fix: RunPolicy.workspace,
     RunRole.finish: RunPolicy.workspace,
     RunRole.pr_fix: RunPolicy.workspace,
+    RunRole.pr_review: RunPolicy.read_only,
 }
 READ_ONLY_ROLES = {role for role, policy in ROLE_POLICY.items() if policy == RunPolicy.read_only}
-FRESH_ROLES = {RunRole.step_review, RunRole.final_review, RunRole.final_fix, RunRole.finish, RunRole.pr_fix}  # never resumed
+FRESH_ROLES = {RunRole.step_review, RunRole.final_review, RunRole.final_fix, RunRole.finish, RunRole.pr_fix,
+               RunRole.pr_review}  # never resumed
 # the role a stage runs when there is no earlier run to repeat
 STAGE_ROLE: dict[Stage, RunRole] = {
     Stage.brainstorm: RunRole.brainstorm,
@@ -409,6 +411,7 @@ async def enqueue(
     requested_by: uuid.UUID,
     resume_prompt: str | None = None,
     resume_session_ref: str | None = None,
+    agent_id: uuid.UUID | None = None,
 ) -> AgentRun:
     """Queue the next workflow run. The caller holds the workflow lock; dispatch happens after commit
     (`dispatch_queued`, or the run-ending path's own dispatch).
@@ -423,7 +426,8 @@ async def enqueue(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "task_not_assigned_to_agent")
     if await active_run(db, task.id) is not None:  # one active run per task: they would share its worktree
         raise HTTPException(status.HTTP_409_CONFLICT, "task_has_active_run")
-    agent = await db.get(Agent, task.assignee_agent_id)
+    # a reviewer may be another agent than the task's (piece 4): it runs, the workflow's agent stays the task's
+    agent = await db.get(Agent, agent_id or task.assignee_agent_id)
     findings = await _latest_findings(db, task.id, role, step) if role in FIX_ROLES else None
     key_override = "design_revision" if role == RunRole.brainstorm and wf.stage == Stage.design else None
     extra = None
@@ -434,6 +438,10 @@ async def enqueue(
         from app.git import send_back  # local: the git modules import this one
 
         extra = [send_back.prompt_section(wf)]
+    if role == RunRole.pr_review:
+        from app.git import agent_review  # local: the git modules import this one
+
+        extra = [await agent_review.prompt_section(db, wf)]
     from app.workflow import (
         records as run_records,  # local: records imports this module
     )
@@ -472,7 +480,8 @@ async def enqueue(
     await db.flush()
     wf.status = WorkflowStatus.running
     wf.needs = None
-    wf.agent_id = agent.id
+    if agent_id is None:
+        wf.agent_id = agent.id
     await record_event(db, task, None, "agent_run_queued", {
         "run_id": str(run.id), "agent_id": str(agent.id), "policy": run.policy, "role": role.value, "step": step,
     })

@@ -56,6 +56,7 @@ ALL_WORKFLOW_TOOLS = {
     "record_decision": {"decision": "d", "reason": "r", "cost_if_wrong": "c"},
     "record_tests": {"command": "pytest", "passed": True},
     "report_pr_fix": {"summary": "Added a back-off", "tests_passed": True},
+    "submit_pr_review": {"verdict": "approved", "summary": "Looks good", "merged": True},
 }
 ALLOWED = {
     "ask_human": {"brainstorm", "plan", "implement", "step_fix", "final_fix", "finish", "pr_fix"},
@@ -68,6 +69,7 @@ ALLOWED = {
     "record_decision": {"implement", "step_fix", "final_fix", "finish", "pr_fix"},
     "record_tests": {"implement", "step_fix", "final_fix", "finish", "pr_fix"},
     "report_pr_fix": {"pr_fix"},
+    "submit_pr_review": {"pr_review"},
 }
 
 
@@ -455,7 +457,7 @@ async def test_personal_token_refused_on_runner_driven_or_others_task(db, tc_fac
     token = _personal(tc)
     # the agent's task is driven by MegooColab: the human's own client cannot submit for their agent
     for name, args in {**ALL_WORKFLOW_TOOLS, "get_workflow": {}}.items():
-        if name in ("submit_review", "report_finish", "report_pr_fix"):  # runner-only: refused by role, tested elsewhere
+        if name in ("submit_review", "report_finish", "report_pr_fix", "submit_pr_review"):  # runner-only: refused by role, tested elsewhere
             continue
         err, text = _tool(tc, token, name, key=b.key, **args)
         assert err and "runner_driven" in text, (name, text)

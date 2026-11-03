@@ -42,6 +42,7 @@ ROLE_KEY: dict[RunRole, str] = {
     RunRole.final_fix: "review_fix",
     RunRole.finish: "finish",
     RunRole.pr_fix: "pr_fix",
+    RunRole.pr_review: "pr_review",
 }
 
 MAX_PROMPT_CHARS = 60_000
@@ -51,7 +52,7 @@ REPORTS_CHARS = 8_000
 
 BUILD_ROLES = {
     RunRole.implement, RunRole.step_review, RunRole.step_fix,
-    RunRole.final_review, RunRole.final_fix, RunRole.finish, RunRole.pr_fix,
+    RunRole.final_review, RunRole.final_fix, RunRole.finish, RunRole.pr_fix, RunRole.pr_review,
 }
 STEP_ROLES = {RunRole.implement, RunRole.step_fix, RunRole.step_review}
 FIX_ROLES = {RunRole.step_fix, RunRole.final_fix}
