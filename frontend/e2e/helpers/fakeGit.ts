@@ -109,12 +109,26 @@ export async function startFakeGit(token: string): Promise<FakeGit> {
   };
 }
 
-/** A GitHub `pull_request` webhook delivery for `o/r` #n, signed (X-Hub-Signature-256) with `secret`. */
-export function pullRequestDelivery(n: number, secret: string): { body: string; headers: Record<string, string> } {
-  const body = JSON.stringify({ action: "closed", number: n, pull_request: { number: n }, repository: { full_name: "o/r" } });
+let deliveries = 0;
+
+/** A GitHub webhook delivery of `event` about `o/r`, signed (X-Hub-Signature-256) with `secret`, with its own id. */
+export function delivery(event: string, payload: object, secret: string): { body: string; headers: Record<string, string> } {
+  const body = JSON.stringify({ repository: { full_name: "o/r" }, ...payload });
   const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+  deliveries += 1;
   return {
     body,
-    headers: { "content-type": "application/json", "X-GitHub-Event": "pull_request", "X-Hub-Signature-256": signature },
+    headers: {
+      "content-type": "application/json",
+      "X-GitHub-Event": event,
+      "X-GitHub-Delivery": `e2e-${Date.now()}-${deliveries}`,
+      "X-Hub-Signature-256": signature,
+    },
   };
+}
+
+/** `o/r` #n merged by `mo` from task branch `megoo/GIT-<n>`: a GitHub `pull_request` delivery signed with `secret`. */
+export function pullRequestDelivery(n: number, secret: string, htmlUrl = `https://git.example/o/r/pull/${n}`) {
+  const pullRequest = { number: n, html_url: htmlUrl, merged: true, head: { ref: `megoo/GIT-${n}` }, base: { ref: "main" } };
+  return delivery("pull_request", { action: "closed", number: n, pull_request: pullRequest, sender: { login: "mo" } }, secret);
 }

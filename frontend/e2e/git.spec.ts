@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
-import { pullRequestDelivery, startFakeGit, type FakeGit } from "./helpers/fakeGit";
+import { delivery, pullRequestDelivery, startFakeGit, type FakeGit } from "./helpers/fakeGit";
 import { buildBinaries, mcp, onPrompt, mintLinkedRunnerToken, startRunner, type RunnerHandle } from "./helpers/runner";
 
 /**
@@ -209,15 +209,43 @@ test("a pull request followed through a git connection", async ({ browser }) => 
   await expect(panel.getByRole("button", { name: "Mark merged" })).toBeVisible();
   expect(fake.requests).toContain("/api/v3/repos/o/r/pulls/1");
 
+  // the task's Activity follows the pull request: the agent's push and pull request (the finish run has just ended),
+  // and a person's review asking for changes
+  const send = async (event: string, payload: object) => {
+    const d = delivery(event, payload, made.secret);
+    expect((await request.post(hookUrl, { data: d.body, headers: d.headers })).status()).toBe(204);
+  };
+  const pr1 = { number: 1, html_url: prUrl(1), title: "Ship the feature", head: { ref: "megoo/GIT-1" }, base: { ref: "main" } };
+  await send("push", { ref: "refs/heads/megoo/GIT-1", after: "1".repeat(40), pusher: { name: "admin-gh" },
+    commits: [{ message: "GIT-1: do it" }] });
+  await send("pull_request", { action: "opened", number: 1, pull_request: pr1, sender: { login: "admin-gh" } });
+  await send("pull_request_review", { action: "submitted", pull_request: pr1, sender: { login: "rev" },
+    review: { id: 5, state: "changes_requested", body: "Add a back-off", html_url: `${prUrl(1)}#review-5` } });
+  const activity = (text: string) => drawer.getByRole("listitem").filter({ hasText: text });
+  await expect(activity("pushed 1 commit to megoo/GIT-1")).toBeVisible({ timeout: 15_000 });
+  await expect(activity("pushed 1 commit to megoo/GIT-1")).toContainText(AGENT_NAME);
+  await expect(activity("pushed 1 commit to megoo/GIT-1").getByText("agent", { exact: true })).toBeVisible();
+  await expect(activity("opened PR #1 · megoo/GIT-1 → main")).toContainText(AGENT_NAME);
+  await expect(activity("requested changes on PR #1")).toContainText("rev");
+  await expect(activity("requested changes on PR #1")).toContainText("Add a back-off");
+
   // 4. someone merges it on the git host; the signed webhook makes MegooColab look, and the task is done
   fake.prs.set(1, { state: "closed", merged: true, checks: "success", reviews: [{ state: "APPROVED", login: "rev" }] });
-  const delivery = pullRequestDelivery(1, made.secret);
-  const hook = await request.post(hookUrl, { data: delivery.body, headers: delivery.headers });
+  const merge = pullRequestDelivery(1, made.secret, prUrl(1));
+  const hook = await request.post(hookUrl, { data: merge.body, headers: merge.headers });
   expect(hook.status()).toBe(204);
   await expect(panel.getByRole("link", { name: "PR merged" })).toBeVisible({ timeout: 30_000 });
   await expect(panel.getByText("Finished", { exact: true })).toBeVisible({ timeout: 30_000 });
   expect((await get<Workflow>(request, `/api/tasks/${FIRST}/workflow`)).status).toBe("finished");
   await expect(drawer.getByText("Moved to Done by the workflow")).toBeVisible();
+  // one line for the merge, naming who did it
+  await expect(activity("mo merged PR #1")).toHaveCount(1);
+  await expect(drawer.getByText("PR #1 merged")).toHaveCount(0);
+  // and it all fits a phone
+  await page.setViewportSize({ width: 280, height: 800 });
+  await expect(activity("mo merged PR #1")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   // 5. a delivery with a wrong signature, or none, is refused and changes nothing
   const forged = pullRequestDelivery(1, "not-the-secret");
