@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { CARD_TABLE } from "@/components/ui/cardTable";
+import { ScrollX } from "@/components/ui/ScrollX";
 import { errorMessage } from "@/lib/errors";
 import {
   KIND_LABELS,
@@ -41,10 +43,11 @@ export function NotificationPrefs() {
   };
   return (
     <div className="space-y-2">
-      {/* four or five columns: on a narrow phone the table scrolls inside its card instead of widening the page */}
-      <div className="card max-w-xl overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
+      {/* four or five columns: a wide screen has the table; a phone a card per event, its channels in a row, each
+          box inside a tap-sized label */}
+      <ScrollX className={`max-w-xl ${CARD_TABLE.box}`}>
+        <table className={`w-full text-sm ${CARD_TABLE.table}`}>
+          <thead className={CARD_TABLE.thead}>
             <tr className="text-left text-xs text-muted-foreground">
               <th className="px-2 py-2 sm:px-3 font-normal">When</th>
               <th className="px-2 py-2 sm:px-3 font-normal">In app</th>
@@ -53,36 +56,44 @@ export function NotificationPrefs() {
               {telegram?.available && <th className="px-2 py-2 sm:px-3 font-normal">Telegram</th>}
             </tr>
           </thead>
-          <tbody>
+          <tbody className={CARD_TABLE.tbody}>
             {(prefs.data ?? []).map((saved) => unsaved[saved.kind] ?? saved).map((p) => (
-              <tr key={p.kind} className="border-t border-line">
-                <td className="px-2 py-2 sm:px-3">{KIND_LABELS[p.kind]}</td>
-                <td className="px-2 py-2 sm:px-3">
-                  <input type="checkbox" aria-label={`In app: ${KIND_LABELS[p.kind]}`} checked={p.in_app} onChange={() => toggle(p, "in_app")} />
+              <tr key={p.kind} className={`border-t border-line ${CARD_TABLE.tr}`}>
+                <td className="px-2 py-2 sm:px-3 max-md:block max-md:p-0 max-md:pb-1.5 max-md:font-medium">{KIND_LABELS[p.kind]}</td>
+                <td data-label="In app" className="px-2 py-2 sm:px-3 max-md:mr-4 max-md:inline-flex max-md:items-center max-md:gap-1.5 max-md:p-0 max-md:text-xs max-md:text-muted-foreground max-md:before:content-[attr(data-label)]">
+                  <label className="max-md:inline-flex max-md:min-h-8 max-md:min-w-8 max-md:items-center max-md:justify-center">
+                    <input type="checkbox" aria-label={`In app: ${KIND_LABELS[p.kind]}`} checked={p.in_app} onChange={() => toggle(p, "in_app")} />
+                  </label>
                 </td>
-                <td className="px-2 py-2 sm:px-3">
-                  <input type="checkbox" aria-label={`Email: ${KIND_LABELS[p.kind]}`} checked={p.email} onChange={() => toggle(p, "email")} />
+                <td data-label="Email" className="px-2 py-2 sm:px-3 max-md:mr-4 max-md:inline-flex max-md:items-center max-md:gap-1.5 max-md:p-0 max-md:text-xs max-md:text-muted-foreground max-md:before:content-[attr(data-label)]">
+                  <label className="max-md:inline-flex max-md:min-h-8 max-md:min-w-8 max-md:items-center max-md:justify-center">
+                    <input type="checkbox" aria-label={`Email: ${KIND_LABELS[p.kind]}`} checked={p.email} onChange={() => toggle(p, "email")} />
+                  </label>
                 </td>
-                <td className="px-2 py-2 sm:px-3">
-                  <input type="checkbox" aria-label={`Push: ${KIND_LABELS[p.kind]}`} checked={p.push ?? false} onChange={() => toggle(p, "push")} />
+                <td data-label="Push" className="px-2 py-2 sm:px-3 max-md:mr-4 max-md:inline-flex max-md:items-center max-md:gap-1.5 max-md:p-0 max-md:text-xs max-md:text-muted-foreground max-md:before:content-[attr(data-label)]">
+                  <label className="max-md:inline-flex max-md:min-h-8 max-md:min-w-8 max-md:items-center max-md:justify-center">
+                    <input type="checkbox" aria-label={`Push: ${KIND_LABELS[p.kind]}`} checked={p.push ?? false} onChange={() => toggle(p, "push")} />
+                  </label>
                 </td>
                 {telegram?.available && (
-                  <td className="px-2 py-2 sm:px-3">
-                    <input
-                      type="checkbox"
-                      aria-label={`Telegram: ${KIND_LABELS[p.kind]}`}
-                      checked={p.telegram ?? false}
-                      disabled={!telegram.linked}
-                      title={telegram.linked ? undefined : "Connect Telegram first"}
-                      onChange={() => toggle(p, "telegram")}
-                    />
+                  <td data-label="Telegram" className="px-2 py-2 sm:px-3 max-md:mr-4 max-md:inline-flex max-md:items-center max-md:gap-1.5 max-md:p-0 max-md:text-xs max-md:text-muted-foreground max-md:before:content-[attr(data-label)]">
+                    <label className="max-md:inline-flex max-md:min-h-8 max-md:min-w-8 max-md:items-center max-md:justify-center">
+                      <input
+                        type="checkbox"
+                        aria-label={`Telegram: ${KIND_LABELS[p.kind]}`}
+                        checked={p.telegram ?? false}
+                        disabled={!telegram.linked}
+                        title={telegram.linked ? undefined : "Connect Telegram first"}
+                        onChange={() => toggle(p, "telegram")}
+                      />
+                    </label>
                   </td>
                 )}
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollX>
       {save.error && <p role="alert" className="text-sm text-pink">{errorMessage(save.error)}</p>}
     </div>
   );

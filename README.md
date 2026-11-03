@@ -71,7 +71,8 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 # 2. Backend
 cd backend
 uv sync
-uv run pytest                      # test suite (uses the megoo_test database)
+uv run pytest -n auto              # test suite, in parallel (each worker gets its own megoo_gwN_test database)
+uv run pytest tests/auth           # a part of it, one process (uses the megoo_test database)
 export SECRET_KEY=megoo-dev-secret-key-not-for-production MEILI_MASTER_KEY=megoo-dev-master-key   # SECRET_KEY needs 16+ characters
 uv run fastapi dev app/main.py     # API on http://localhost:8000/api/docs
 uv run python -m app.worker        # background jobs (search indexing); needs the API's migrations

@@ -22,9 +22,10 @@ async def _admin(client, db):
     await login(client, await make_user(db, role=Role.admin))
 
 
-async def _configure(client, job="extraction", model="gpt-x"):
-    pid = (await client.post("/api/admin/ai/providers", json={"name": "P", "kind": "openai", "api_key": "sk"})).json()["id"]
-    r = await client.put(f"/api/admin/ai/jobs/{job}", json={"provider_id": pid, "model": model})
+async def _configure(client, job="extraction", model="gpt-x", *, kind="openai", effort=None, name="P"):
+    pid = (await client.post("/api/admin/ai/providers", json={"name": name, "kind": kind, "api_key": "sk"})).json()["id"]
+    body = {"provider_id": pid, "model": model} | ({"effort": effort} if effort else {})
+    r = await client.put(f"/api/admin/ai/jobs/{job}", json=body)
     assert r.status_code == 200, r.text
     return pid
 
@@ -119,3 +120,71 @@ async def test_settings_change_enqueues_every_reindex_job(client, db, monkeypatc
     await client.put("/api/admin/ai/jobs/embeddings", json={"provider_id": pid, "model": "m"})
     kinds = sorted(j.kind for j in (await db.execute(select(Job).where(Job.status == JobStatus.queued))).scalars())
     assert kinds == ["kb.reconcile", "t.extra"]
+
+
+async def _seen_call(monkeypatch, db, job="extraction"):
+    seen = {}
+
+    async def fake(**kw):
+        seen.update(kw)
+        return _resp()
+
+    monkeypatch.setattr(litellm, "acompletion", fake)
+    await ai.complete(db, job, [{"role": "user", "content": "hi"}])
+    return seen
+
+
+async def test_a_jobs_effort_is_saved_and_listed(client, db):
+    await _admin(client, db)
+    await _configure(client, job="dreaming", effort="low")
+    jobs = {j["job"]: j for j in (await client.get("/api/admin/ai/jobs")).json()}
+    assert jobs["dreaming"]["effort"] == "low"
+    assert jobs["extraction"]["effort"] is None
+    # saving without one goes back to the model's default
+    pid = jobs["dreaming"]["provider_id"]
+    assert (await client.put("/api/admin/ai/jobs/dreaming", json={"provider_id": pid, "model": "gpt-x"})).json()["effort"] is None
+
+
+async def test_an_effort_must_be_a_known_one_and_embeddings_take_none(client, db):
+    await _admin(client, db)
+    pid = await _configure(client)
+    assert (await client.put("/api/admin/ai/jobs/extraction", json={"provider_id": pid, "model": "m", "effort": "huge"})).status_code == 422
+    r = await client.put("/api/admin/ai/jobs/embeddings", json={"provider_id": pid, "model": "m", "effort": "low"})
+    assert (r.status_code, r.json()["detail"]) == (422, "no_effort_for_embeddings")
+
+
+async def test_without_an_effort_nothing_is_sent(client, db, real_mode, monkeypatch):
+    await _admin(client, db)
+    await _configure(client)
+    seen = await _seen_call(monkeypatch, db)
+    assert "reasoning_effort" not in seen and "extra_body" not in seen
+
+
+async def test_the_jobs_effort_goes_with_each_call(client, db, real_mode, monkeypatch):
+    await _admin(client, db)
+    await _configure(client, effort="none")
+    seen = await _seen_call(monkeypatch, db)
+    assert seen["reasoning_effort"] == "none" and "extra_body" not in seen
+
+
+async def test_deepseek_gets_the_effort_level_itself(client, db, real_mode, monkeypatch):
+    # LiteLLM turns reasoning_effort into DeepSeek's thinking on/off only; the level goes in the body as DeepSeek's own
+    await _admin(client, db)
+    await _configure(client, model="deepseek-v4.1-flash", kind="deepseek", effort="low")
+    seen = await _seen_call(monkeypatch, db)
+    assert seen["model"] == "deepseek/deepseek-v4.1-flash"
+    assert seen["reasoning_effort"] == "low" and seen["extra_body"] == {"reasoning_effort": "low"}
+
+
+async def test_the_test_button_leaves_room_for_thinking(client, db, real_mode, monkeypatch):
+    await _admin(client, db)
+    await _configure(client, effort="high")
+    seen = {}
+
+    async def fake(**kw):
+        seen.update(kw)
+        return _resp('{"ok": true}')
+
+    monkeypatch.setattr(litellm, "acompletion", fake)
+    assert (await client.post("/api/admin/ai/jobs/extraction/test")).json()["ok"] is True
+    assert seen["max_tokens"] >= 2000

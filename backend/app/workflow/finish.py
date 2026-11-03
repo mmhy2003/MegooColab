@@ -29,13 +29,19 @@ from app.agent_runs.models import AgentRun
 from app.audit import service as audit
 from app.auth.models import User
 from app.core.text import strip_nul
+from app.git.models import PR_BACK_MERGE
 from app.kb import filing
 from app.notifications import service as notifications
 from app.notifications.models import Kind
-from app.projects.models import ColumnCategory, Project, ProjectRepository, RepoProvider
+from app.projects.models import (
+    ColumnCategory,
+    Project,
+    ProjectRepository,
+    PrReview,
+    RepoProvider,
+)
 from app.tasks.models import Task
 from app.workflow import build, engine, questions
-from app.git.models import PR_BACK_MERGE
 from app.workflow.models import (
     Driver,
     FinishingOption,
@@ -141,7 +147,8 @@ async def enter_done(db: AsyncSession, wf: TaskWorkflow, task: Task, *, requeste
     # Frozen for the whole Done stage, so a project setting changed meanwhile cannot change this run. The task's
     # override is overwritten on purpose: set_finishing is refused from here on, so it has served its purpose.
     wf.finishing_override = engine.finishing_option(project, wf)
-    wf.finish_requires_human_review = bool(project.require_human_code_review)
+    wf.finish_pr_review = project.pr_review
+    wf.finish_requires_human_review = project.pr_review != "none"
     wf.review_round = 0
     wf.nudged = False
     await engine.enqueue(db, wf, task, RunRole.finish, requested_by=requested_by)
@@ -156,7 +163,9 @@ async def finish_workflow(db: AsyncSession, wf: TaskWorkflow, task: Task, actor_
         "outcome": wf.finish_outcome, "branch": wf.branch, "pr_url": wf.pr_url,
     })
     if task.in_chat:  # the chat asks whether to add the round to the board: its people hear it finished
-        from app.chats.service import chat_people  # local: the chats modules import the workflow
+        from app.chats.service import (
+            chat_people,  # local: the chats modules import the workflow
+        )
 
         recipients, link = await chat_people(db, task)
         await notifications.notify(
@@ -272,9 +281,14 @@ async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Ag
         if waits and engine.finishing_option(project, wf) == FinishingOption.pull_request:
             from app.git import service as git  # local: git imports the workflow
 
-            await engine.wait_for(db, wf, Needs.human_code_review)
-            # a tracked pull request merged (or closed) before this run ended moves on at once
-            await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))
+            agent_reviews = engine.pr_review_mode(project, wf) == PrReview.agent
+            await engine.wait_for(db, wf, Needs.human_code_review, notify=not agent_reviews)
+            # a tracked pull request merged (or closed) before this run ended moves on at once; else an agent reviews
+            # it when the project asks for one (piece 4)
+            if not await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):
+                from app.git import agent_review  # local: git imports the workflow
+
+                await agent_review.review_if_agent(db, wf, task)
         else:
             await finish_workflow(db, wf, task, None)
         return

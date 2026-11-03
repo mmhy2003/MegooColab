@@ -12,6 +12,7 @@ from app.auth.deps import AdminUser, AuthedUser
 from app.auth.models import User
 from app.core.db import DbSession
 from app.core.text import NoNulStr
+from app.images.support import task_takes_images
 from app.kb import filing
 from app.projects.access import get_project_for
 from app.projects.models import Project
@@ -207,6 +208,9 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
             state = "pending"
         steps.append(WorkflowStepOut(n=n, title=step.get("title", ""), state=state))
     return WorkflowOut(
+        pr_fix_rounds=wf.pr_fix_rounds or 0,  # an unsaved (never started) workflow has no default yet
+        pr_fix_trigger=wf.pr_fix_trigger,
+        takes_images=await task_takes_images(db, task),
         kb_documents=await filing.kb_documents(db, task.id),
         driver=wf.driver,
         stage=wf.stage,
@@ -280,6 +284,16 @@ async def approve_human_review(key: str, body: HumanReviewIn, user: AuthedUser, 
     return await workflow_out(db, task, user)
 
 
+@router.post("/api/tasks/{key}/workflow/send-back/cancel")
+async def cancel_send_back(key: str, user: AuthedUser, db: DbSession) -> WorkflowOut:
+    """Don't send back: stop the fix run a review on the pull request started, and wait for the merge again."""
+    from app.git import send_back  # local: the git modules import the workflow
+
+    task, _ = await get_task_for(db, user, key, write=True)
+    await send_back.cancel(db, user, task)
+    return await workflow_out(db, task, user)
+
+
 @router.put("/api/tasks/{key}/workflow/finishing")
 async def set_finishing(key: str, body: FinishingIn, user: AuthedUser, db: DbSession) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)
@@ -301,6 +315,7 @@ async def set_manual_workflow(key: str, body: ManualWorkflowIn, user: AuthedUser
 class AnswerIn(BaseModel):
     choice: NoNulStr | None = None
     text: NoNulStr | None = None
+    image_ids: list[uuid.UUID] = Field(default=[], max_length=6)  # unsent images (POST /api/images) it sends
 
 
 class MockupOut(BaseModel):
@@ -328,7 +343,7 @@ async def answer_question(
     key: str, question_id: uuid.UUID, body: AnswerIn, user: AuthedUser, db: DbSession
 ) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)
-    await questions.answer(db, user, task, question_id, body.choice, body.text)
+    await questions.answer(db, user, task, question_id, body.choice, body.text, body.image_ids)
     await engine.dispatch_queued(db)
     return await workflow_out(db, task, user)
 
@@ -421,6 +436,7 @@ async def decide_document(
     key: str, kind: DocKind, version: int, body: DocumentDecisionIn, user: AuthedUser, db: DbSession
 ) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)
-    await documents.decide(db, user, task, kind, version, body.approve, body.comment)
+    await documents.decide(db, user, task, kind, version, body.approve, body.comment,
+                           [] if body.approve else body.image_ids)
     await engine.dispatch_queued(db)
     return await workflow_out(db, task, user)

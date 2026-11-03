@@ -10,6 +10,7 @@ fix (Branch from) has two rows, its own pull request and the back-merge into the
 when both are merged, and either one closed escalates (`back_merge_pr_closed` for the back-merge one).
 """
 
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
@@ -18,11 +19,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import service as audit
+from app.core.config import get_settings
+from app.core.crypto import decrypt, encrypt
 from app.git import providers
 from app.git.models import PR_BACK_MERGE, PR_MAIN, GitConnection, TaskPullRequest
 from app.jobs import queue
 from app.projects.models import ProjectRepository
-from app.tasks.models import Task
+from app.tasks.models import Task, TaskEvent
 
 POLL_SECONDS = 120
 POLL_LIMIT = 50
@@ -148,12 +151,38 @@ async def apply_status(
     row.last_checked_at = _now()
     row.next_check_at = _now() + timedelta(seconds=POLL_SECONDS)
     await db.flush()
+    await _record_checks(db, task, row, status)
     if not changed:
         return
     await engine.record_workflow_event(db, task, None, "pr.status",
                                        {"state": status.state, "checks": status.checks, "review": status.review})
     if wf is not None:
         await settle_done(db, wf, task, await pull_requests_of_task(db, task_id))
+
+
+async def _record_checks(db: AsyncSession, task: Task, row: TaskPullRequest, status: providers.PrStatus) -> None:
+    """The task's Activity says when a pull request's checks finish: once per head commit and result."""
+    from app.workflow import engine  # local: the workflow imports this module
+
+    if status.checks not in ("success", "failure") or not status.head_sha or row.connection_id is None:
+        return
+    result = "passed" if status.checks == "success" else "failed"
+    seen = await db.execute(
+        select(TaskEvent.id).where(
+            TaskEvent.task_id == task.id,
+            TaskEvent.kind == "git.checks",
+            TaskEvent.data["head_sha"].astext == status.head_sha,
+            TaskEvent.data["result"].astext == result,
+        ).limit(1)
+    )
+    if seen.first() is not None:
+        return
+    conn = await db.get(GitConnection, row.connection_id)
+    ref = None if conn is None else providers.parse_pr_url(row.url, conn)
+    await engine.record_workflow_event(db, task, None, "git.checks", {
+        "host": None if conn is None else conn.kind, "actor": None,
+        "pr": {"number": None if ref is None else ref.number, "url": row.url},
+        "result": result, "head_sha": status.head_sha})
 
 
 async def settle_done(db: AsyncSession, wf, task: Task, rows: list[TaskPullRequest]) -> bool:
@@ -208,3 +237,79 @@ async def rows_for_delivery(
             if row.task_id not in out:
                 out.append(row.task_id)
     return out
+
+
+def webhook_url(repo_id: uuid.UUID) -> str:
+    """A repository's own webhook address, as its host must reach it."""
+    return f"{get_settings().public_url.rstrip('/')}/api/git/webhooks/repos/{repo_id}"
+
+
+def shared_webhook_url(connection_id: uuid.UUID) -> str:
+    """A connection's old shared webhook address (before repositories had their own)."""
+    return f"{get_settings().public_url.rstrip('/')}/api/git/webhooks/{connection_id}"
+
+
+def ensure_secret(repo: ProjectRepository) -> str:
+    """The repository's own webhook secret, made on first use."""
+    if not repo.webhook_secret_enc:
+        repo.webhook_secret_enc = encrypt(secrets.token_urlsafe(32))
+    return decrypt(repo.webhook_secret_enc)
+
+
+def _path(repo: ProjectRepository) -> str:
+    path = providers.repo_path(repo.url)
+    if path is None:
+        raise providers.GitProviderError("not_found")
+    return path
+
+
+async def install_hook(repo: ProjectRepository, conn: GitConnection) -> None:
+    """Create it for me: the repository's webhook on its host, at its own address with its own secret. A webhook
+    already at that address (made earlier, or by hand from the steps), or the one it made before at an address since
+    changed, is updated rather than duplicated; one at the connection's old shared address is removed, as both point
+    here; webhooks pointing anywhere else are not touched."""
+    path = _path(repo)
+    own, shared = webhook_url(repo.id), shared_webhook_url(conn.id)
+    secret = ensure_secret(repo)
+    hooks = await providers.list_hooks(conn, path)
+    ours = next((hook_id for hook_id, url in hooks if hook_id == repo.webhook_hook_id), None)
+    ours = ours or next((hook_id for hook_id, url in hooks if url.rstrip("/").lower() == own.lower()), None)
+    if ours is not None:
+        await providers.update_hook(conn, path, ours, own, secret)
+    else:
+        ours = await providers.create_hook(conn, path, own, secret)
+    for hook_id, url in hooks:
+        if url == shared and hook_id != ours:
+            await providers.delete_hook(conn, path, hook_id)
+    repo.webhook_hook_id = ours
+
+
+async def renew_secret(repo: ProjectRepository, conn: GitConnection) -> tuple[str, bool | None]:
+    """A new secret (the old one stops working at once) and whether the webhook MegooColab made has it too: None when
+    there is none on record, False when the host would not take it."""
+    repo.webhook_secret_enc = None
+    secret = ensure_secret(repo)
+    if not repo.webhook_hook_id:
+        return secret, None
+    try:
+        await providers.update_hook(conn, _path(repo), repo.webhook_hook_id, webhook_url(repo.id), secret)
+    except providers.GitProviderError:
+        return secret, False
+    return secret, True
+
+
+async def forget_hook(repo: ProjectRepository, conn: GitConnection | None) -> str | None:
+    """The repository leaves its connection (moved, unlinked, removed): the webhook MegooColab made on the old host is
+    deleted there, best-effort, and its webhook starts afresh. Returns the host's error code when the delete failed,
+    which never blocks the change."""
+    error = None
+    if repo.webhook_hook_id and conn is not None:
+        try:
+            await providers.delete_hook(conn, _path(repo), repo.webhook_hook_id)
+        except providers.GitProviderError as e:
+            error = e.code
+    repo.webhook_secret_enc = None
+    repo.webhook_hook_id = None
+    repo.webhook_last_at = None
+    repo.webhook_failing = False
+    return error

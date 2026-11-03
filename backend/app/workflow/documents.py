@@ -1,6 +1,7 @@
 """Design and plan documents: agents submit versions, humans approve or reject them (WF-5, WF-7, WF-8, WF-9)."""
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
@@ -10,6 +11,8 @@ from app.agent_runs.models import AgentRun
 from app.audit import service as audit
 from app.auth.models import User
 from app.core.text import strip_nul
+from app.images.files import MessageKind
+from app.images.links import link_images
 from app.kb import filing
 from app.projects.models import Project
 from app.tasks.models import Task, TaskType
@@ -156,7 +159,8 @@ async def submit_connect_only(
 
 
 async def decide(
-    db, user: User, task: Task, kind: DocKind | str, version: int, approve: bool, comment: str | None
+    db, user: User, task: Task, kind: DocKind | str, version: int, approve: bool, comment: str | None,
+    images: Sequence[uuid.UUID] = (),
 ) -> None:
     """A human approves or rejects the document (WF-6 roles). The first decision wins (409 already_decided)."""
     kind = DocKind(kind)
@@ -194,7 +198,10 @@ async def decide(
     if approve:
         await engine.record_workflow_event(db, task, user.id, "document.approved", data)
     else:
-        await engine.record_workflow_event(db, task, user.id, "document.rejected", {**data, "comment": comment})
+        await engine.record_workflow_event(
+            db, task, user.id, "document.rejected", {**data, "comment": comment, "document_id": str(doc.id)}
+        )
+        await link_images(db, user, images, task, MessageKind.change_request, doc.id)
     await audit.record(
         db, "workflow.approve" if approve else "workflow.reject", actor_id=user.id, target_type="task",
         target_id=task.id, data={**data, "document_id": str(doc.id)},

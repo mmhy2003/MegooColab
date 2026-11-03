@@ -42,7 +42,7 @@ export function StatusSection({ project, canChange }: { project: Project; canCha
     <section aria-label="Status" className="card max-w-xl space-y-2 p-4">
       <h2 className="text-xs tracking-wider text-muted-foreground uppercase">Status</h2>
       {canChange ? (
-        <div role="group" aria-label="Project status" className="inline-flex overflow-hidden rounded border border-line">
+        <div role="group" aria-label="Project status" className="inline-flex max-w-full flex-wrap overflow-hidden rounded border border-line">
           {ORDER.map((s) => (
             <button
               key={s}

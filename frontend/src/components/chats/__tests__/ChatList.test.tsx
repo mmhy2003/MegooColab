@@ -8,6 +8,16 @@ import { intentText, stateText } from "@/lib/chats";
 afterEach(cleanup);
 
 
+describe("ChatList", () => {
+  it("a long title stays inside: two lines, wrapping anywhere", () => {
+    render(<ChatList chats={[chat({ title: `see ${"https://git.example.com/a/very/long/path/".repeat(4)}` })]} showProject />);
+    const title = screen.getByText(/^see https/);
+    // two lines on a phone (no display:block, which would undo the clamp); one line, cut, on a wide screen as before
+    expect(title).toHaveClass("max-md:line-clamp-2", "wrap-anywhere", "md:truncate");
+    expect(title).not.toHaveClass("block");
+  });
+});
+
 describe("chat copy", () => {
   it.each([
     ["talking", {}, "talking"],

@@ -73,6 +73,13 @@ describe("AdminUsersPage", () => {
     expect(screen.getByText("dee@acme.io").closest("tr")).toHaveTextContent("Never");
   });
 
+  it("the user card labels two-factor and last seen", async () => {
+    setup();
+    const row = (await screen.findByText("cy@acme.io")).closest("tr")!;
+    expect(row).toHaveTextContent("Two-factor: Off");
+    expect(screen.getByText("dee@acme.io").closest("tr")).toHaveTextContent("Last seen: Never");
+  });
+
   it("filters by status, by two-factor and by a search", async () => {
     setup();
     await screen.findByText("bea@acme.io");

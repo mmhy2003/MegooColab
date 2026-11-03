@@ -41,6 +41,33 @@ describe("ChatComposer", () => {
     await waitFor(() => expect(box).toHaveValue(""));
   });
 
+  it("sends the images added to the message", async () => {
+    const posts: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/images") {
+        return new Response(JSON.stringify({ id: "img-1", filename: "a.png", size: 4, content_type: "image/png" }), { status: 201 });
+      }
+      if (init?.method === "POST") posts.push(JSON.parse(String(init.body)));
+      return new Response("{}", { status: 200 });
+    }));
+    withClient(<ChatComposer chat={chat({ intent: "tell", takes_images: true })} agentRunning={false} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message laptop-claude" }), { target: { value: "See this" } });
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, {
+      target: { files: [new File(["PNG"], "a.png", { type: "image/png" })] },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(posts).toEqual([{ body: "See this", image_ids: ["img-1"] }]));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Remove a.png" })).toBeNull());
+  });
+
+  it("can't add images when the agent's runner can't take them", () => {
+    stubFetch();
+    withClient(<ChatComposer chat={chat({ intent: "tell", takes_images: false })} agentRunning={false} />);
+    expect(screen.getByRole("button", { name: "Add images" })).toBeDisabled();
+    expect(screen.getByText("Update the runner on laptop-claude's machine to send images.")).toBeInTheDocument();
+  });
+
   it("is replaced when the chat has ended", () => {
     stubFetch();
     withClient(<ChatComposer chat={chat({ status: "ended", intent: "closed" })} agentRunning={false} />);

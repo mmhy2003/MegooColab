@@ -89,6 +89,13 @@ describe("AskMemory", () => {
     sessionStorage.clear();
   });
 
+  it("placeholders and the project choice fit a phone", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json([])));
+    wrap(<AskMemory />);
+    expect((screen.getByLabelText("Question") as HTMLTextAreaElement).placeholder.length).toBeLessThanOrEqual(32);
+    expect(screen.getByLabelText("Project (optional)")).toHaveClass("min-w-0", "max-w-full");
+  });
+
   it("sends project_key when chosen", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url === "/api/projects") return json([{ id: "p1", key: "PAY", name: "Payments" }]);

@@ -79,8 +79,10 @@ for (const [label, viewport] of [["desktop", { width: 1280, height: 600 }], ["ph
     expect(Math.abs(top.composerBottom - top.viewBottom)).toBeLessThanOrEqual(2);
     expect(top.overlap).toBe(false);
 
-    // tapping into it on a phone makes it grow: the buttons still keep clear
-    await page.getByRole("textbox", { name: "Add a comment" }).click();
+    // tapping into it makes it grow (on a phone it waits as a one-line bar, which opens the form): the buttons still
+    // keep clear
+    if (label === "phone") await page.getByRole("button", { name: "Add a comment…" }).click();
+    else await page.getByRole("textbox", { name: "Add a comment" }).click();
     await page.waitForTimeout(300);
     expect((await geometry(page)).overlap).toBe(false);
     expect(await page.evaluate(() => window.scrollY)).toBe(0);

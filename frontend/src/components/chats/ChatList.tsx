@@ -19,7 +19,8 @@ export function ChatList({ chats, selected, showProject }: { chats: Chat[]; sele
                 c.id === selected ? "bg-surface-2 shadow-[inset_2px_0_0_var(--cyan)]" : ""
               }`}
             >
-              <span className="block truncate text-sm">{c.title}</span>
+              {/* two lines on a phone; one line, cut, on a wide screen. No `block`: it would undo the clamp's display */}
+              <span className="text-sm wrap-anywhere max-md:line-clamp-2 md:block md:truncate">{c.title}</span>
               <span className={`block truncate text-xs ${tone}`}>
                 {showProject && `${c.project_key} · `}
                 {stateText(c)}

@@ -16,6 +16,8 @@ const KEYS: [string, string][] = [
   ["review_final", "review"],
   ["review_fix", "review"],
   ["finish", "done"],
+  ["pr_fix", "done"],
+  ["pr_review", "done"],
 ];
 
 /** The page keeps the open stage in the address; here it is plain state, starting on Plan. */
@@ -80,6 +82,12 @@ afterEach(() => {
 });
 
 describe("MethodologyEditor", () => {
+  it("the editor uses the full width on phones", async () => {
+    setup();
+    const region = await screen.findByRole("region", { name: "plan" });
+    expect(region.parentElement).toHaveClass("max-md:border-0", "max-md:p-0");
+  });
+
   it("shows one tab per stage, each with its keys and versions", async () => {
     setup();
     await screen.findByRole("region", { name: "plan" });
@@ -91,6 +99,8 @@ describe("MethodologyEditor", () => {
     expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual([
       "build_implement", "build_step_review", "build_step_fix",
     ]);
+    fireEvent.click(screen.getByRole("tab", { name: "Done" }));
+    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual(["finish", "pr_fix", "pr_review"]);
   });
 
   it("marks a stage with unsaved edits and keeps them when switching tabs", async () => {

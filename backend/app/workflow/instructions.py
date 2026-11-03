@@ -7,6 +7,7 @@ still escaped and quoted line by line, so a message cannot close or forge MegooC
 
 import logging
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from sqlalchemy import exists, select
@@ -16,10 +17,17 @@ from app.agent_runs.models import AgentRun, RunStatus
 from app.auth.models import User
 from app.core.db import SessionLocal
 from app.core.events import Event, publish
+from app.images import delivery as image_delivery
+from app.images.delivery import attached_line
 from app.notifications.service import plain_mentions
 from app.runner.protocol import RunSteer
-from app.runner.registry import STEER_CAPABILITY, RunnerClosed, registry
-from app.tasks.models import Comment, Delivery, Task, TaskEvent
+from app.runner.registry import (
+    IMAGES_CAPABILITY,
+    STEER_CAPABILITY,
+    RunnerClosed,
+    registry,
+)
+from app.tasks.models import Attachment, Comment, Delivery, Task, TaskEvent
 
 log = logging.getLogger(__name__)
 
@@ -40,15 +48,25 @@ STEER_PREFIX = (
 )
 
 
-def frame_instruction(sender: str, at: datetime, body: str) -> str:
+def frame_instruction(sender: str, at: datetime, body: str, images: Sequence[str] = ()) -> str:
+    """A message for the agent, quoted; `images`: the names of the images sent with it (the run shows them)."""
     from app.workflow.context import _escape  # local: context imports this module
 
     lines = _escape(plain_mentions(body)).splitlines() or [""]
     quoted = "\n".join(f"> {line}" if line else ">" for line in lines)
+    attached = "\n" + _escape(attached_line(images)) if images else ""
     return (
         f"Instruction from {_escape(sender)} (a person who can direct this task's work), "
-        f"sent {at:%Y-%m-%d %H:%M} UTC:\n{quoted}"
+        f"sent {at:%Y-%m-%d %H:%M} UTC:\n{quoted}{attached}"
     )
+
+
+async def _image_names(db: AsyncSession, comment_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+    from app.images.links import (
+        images_of,  # local: the images modules import the task modules
+    )
+
+    return {k: [i.filename for i in v] for k, v in (await images_of(db, comment_ids)).items()}
 
 
 async def framed_messages(db: AsyncSession, task: Task, states: tuple[Delivery, ...]) -> list[tuple[Comment, str]]:
@@ -57,13 +75,14 @@ async def framed_messages(db: AsyncSession, task: Task, states: tuple[Delivery, 
     same = Comment.task_id == task.id
     if task.chat_id is not None:
         same = Comment.task_id.in_(select(Task.id).where(Task.chat_id == task.chat_id))
-    rows = await db.execute(
+    rows = (await db.execute(
         select(Comment, User.name)
         .outerjoin(User, User.id == Comment.author_user_id)
         .where(same, Comment.delivery.in_(states))
         .order_by(Comment.created_at, Comment.id)
-    )
-    return [(c, frame_instruction(name or "someone", c.created_at, c.body_md)) for c, name in rows.all()]
+    )).all()
+    names = await _image_names(db, [c.id for c, _ in rows])
+    return [(c, frame_instruction(name or "someone", c.created_at, c.body_md, names.get(c.id, ()))) for c, name in rows]
 
 
 def fit(heading: str, framed: list[str], budget: int = INSTRUCTIONS_CHARS) -> tuple[str | None, int]:
@@ -117,7 +136,8 @@ async def take_waiting(db: AsyncSession, run: AgentRun, task: Task) -> tuple[str
     if not rows:
         return None, []
     now = datetime.now(UTC)
-    framed = [frame_instruction(name or "someone", c.created_at, c.body_md) for c, name in rows]
+    names = await _image_names(db, [c.id for c, _ in rows])
+    framed = [frame_instruction(name or "someone", c.created_at, c.body_md, names.get(c.id, ())) for c, name in rows]
     text, dropped = fit("## New instructions", framed)
     given = [c for c, _ in rows[dropped:]]  # the oldest cut to fit stay waiting, for the next run
     for c in given:
@@ -160,7 +180,9 @@ async def _sender(db: AsyncSession, comment: Comment) -> str:
 async def steer_after_commit(comment_id: uuid.UUID) -> None:
     """Hand a just-committed message to the task's running agent, if its runner can take it mid-turn. Otherwise,
     or if anything fails, it stays waiting for the agent's next run."""
-    from app.workflow import engine  # local: the engine imports the context, which imports this module
+    from app.workflow import (
+        engine,  # local: the engine imports the context, which imports this module
+    )
 
     async with SessionLocal() as db:
         comment = await db.get(Comment, comment_id)
@@ -171,6 +193,9 @@ async def steer_after_commit(comment_id: uuid.UUID) -> None:
         task = await db.get(Task, comment.task_id)
         run = await engine.active_run(db, task.id)
         conn = registry.conn_for_run(run.id) if run is not None else None
+        images = list((await db.execute(
+            select(Attachment).where(Attachment.message_id == comment.id).order_by(Attachment.created_at, Attachment.id)
+        )).scalars())
         if (
             comment.delivery != Delivery.waiting
             or run is None
@@ -178,17 +203,24 @@ async def steer_after_commit(comment_id: uuid.UUID) -> None:
             or run.agent_id != task.assignee_agent_id
             or conn is None
             or STEER_CAPABILITY not in conn.capabilities
+            # a runner that can't show images would hand over the words without them, and images over one prompt's
+            # budget can't go at once: either way it waits for the next run
+            or (images and IMAGES_CAPABILITY not in conn.capabilities)
+            or not image_delivery.within_budget(images)
         ):
             await db.commit()
             return
         comment.delivery = Delivery.sending
         comment.delivery_run_id = run.id
         comment.delivery_error = None
-        text = STEER_PREFIX + frame_instruction(await _sender(db, comment), comment.created_at, comment.body_md)
+        names = [a.filename for a in images]
+        text = STEER_PREFIX + frame_instruction(await _sender(db, comment), comment.created_at, comment.body_md, names)
+        image_delivery.mark_sent(images, run.id, delivered=False)  # delivered once the runner says injected
         await _changed(db, task.id)
         await db.commit()
         try:
-            await conn.send(RunSteer(run_id=run.id, message_id=comment.id, text=text))
+            await conn.send(RunSteer(run_id=run.id, message_id=comment.id, text=text,
+                                     images=image_delivery.run_images(images)))
         except RunnerClosed:
             await on_steer_result(db, run.id, comment.id, "not_running", None)
             await db.commit()
@@ -205,6 +237,7 @@ async def on_steer_result(
         return
     if outcome == "injected":
         run = await db.get(AgentRun, run_id)
+        await image_delivery.mark_delivered(db, comment.id)
         comment.delivery = Delivery.read_while_working
         comment.delivered_at = datetime.now(UTC)
         comment.delivery_stage = run.stage if run is not None else None
@@ -232,6 +265,14 @@ async def release_on_run_end(db: AsyncSession, run: AgentRun) -> None:
     states = [Delivery.sending]
     if not await _agent_worked(db, run):
         states.append(Delivery.given_at_start)
+        # the images its start delivered for the first time were never seen either: the next run carries them again
+        # (a run that never started sent none)
+        if run.started_at is not None:
+            for a in (await db.execute(select(Attachment).where(
+                Attachment.sent_run_id == run.id, Attachment.delivered_at.is_not(None),
+                Attachment.delivered_at >= run.started_at,
+            ).with_for_update())).scalars():
+                a.delivered_at = None
     rows = (await db.execute(
         select(Comment).where(Comment.delivery_run_id == run.id, Comment.delivery.in_(states)).with_for_update()
     )).scalars().all()

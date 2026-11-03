@@ -83,6 +83,11 @@ export const ESCALATION_REASON_TEXT: Record<string, string> = {
   final_review_not_clean: "The final review still had findings after one fix round.",
   finish_incomplete: "The agent ended its run without finishing the work.",
   engine_error: "MegooColab hit an internal error handling the last run.",
+  pr_fix_rounds_exhausted: "Changes were requested again after 3 fix rounds.",
+  pr_fix_incomplete: "The fix run ended without pushing a fix with passing tests.",
+  agent_merge_failed: "The agent approved the pull request but couldn't merge it.",
+  agent_review_incomplete: "The reviewer ended its run without a verdict.",
+  agent_review_unavailable: "The chosen reviewer can't work on this repository.",
 };
 
 export function escalationReasonText(code: string | null): string {
@@ -92,13 +97,57 @@ export function escalationReasonText(code: string | null): string {
 
 /** "Accept" is offered only where treating the work as passed makes sense. */
 export const ACCEPTABLE_REASONS = ["review_rounds_exhausted", "final_review_not_clean", "enforcement_violation", "pr_closed",
-  "back_merge_pr_closed"];
+  "back_merge_pr_closed", "pr_fix_rounds_exhausted", "pr_fix_incomplete", "agent_merge_failed", "agent_review_incomplete",
+  "agent_review_unavailable"];
 
 export const FINISHING_LABEL: Record<FinishingOption, string> = {
   merge_local: "Merge locally",
-  pull_request: "Open a pull request",
+  pull_request: "Push and open a pull request",
   keep_branch: "Keep the branch",
 };
+
+/** What each finishing option does, once the work is built, reviewed and its tests pass again; shown under the
+ * choice wherever it is made (a project's settings, the defaults for new projects, one task). */
+export const FINISHING_HELP: Record<FinishingOption, string> = {
+  pull_request:
+    "The agent pushes the task's branch and opens a pull request (a merge request on GitLab) into the branch the task " +
+    "started from. Nothing is merged: you review and merge it on GitHub, GitLab or Gitea. On a plain git server, " +
+    "which has no pull requests, it only pushes the branch.",
+  merge_local:
+    "The agent merges the task's branch into the branch it started from, in your own checkout on the agent's machine, " +
+    "then runs the tests again on the merged result. Nothing is pushed: you push when you're ready. If your checkout " +
+    "has uncommitted changes, it asks you before touching anything.",
+  keep_branch:
+    "The agent leaves the finished work committed on its own branch on the agent's machine. Nothing is merged or " +
+    "pushed: what happens next is up to you.",
+};
+
+/** Who reviews a task's pull request (piece 4): the choices and what each does. */
+export type PrReview = "none" | "human" | "agent";
+export const PR_REVIEW_LABEL: Record<PrReview, string> = { none: "None", human: "Human", agent: "Agent" };
+export const PR_REVIEW_HELP: Record<PrReview, string> = {
+  none: "The task moves to Done as soon as the agent finishes; nobody reviews the pull request first.",
+  human:
+    "The task waits until a person merges the pull request (MegooColab notices when the repository is connected, or " +
+    "someone clicks Mark merged).",
+  agent:
+    "An agent reviews the pull request on the host, and merges it when it approves; changes it asks for go back to " +
+    "the task's agent (at most 3 rounds, then it asks you).",
+};
+/** Human and Agent always end the work as a pull request. */
+export const PR_REVIEW_FORCES_PR = "With Human or Agent, the work always ends as a pull request, whatever the finishing option says.";
+export const OWN_AGENT_REVIEWS = "The task's own agent (fresh session)";
+
+/** The send-back setting (piece 3): what a review or a /fix comment on the task's pull request does. */
+export const SEND_BACK_HELP =
+  "A 'changes requested' review, or a comment starting with /fix, sends the task back to its agent. The agent fixes " +
+  "the code and pushes to the same pull request. At most 3 rounds, then it asks you. On GitLab, use a /fix comment.";
+
+/** The commit-the-documents setting, on and off. */
+export const DOCS_HELP =
+  "On: the approved design and plan are added to the task's branch as files (docs/superpowers/specs/KEY-design.md " +
+  "and docs/superpowers/plans/KEY-plan.md), so they travel with the code into the merge or the pull request. Off: " +
+  "they stay in MegooColab only.";
 
 /** Where the work starts and is delivered (Branch from): recorded once the task's branch exists, else a preview. */
 /** `toldAgent`: a started connect-only workflow, whose agent makes its own branch and never reports where it started. */

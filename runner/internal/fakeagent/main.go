@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -64,6 +65,8 @@ func (a *fakeAgent) Initialize(_ context.Context, p acp.InitializeRequest) (acp.
 	if os.Getenv("FAKEAGENT_RESUME") == "1" && os.Getenv("FAKEAGENT_NO_LOAD") != "1" {
 		caps.SessionCapabilities.Resume = &acp.SessionResumeCapabilities{}
 	}
+	// FAKEAGENT_IMAGES=1: it takes image blocks in a prompt, as Claude Code does
+	caps.PromptCapabilities.Image = os.Getenv("FAKEAGENT_IMAGES") == "1"
 	resp := acp.InitializeResponse{ProtocolVersion: acp.ProtocolVersionNumber, AgentCapabilities: caps}
 	// FAKEAGENT_STEERING=off: an adapter without the ACP steering extension
 	if os.Getenv("FAKEAGENT_STEERING") != "off" {
@@ -103,6 +106,7 @@ func (a *fakeAgent) HandleExtensionMethod(_ context.Context, method string, para
 	a.mu.Lock()
 	live := a.turnLive
 	if live {
+		a.seeImages(p.Prompt, "steer")
 		a.report.Steers = append(a.report.Steers, text.String())
 		a.history = append(a.history, histMsg{Role: "user", Text: text.String()})
 	}
@@ -115,6 +119,17 @@ func (a *fakeAgent) HandleExtensionMethod(_ context.Context, method string, para
 		return map[string]any{"outcome": "promptRequired"}, nil
 	}
 	return map[string]any{"outcome": "startedNewTurn"}, nil
+}
+
+// seeImages records the image blocks of a prompt or steer. The caller holds a.mu.
+func (a *fakeAgent) seeImages(blocks []acp.ContentBlock, where string) {
+	for _, b := range blocks {
+		if b.Image == nil {
+			continue
+		}
+		data, _ := base64.StdEncoding.DecodeString(b.Image.Data)
+		a.report.Images = append(a.report.Images, ImageSeen{Mime: b.Image.MimeType, Bytes: len(data), Where: where})
+	}
 }
 
 // begin records a session request (new, load or resume) and makes it current.
@@ -245,6 +260,7 @@ func (a *fakeAgent) Prompt(_ context.Context, p acp.PromptRequest) (acp.PromptRe
 		}
 	}
 	a.mu.Lock()
+	a.seeImages(p.Prompt, "prompt")
 	if len(a.report.Prompts) == 0 {
 		a.report.PromptModel, a.report.PromptEffort = a.model, a.effort
 	}

@@ -31,6 +31,11 @@ afterEach(() => {
 });
 
 describe("StatusSection", () => {
+  it("the status choices fit at 280 px", () => {
+    wrap(<StatusSection project={project()} canChange />);
+    expect(screen.getByRole("group", { name: "Project status" })).toHaveClass("flex-wrap");
+  });
+
   it("marks the current status", () => {
     mockFetch(0);
     wrap(<StatusSection project={project()} canChange />);

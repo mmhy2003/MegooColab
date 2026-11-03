@@ -67,6 +67,10 @@ const CapabilityModel = "model/1"
 // _session/steering) and answers with run_steer_result.
 const CapabilitySteer = "steer/1"
 
+// CapabilityImages is advertised in every hello: the runner takes run_start.images and run_steer.images,
+// downloads each with its token, and shows them to the agent (image blocks in the prompt, or files it may read).
+const CapabilityImages = "images/1"
+
 // Outcomes of a run_steer.
 const (
 	SteerInjected    = "injected"    // the agent has it, in its running turn
@@ -182,6 +186,15 @@ type RunBranch struct {
 	Repositories []RunBranchRepo `json:"repositories"`
 }
 
+// RunImage is an image for the agent (capability images/1): the runner downloads it from
+// /api/runner/images/{id} with its token.
+type RunImage struct {
+	ID          string `json:"id"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	Size        int64  `json:"size"`
+}
+
 // RunStart tells the runner to start a run. Policy is read_only or workspace.
 type RunStart struct {
 	Type      string  `json:"type"`
@@ -202,6 +215,7 @@ type RunStart struct {
 	Files           []File     `json:"files,omitempty"`
 	RepoFiles       []File     `json:"repo_files,omitempty"`
 	CommitMessage   string     `json:"commit_message,omitempty"`
+	Images          []RunImage `json:"images,omitempty"` // in the order the prompt names them
 
 	// Every task run (capability branch/1); nil for answering runs.
 	Branch *RunBranch `json:"branch,omitempty"`
@@ -215,10 +229,11 @@ type RunCancel struct {
 
 // RunSteer is a person's message for a running agent.
 type RunSteer struct {
-	Type      string `json:"type"`
-	RunID     string `json:"run_id"`
-	MessageID string `json:"message_id"`
-	Text      string `json:"text"`
+	Type      string     `json:"type"`
+	RunID     string     `json:"run_id"`
+	MessageID string     `json:"message_id"`
+	Text      string     `json:"text"`
+	Images    []RunImage `json:"images,omitempty"`
 }
 
 // RunSteerResult answers a RunSteer with one of the Steer* outcomes.
@@ -249,7 +264,7 @@ func NewHello(version, os, arch string, agents []AgentAvailability) Hello {
 		}
 		out[i] = a
 	}
-	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp}}
+	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages}}
 }
 
 // NewHeartbeat builds a heartbeat.

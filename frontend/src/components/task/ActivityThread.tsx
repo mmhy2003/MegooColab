@@ -1,11 +1,23 @@
-import { AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle,
+  CircleCheck,
+  CircleX,
+  GitCommitHorizontal,
+  GitMerge,
+  GitPullRequestArrow,
+  GitPullRequestClosed,
+  MessageSquare,
+} from "lucide-react";
 
+import { ImageGallery } from "@/components/images/ImageGallery";
 import { Avatar } from "@/components/ui/Avatar";
 import { Markdown } from "@/components/ui/Markdown";
 import { QuestionCard } from "@/components/workflow/QuestionCard";
 import { ReviewResult } from "@/components/workflow/ReviewFindings";
 import { stateText } from "@/lib/agentMessages";
 import { runReasonText } from "@/lib/agents";
+import { describeGitEvent, type GitLine } from "@/lib/gitActivity";
+import type { ImageRef } from "@/lib/images";
 import type { ActivityItem } from "@/lib/types";
 import { escalationReasonText, FINISHING_LABEL, STAGES, type FinishingOption } from "@/lib/workflow";
 
@@ -140,6 +152,14 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
       return DECISION_TEXT[str(data.action) ?? ""] ?? "decided how to continue";
     case "workflow.finished":
       return "The workflow finished";
+    case "pr.sent_back": {
+      const what = data.kind === "fix_comment" ? "/fix" : "changes requested";
+      return `Sent back to its agent: ${what} on PR #${num(data.pr_number)} by ${str(data.by) ?? "someone"} (round ${num(data.round)} of ${num(data.of)})`;
+    }
+    case "pr.fix_pushed":
+      return `Fixed and pushed to PR #${num(data.pr_number)} (round ${num(data.round)} of ${num(data.of)})`;
+    case "pr.send_back_cancelled":
+      return "stopped the fix: back to waiting for the merge";
     case "finishing.changed": {
       const option = str(data.option) as FinishingOption | undefined;
       return option && FINISHING_LABEL[option] ? `set the finishing option to ${FINISHING_LABEL[option]}` : "reset the finishing option";
@@ -200,6 +220,8 @@ const STANDALONE = new Set([
   "workflow.no_column",
   "workflow.escalated",
   "workflow.finished",
+  "pr.sent_back",
+  "pr.fix_pushed",
 ]);
 
 function isSafeUrl(url: string | undefined): url is string {
@@ -246,7 +268,7 @@ export function ActivityThread({
         const actor = item.actor?.name ?? (isAgent ? (agentId && agentNames?.get(agentId)) || "Agent" : "Someone");
         if (item.type === "question" && item.question) {
           return (
-            <li key={item.id} className="flex gap-2">
+            <li key={item.id} id={`activity-${item.id}`} className="flex gap-2">
               <Avatar name="Agent" size={24} />
               <QuestionCard item={item} taskKey={taskKey} canAct={canAct} readOnly={readOnly} onAnswered={onAnswered} />
             </li>
@@ -255,7 +277,7 @@ export function ActivityThread({
         if (item.type === "comment") {
           const toAgent = item.to_agent;
           return (
-            <li key={item.id} className="flex gap-2">
+            <li key={item.id} id={`activity-${item.id}`} className="flex gap-2">
               <Avatar name={actor} size={24} />
               <div
                 data-agent-message={toAgent ? "" : undefined}
@@ -273,6 +295,7 @@ export function ActivityThread({
                   {item.edited_at && <span className="ml-1">(edited)</span>}
                 </p>
                 <Markdown>{item.body_md ?? ""}</Markdown>
+                <ImageGallery images={item.images ?? []} />
               </div>
             </li>
           );
@@ -283,6 +306,8 @@ export function ActivityThread({
           const column = columnNames.get(str(data.to_column) ?? "") ?? "another column";
           return <EventRow key={item.id} at={item.at} text={`Moved to ${column} by the workflow`} />;
         }
+        const git = describeGitEvent(kind, data);
+        if (git) return <GitEventRow key={item.id} at={item.at} line={git} />;
         const text = describeEvent(kind, data, { columnNames, userNames, agentNames }, !!item.actor);
         if (kind === "enforcement.violation") return <EventRow key={item.id} at={item.at} text={text} violation />;
         const isWorkflowKind = /^(workflow|escalation|document|step|review|finish|finishing|human_review)[._]/.test(kind);
@@ -290,8 +315,10 @@ export function ActivityThread({
         const docKind = kind.startsWith("document.") && (data.kind === "design" || data.kind === "plan") ? data.kind : undefined;
         const reviewId = kind === "review.result" ? str(data.review_id) : undefined;
         const prUrl = kind === "finish.reported" ? str(data.pr_url) : undefined;
+        const fixSummary = kind === "pr.fix_pushed" ? str(data.summary) : undefined;
         return (
-          <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind} docVersion={num(data.version)}>
+          <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind} docVersion={num(data.version)}
+            images={item.images}>
             {isSafeUrl(prUrl) && (
               <>
                 {" — "}
@@ -301,6 +328,7 @@ export function ActivityThread({
               </>
             )}
             {reviewId && <ReviewResult taskKey={taskKey} reviewId={reviewId} total={findingTotal(data)} />}
+            {fixSummary && <span className="mt-1 block border-l-2 border-line pl-2">{fixSummary}</span>}
           </EventRow>
         );
       })}
@@ -316,6 +344,7 @@ function EventRow({
   violation = false,
   docKind,
   docVersion = 0,
+  images = [],
   children,
 }: {
   at: string;
@@ -325,6 +354,8 @@ function EventRow({
   /** document events link to the design or plan section of the task */
   docKind?: string;
   docVersion?: number;
+  /** sent with it: a change request's */
+  images?: ImageRef[];
   children?: React.ReactNode;
 }) {
   return (
@@ -338,6 +369,56 @@ function EventRow({
         {lead && <span className="text-fg">{lead} </span>}
         {docKind ? <DocText text={text} kind={docKind} version={docVersion} /> : text}
         {children}
+        <ImageGallery images={images} />
+      </span>
+      <span className="ml-auto whitespace-nowrap">{when(at)}</span>
+    </li>
+  );
+}
+
+const GIT_ICON: Record<GitLine["icon"], { Icon: typeof GitMerge; tone: string }> = {
+  push: { Icon: GitCommitHorizontal, tone: "text-cyan-ink" },
+  opened: { Icon: GitPullRequestArrow, tone: "text-cyan-ink" },
+  comment: { Icon: MessageSquare, tone: "text-muted-foreground" },
+  approved: { Icon: CircleCheck, tone: "text-green-ink" },
+  changes: { Icon: CircleX, tone: "text-pink" },
+  reviewed: { Icon: MessageSquare, tone: "text-muted-foreground" },
+  "checks-passed": { Icon: CircleCheck, tone: "text-green-ink" },
+  "checks-failed": { Icon: CircleX, tone: "text-pink" },
+  merged: { Icon: GitMerge, tone: "text-violet" },
+  closed: { Icon: GitPullRequestClosed, tone: "text-pink" },
+};
+
+/** A pull request or branch event: who (an agent tagged as one), what (linked to the host), the host, and an
+ * excerpt quoted as plain text. */
+function GitEventRow({ at, line }: { at: string; line: GitLine }) {
+  const { Icon, tone } = GIT_ICON[line.icon];
+  return (
+    <li className="flex items-start gap-2 pl-1 text-xs text-muted-foreground">
+      <Icon size={12} aria-hidden className={`mt-0.5 shrink-0 ${tone}`} />
+      <span className="min-w-0 flex-1 break-words">
+        {line.lead && (
+          <span className="text-fg" title={line.login ? `${line.login}${line.host ? ` on ${line.host}` : ""}` : undefined}>
+            {line.lead}
+          </span>
+        )}
+        {line.lead && line.agent && <span className="ml-1 rounded-full border border-violet/50 px-1.5 text-violet">agent</span>}
+        {line.lead && " "}
+        {line.href ? (
+          <a href={line.href} target="_blank" rel="noopener noreferrer" className="text-fg hover:underline">
+            {line.text}
+          </a>
+        ) : (
+          line.text
+        )}
+        {line.host && <span className="ml-1.5 rounded border border-line px-1 text-[0.65rem]">{line.host}</span>}
+        {line.detail && <span className="ml-1.5">{line.detail}</span>}
+        {(line.quote || line.where) && (
+          <span className="mt-1 block border-l-2 border-line pl-2">
+            {line.where && <span className="mr-1 font-mono">{line.where}</span>}
+            {line.quote}
+          </span>
+        )}
       </span>
       <span className="ml-auto whitespace-nowrap">{when(at)}</span>
     </li>

@@ -22,8 +22,7 @@ async def _admin(client, db):
 
 
 async def _create(client, **kw):
-    body = {"name": "GitHub", "kind": "github", "base_url": "https://github.com", "token": TOKEN,
-            "webhook_secret": SECRET, **kw}
+    body = {"name": "GitHub", "kind": "github", "base_url": "https://github.com", "token": TOKEN, **kw}
     return await client.post("/api/admin/git-connections", json=body)
 
 
@@ -46,12 +45,15 @@ async def test_admin_crud_and_test_endpoint(client, client_factory, db, fake_git
     r = await _create(client)
     assert r.status_code == 201, r.text
     conn = r.json()
-    assert conn == {"id": conn["id"], "name": "GitHub", "kind": "github", "base_url": "https://github.com",
-                    "token_set": True, "webhook_secret_set": True}
+    assert conn == {"id": conn["id"], "name": "GitHub", "kind": "github", "base_url": "https://github.com", "hosted": True,
+                    "token_set": True, "webhook_secret_set": False, "waiting_repositories": []}
+    # a shared secret from before repositories had their own can still be set (and removed below)
+    r = await client.patch(f"/api/admin/git-connections/{conn['id']}", json={"webhook_secret": SECRET})
+    assert r.json()["webhook_secret_set"] is True
     assert (await _create(client)).status_code == 409 and (await _create(client)).json()["detail"] == "git_connection_name_taken"
     for bad in ("https://user:pw@github.com", "https://github.com/?x=1", "ftp://github.com", "github.com", "https://"):
         assert (await _create(client, name=f"n{bad}", base_url=bad)).status_code == 422, bad
-    r = await _create(client, name="Gitea", kind="gitea", base_url="http://gitea.local:3000/", webhook_secret="")
+    r = await _create(client, name="Gitea", kind="gitea", base_url="http://gitea.local:3000/")
     assert r.json()["base_url"] == "http://gitea.local:3000" and r.json()["webhook_secret_set"] is False
 
     r = await client.post(f"/api/admin/git-connections/{conn['id']}/test")
@@ -78,6 +80,7 @@ async def test_token_never_returned_or_logged(client, db, fake_github, caplog):
     caplog.set_level(logging.DEBUG)
     await _admin(client, db)
     conn = (await _create(client)).json()
+    await client.patch(f"/api/admin/git-connections/{conn['id']}", json={"webhook_secret": SECRET})
     stored = (await db.execute(text("SELECT token_enc, webhook_secret_enc FROM git_connections"))).one()
     assert TOKEN not in stored[0] and SECRET not in stored[1]
     await client.patch(f"/api/admin/git-connections/{conn['id']}", json={"token": "wrong-token-value"})
@@ -120,5 +123,60 @@ async def test_connection_names_for_repository_links(client, client_factory, db)
     member = client_factory()
     await login(member, await make_user(db))
     r = await member.get("/api/git/connections")
-    assert r.status_code == 200 and r.json() == [{"id": conn["id"], "name": "GitHub"}]
+    # the kind too: a repository picked from it takes its provider from it
+    assert r.status_code == 200 and r.json() == [{"id": conn["id"], "name": "GitHub", "kind": "github"}]
     assert (await client_factory().get("/api/git/connections")).status_code == 401
+
+
+# -- piece 1: hosted providers need no address; the shared secret is the old way -----------------------------
+
+
+async def test_hosted_github_and_gitlab_need_no_address(client, db):
+    await _admin(client, db)
+    gh = await client.post("/api/admin/git-connections", json={"name": "GH", "kind": "github", "token": "t"})
+    assert gh.status_code == 201, gh.text
+    assert (gh.json()["base_url"], gh.json()["hosted"]) == ("https://github.com", True)
+    gl = await client.post("/api/admin/git-connections", json={"name": "GL", "kind": "gitlab", "token": "t"})
+    assert (gl.json()["base_url"], gl.json()["hosted"]) == ("https://gitlab.com", True)
+    mine = await client.post(
+        "/api/admin/git-connections", json={"name": "Mine", "kind": "gitlab", "base_url": "https://gitlab.acme.io", "token": "t"}
+    )
+    assert mine.json()["hosted"] is False
+
+
+async def test_gitea_needs_an_address(client, db):
+    await _admin(client, db)
+    r = await client.post("/api/admin/git-connections", json={"name": "Tea", "kind": "gitea", "token": "t"})
+    assert r.status_code == 422 and "base_url_required" in r.text
+
+
+async def test_a_new_provider_has_no_shared_secret(client, db):
+    await _admin(client, db)
+    r = await client.post("/api/admin/git-connections", json={"name": "GH", "kind": "github", "token": "t", "webhook_secret": "x"})
+    assert r.status_code == 201 and r.json()["webhook_secret_set"] is False
+
+
+async def test_the_shared_secret_notice_lists_repositories_not_yet_on_their_own(client, db):
+    from datetime import UTC, datetime
+
+    from app.core.crypto import encrypt
+    from app.git.models import GitConnection
+    from app.projects.models import Project, ProjectRepository
+
+    await make_project(client, db, "PAY")
+    await _admin(client, db)
+    project = (await db.execute(select(Project).where(Project.key == "PAY"))).scalar_one()
+    conn = GitConnection(name="Old", kind="github", base_url="https://github.com", token_enc=encrypt("t"),
+                         webhook_secret_enc=encrypt("shared"))
+    db.add(conn)
+    await db.flush()
+    db.add_all([
+        ProjectRepository(project_id=project.id, name="acme/pay", url="https://github.com/acme/pay", provider="github",
+                          connection_id=conn.id),
+        ProjectRepository(project_id=project.id, name="acme/web", url="https://github.com/acme/web", provider="github",
+                          connection_id=conn.id, webhook_last_at=datetime.now(UTC)),
+    ])
+    await db.commit()
+    rows = (await client.get("/api/admin/git-connections")).json()
+    old = next(r for r in rows if r["name"] == "Old")
+    assert old["waiting_repositories"] == [{"project_key": "PAY", "name": "acme/pay"}]

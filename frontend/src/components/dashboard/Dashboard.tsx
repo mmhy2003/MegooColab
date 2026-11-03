@@ -21,7 +21,8 @@ import { type DashboardScope, readScope, useDashboard, writeScope } from "@/lib/
 import type { User } from "@/lib/types";
 
 /** The home page (layout A): headline numbers; what needs you and your tasks beside what the agents are doing; then
- * the work in numbers, two columns wide; then System for admins. One column on narrow screens. */
+ * the work in numbers, two columns wide; then System for admins. One column on narrow screens, where the page is one
+ * flex column (its grids `contents`) so Needs you can move up above the numbers. */
 export function Dashboard({ user }: { user: User }) {
   const isAdmin = user.role === "admin";
   const [chosen, setScope] = useState<DashboardScope>(() => readScope(isAdmin));
@@ -33,21 +34,28 @@ export function Dashboard({ user }: { user: User }) {
     writeScope(s);
   };
   return (
-    <div className="space-y-3">
-      <PageHeader title="Dashboard" subtitle="Updates live" actions={<ScopeSwitch value={scope} onChange={choose} isAdmin={isAdmin} />} />
+    <div className="space-y-3 max-md:flex max-md:flex-col max-md:gap-3 max-md:space-y-0">
+      <div className="max-md:order-first">
+        <PageHeader title="Dashboard" subtitle="Updates live" actions={<ScopeSwitch value={scope} onChange={choose} isAdmin={isAdmin} />} />
+      </div>
       {isError && !data && (
-        <p role="alert" className="text-sm text-pink">
+        <p role="alert" className="text-sm text-pink max-md:order-first">
           The dashboard could not load. Reload the page to try again.
         </p>
       )}
-      {data ? <Kpis numbers={data.numbers} /> : <div aria-hidden className="h-20 animate-pulse rounded bg-surface-2" />}
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <div className="grid min-w-0 content-start gap-3">
-          {data ? (
-            <NeedsYou items={data.needs} total={data.numbers.need_you} showWaitingFor={scope !== "mine"} />
-          ) : (
-            <Widget title="Needs you" icon={Inbox} loading />
-          )}
+      <div data-kpis>
+        {data ? <Kpis numbers={data.numbers} /> : <div aria-hidden className="h-20 animate-pulse rounded bg-surface-2" />}
+      </div>
+      <div className="grid gap-3 max-md:contents lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <div className="grid min-w-0 content-start gap-3 max-md:contents">
+          {/* a phone puts what needs you first, above the numbers; a wide screen keeps it beside the agents */}
+          <div data-needs className="min-w-0 max-md:order-first">
+            {data ? (
+              <NeedsYou items={data.needs} total={data.numbers.need_you} showWaitingFor={scope !== "mine"} />
+            ) : (
+              <Widget title="Needs you" icon={Inbox} loading />
+            )}
+          </div>
           {data ? <ChatsCard chats={data.chats ?? []} /> : <Widget title="Chats" icon={MessageCircle} loading />}
           {data ? <MyTasks items={data.my_tasks} /> : <Widget title="My tasks" icon={UserRoundCheck} loading />}
         </div>

@@ -15,7 +15,7 @@ KEYS: dict[Stage, list[str]] = {
     Stage.plan: ["plan"],
     Stage.build: ["build_implement", "build_step_review", "build_step_fix"],
     Stage.review: ["review_final", "review_fix"],
-    Stage.done: ["finish"],
+    Stage.done: ["finish", "pr_fix", "pr_review"],
 }
 ALL_KEYS: list[str] = [k for keys in KEYS.values() for k in keys]
 STAGE_OF: dict[str, Stage] = {k: stage for stage, keys in KEYS.items() for k in keys}

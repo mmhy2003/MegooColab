@@ -7,6 +7,7 @@ from app.core.crypto import encrypt
 from app.core.db import DbSession
 from app.core.email import SmtpMailer
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
+from app.projects.models import PrReview
 from app.workflow.models import FinishingOption
 
 router = APIRouter(tags=["org"])
@@ -45,7 +46,7 @@ class Dreaming(BaseModel):
 
 class ProjectDefaults(BaseModel):
     finishing_option: FinishingOption = FinishingOption.pull_request
-    require_human_code_review: bool = False
+    pr_review: PrReview = PrReview.none
     sprints_enabled: bool = True
     commit_docs_to_repo: bool = False
 
@@ -96,7 +97,7 @@ def _settings_out(org: OrgSettings) -> AdminSettingsOut:
         dreaming=Dreaming(enabled=org.dream_enabled, hour_utc=org.dream_hour_utc),
         project_defaults=ProjectDefaults(
             finishing_option=org.default_finishing_option,
-            require_human_code_review=org.default_require_human_code_review,
+            pr_review=org.default_pr_review,
             sprints_enabled=org.default_sprints_enabled,
             commit_docs_to_repo=org.default_commit_docs_to_repo,
         ),
@@ -130,7 +131,7 @@ async def put_settings(body: AdminSettingsIn, admin: AdminUser, db: DbSession) -
     if body.project_defaults is not None:
         d = body.project_defaults
         org.default_finishing_option = d.finishing_option.value
-        org.default_require_human_code_review = d.require_human_code_review
+        org.default_pr_review = d.pr_review.value
         org.default_sprints_enabled = d.sprints_enabled
         org.default_commit_docs_to_repo = d.commit_docs_to_repo
     if body.hub is not None:

@@ -24,6 +24,8 @@ class AiJobModel(Base):
     job: Mapped[str] = mapped_column(String(50), primary_key=True)
     provider_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ai_providers.id", ondelete="SET NULL"))
     model: Mapped[str] = mapped_column(String(200), default="")
+    # how hard a thinking model thinks for this job: none, low, medium, high or max; null: the model's own default
+    effort: Mapped[str | None] = mapped_column(String(10))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

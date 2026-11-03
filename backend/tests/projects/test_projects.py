@@ -151,3 +151,51 @@ async def test_repositories_and_labels_crud(client, db):
     assert (await client.post("/api/projects/PAY/labels", json={"name": "bug", "color": "#000000"})).status_code == 409
     assert (await client.post("/api/projects/PAY/labels", json={"name": "x", "color": "red"})).status_code == 422
     assert [l["name"] for l in (await client.get("/api/projects/PAY/labels")).json()] == ["bug"]
+
+
+async def test_send_back_setting_defaults_off_and_patches(client, client_factory, db):
+    """Piece 3: a project chooses whether changes requested on its pull requests send the task back to its agent."""
+    _, team = await _manager_with_team(client, db)
+    created = (await _create(client, team)).json()
+    assert created["send_back_on_changes_requested"] is False
+    r = await client.patch("/api/projects/PAY", json={"send_back_on_changes_requested": True})
+    assert r.status_code == 200 and r.json()["send_back_on_changes_requested"] is True
+    assert (await client.get("/api/projects/PAY")).json()["send_back_on_changes_requested"] is True
+    v = await make_user(db, role=Role.viewer)
+    await client.put(f"/api/teams/{team.id}/members", json={"user_ids": await _member_ids(client, team) + [str(v.id)]})
+    vc = client_factory()
+    await login(vc, v)
+    assert (await vc.patch("/api/projects/PAY", json={"send_back_on_changes_requested": False})).status_code == 403
+
+
+async def test_pr_review_defaults_none_and_patches(client, client_factory, db):
+    """Piece 4: who reviews a task's pull request (none, a human, or an agent), replacing the human review checkbox."""
+    from app.agents.models import Agent
+
+    m, team = await _manager_with_team(client, db)
+    created = (await _create(client, team)).json()
+    assert (created["pr_review"], created["pr_reviewer_agent_id"]) == ("none", None)
+    assert "require_human_code_review" not in created
+    agent = Agent(owner_id=m.id, name="review-bot", program="claude_code")
+    db.add(agent)
+    await db.commit()
+    r = await client.patch("/api/projects/PAY", json={"pr_review": "agent", "pr_reviewer_agent_id": str(agent.id)})
+    assert r.status_code == 200, r.text
+    assert (r.json()["pr_review"], r.json()["pr_reviewer_agent_id"]) == ("agent", str(agent.id))
+    assert (await client.patch("/api/projects/PAY", json={"pr_review": "robots"})).status_code == 422
+    r = await client.patch("/api/projects/PAY", json={"pr_reviewer_agent_id": None})
+    assert r.json()["pr_reviewer_agent_id"] is None and r.json()["pr_review"] == "agent"
+    v = await make_user(db, role=Role.viewer)
+    await client.put(f"/api/teams/{team.id}/members", json={"user_ids": await _member_ids(client, team) + [str(v.id)]})
+    vc = client_factory()
+    await login(vc, v)
+    assert (await vc.patch("/api/projects/PAY", json={"pr_review": "none"})).status_code == 403
+
+
+def test_migration_maps_the_old_checkbox():
+    from pathlib import Path
+
+    [path] = (Path(__file__).parents[2] / "migrations" / "versions").glob("*_pr_review.py")
+    source = path.read_text()
+    assert "pr_review = 'human'" in source and "require_human_code_review" in source
+    assert "default_pr_review = 'human'" in source and "default_require_human_code_review" in source

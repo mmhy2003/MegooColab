@@ -90,7 +90,7 @@ export function AddMachine({
             </p>
           ) : (
             <form
-              className="flex flex-wrap items-end gap-2"
+              className="flex flex-wrap items-end gap-2 max-sm:flex-col max-sm:items-stretch"
               onSubmit={(e) => {
                 e.preventDefault();
                 void make();

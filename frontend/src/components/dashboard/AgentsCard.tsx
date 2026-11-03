@@ -26,7 +26,7 @@ export function AgentsCard({ agents, isAdmin }: { agents: AgentItem[]; isAdmin: 
               <span className={`min-w-0 flex-1 truncate ${agent.status === "offline" ? "text-muted-foreground" : ""}`}>{agent.name}</span>
               <RunnerUpdateArrow runner={agent.runner} ownerId={agent.owner_id} />
               <Chip tone={STATUS[agent.status].tone}>{STATUS[agent.status].label}</Chip>
-              <span className="shrink-0 text-xs text-muted-foreground">
+              <span className="max-w-[45%] min-w-0 shrink truncate text-xs text-muted-foreground">
                 {agent.runs_today} {agent.runs_today === 1 ? "run" : "runs"} today
               </span>
             </li>

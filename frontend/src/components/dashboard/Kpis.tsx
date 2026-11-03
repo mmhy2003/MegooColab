@@ -1,3 +1,4 @@
+import { ScrollX } from "@/components/ui/ScrollX";
 import type { Numbers } from "@/lib/dashboard";
 
 function plural(n: number, one: string, many = `${one}s`): string {
@@ -24,7 +25,8 @@ function Tile({
       role="group"
       aria-label={label}
       data-alert={alert}
-      className={`card min-w-0 px-3 py-2.5 ${alert ? "border-pink" : ""}`}
+      data-tile
+      className={`card min-w-0 shrink-0 px-3 py-2.5 max-md:w-36 ${alert ? "border-pink" : ""}`}
     >
       <p className={`font-mono text-2xl leading-tight font-semibold ${alert ? "text-pink" : live ? "text-cyan-ink glow-cyan" : ""}`}>
         {value}
@@ -42,9 +44,11 @@ function doneTrend(now: number, before: number): string {
 }
 
 /** The headline numbers across the top of the dashboard. */
+/** The headline numbers: a grid on a wide screen; on a phone one row of small tiles to swipe through, each kept whole
+ * (all 8, with their second line) rather than 8 full-width cards before anything else. */
 export function Kpis({ numbers: n }: { numbers: Numbers }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-2.5">
+    <ScrollX innerClassName="flex gap-2.5 md:grid md:grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))]">
       <Tile label="Need you" value={n.need_you} small={`${n.need_you_over_day} over a day old`} alert={n.need_you > 0} />
       <Tile label="Agents working / online" value={n.agents_working} of={n.agents_online} small={plural(n.runs_queued, "run") + " queued"} live />
       <Tile label="Open chats" value={n.open_chats ?? 0} small={`${n.chats_waiting_on_you ?? 0} waiting on you`} alert={(n.chats_waiting_on_you ?? 0) > 0} />
@@ -57,6 +61,6 @@ export function Kpis({ numbers: n }: { numbers: Numbers }) {
         value={n.failed_24h}
         small={n.success_rate_24h === null || n.success_rate_24h === undefined ? "no runs finished" : `${Math.round(n.success_rate_24h * 100)}% succeeded`}
       />
-    </div>
+    </ScrollX>
   );
 }

@@ -99,12 +99,12 @@ async def test_only_owner_edits_agent(client, client_factory, db):
     a = await _agent(client)
     r = await client.patch(
         f"/api/agents/{a['id']}",
-        json={"name": "Renamed", "answer_mode": "auto", "max_concurrent_runs": 3},
+        json={"name": "Renamed", "answer_mode": "auto", "max_concurrent_runs": 5},
     )
     assert r.status_code == 200
     assert r.json()["name"] == "Renamed" and r.json()["answer_mode"] == "auto"
-    assert r.json()["max_concurrent_runs"] == 3
-    assert (await client.patch(f"/api/agents/{a['id']}", json={"max_concurrent_runs": 4})).status_code == 422
+    assert r.json()["max_concurrent_runs"] == 5
+    assert (await client.patch(f"/api/agents/{a['id']}", json={"max_concurrent_runs": 6})).status_code == 422
     assert (await client.patch(f"/api/agents/{a['id']}", json={"max_concurrent_runs": 0})).status_code == 422
 
     other = client_factory()

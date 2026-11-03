@@ -3,10 +3,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ImageAttach, ImageDropZone } from "@/components/images/ImageAttach";
+import { ImageGallery } from "@/components/images/ImageGallery";
 import { Button } from "@/components/ui/Button";
 import { Markdown } from "@/components/ui/Markdown";
 import { api, ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { useImageDraft } from "@/lib/images";
 import { qk } from "@/lib/queries";
 import type { ActivityItem, ActivityQuestion, MockupInfo } from "@/lib/types";
 
@@ -41,6 +44,7 @@ export function QuestionCard({
   }, [text]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const images = useImageDraft(); // with an answer in the person's own words
   const open = q.status === "open";
   const answerable = canAct && !readOnly && open;
 
@@ -57,12 +61,13 @@ export function QuestionCard({
   const choices = [...q.choices].sort((a, b) => Number(!!b.recommended) - Number(!!a.recommended));
   const label = (id: string) => q.choices.find((c) => c.id === id)?.label ?? id;
   const other = selected === OTHER;
-  const ready = selected !== null && (!other || text.trim().length > 0);
+  const ready = selected !== null && (!other || text.trim().length > 0) && !(other && images.uploading);
   const sendSelected = () => {
-    if (ready) void send(other ? { text: text.trim() } : { choice: selected! });
+    if (!ready) return;
+    void send(other ? { text: text.trim(), ...(images.ids.length ? { image_ids: images.ids } : {}) } : { choice: selected! });
   };
 
-  const send = async (json: { choice: string } | { text: string }) => {
+  const send = async (json: { choice: string } | { text: string; image_ids?: string[] }) => {
     if (busy) return;
     setError(null);
     setBusy(true);
@@ -132,14 +137,17 @@ export function QuestionCard({
           )}
           {other && (
             <div className="space-y-1">
-              <textarea
-                aria-label="Your answer"
-                className="w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm"
-                rows={3}
-                maxLength={MAX_ANSWER}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-              />
+              <ImageDropZone draft={images}>
+                <textarea
+                  aria-label="Your answer"
+                  className="block w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm"
+                  rows={3}
+                  maxLength={MAX_ANSWER}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                />
+              </ImageDropZone>
+              <ImageAttach draft={images} />
               <p className="text-right text-xs text-muted-foreground">
                 {text.length}/{MAX_ANSWER}
               </p>
@@ -178,6 +186,7 @@ export function QuestionCard({
           {q.answer_text}
         </p>
       )}
+      {q.status === "answered" && <ImageGallery images={item.images ?? []} />}
       {error && (
         <p role="alert" className="text-xs text-pink">
           {error}

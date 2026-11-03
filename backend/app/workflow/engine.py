@@ -36,7 +36,7 @@ from app.core.events import Event, publish
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.access import can_manage_project, project_team_ids
-from app.projects.models import BoardColumn, Project
+from app.projects.models import BoardColumn, Project, PrReview
 from app.tasks.models import Task, TaskEvent, TaskType
 from app.tasks.service import apply_column, end_position, record_event
 from app.teams.service import user_team_ids
@@ -73,9 +73,15 @@ ROLE_POLICY: dict[RunRole, RunPolicy] = {
     RunRole.final_review: RunPolicy.read_only,
     RunRole.final_fix: RunPolicy.workspace,
     RunRole.finish: RunPolicy.workspace,
+    RunRole.pr_fix: RunPolicy.workspace,
+    # the reviewer runs the host's CLI (gh, glab, tea), which the read-only policy refuses; R1 still holds it to
+    # changing nothing in the repository
+    RunRole.pr_review: RunPolicy.workspace,
 }
 READ_ONLY_ROLES = {role for role, policy in ROLE_POLICY.items() if policy == RunPolicy.read_only}
-FRESH_ROLES = {RunRole.step_review, RunRole.final_review, RunRole.final_fix, RunRole.finish}  # never resumed
+R1_ROLES = READ_ONLY_ROLES | {RunRole.pr_review}  # runs that must leave the repository as they found it
+FRESH_ROLES = {RunRole.step_review, RunRole.final_review, RunRole.final_fix, RunRole.finish, RunRole.pr_fix,
+               RunRole.pr_review}  # never resumed
 # the role a stage runs when there is no earlier run to repeat
 STAGE_ROLE: dict[Stage, RunRole] = {
     Stage.brainstorm: RunRole.brainstorm,
@@ -157,7 +163,9 @@ async def record_workflow_event(
     event = await record_event(db, task, actor_id, kind, data or {})
     await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
     if task.chat_id is not None:
-        from app.chats.service import touch  # local: the chats modules import the engine
+        from app.chats.service import (
+            touch,  # local: the chats modules import the engine
+        )
 
         await touch(db, task.chat_id)
     return event
@@ -278,11 +286,16 @@ NEEDS_TITLES = {
 }
 
 
-async def wait_for(db: AsyncSession, wf: TaskWorkflow, needs: Needs, *, actor_id: uuid.UUID | None = None) -> None:
-    """The workflow waits on a person: the agent's owner and the task's human assignee are told (NOT-1)."""
+async def wait_for(
+    db: AsyncSession, wf: TaskWorkflow, needs: Needs, *, actor_id: uuid.UUID | None = None, notify: bool = True
+) -> None:
+    """The workflow waits on a person: the agent's owner and the task's human assignee are told (NOT-1), unless
+    `notify` is off (the wait is only a resting state: an agent's review of the pull request handles it)."""
     wf.status = WorkflowStatus.waiting_human
     wf.needs = Needs(needs)
     wf.waiting_since = datetime.now(UTC)
+    if not notify:
+        return
     task = await db.get(Task, wf.task_id)
     project = await db.get(Project, task.project_id)
     agent_id = wf.agent_id or task.assignee_agent_id
@@ -290,7 +303,9 @@ async def wait_for(db: AsyncSession, wf: TaskWorkflow, needs: Needs, *, actor_id
     key = f"{project.key}-{task.number}"
     recipients, link = [owner, task.assignee_user_id], f"/projects/{project.key}/board?task={key}"
     if task.in_chat:  # a chat round: the person who started the chat follows it, in the chat
-        from app.chats.service import chat_people  # local: the chats modules import the engine
+        from app.chats.service import (
+            chat_people,  # local: the chats modules import the engine
+        )
 
         recipients, link = await chat_people(db, task)
     await notifications.notify(
@@ -354,10 +369,21 @@ async def _implementer_reports(
 # When the Done stage begins, finish.enter_done freezes the effective option into wf.finishing_override and records
 # wf.finish_requires_human_review, so later project changes do not affect the run.
 def requires_human_review(project: Project, wf: TaskWorkflow) -> bool:
-    """The frozen requirement; a Done-stage row from before it existed falls back to the live setting."""
+    """The task waits on its pull request (a person's or an agent's review). The frozen requirement; a Done-stage row
+    from before it existed falls back to the live setting."""
     if wf.stage == Stage.done and wf.finish_requires_human_review is not None:
         return wf.finish_requires_human_review
-    return bool(project.require_human_code_review)
+    return pr_review_mode(project, wf) != PrReview.none
+
+
+def pr_review_mode(project: Project, wf: TaskWorkflow) -> PrReview:
+    """Who reviews the pull request: frozen when the Done stage began, else the project's setting. A row frozen
+    before piece 4 has only the yes/no: yes was a person."""
+    if wf.stage == Stage.done and wf.finish_requires_human_review is not None:
+        if wf.finish_pr_review:
+            return PrReview(wf.finish_pr_review)
+        return PrReview.human if wf.finish_requires_human_review else PrReview.none
+    return PrReview(project.pr_review)
 
 
 UNKNOWN_START = "unknown — deliver into the branch the task branch was created from (git merge-base helps)"
@@ -376,7 +402,7 @@ def finishing_option(project: Project, wf: TaskWorkflow) -> FinishingOption:
     """WF-6a/6b: human code review forces a pull request; else the task's override; else the project's option."""
     if wf.stage == Stage.done and wf.finish_requires_human_review is not None:  # frozen when Done began
         return FinishingOption(wf.finishing_override)
-    if project.require_human_code_review:
+    if PrReview(project.pr_review) != PrReview.none:
         return FinishingOption.pull_request
     return FinishingOption(wf.finishing_override or project.finishing_option)
 
@@ -393,6 +419,7 @@ async def enqueue(
     requested_by: uuid.UUID,
     resume_prompt: str | None = None,
     resume_session_ref: str | None = None,
+    agent_id: uuid.UUID | None = None,
 ) -> AgentRun:
     """Queue the next workflow run. The caller holds the workflow lock; dispatch happens after commit
     (`dispatch_queued`, or the run-ending path's own dispatch).
@@ -407,13 +434,22 @@ async def enqueue(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "task_not_assigned_to_agent")
     if await active_run(db, task.id) is not None:  # one active run per task: they would share its worktree
         raise HTTPException(status.HTTP_409_CONFLICT, "task_has_active_run")
-    agent = await db.get(Agent, task.assignee_agent_id)
+    # a reviewer may be another agent than the task's (piece 4): it runs, the workflow's agent stays the task's
+    agent = await db.get(Agent, agent_id or task.assignee_agent_id)
     findings = await _latest_findings(db, task.id, role, step) if role in FIX_ROLES else None
     key_override = "design_revision" if role == RunRole.brainstorm and wf.stage == Stage.design else None
     extra = None
     if role == RunRole.finish:
         option = finishing_option(await db.get(Project, task.project_id), wf)
         extra = [f"## Finishing\nFinishing option: {option.value}\n{delivery_lines(task)}"]
+    if role == RunRole.pr_fix:
+        from app.git import send_back  # local: the git modules import this one
+
+        extra = [send_back.prompt_section(wf)]
+    if role == RunRole.pr_review:
+        from app.git import agent_review  # local: the git modules import this one
+
+        extra = [await agent_review.prompt_section(db, wf)]
     from app.workflow import (
         records as run_records,  # local: records imports this module
     )
@@ -452,7 +488,8 @@ async def enqueue(
     await db.flush()
     wf.status = WorkflowStatus.running
     wf.needs = None
-    wf.agent_id = agent.id
+    if agent_id is None:
+        wf.agent_id = agent.id
     await record_event(db, task, None, "agent_run_queued", {
         "run_id": str(run.id), "agent_id": str(agent.id), "policy": run.policy, "role": role.value, "step": step,
     })
@@ -498,9 +535,14 @@ async def rerun(
     if resume_kind is None:
         carried = last.resume_prompt if last is not None and last.status != RunStatus.completed else None
         text = carried or CONTINUE_TEXT
+    # a review run (piece 4) runs again on the project's reviewer, when that is another agent than the task's
+    other = None
+    if role == RunRole.pr_review:
+        reviewer = (await db.get(Project, task.project_id)).pr_reviewer_agent_id
+        other = reviewer if reviewer not in (None, task.assignee_agent_id) else None
     return await enqueue(
         db, wf, task, role, step=step, resume_kind=resume_kind, payload=payload, requested_by=requested_by,
-        resume_prompt=text,
+        resume_prompt=text, agent_id=other,
     )
 
 
@@ -611,9 +653,14 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
             .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
             .limit(1)
         )
-        if (reported or {}).get("tests_passed") is True and requires_human_review(
-            await db.get(Project, task.project_id), wf
-        ):
+        project = await db.get(Project, task.project_id)
+        if (reported or {}).get("tests_passed") is True and requires_human_review(project, wf):
+            last = await latest_run(db, wf.task_id)
+            if (
+                pr_review_mode(project, wf) == PrReview.agent and last is not None
+                and last.workflow_role == RunRole.pr_review and not (last.step_result or {}).get("verdict")
+            ):
+                return None  # the agent's review never finished: it runs again
             return Needs.human_code_review
     return None
 
@@ -656,6 +703,9 @@ AcceptHandler = Callable[[AsyncSession, TaskWorkflow, Task, User], Awaitable[Non
 # reason -> what `accept` does. Accept applies only to review_rounds_exhausted, final_review_not_clean
 # (registered by the build and review stages) and enforcement_violation; any other reason gets 422.
 ACCEPT_HANDLERS: dict[str, AcceptHandler] = {}
+# reason -> what `retry` does, where repeating the latest run is not it (piece 4: an unavailable reviewer's review
+# starts again, rather than the Finish or fix run before it)
+RETRY_HANDLERS: dict[str, AcceptHandler] = {}
 
 
 async def _accept_violation(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
@@ -690,7 +740,10 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
         wf.failures = 0
         wf.nudged = False
         wf.status = WorkflowStatus.running
-        await rerun(db, wf, task, requested_by=user.id)
+        if reason in RETRY_HANDLERS:
+            await RETRY_HANDLERS[reason](db, wf, task, user)
+        else:
+            await rerun(db, wf, task, requested_by=user.id)
     else:
         wf.status = WorkflowStatus.running
         await ACCEPT_HANDLERS[reason](db, wf, task, user)
@@ -888,7 +941,7 @@ async def _on_run_finished(db: AsyncSession, run: AgentRun) -> None:
         wf.status = WorkflowStatus.paused
         await record_workflow_event(db, task, run.cancelled_by, "workflow.paused", {"run_id": str(run.id)})
         return
-    if role in READ_ONLY_ROLES and _git_changed(run):
+    if role in R1_ROLES and _git_changed(run):
         # R1, whatever the outcome: an agent that commits and then errors out is caught too, never retried
         wf.enforcement = Enforcement.partially_enforced
         await record_workflow_event(db, task, None, "enforcement.violation", {"stage": str(run.stage), "role": role.value})

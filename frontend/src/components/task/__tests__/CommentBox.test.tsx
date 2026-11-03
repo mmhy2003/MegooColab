@@ -36,7 +36,7 @@ describe("CommentBox", () => {
     fireEvent.keyDown(box, { key: "Escape" });
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith(`Thanks @[Sam Lee](user:${users[1].id}) and @[Ahmed Ali](user:${users[2].id}) @zz`, false),
+      expect(onSubmit).toHaveBeenCalledWith(`Thanks @[Sam Lee](user:${users[1].id}) and @[Ahmed Ali](user:${users[2].id}) @zz`, false, []),
     );
   });
 
@@ -113,7 +113,7 @@ describe("CommentBox", () => {
     fireEvent.keyDown(box, { key: "Enter" });
     type(box, "Thanks @Sara K");
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Thanks @Sara K", false));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Thanks @Sara K", false, []));
   });
 
   describe("to the agent", () => {
@@ -142,7 +142,7 @@ describe("CommentBox", () => {
       fireEvent.click(toggle());
       type(box(), "Use X");
       fireEvent.click(screen.getByRole("button", { name: "Send to agent" }));
-      await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Use X", true));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Use X", true, []));
     });
 
     it("deleting the mention turns the switch off unless it was turned on by hand", () => {
@@ -187,6 +187,58 @@ describe("CommentBox", () => {
       fireEvent.click(toggle());
       expect(screen.getByText("laptop-claude is about to start.")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Send to agent" })).toBeInTheDocument();
+    });
+  });
+
+  describe("images", () => {
+    const agent = { id: "a1", name: "laptop-claude" };
+    const png = (name: string) => new File(["PNG"], name, { type: "image/png" });
+    const pick = (...files: File[]) =>
+      fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, { target: { files } });
+
+    function stubUpload() {
+      let n = 0;
+      vi.stubGlobal("fetch", vi.fn(async () => {
+        n += 1;
+        return new Response(JSON.stringify({ id: `img-${n}`, filename: "x.png", size: 4, content_type: "image/png" }), { status: 201 });
+      }));
+    }
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("sends a comment's images, then empties", async () => {
+      stubUpload();
+      const onSubmit = vi.fn(async () => undefined);
+      render(<CommentBox agent={agent} onSubmit={onSubmit} />);
+      type(screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement, "See this");
+      pick(png("one.png"));
+      expect(
+        await screen.findByText("A comment for the people on this task. The agent sees that it had images, not the images."),
+      ).toBeInTheDocument();
+      await waitFor(() => expect(screen.getByRole("button", { name: "Comment" })).toBeEnabled());
+      fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("See this", false, ["img-1"]));
+      await waitFor(() => expect(screen.queryByRole("button", { name: "Remove one.png" })).toBeNull());
+    });
+
+    it("sends images to an agent that can be sent them", async () => {
+      stubUpload();
+      const onSubmit = vi.fn(async () => undefined);
+      render(<CommentBox agent={agent} canTellAgent takesImages onSubmit={onSubmit} />);
+      fireEvent.click(screen.getByRole("switch", { name: "Send to laptop-claude" }));
+      type(screen.getByRole("textbox", { name: "Add a comment" }) as HTMLTextAreaElement, "Fix this");
+      pick(png("one.png"));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Send to agent" })).toBeEnabled());
+      fireEvent.click(screen.getByRole("button", { name: "Send to agent" }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Fix this", true, ["img-1"]));
+    });
+
+    it("is off for an agent whose runner can't take images, and says why", () => {
+      render(<CommentBox agent={agent} canTellAgent onSubmit={vi.fn()} />);
+      expect(screen.getByRole("button", { name: "Add images" })).toBeEnabled(); // a comment is for people
+      fireEvent.click(screen.getByRole("switch", { name: "Send to laptop-claude" }));
+      expect(screen.getByRole("button", { name: "Add images" })).toBeDisabled();
+      expect(screen.getByText("Update the runner on laptop-claude's machine to send images.")).toBeInTheDocument();
     });
   });
 });

@@ -24,7 +24,7 @@ export function ChatsCard({ chats }: { chats: ChatBrief[] }) {
                 <Link href={`/chats/${c.id}`} className="min-w-0 flex-1 truncate text-fg no-underline hover:underline">
                   {`${c.title} · ${c.project_key}`}
                 </Link>
-                <span className={`shrink-0 text-xs ${tone}`}>{chatStateText({ ...c, state })}</span>
+                <span className={`max-w-[45%] min-w-0 shrink truncate text-xs ${tone}`}>{chatStateText({ ...c, state })}</span>
               </li>
             );
           })}

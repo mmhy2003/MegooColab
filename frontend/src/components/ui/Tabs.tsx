@@ -3,6 +3,8 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useRef } from "react";
 
+import { ScrollX } from "@/components/ui/ScrollX";
+
 export type TabDef<T extends string> = {
   id: T;
   label: string;
@@ -28,7 +30,7 @@ export function useTabParam<T extends string>(ids: readonly T[]): [T, (id: T) =>
 }
 
 /** Underline tabs, as on a project's pages. Arrow keys, Home and End move between them; on a narrow screen the row
- * scrolls sideways instead of widening the page. */
+ * scrolls sideways instead of widening the page, its edge faded where more tabs hide. */
 export function Tabs<T extends string>({
   label,
   tabs,
@@ -48,40 +50,42 @@ export function Tabs<T extends string>({
   };
   const at = tabs.findIndex((t) => t.id === value);
   return (
-    <div role="tablist" aria-label={label} className="mb-4 flex max-w-full min-w-0 gap-1 overflow-x-auto border-b border-line">
-      {tabs.map((t) => {
-        const selected = t.id === value;
-        return (
-          <button
-            key={t.id}
-            ref={(el) => {
-              if (el) refs.current.set(t.id, el);
-              else refs.current.delete(t.id);
-            }}
-            type="button"
-            role="tab"
-            id={`tab-${t.id}`}
-            aria-controls={`panel-${t.id}`}
-            aria-selected={selected}
-            aria-label={t.mark ? `${t.label} (${t.markLabel ?? "unsaved changes"})` : undefined}
-            tabIndex={selected ? 0 : -1}
-            onClick={() => onChange(t.id)}
-            onKeyDown={(e) => {
-              const move = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 }[e.key];
-              if (move === undefined) return;
-              e.preventDefault();
-              go(move);
-            }}
-            className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 pb-2 text-sm whitespace-nowrap ${
-              selected ? "border-cyan text-cyan-ink" : "border-transparent text-muted-foreground hover:text-fg"
-            }`}
-          >
-            {t.label}
-            {t.mark && <span aria-hidden className="size-1.5 rounded-full bg-amber" />}
-          </button>
-        );
-      })}
-    </div>
+    <ScrollX chevron className="mb-4 border-b border-line">
+      <div role="tablist" aria-label={label} className="flex gap-1">
+        {tabs.map((t) => {
+          const selected = t.id === value;
+          return (
+            <button
+              key={t.id}
+              ref={(el) => {
+                if (el) refs.current.set(t.id, el);
+                else refs.current.delete(t.id);
+              }}
+              type="button"
+              role="tab"
+              id={`tab-${t.id}`}
+              aria-controls={`panel-${t.id}`}
+              aria-selected={selected}
+              aria-label={t.mark ? `${t.label} (${t.markLabel ?? "unsaved changes"})` : undefined}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => onChange(t.id)}
+              onKeyDown={(e) => {
+                const move = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 }[e.key];
+                if (move === undefined) return;
+                e.preventDefault();
+                go(move);
+              }}
+              className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 pb-2 text-sm whitespace-nowrap ${
+                selected ? "border-cyan text-cyan-ink" : "border-transparent text-muted-foreground hover:text-fg"
+              }`}
+            >
+              {t.label}
+              {t.mark && <span aria-hidden className="size-1.5 rounded-full bg-amber" />}
+            </button>
+          );
+        })}
+      </div>
+    </ScrollX>
   );
 }
 

@@ -158,7 +158,14 @@ func (r *run) deliverSteers() {
 		ac, session := st.ac, st.session
 		st.mu.Unlock()
 
-		outcome, errMsg, stray, idle := steerTurn(r.ctx, ac, session, s.Text)
+		var outcome, errMsg string
+		var stray, idle bool
+		blocks, err := r.steerContent(s)
+		if err != nil {
+			outcome, errMsg = protocol.SteerFailed, err.Error()
+		} else {
+			outcome, errMsg, stray, idle = steerTurn(r.ctx, ac, session, blocks)
+		}
 		if idle {
 			if retrying != s.MessageID {
 				retrying, since = s.MessageID, time.Now()
@@ -184,6 +191,15 @@ func (r *run) deliverSteers() {
 		}
 		r.answerSteer(s, outcome, errMsg)
 	}
+}
+
+// steerContent is the steer for the agent, with its images (downloaded now, then shown as the prompt's were).
+func (r *run) steerContent(s protocol.RunSteer) ([]acp.ContentBlock, error) {
+	data, err := r.m.fetchImages(r.ctx, s.Images)
+	if err != nil {
+		return nil, err
+	}
+	return r.content(s.Text, s.Images, data)
 }
 
 // endTurn is called once session/prompt has returned (and again when the run
@@ -213,12 +229,12 @@ func (r *run) endTurn() (stray bool) {
 // steerTurn makes one _session/steering call. promptRequired (idle: no running turn)
 // and startedNewTurn (Codex, when the turn ended under the steer) both mean the
 // agent did not get the message in this run.
-func steerTurn(ctx context.Context, ac *acp.ClientSideConnection, session acp.SessionId, text string) (outcome, errMsg string, stray, idle bool) {
+func steerTurn(ctx context.Context, ac *acp.ClientSideConnection, session acp.SessionId, prompt []acp.ContentBlock) (outcome, errMsg string, stray, idle bool) {
 	cctx, cancel := context.WithTimeout(ctx, steerTimeout)
 	defer cancel()
 	raw, err := ac.CallExtension(cctx, steeringMethod, map[string]any{
 		"sessionId": session,
-		"prompt":    []acp.ContentBlock{acp.TextBlock(text)},
+		"prompt":    prompt,
 		"_meta":     map[string]any{"steering": map[string]any{"idleBehavior": "promptRequired"}},
 	})
 	if err != nil {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WorkflowPanel } from "@/components/workflow/WorkflowPanel";
@@ -150,13 +150,15 @@ describe("WorkflowPanel", () => {
   it("shows the finishing select before done", async () => {
     setup(wf({ stage: "build", status: "running" }));
     expect(await screen.findByLabelText("Finishing option")).toBeInTheDocument();
+    // what the chosen option does, under the choice
+    expect(screen.getByText(/pushes the task's branch and opens a pull request/)).toBeInTheDocument();
   });
 
   it("finishing select hidden at done", async () => {
     setup(wf({ stage: "done", status: "running" }));
     await screen.findByText(/Running: Done/);
     expect(screen.queryByLabelText("Finishing option")).not.toBeInTheDocument();
-    expect(screen.getByText("Open a pull request")).toBeInTheDocument();
+    expect(screen.getByText("Push and open a pull request")).toBeInTheDocument();
   });
 
   it("shows the status line and Pause while running", async () => {
@@ -243,7 +245,7 @@ describe("WorkflowPanel", () => {
     setup(wf());
     await screen.findByRole("button", { name: "Start" });
     expect(screen.queryByLabelText("Finishing option")).not.toBeInTheDocument();
-    expect(screen.getByText("Open a pull request")).toBeInTheDocument();
+    expect(screen.getByText("Push and open a pull request")).toBeInTheDocument();
   });
 
   it("explains a forced finishing option instead of offering a select", async () => {
@@ -325,5 +327,52 @@ describe("WorkflowPanel branches", () => {
       start_branch: "main", back_merge_into: "develop", finish_outcome: "branch_kept",
     } as Partial<Workflow>));
     expect(await screen.findByText("This fix still has to reach main and develop.")).toBeInTheDocument();
+  });
+});
+
+describe("WorkflowPanel: sent back by a review on the pull request", () => {
+  const fixing = () =>
+    wf({
+      stage: "build", status: "running", pr_url: "https://github.com/acme/pay/pull/42", branch: "megoo/PAY-1-retries",
+      pr_fix_rounds: 2, pr_fix_trigger: { kind: "review", by: "rev", pr_number: 42, excerpt: "Two things", round: 2 },
+    } as Partial<Workflow>);
+
+  it("says who asked, who is fixing and the round, and Don't send back stops it", async () => {
+    const fixRun = { id: "r1", status: "running", workflow_role: "pr_fix", policy: "workspace", step: null };
+    const fetchMock = setup(fixing(), { post: new Response(JSON.stringify(fixing()), { status: 200 }), runs: [fixRun] });
+    expect(await screen.findByText("Changes requested on PR #42 by rev · Ann's Codex is fixing them · round 2 of 3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Don't send back" }));
+    const confirm = await screen.findByRole("alertdialog");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Don't send back" }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u, i]) => String(u) === "/api/tasks/PAY-1/workflow/send-back/cancel" && i?.method === "POST")).toBe(true),
+    );
+  });
+
+  it("follows the fix run itself: a retried fix shows, a stale request on another run doesn't", async () => {
+    const trigger = { kind: "fix_comment", by: "mo", pr_number: 42, excerpt: "/fix it", round: 3 };
+    const fixRun = { id: "r1", status: "running", workflow_role: "pr_fix", policy: "workspace", step: null };
+    setup(wf({ stage: "done", status: "running", pr_fix_rounds: 3, pr_fix_trigger: trigger } as Partial<Workflow>), { runs: [fixRun] });
+    expect(await screen.findByText(/by mo · Ann's Codex is fixing them · round 3 of 3/)).toBeInTheDocument();
+    cleanup();
+    const buildRun = { id: "r2", status: "running", workflow_role: "implement", policy: "workspace", step: 1 };
+    setup(wf({ stage: "build", status: "running", pr_fix_rounds: 3, pr_fix_trigger: trigger } as Partial<Workflow>), { runs: [buildRun] });
+    await screen.findAllByText(/Build/);
+    expect(screen.queryByRole("button", { name: "Don't send back" })).toBeNull();
+  });
+
+  it("shows nothing of the kind outside a fix round", async () => {
+    setup(wf({ status: "running", stage: "build" }));
+    await screen.findAllByText(/Build/);
+    expect(screen.queryByRole("button", { name: "Don't send back" })).toBeNull();
+  });
+});
+
+describe("WorkflowPanel: an agent reviewing the pull request", () => {
+  it("names the reviewer and the pull request while its review run goes", async () => {
+    const run = { id: "r9", status: "running", workflow_role: "pr_review", policy: "read_only", step: null,
+      agent: { id: "a9", name: "review-bot" } };
+    setup(wf({ stage: "done", status: "running", pr_url: "https://github.com/acme/pay/pull/42", branch: "megoo/PAY-1-x" }), { runs: [run] });
+    expect(await screen.findByText("review-bot is reviewing PR #42")).toBeInTheDocument();
   });
 });

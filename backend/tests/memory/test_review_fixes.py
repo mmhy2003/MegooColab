@@ -137,7 +137,7 @@ async def test_dream_aborts_after_consecutive_failures(client, db, monkeypatch):
     assert len(seen) == 2 and run.status == "failed" and "provider down" in run.error
 
 
-async def test_dreaming_asks_for_8000_tokens_and_truncation_is_bad_output(client, db, monkeypatch):
+async def test_dreaming_asks_for_16000_tokens_and_truncation_is_bad_output(client, db, monkeypatch):
     await _add(db, "One fact about releases")
     monkeypatch.setattr(get_settings(), "ai_fake", False)
     admin = await make_user(db, role=Role.admin)
@@ -155,7 +155,8 @@ async def test_dreaming_asks_for_8000_tokens_and_truncation_is_bad_output(client
 
     monkeypatch.setattr(litellm, "acompletion", cut)
     run = await _dream()
-    assert seen["max_tokens"] == dream.MAX_TOKENS == 8000 and seen["max_retries"] == 0
+    # room for a thinking model's reasoning as well as the reply
+    assert seen["max_tokens"] == dream.MAX_TOKENS == 16000 and seen["max_retries"] == 0
     assert run.status == "failed" and "truncated" in run.error
 
 

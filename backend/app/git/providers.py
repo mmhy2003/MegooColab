@@ -30,7 +30,8 @@ _RUN_FAILED = {"failure", "cancelled", "timed_out", "action_required", "startup_
 
 
 class GitProviderError(Exception):
-    """A provider call failed: unauthorized | not_found | unreachable | rate_limited | bad_response."""
+    """A provider call failed: unauthorized | forbidden | not_found | unreachable | rate_limited | bad_response.
+    forbidden: the token is valid but may not do this (managing webhooks without the permission)."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
@@ -101,6 +102,14 @@ def repo_path(repo_url: str) -> str | None:
     return path if "/" in path else None
 
 
+# the hosted services: a connection to one needs no address of its own
+HOSTED: dict[GitKind, str] = {GitKind.github: "https://github.com", GitKind.gitlab: "https://gitlab.com"}
+
+
+def is_hosted(conn: GitConnection) -> bool:
+    return HOSTED.get(GitKind(conn.kind)) == conn.base_url.rstrip("/").lower()
+
+
 def api_base(conn: GitConnection) -> str:
     kind = GitKind(conn.kind)
     if kind == GitKind.github:
@@ -133,9 +142,12 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=False)
 
 
-async def _get(client: httpx.AsyncClient, conn: GitConnection, path: str) -> Any:
+async def _send(
+    client: httpx.AsyncClient, conn: GitConnection, method: str, path: str, *, params: dict | None = None,
+    json: Any = None, ok: tuple[int, ...] = (200,),
+) -> Any:
     try:
-        r = await client.get(api_base(conn) + path, headers=_headers(conn))
+        r = await client.request(method, api_base(conn) + path, headers=_headers(conn), params=params, json=json)
     except httpx.HTTPError:
         raise GitProviderError("unreachable") from None
     if r.status_code == 401:
@@ -144,12 +156,20 @@ async def _get(client: httpx.AsyncClient, conn: GitConnection, path: str) -> Any
         raise GitProviderError("not_found")
     if r.status_code == 429 or (r.status_code == 403 and r.headers.get("X-RateLimit-Remaining") == "0"):
         raise GitProviderError("rate_limited")
-    if r.status_code != 200:
+    if r.status_code == 403:
+        raise GitProviderError("forbidden")
+    if r.status_code not in ok:
         raise GitProviderError("bad_response")
+    if r.status_code == 204 or not r.content:
+        return None
     try:
         return r.json()
     except ValueError:
         raise GitProviderError("bad_response") from None
+
+
+async def _get(client: httpx.AsyncClient, conn: GitConnection, path: str, params: dict | None = None) -> Any:
+    return await _send(client, conn, "GET", path, params=params)
 
 
 async def _optional(client: httpx.AsyncClient, conn: GitConnection, path: str) -> Any:
@@ -308,3 +328,161 @@ async def whoami(conn: GitConnection, *, client: httpx.AsyncClient | None = None
     finally:
         if own:
             await client.aclose()
+
+
+# ---- repositories and their webhooks (piece 1) -----------------------------------------------------------
+
+PAGE = 50
+# what a repository's webhook asks its host to send: what MegooColab follows on a task's pull request and branch
+HOOK_EVENTS: dict[GitKind, list[str]] = {
+    GitKind.github: ["pull_request", "pull_request_review", "pull_request_review_comment", "issue_comment", "push",
+                     "check_run", "check_suite", "status"],
+    GitKind.gitlab: ["push_events", "note_events", "merge_requests_events", "pipeline_events"],
+    GitKind.gitea: ["push", "pull_request", "pull_request_sync", "pull_request_comment", "pull_request_review_approved",
+                    "pull_request_review_rejected", "pull_request_review_comment", "issue_comment", "status"],
+}
+
+
+@dataclass(frozen=True)
+class RepoChoice:
+    path: str
+    url: str
+    default_branch: str | None
+
+
+def _choice(item: Any, kind: GitKind) -> RepoChoice | None:
+    if not isinstance(item, dict):
+        return None
+    path = item.get("path_with_namespace") if kind == GitKind.gitlab else item.get("full_name")
+    url = item.get("web_url") if kind == GitKind.gitlab else item.get("html_url")
+    branch = item.get("default_branch")
+    if not isinstance(path, str) or not isinstance(url, str) or "/" not in path:
+        return None
+    return RepoChoice(path, url, branch if isinstance(branch, str) and branch else None)
+
+
+async def list_repositories(
+    conn: GitConnection, *, q: str = "", page: int = 1, client: httpx.AsyncClient | None = None
+) -> tuple[list[RepoChoice], bool]:
+    """The repositories the connection's token can see, PAGE at a time, matching q, and whether there are more.
+    GitLab searches itself; GitHub and Gitea have no search on these lists, so their pages are filtered here
+    (GitHub reads three pages of 100 for each of ours, so Load more never skips any)."""
+    kind = GitKind(conn.kind)
+    needle = q.strip().lower()
+
+    async def call(c):
+        if kind == GitKind.gitlab:
+            params = {"membership": "true", "simple": "true", "order_by": "path", "sort": "asc", "per_page": PAGE,
+                      "page": page}
+            if needle:
+                params["search"] = needle
+            raw = await _get(c, conn, "/projects", params)
+            if not isinstance(raw, list):
+                raise GitProviderError("bad_response")
+            return [x for x in (_choice(i, kind) for i in raw) if x], len(raw) == PAGE
+        if kind == GitKind.gitea:
+            raw = await _get(c, conn, "/user/repos", {"limit": PAGE, "page": page})
+            if not isinstance(raw, list):
+                raise GitProviderError("bad_response")
+            found = [x for x in (_choice(i, kind) for i in raw) if x and needle in x.path.lower()]
+            return found, len(raw) == PAGE
+        found: list[RepoChoice] = []
+        more = False
+        for host_page in range((page - 1) * 3 + 1, page * 3 + 1):
+            raw = await _get(c, conn, "/user/repos", {"per_page": 100, "page": host_page, "sort": "full_name",
+                                                      "affiliation": "owner,collaborator,organization_member"})
+            if not isinstance(raw, list):
+                raise GitProviderError("bad_response")
+            found += [x for x in (_choice(i, kind) for i in raw) if x and needle in x.path.lower()]
+            more = len(raw) == 100
+            if not more:
+                break
+        return found, more
+
+    return await _with(client, call)
+
+
+def _hooks_path(conn: GitConnection, path: str) -> str:
+    if GitKind(conn.kind) == GitKind.gitlab:
+        return f"/projects/{quote(path, safe='')}/hooks"
+    return f"/repos/{path}/hooks"
+
+
+def _hook_body(conn: GitConnection, url: str, secret: str) -> dict:
+    kind = GitKind(conn.kind)
+    if kind == GitKind.gitlab:
+        return {"url": url, "token": secret, "enable_ssl_verification": True, **dict.fromkeys(HOOK_EVENTS[kind], True)}
+    config = {"url": url, "content_type": "json", "secret": secret}
+    if kind == GitKind.github:
+        return {"name": "web", "active": True, "events": HOOK_EVENTS[kind], "config": {**config, "insecure_ssl": "0"}}
+    return {"type": "gitea", "active": True, "events": HOOK_EVENTS[kind], "config": config}
+
+
+async def _with(client: httpx.AsyncClient | None, call):
+    own = client is None
+    client = client or _client()
+    try:
+        return await call(client)
+    finally:
+        if own:
+            await client.aclose()
+
+
+async def list_hooks(conn: GitConnection, path: str, *, client: httpx.AsyncClient | None = None) -> list[tuple[str, str]]:
+    """(hook id, the address it posts to) for each of the repository's webhooks."""
+
+    async def call(c):
+        page = {"limit": 50} if GitKind(conn.kind) == GitKind.gitea else {"per_page": 100}
+        raw = await _get(c, conn, _hooks_path(conn, path), page)
+        if not isinstance(raw, list):
+            raise GitProviderError("bad_response")
+        out = []
+        for hook in raw:
+            if not isinstance(hook, dict) or hook.get("id") is None:
+                continue
+            url = hook.get("url") if GitKind(conn.kind) == GitKind.gitlab else (hook.get("config") or {}).get("url")
+            if isinstance(url, str):
+                out.append((str(hook["id"]), url))
+        return out
+
+    return await _with(client, call)
+
+
+async def create_hook(conn: GitConnection, path: str, url: str, secret: str, *, client: httpx.AsyncClient | None = None) -> str:
+    async def call(c):
+        made = await _send(c, conn, "POST", _hooks_path(conn, path), json=_hook_body(conn, url, secret), ok=(200, 201))
+        if not isinstance(made, dict) or made.get("id") is None:
+            raise GitProviderError("bad_response")
+        return str(made["id"])
+
+    return await _with(client, call)
+
+
+async def update_hook(
+    conn: GitConnection, path: str, hook_id: str, url: str, secret: str, *, client: httpx.AsyncClient | None = None
+) -> None:
+    method = "PUT" if GitKind(conn.kind) == GitKind.gitlab else "PATCH"
+
+    async def call(c):
+        await _send(c, conn, method, f"{_hooks_path(conn, path)}/{hook_id}", json=_hook_body(conn, url, secret))
+
+    await _with(client, call)
+
+
+async def delete_hook(conn: GitConnection, path: str, hook_id: str, *, client: httpx.AsyncClient | None = None) -> None:
+    """Gone already counts as done."""
+
+    async def call(c):
+        try:
+            await _send(c, conn, "DELETE", f"{_hooks_path(conn, path)}/{hook_id}", ok=(200, 204))
+        except GitProviderError as e:
+            if e.code != "not_found":
+                raise
+
+    await _with(client, call)
+
+
+def hook_page_url(conn: GitConnection, path: str) -> str:
+    """The host's webhook settings page for the repository."""
+    web = conn.base_url.rstrip("/")
+    return f"{web}/{path}/-/hooks" if GitKind(conn.kind) == GitKind.gitlab else f"{web}/{path}/settings/hooks"

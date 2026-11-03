@@ -11,7 +11,7 @@ from app.jobs import queue
 from app.jobs.worker import run_worker
 
 # job handler modules register themselves on import
-HANDLER_MODULES: tuple[str, ...] = ("app.git.jobs", "app.kb.search", "app.memory.fakes", "app.memory.extract", "app.memory.dream",
+HANDLER_MODULES: tuple[str, ...] = ("app.git.jobs", "app.images.jobs", "app.kb.search", "app.memory.fakes", "app.memory.extract", "app.memory.dream",
                                    "app.notifications.jobs", "app.push.jobs", "app.search.jobs",
                                    "app.telegram.jobs", "app.updates.check")
 # run once at start as well as on their schedule (periodic jobs otherwise wait one interval)

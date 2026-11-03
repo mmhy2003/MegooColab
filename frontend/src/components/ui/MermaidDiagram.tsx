@@ -101,7 +101,7 @@ export function MermaidDiagram({ source }: { source: string }) {
       {showCode ? (
         code
       ) : current?.svg ? (
-        <div className="overflow-x-auto p-3 [&_svg]:mx-auto [&_svg]:h-auto" dangerouslySetInnerHTML={{ __html: current.svg }} />
+        <div data-scroll-x className="overflow-x-auto p-3 [&_svg]:mx-auto [&_svg]:h-auto" dangerouslySetInnerHTML={{ __html: current.svg }} />
       ) : (
         <p className="p-3 text-xs text-muted-foreground">Drawing diagram…</p>
       )}

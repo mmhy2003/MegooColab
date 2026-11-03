@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatView } from "@/components/chats/ChatView";
@@ -18,7 +19,13 @@ function show(c: Chat) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
-      const body = url.includes("/activity") || url.includes("/agent-runs") ? [] : url.includes("/workflow") ? {} : c;
+      // the round's own parts (RoundSections) as a task's: empty lists, no documents, no decisions
+      const lists = ["/activity", "/agent-runs", "/questions", "/attachments", "/mockups", "/api/projects/", "/api/users"];
+      const body = lists.some((l) => url.includes(l))
+        ? []
+        : url.includes("/workflow") ? {} : url.includes("/records") ? { decisions: [] }
+        : url.startsWith("/api/tasks/") ? { id: "t7", key: "PAY-7", subtask_count: 0, subtask_done_count: 0 }
+        : c;
       return new Response(JSON.stringify(body), { status: 200 });
     }),
   );
@@ -36,6 +43,35 @@ afterEach(() => {
 });
 
 describe("ChatView", () => {
+  it("the phone header folds End chat into a menu and the steps into one line", async () => {
+    const r = chat().rounds[0];
+    show(chat({ rounds: [{ ...r, stage: "design" }] }));
+    await userEvent.click(await screen.findByRole("button", { name: "Chat actions" }));
+    expect(await screen.findByRole("menuitem", { name: "End chat" })).toBeInTheDocument();
+    const steps = screen.getByRole("button", { name: "Design · step 2 of 5" }); // the ▾ is not read out
+    expect(steps).toHaveAttribute("aria-expanded", "false");
+    expect(steps).toHaveClass("min-h-8"); // tap-sized
+    await userEvent.click(steps);
+    expect(steps).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByRole("list", { name: "Progress" }).length).toBe(2); // the phone's, and the desktop row
+  });
+
+  it("on a phone the message box grows with the text and the image button sits beside Send", async () => {
+    show(chat());
+    const box = await screen.findByRole("textbox", { name: "Message laptop-claude" });
+    expect(box).toHaveClass("max-md:[field-sizing:content]", "max-md:max-h-32");
+    const images = screen.getByRole("button", { name: "Add images" });
+    const send = screen.getByRole("button", { name: "Send" });
+    // one row on a phone: the image button and Send share a parent row
+    expect(images.closest("[data-composer-row]")).toContainElement(send);
+  });
+
+  it("the header names project, agent and program on one line", async () => {
+    show(chat());
+    const line = await screen.findByText("PAY · laptop-claude · Claude Code");
+    expect(line).toHaveClass("truncate");
+  });
+
   it("gives a long title its own lines, cut after two, and the whole of it on hover", async () => {
     show(chat({ title: LONG }));
     const title = await screen.findByRole("heading", { level: 2, name: LONG });
@@ -53,6 +89,8 @@ describe("ChatView", () => {
       return el;
     });
     expect(thread).toHaveClass("overflow-y-auto");
+    // and holds what is positioned inside it (screen-reader text in its parts), or that would stretch the page
+    expect(thread).toHaveClass("relative");
     expect(thread).not.toContainElement(screen.getByRole("heading", { level: 2 }));
     expect(thread).not.toContainElement(screen.getByRole("textbox", { name: "Message laptop-claude" }));
   });
@@ -71,5 +109,11 @@ describe("ChatView", () => {
     show(chat({ state: "question", can_act: false }));
     expect(await screen.findByText("waiting: answer the agent's question")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "waiting: answer the agent's question" })).toBeNull();
+  });
+
+  it("shows the images sent with a round's first message", async () => {
+    const c = chat();
+    show({ ...c, rounds: [{ ...c.rounds[0], images: [{ id: "i1", filename: "first.png", size: 10 }] }] } as typeof c);
+    expect(await screen.findByRole("button", { name: "Open first.png" })).toBeInTheDocument();
   });
 });

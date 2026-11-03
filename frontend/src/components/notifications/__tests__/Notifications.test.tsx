@@ -94,6 +94,18 @@ describe("NotificationList", () => {
 });
 
 describe("NotificationPrefs", () => {
+  it("on phones each event is a card with its channels", async () => {
+    mockFetch((url, init) => (url === "/api/me/notification-preferences" && !init?.method ? json([{ kind: "assigned", in_app: true, email: true }]) : undefined));
+    wrap(<NotificationPrefs />);
+    const email = await screen.findByRole("checkbox", { name: "Email: Assigned to me" });
+    const table = email.closest("table")!;
+    expect(table).toHaveClass("max-md:block");
+    expect(table.querySelector("thead")).toHaveClass("max-md:hidden");
+    expect(email.closest("td")).toHaveAttribute("data-label", "Email");
+    // the whole cell is the tap target on a phone, not the 13 px box
+    expect(email.closest("label")).toHaveClass("max-md:min-h-8", "max-md:min-w-8");
+  });
+
   it("toggles in-app and email per kind", async () => {
     const prefs = [
       { kind: "needs_you", in_app: true, email: true },

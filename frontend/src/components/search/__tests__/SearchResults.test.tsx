@@ -65,6 +65,24 @@ afterEach(() => {
 });
 
 describe("SearchResults", () => {
+  it("on phones the filters fold behind a Filters button that counts what is set", async () => {
+    setup(() => page([hit(1)]), "q=payments&kind=task&updated=7d");
+    const toggle = await screen.findByRole("button", { name: "Filters (2)" });
+    expect(toggle).toHaveClass("md:hidden");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const filters = screen.getByRole("complementary", { name: "Filters" });
+    expect(filters).toHaveClass("max-md:hidden");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(filters).not.toHaveClass("max-md:hidden");
+  });
+
+  it("long words in a result wrap", async () => {
+    setup(() => page([hit(1, { snippet: `see ${"https://git.example.com/a/very/long/path/".repeat(3)}` })]));
+    const [article] = await screen.findAllByRole("article");
+    expect(article).toHaveClass("wrap-anywhere");
+  });
+
   it("shows facet counts and puts filters in the URL", async () => {
     const { calls, urls } = setup(() => page([hit(1)]));
     const tasks = await screen.findByRole("checkbox", { name: "Tasks (21)" });

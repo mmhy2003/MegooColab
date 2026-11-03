@@ -165,10 +165,20 @@ class Comment(IdMixin, Base):
 class Attachment(IdMixin, Base):
     __tablename__ = "attachments"
 
-    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    # None: an image uploaded for a message not sent yet (removed after a day if it never is)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
     filename: Mapped[str] = mapped_column(String(255))
     content_type: Mapped[str] = mapped_column(String(200))
     size: Mapped[int]
     storage_key: Mapped[str] = mapped_column(String(200))
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # its bytes were checked as PNG, JPEG, GIF or WebP: only then is it shown in the page (served inline)
+    image: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # the message it was sent with (app.images.files.MessageKind and that message's id); None for a file
+    # uploaded to the task's Attachments, or whose comment was deleted
+    message_kind: Mapped[str | None] = mapped_column(String(20))
+    message_id: Mapped[uuid.UUID | None] = mapped_column(index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # the agent first had it
+    # the last run it was sent to (or steered into): that run's runner may download it
+    sent_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))

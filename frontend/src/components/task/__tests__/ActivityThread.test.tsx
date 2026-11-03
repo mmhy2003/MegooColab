@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ActivityThread } from "@/components/task/ActivityThread";
@@ -288,5 +288,89 @@ describe("ActivityThread workflow events", () => {
       render(<ActivityThread items={items} columnNames={columnNames} userNames={userNames} />);
       expect(screen.queryByText(/→/)).toBeNull();
     });
+  });
+
+  describe("images", () => {
+    const img = (id: string, filename: string) => ({ id, filename, size: 1024 });
+
+    it("shows a comment's images with it, and marks each item so it can be linked to", () => {
+      const withImages: ActivityItem[] = [
+        { type: "comment", id: "c9", at: "2026-10-22T10:01:00Z", actor, body_md: "See these", edited_at: null,
+          images: [img("i1", "one.png"), img("i2", "two.png")] },
+      ];
+      const { container } = render(<ActivityThread items={withImages} columnNames={new Map()} userNames={new Map()} />);
+      expect(screen.getByRole("button", { name: "Open one.png" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Open two.png" })).toBeInTheDocument();
+      expect(container.querySelector("#activity-c9")).not.toBeNull();
+    });
+
+    it("shows a change request's images under it", () => {
+      const rejected: ActivityItem[] = [
+        { type: "event", id: "e9", at: "2026-10-22T10:01:00Z", actor, kind: "document.rejected",
+          data: { kind: "design", version: 1, comment: "like this", document_id: "d1" }, images: [img("i3", "like.png")] },
+      ];
+      render(<ActivityThread items={rejected} columnNames={new Map()} userNames={new Map()} />);
+      expect(screen.getByRole("button", { name: "Open like.png" })).toBeInTheDocument();
+    });
+
+    it("shows an answer's images with the answer", () => {
+      const answered: ActivityItem[] = [
+        { type: "question", id: "q9", at: "2026-10-22T10:01:00Z", actor: null, images: [img("i4", "this.png")],
+          question: { id: "q9", body: "Which one?", choices: [], status: "answered", mockup: null,
+                      answered_by: { id: "u1", name: "Ahmed Ali" }, answer_choice: null, answer_text: "this" } },
+      ];
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ActivityThread items={answered} columnNames={new Map()} userNames={new Map()} taskKey="PAY-1" />
+        </QueryClientProvider>,
+      );
+      expect(screen.getByRole("button", { name: "Open this.png" })).toBeInTheDocument();
+    });
+  });
+});
+
+describe("ActivityThread: a task sent back by its pull request", () => {
+  const at = "2026-11-03T10:00:00Z";
+  it("words the send-back, the fix and the stop", () => {
+    const rows: ActivityItem[] = [
+      { type: "event", id: "s1", at, actor: null, kind: "pr.sent_back",
+        data: { pr_number: 42, by: "rev", kind: "review", round: 2, of: 3, excerpt: "Two things" } },
+      { type: "event", id: "s2", at, actor: null, kind: "pr.sent_back",
+        data: { pr_number: 42, by: "mo", kind: "fix_comment", round: 3, of: 3, excerpt: "/fix the timeout" } },
+      { type: "event", id: "s3", at, actor: null, kind: "pr.fix_pushed",
+        data: { pr_number: 42, round: 2, of: 3, summary: "Added a <b>back-off</b>" } },
+      { type: "event", id: "s4", at, actor, kind: "pr.send_back_cancelled", data: {} },
+    ];
+    render(<ActivityThread items={rows} columnNames={new Map()} userNames={new Map()} />);
+    const text = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(text[0]).toContain("Sent back to its agent: changes requested on PR #42 by rev (round 2 of 3)");
+    expect(text[1]).toContain("Sent back to its agent: /fix on PR #42 by mo (round 3 of 3)");
+    expect(text[2]).toContain("Fixed and pushed to PR #42 (round 2 of 3)");
+    expect(screen.getByText("Added a <b>back-off</b>")).toBeInTheDocument();
+    expect(text[3]).toContain("Ahmed Ali stopped the fix: back to waiting for the merge");
+    expect(text[0]).not.toContain("Someone");
+  });
+});
+
+describe("ActivityThread: the agent's review of the pull request", () => {
+  const at = "2026-11-03T11:00:00Z";
+  const reviewed = (data: Record<string, unknown>): ActivityItem => ({
+    type: "event", id: String(Math.random()), at, actor: null, kind: "pr.agent_reviewed",
+    data: { pr_number: 42, agent_name: "review-bot", agent_id: "a9", summary: "Two <b>things</b>", findings: 3, ...data },
+  });
+  it("says what the reviewer decided, led by the agent with its tag", () => {
+    render(<ActivityThread columnNames={new Map()} userNames={new Map()} items={[
+      reviewed({ verdict: "approved", merged: true }),
+      reviewed({ verdict: "approved", merged: false, merge_error: "Required review missing" }),
+      reviewed({ verdict: "changes_requested", merged: false }),
+    ]} />);
+    const rows = screen.getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("review-bot");
+    expect(within(rows[0]).getByText("agent")).toBeInTheDocument();
+    expect(rows[0]).toHaveTextContent("approved PR #42 and merged it");
+    expect(rows[1]).toHaveTextContent("approved PR #42 (not merged: Required review missing)");
+    expect(rows[2]).toHaveTextContent("requested changes on PR #42 · 3 findings");
+    expect(within(rows[2]).getByText("Two <b>things</b>")).toBeInTheDocument();
+    expect(rows[2]).not.toHaveTextContent("Someone");
   });
 });

@@ -316,3 +316,33 @@ func TestReadOnlyDangerousOptionsInEveryPosition(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkspaceAllowsReadsInAllowedDir(t *testing.T) {
+	root, extra, other := t.TempDir(), t.TempDir(), t.TempDir()
+	for _, kind := range []policy.Kind{policy.Workspace, policy.ReadOnly} {
+		pol, err := policy.New(kind, root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		img := filepath.Join(extra, "1-shot.png")
+		if pol.CheckRead(img).Allow {
+			t.Fatalf("%s: a read outside the worktree is refused until its folder is allowed", kind)
+		}
+		pol.AllowRead(extra)
+		if !pol.CheckRead(img).Allow {
+			t.Fatalf("%s: a read in the allowed folder is allowed", kind)
+		}
+		if !pol.CheckTool(acp.ToolKindRead, "Read", []string{img}, "").Allow {
+			t.Fatalf("%s: a read tool on the allowed folder is allowed", kind)
+		}
+		if pol.CheckWrite(img).Allow || pol.CheckTool(acp.ToolKindEdit, "Edit", []string{img}, "").Allow {
+			t.Fatalf("%s: writes there stay refused", kind)
+		}
+		if pol.CheckRead(filepath.Join(other, "x")).Allow {
+			t.Fatalf("%s: other folders stay refused", kind)
+		}
+		if got, ok := pol.ResolveRead(img); !ok || filepath.Base(got) != "1-shot.png" {
+			t.Fatalf("%s: ResolveRead = %q %v", kind, got, ok)
+		}
+	}
+}

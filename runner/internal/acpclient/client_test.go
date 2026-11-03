@@ -711,3 +711,21 @@ func TestSafeMcpAllowedInReadOnly(t *testing.T) {
 		t.Errorf("prefix lookalike = %s", got)
 	}
 }
+
+func TestReadTextFileInAllowedDir(t *testing.T) {
+	root, _ := filepath.EvalSymlinks(t.TempDir())
+	extra, _ := filepath.EvalSymlinks(t.TempDir())
+	if err := os.WriteFile(filepath.Join(extra, "notes.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pol, _ := policy.New(policy.Workspace, root)
+	c := acpclient.New(pol, root, (&recorder{}).emit)
+	req := acp.ReadTextFileRequest{Path: filepath.Join(extra, "notes.txt")}
+	if _, err := c.ReadTextFile(context.Background(), req); err == nil {
+		t.Fatal("outside the worktree: refused until allowed")
+	}
+	pol.AllowRead(extra)
+	if r, err := c.ReadTextFile(context.Background(), req); err != nil || r.Content != "hi" {
+		t.Fatalf("allowed folder: %q %v", r.Content, err)
+	}
+}

@@ -159,6 +159,14 @@ type Report struct {
 	Replayed      int             `json:"replayed"`       // history updates sent while loading
 	McpServers    json.RawMessage `json:"mcp_servers"`    // what the last session request carried
 	Steers        []string        `json:"steers"`         // the text of every steer injected into a turn
+	Images        []ImageSeen     `json:"images"`         // image blocks received in prompts and steers
+}
+
+// ImageSeen is one image block the agent was given.
+type ImageSeen struct {
+	Mime  string `json:"mime"`
+	Bytes int    `json:"bytes"`
+	Where string `json:"where"` // "prompt" | "steer"
 }
 
 type InitSummary struct {

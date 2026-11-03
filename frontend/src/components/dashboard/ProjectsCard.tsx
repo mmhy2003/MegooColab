@@ -23,7 +23,7 @@ export function ProjectsCard({ projects }: { projects: ProjectRow[] }) {
                 <span
                   role="img"
                   aria-label={`${p.key}: ${p.done} done, ${p.in_progress} in progress, ${p.open - p.in_progress} to do`}
-                  className="flex h-1.5 w-24 shrink-0 overflow-hidden rounded-sm bg-surface-2"
+                  className="flex h-1.5 w-24 shrink-0 overflow-hidden rounded-sm bg-surface-2 max-md:w-14"
                 >
                   <b className="block bg-green" style={{ width: `${(p.done / total) * 100}%` }} />
                   <b className="block bg-cyan" style={{ width: `${(p.in_progress / total) * 100}%` }} />

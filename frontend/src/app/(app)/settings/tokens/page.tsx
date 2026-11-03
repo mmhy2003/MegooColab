@@ -17,6 +17,7 @@ import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
 import type { AccessToken, CreatedToken, TokenScope } from "@/lib/types";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { ScrollX } from "@/components/ui/ScrollX";
 import { usePageTitle } from "@/lib/title";
 
 const SCOPE_LABEL: Record<TokenScope, string> = { mcp: "MCP", runner: "Runner" };
@@ -121,7 +122,7 @@ export default function TokensPage() {
             actions={<Button onClick={() => setCreating(true)}>New token</Button>}
           />
           {error && <p role="alert" className="mb-2 text-sm text-pink">{error}</p>}
-          <div className="card overflow-x-auto">
+          <ScrollX className="card">
             <table className="w-full text-left text-sm">
               <thead className="text-xs tracking-wider text-muted-foreground uppercase">
                 <tr className="border-b border-line">
@@ -175,7 +176,7 @@ export default function TokensPage() {
                 )}
               </tbody>
             </table>
-          </div>
+          </ScrollX>
         </div>
         <section className="card space-y-3 p-4">
           <h2 className="text-sm font-bold text-cyan-ink">Connect a coding tool over MCP</h2>

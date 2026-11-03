@@ -17,6 +17,16 @@ describe("Kpis", () => {
     expect(screen.getByText("1 over a day old")).toBeInTheDocument();
   });
 
+  it("all 8 tiles stay, each with its second line, in a sideways row on phones", () => {
+    const { container } = render(<Kpis numbers={{ ...numbers, need_you_over_day: 2 }} />);
+    const row = container.querySelector("[data-scroll-x]")!;
+    expect(row).toHaveAttribute("data-scroll-x");
+    const tiles = Array.from(row.querySelectorAll("[data-tile]"));
+    expect(tiles).toHaveLength(8);
+    for (const t of tiles) expect(t).toHaveClass("max-md:w-36", "shrink-0");
+    expect(screen.getByText("2 over a day old")).toBeInTheDocument();
+  });
+
   it("shows every tile with its small line", () => {
     render(<Kpis numbers={numbers} />);
     expect(tile("Agents working / online")).toHaveTextContent("1/ 2");

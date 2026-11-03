@@ -15,7 +15,7 @@ const SETTINGS = {
   name: "Acme",
   smtp: { host: "smtp.acme.io", port: 587, user: "megoo", from: "megoo@acme.io", tls: true, password_set: true },
   dreaming: { enabled: true, hour_utc: 3 },
-  project_defaults: { finishing_option: "pull_request", require_human_code_review: false, sprints_enabled: true, commit_docs_to_repo: false },
+  project_defaults: { finishing_option: "pull_request", pr_review: "none", sprints_enabled: true, commit_docs_to_repo: false },
   hub: { share_everyone: true },
 };
 const KEPT_SMTP = { host: "smtp.acme.io", port: 587, user: "megoo", from: "megoo@acme.io", tls: true, password: null };
@@ -78,19 +78,32 @@ describe("Admin settings in tabs", () => {
     expect(panel.getByLabelText("Send a test email to")).toBeInTheDocument();
   });
 
+  it("New projects says what each default does", async () => {
+    search = "tab=new-projects";
+    renderPage();
+    const panel = within(await screen.findByRole("tabpanel", { name: "New projects" }));
+    expect(panel.getByText(/pushes the task's branch and opens a pull request/)).toBeInTheDocument();
+    fireEvent.change(panel.getByLabelText("Default finishing option"), { target: { value: "keep_branch" } });
+    expect(panel.getByText(/leaves the finished work committed on its own branch/)).toBeInTheDocument();
+    expect(panel.getByText(/nobody reviews the pull request first/)).toBeInTheDocument();
+    fireEvent.change(panel.getByLabelText("Default pull request review"), { target: { value: "agent" } });
+    expect(panel.getByText(/An agent reviews the pull request on the host, and merges it when it approves/)).toBeInTheDocument();
+    expect(panel.getByText(/so they travel with the code/)).toBeInTheDocument();
+  });
+
   it("New projects saves the defaults only", async () => {
     search = "tab=new-projects";
     renderPage();
     const panel = within(await screen.findByRole("tabpanel", { name: "New projects" }));
     fireEvent.change(panel.getByLabelText("Default finishing option"), { target: { value: "keep_branch" } });
-    fireEvent.click(panel.getByRole("checkbox", { name: "Require a human code review" }));
+    fireEvent.change(panel.getByLabelText("Default pull request review"), { target: { value: "human" } });
     fireEvent.click(panel.getByRole("checkbox", { name: "Sprints" }));
     fireEvent.click(panel.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(puts()).toHaveLength(1));
     expect(puts()[0].body).toEqual({
       name: "Acme",
       smtp: KEPT_SMTP,
-      project_defaults: { finishing_option: "keep_branch", require_human_code_review: true, sprints_enabled: false, commit_docs_to_repo: false },
+      project_defaults: { finishing_option: "keep_branch", pr_review: "human", sprints_enabled: false, commit_docs_to_repo: false },
     });
   });
 

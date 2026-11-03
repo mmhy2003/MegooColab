@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.auth.schemas import UserOut
 from app.chats.models import ChatStatus
 from app.core.text import NoNulStr
+from app.images.files import ImageRef
 
 MAX_MESSAGE = 8_000
 
@@ -22,10 +23,12 @@ class ChatIn(BaseModel):
     project_key: NoNulStr = Field(min_length=1, max_length=20)
     agent_id: uuid.UUID | None = None  # None: any free agent the person may use on the project
     message: NoNulStr = Field(min_length=1, max_length=MAX_MESSAGE)
+    image_ids: list[uuid.UUID] = Field(default=[], max_length=6)  # unsent images (POST /api/images) it sends
 
 
 class MessageIn(BaseModel):
     body: NoNulStr = Field(min_length=1, max_length=MAX_MESSAGE)
+    image_ids: list[uuid.UUID] = Field(default=[], max_length=6)  # unsent images (POST /api/images) it sends
 
 
 class MessageOut(BaseModel):
@@ -67,6 +70,7 @@ class RoundOut(BaseModel):
     branch_from: str | None
     # "pending": finished, or the chat ended, with nothing decided yet; None: the round is still going
     board: Literal["pending", "added", "declined"] | None
+    images: list[ImageRef] = []  # sent with its first message
 
 
 class ChatOut(BaseModel):
@@ -82,3 +86,4 @@ class ChatOut(BaseModel):
     intent: Intent = "closed"
     can_act: bool
     rounds: list[RoundOut]
+    takes_images: bool = False  # its messages may carry images (the latest round's agent can be sent them)

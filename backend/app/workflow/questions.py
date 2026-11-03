@@ -3,6 +3,7 @@
 
 import re
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -13,6 +14,8 @@ from app.agent_runs.models import AgentRun
 from app.audit import service as audit
 from app.auth.models import User
 from app.core.text import strip_nul
+from app.images.files import MessageKind
+from app.images.links import link_images
 from app.tasks.models import Task
 from app.workflow import engine
 from app.workflow.models import (
@@ -145,7 +148,10 @@ async def next_mockup(db, task: Task, clean: dict[str, Any]) -> Mockup:
     return row
 
 
-async def answer(db, user: User, task: Task, question_id: uuid.UUID, choice: str | None, text: str | None) -> None:
+async def answer(
+    db, user: User, task: Task, question_id: uuid.UUID, choice: str | None, text: str | None,
+    images: Sequence[uuid.UUID] = (),
+) -> None:
     """A human answers a question (WF-6 roles). The first answer wins (409 already_decided). If the workflow is
     waiting on this question, the asking role's session resumes; otherwise the answer is only recorded."""
     wf = await engine.lock_task(db, task)  # lock order: task, workflow, then the question row
@@ -183,6 +189,7 @@ async def answer(db, user: User, task: Task, question_id: uuid.UUID, choice: str
     q.answer_choice = choice
     q.answer_text = text
     q.answered_at = datetime.now(UTC)
+    await link_images(db, user, images, task, MessageKind.answer, q.id)
     await engine.record_workflow_event(
         db, task, user.id, "question.answered", {"question_id": str(q.id), "choice": choice, "has_text": bool(text)}
     )

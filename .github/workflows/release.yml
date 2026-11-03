@@ -39,8 +39,10 @@ jobs:
     if: needs.plan.outputs.app == 'true' || needs.plan.outputs.runner == 'true'
     uses: ./.github/workflows/ci.yml
 
+  # the start-up check builds and runs the images while the tests run: it publishes nothing, and the images job
+  # below (which pushes) waits for both
   app:
-    needs: [plan, tests]
+    needs: plan
     if: needs.plan.outputs.app == 'true'
     runs-on: ubuntu-latest
     env:
@@ -94,7 +96,7 @@ jobs:
   # Each platform is built on a machine of its own architecture: under QEMU emulation the arm64 frontend build
   # crashed (node: "Illegal instruction") or hung. Each build is pushed by digest; publish tags them together.
   images:
-    needs: [plan, app]
+    needs: [plan, tests, app]
     if: needs.plan.outputs.app == 'true'
     strategy:
       fail-fast: true

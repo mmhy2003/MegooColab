@@ -24,7 +24,7 @@ const STAGE_CARDS: { id: MethodologyStage; label: string; keys: string[] }[] = [
   { id: "plan", label: "Plan", keys: ["plan"] },
   { id: "build", label: "Build", keys: ["build_implement", "build_step_review", "build_step_fix"] },
   { id: "review", label: "Review", keys: ["review_final", "review_fix"] },
-  { id: "done", label: "Done", keys: ["finish"] },
+  { id: "done", label: "Done", keys: ["finish", "pr_fix", "pr_review"] },
 ];
 
 const mqk = {
@@ -232,7 +232,7 @@ export function MethodologyEditor({ stage, onStage }: { stage: MethodologyStage;
       />
       {STAGE_CARDS.map((s) => (
         <TabPanel key={s.id} id={s.id} active={s.id === stage}>
-          <div className="card space-y-3 p-4">
+          <div className="card space-y-3 p-4 max-md:border-0 max-md:bg-transparent max-md:p-0 max-md:shadow-none">
             {s.keys.map((k) => {
               const item = byKey.get(k);
               return item ? <KeyEditor key={k} item={item} names={names} onDirty={onDirty} /> : null;

@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { AdminOnly } from "@/components/admin/AdminOnly";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ScrollX } from "@/components/ui/ScrollX";
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queries";
 import type { AuditEntry, User } from "@/lib/types";
@@ -31,7 +32,7 @@ function AuditPageContent() {
           onChange={(e) => setAction(e.target.value.trim())}
         />
       </div>
-      <div className="card overflow-x-auto">
+      <ScrollX className="card">
         <table className="w-full text-left text-sm">
           <thead className="text-xs tracking-wider text-muted-foreground uppercase">
             <tr className="border-b border-line">
@@ -58,7 +59,7 @@ function AuditPageContent() {
             )}
           </tbody>
         </table>
-      </div>
+      </ScrollX>
     </div>
   );
 }

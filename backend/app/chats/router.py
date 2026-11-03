@@ -4,7 +4,15 @@ from fastapi import APIRouter, status
 
 from app.auth.deps import AuthedUser
 from app.chats import service
-from app.chats.schemas import BoardDefaults, BoardIn, ChatIn, ChatOut, MessageIn, MessageOut, RoundOut
+from app.chats.schemas import (
+    BoardDefaults,
+    BoardIn,
+    ChatIn,
+    ChatOut,
+    MessageIn,
+    MessageOut,
+    RoundOut,
+)
 from app.core.db import DbSession
 
 router = APIRouter(tags=["chats"])
@@ -45,7 +53,7 @@ async def send_message(chat_id: uuid.UUID, body: MessageIn, user: AuthedUser, db
     from app.workflow.instructions import steer_after_commit
 
     chat = await service.get_chat_for(db, user, chat_id)
-    what, task, steer = await service.send_message(db, user, chat, body.body)
+    what, task, steer = await service.send_message(db, user, chat, body.body, body.image_ids)
     key = f"{(await db.get(Project, task.project_id)).key}-{task.number}"
     await db.commit()
     if steer is not None:

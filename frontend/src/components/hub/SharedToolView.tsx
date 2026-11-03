@@ -25,7 +25,7 @@ export function SetupText({ spec }: { spec: HubSpec }) {
     }
     for (const e of spec.env ?? []) rows.push(`env  ${e.name} = ${e.secret ? `‹your ${e.name}›` : e.value}`);
   }
-  return <pre className="overflow-x-auto rounded bg-surface-2 p-2 text-xs">{rows.join("\n")}</pre>;
+  return <pre data-scroll-x className="overflow-x-auto rounded bg-surface-2 p-2 text-xs">{rows.join("\n")}</pre>;
 }
 
 /** What it runs on your machine, said before you take it. */

@@ -57,8 +57,8 @@ export function SystemCard({ system }: { system: SystemOut }) {
         {systemLines(system, new Date()).map((line) => (
           <li key={line.label} className="flex min-w-0 items-center gap-1.5" data-attention={line.attention}>
             <Dot state={line.attention ? "attention" : "online"} />
-            <span className="truncate">{line.label}</span>
-            <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{line.value}</span>
+            <span className="min-w-0 truncate">{line.label}</span>
+            <span className="ml-auto max-w-[45%] min-w-0 shrink truncate font-mono text-xs text-muted-foreground">{line.value}</span>
           </li>
         ))}
       </ul>

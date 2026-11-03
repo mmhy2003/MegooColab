@@ -4,10 +4,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { ImageAttach, ImageDropZone } from "@/components/images/ImageAttach";
 import { Button } from "@/components/ui/Button";
 import { Markdown } from "@/components/ui/Markdown";
 import { api, ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import { useImageDraft } from "@/lib/images";
 import { qk } from "@/lib/queries";
 import type { DocKind, DocumentDetail, DocumentInfo } from "@/lib/types";
 import { testRunText, useMockups, useRunRecords, useWorkflow, type TestRun } from "@/lib/workflow";
@@ -36,6 +38,7 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
   const versions = (list.data ?? []).filter((d) => d.kind === kind).sort((a, b) => a.version - b.version);
   const [picked, setPicked] = useState<number | null>(null);
   const [comment, setComment] = useState("");
+  const images = useImageDraft(); // with a rejection: what should change, shown
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // a thread link `#document-<kind>-v<n>` selects that version, also when the hash changes later
@@ -83,9 +86,11 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
     try {
       await api(`/api/tasks/${taskKey}/documents/${kind}/${selected.version}/decision`, {
         method: "POST",
-        json: { approve, comment: text || null },
+        // approving sends none: the images say what should change
+        json: { approve, comment: text || null, ...(!approve && images.ids.length ? { image_ids: images.ids } : {}) },
       });
       setComment("");
+      images.clear();
     } catch (err) {
       setError(err instanceof ApiError && err.detail === "already_decided" ? "Someone already decided this version." : errorMessage(err));
     } finally {
@@ -178,11 +183,14 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
         <div className="space-y-2">
           <label className="block space-y-1 text-xs text-muted-foreground">
             Comment
-            <textarea aria-label="Comment" rows={3} maxLength={4000} className={FIELD} value={comment} onChange={(e) => setComment(e.target.value)} />
+            <ImageDropZone draft={images}>
+              <textarea aria-label="Comment" rows={3} maxLength={4000} className={FIELD} value={comment} onChange={(e) => setComment(e.target.value)} />
+            </ImageDropZone>
           </label>
+          <ImageAttach draft={images} />
           <div className="flex gap-2">
             <Button disabled={busy} onClick={() => void decide(true)}>Approve</Button>
-            <Button variant="danger" disabled={busy} onClick={() => void decide(false)}>Reject</Button>
+            <Button variant="danger" disabled={busy || images.uploading} onClick={() => void decide(false)}>Reject</Button>
           </div>
           <p className="text-xs text-muted-foreground">A comment is required to reject.</p>
         </div>

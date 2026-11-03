@@ -131,6 +131,13 @@ func EnsureFrom(ctx context.Context, logw io.Writer, repo, cacheRoot, agentID, t
 	args := []string{"worktree", "add", "-b", branch, path}
 	if _, e := git(repo, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); e == nil {
 		args = []string{"worktree", "add", path, branch}
+		// another agent of this clone has the task's branch checked out (the pull request's reviewer is a second
+		// agent): git allows one checkout of a branch, so this worktree is detached at the branch's commit
+		if elsewhere, e := checkedOutElsewhere(repo, branch, path); e != nil {
+			return "", "", false, e
+		} else if elsewhere {
+			args = []string{"worktree", "add", "--detach", path, branch}
+		}
 	} else if startPoint != nil {
 		point, e := startPoint()
 		if e != nil {
@@ -279,6 +286,28 @@ func worktreeEntry(repo, path string) (registered bool, lock string, err error) 
 		return true, "", nil
 	}
 	return false, "", nil
+}
+
+// checkedOutElsewhere reports whether branch is the checked-out branch of a worktree of repo other than path.
+func checkedOutElsewhere(repo, branch, path string) (bool, error) {
+	out, err := git(repo, "worktree", "list", "--porcelain")
+	if err != nil {
+		return false, err
+	}
+	want, ref := canon(path), "branch refs/heads/"+branch
+	for _, block := range strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n\n") {
+		lines := strings.Split(strings.TrimSpace(block), "\n")
+		p, ok := strings.CutPrefix(lines[0], "worktree ")
+		if !ok || canon(p) == want {
+			continue
+		}
+		for _, l := range lines[1:] {
+			if strings.TrimSpace(l) == ref {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func canon(p string) string {

@@ -5,7 +5,7 @@ import { useMemo, useSyncExternalStore } from "react";
 import { readStored, writeStored } from "@/lib/stored";
 
 /** The places someone reads through, page after page: moving inside one keeps where they came from. */
-export type Area = "kb-read" | "kb-search" | "memory-read";
+export type Area = "kb-read" | "kb-search" | "memory-read" | "chat";
 export type Origin = { url: string; label: string };
 
 type Visit = { url: string; label: string | null };
@@ -23,6 +23,8 @@ export function areaOf(url: string): Area | null {
     return parts[1] ? "kb-read" : null;
   }
   if (parts[0] === "memory" && parts[1] === "entity" && parts[2]) return "memory-read";
+  // an open chat (and the next one opened from it): its origin is the list its ‹ goes back to
+  if (parts[0] === "chats" && parts[1]) return "chat";
   return null;
 }
 

@@ -32,7 +32,7 @@ export function BacklogQuickCreate({ onCreate }: { onCreate: (title: string, typ
         aria-label="New item type"
         value={type}
         onChange={(e) => setType(e.target.value as TaskType)}
-        className="rounded border border-line bg-surface-2 px-1 py-0.5 text-xs"
+        className="min-h-8 rounded border border-line bg-surface-2 px-1 py-0.5 text-xs"
       >
         {TYPES.map((t) => (
           <option key={t} value={t}>{t}</option>

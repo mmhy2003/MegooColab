@@ -4,9 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/Button";
-import { CopyField } from "@/components/ui/CopyField";
 import { Input } from "@/components/ui/Input";
-import { Select } from "@/components/ui/Select";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -16,28 +14,60 @@ import {
   type GitConnectionTest,
   type GitKind,
   gitTestError,
+  HOSTED,
+  TOKEN_DOCS,
+  TOKEN_HELP,
   useGitConnections,
-  webhookUrl,
 } from "@/lib/git";
 
 const KIND_LABEL = Object.fromEntries(GIT_KINDS.map((k) => [k.value, k.label])) as Record<GitKind, string>;
 const SET = "••••";
 
-type Form = { name: string; kind: GitKind; base_url: string; token: string; webhook_secret: string };
+type Form = { name: string; kind: GitKind; hosted: boolean; base_url: string; token: string };
 
-/** Add or edit a connection. The token and webhook secret are write-only: empty keeps what is saved. */
+/** A row of buttons, one pressed: a choice with few options, all in view. */
+function Choice<T extends string>({ label, value, options, onChange }: {
+  label: string;
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <span className="text-xs tracking-wider text-muted-foreground uppercase">{label}</span>
+      <div role="group" aria-label={label} className="flex overflow-hidden rounded border border-line">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={o.value === value}
+            onClick={() => onChange(o.value)}
+            className={`min-h-9 flex-1 px-2 text-sm ${o.value === value ? "bg-surface-2 font-semibold text-cyan-ink" : "text-muted-foreground hover:text-fg"}`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Add or edit a connection: the kind, hosted or self-hosted (only then an address), a name and the token. The
+ * token is write-only: empty keeps what is saved. Webhook secrets are each repository's own now. */
 function ConnectionForm({ editing, onDone }: { editing: GitConnection | null; onDone: () => void }) {
   const client = useQueryClient();
   const [form, setForm] = useState<Form>({
     name: editing?.name ?? "",
     kind: editing?.kind ?? "github",
-    base_url: editing?.base_url ?? "https://github.com",
+    hosted: editing ? editing.hosted : true,
+    base_url: editing && !editing.hosted ? editing.base_url : "",
     token: "",
-    webhook_secret: "",
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<Form>) => setForm({ ...form, ...patch });
+  const hostedOption = HOSTED[form.kind];
+  const hosted = Boolean(hostedOption) && form.hosted;
 
   return (
     <form
@@ -46,14 +76,16 @@ function ConnectionForm({ editing, onDone }: { editing: GitConnection | null; on
         e.preventDefault();
         setBusy(true);
         setError(null);
+        const base_url = hosted ? hostedOption!.url : form.base_url;
         try {
           if (editing) {
-            const patch: Record<string, string> = { name: form.name, base_url: form.base_url };
+            const patch: Record<string, string> = { name: form.name, base_url };
             if (form.token) patch.token = form.token;
-            if (form.webhook_secret) patch.webhook_secret = form.webhook_secret;
             await api(`/api/admin/git-connections/${editing.id}`, { method: "PATCH", json: patch });
           } else {
-            await api("/api/admin/git-connections", { method: "POST", json: form });
+            // a hosted service sends no address: the server knows it
+            const body = { name: form.name, kind: form.kind, token: form.token, ...(hosted ? {} : { base_url }) };
+            await api("/api/admin/git-connections", { method: "POST", json: body });
           }
           await client.invalidateQueries({ queryKey: ["git"] });
           onDone();
@@ -64,32 +96,37 @@ function ConnectionForm({ editing, onDone }: { editing: GitConnection | null; on
         }
       }}
     >
-      <Input label="Name" required maxLength={100} value={form.name} onChange={(e) => set({ name: e.target.value })} />
-      {!editing && (
-        <Select label="Kind" value={form.kind} onChange={(e) => set({ kind: e.target.value as GitKind })}>
-          {GIT_KINDS.map((k) => (
-            <option key={k.value} value={k.value}>{k.label}</option>
-          ))}
-        </Select>
+      {!editing && <Choice label="Kind" value={form.kind} options={GIT_KINDS} onChange={(kind) => set({ kind })} />}
+      {hostedOption && (
+        <Choice
+          label="Where"
+          value={form.hosted ? "hosted" : "self"}
+          options={[{ value: "hosted", label: hostedOption.label }, { value: "self", label: "Self-hosted" }]}
+          onChange={(v) => set({ hosted: v === "hosted" })}
+        />
       )}
-      <Input label="Base URL" required value={form.base_url} onChange={(e) => set({ base_url: e.target.value })} />
-      <Input
-        label="Token"
-        type="password"
-        autoComplete="off"
-        required={!editing}
-        placeholder={editing?.token_set ? SET : "A read-only token"}
-        value={form.token}
-        onChange={(e) => set({ token: e.target.value })}
-      />
-      <Input
-        label="Webhook secret"
-        type="password"
-        autoComplete="off"
-        placeholder={editing?.webhook_secret_set ? SET : "Optional: webhooks update pull requests at once"}
-        value={form.webhook_secret}
-        onChange={(e) => set({ webhook_secret: e.target.value })}
-      />
+      {!hosted && (
+        <div className="space-y-1">
+          <Input label="Server address" required placeholder="https://git.example.com" value={form.base_url} onChange={(e) => set({ base_url: e.target.value })} />
+          <p className="text-xs text-muted-foreground">Only for a self-hosted server. GitHub.com and GitLab.com need no address.</p>
+        </div>
+      )}
+      <Input label="Name" required maxLength={100} value={form.name} onChange={(e) => set({ name: e.target.value })} />
+      <div className="space-y-1">
+        <Input
+          label="Access token"
+          type="password"
+          autoComplete="off"
+          required={!editing}
+          placeholder={editing?.token_set ? SET : undefined}
+          value={form.token}
+          onChange={(e) => set({ token: e.target.value })}
+        />
+        <p className="text-xs text-muted-foreground">
+          {TOKEN_HELP[form.kind]}{" "}
+          <a href={TOKEN_DOCS[form.kind]} target="_blank" rel="noopener noreferrer">How to make one</a>
+        </p>
+      </div>
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}
       <div className="flex gap-2">
         <Button type="submit" disabled={busy}>Save</Button>
@@ -141,10 +178,39 @@ function ConnectionRow({ c, onEdit }: { c: GitConnection; onEdit: () => void }) 
           </Button>
         </div>
         {result && <p role="status" className={`text-xs ${result.ok ? "text-green-ink" : "text-pink"}`}>{result.text}</p>}
-        {c.webhook_secret_set ? (
-          <CopyField label="Webhook URL" value={webhookUrl(c.id)} />
-        ) : (
-          <p className="text-xs text-muted-foreground">No webhook secret: pull requests are checked every 2 minutes.</p>
+        {c.webhook_secret_set && (
+          <div className="space-y-1 rounded border border-amber/50 bg-amber/5 p-2 text-xs">
+            <p>
+              This provider still has a shared webhook secret from before. Repositories now each have their own: set them
+              up, then remove the shared one.
+            </p>
+            {c.waiting_repositories.length > 0 && (
+              <>
+                <p className="text-muted-foreground">Still relying on it:</p>
+                <ul className="list-disc pl-5">
+                  {c.waiting_repositories.map((r) => (
+                    <li key={`${r.project_key}/${r.name}`}>{r.project_key} · {r.name}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <Button
+              variant="ghost"
+              onClick={async () => {
+                const waiting = c.waiting_repositories.length;
+                if (waiting > 0 && !(await ask({
+                  tone: "warn",
+                  title: "Remove the shared secret?",
+                  text: `${waiting === 1 ? "This repository hasn't" : `These ${waiting} repositories haven't`} set up their own webhook yet and would stop getting updates.`,
+                  ok: "Remove",
+                }))) return;
+                await api(`/api/admin/git-connections/${c.id}`, { method: "PATCH", json: { webhook_secret: "" } });
+                await client.invalidateQueries({ queryKey: ["git"] });
+              }}
+            >
+              Remove shared secret
+            </Button>
+          </div>
         )}
       </li>
       {dialog}

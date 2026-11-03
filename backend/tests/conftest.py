@@ -2,19 +2,25 @@ import asyncio
 import os
 import tempfile
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 # Only TEST_DATABASE_URL (or the default test DB) decides the database; an exported DATABASE_URL
 # is overwritten. The session fixture below drops the public schema, so refuse any non-test DB.
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL", "postgresql+asyncpg://megoo:megoo@localhost:5433/megoo_test"
 )
+# `pytest -n <N>` (pytest-xdist): each worker gets a database of its own (megoo_gw0_test, ...), made on first use,
+# so tests running side by side never share tables
 _db_name = urlsplit(TEST_DATABASE_URL).path.rsplit("/", 1)[-1]
-if not _db_name.endswith("_test"):
+if not _db_name.endswith("_test"):  # checked as configured, before a worker's name is derived from it
     raise RuntimeError(
         f"Refusing to run tests: database name {_db_name!r} does not end in '_test' "
         "(the suite drops the public schema). Fix TEST_DATABASE_URL."
     )
+_worker = os.environ.get("PYTEST_XDIST_WORKER")
+if _worker:
+    _parts = urlsplit(TEST_DATABASE_URL)
+    TEST_DATABASE_URL = urlunsplit(_parts._replace(path=f"/{_db_name.removesuffix('_test')}_{_worker}_test"))
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("SECRET_KEY", "test-secret-key-0123456789abcdef")
 os.environ["RUN_MIGRATIONS_ON_STARTUP"] = "false"
@@ -32,11 +38,18 @@ from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
+from pwdlib import PasswordHash
+from pwdlib.hashers.argon2 import Argon2Hasher
 from sqlalchemy import text
 
 import app.models
+from app.core import security
 from app.core.db import Base, SessionLocal, engine
 from app.main import create_app
+
+# Tests hash passwords with the cheapest Argon2 settings: production's (memory- and time-hard on purpose) made
+# every user a test creates cost a noticeable slice of a second. Hashes still verify the same way.
+security._password_hash = PasswordHash((Argon2Hasher(time_cost=1, memory_cost=1024, parallelism=1),))
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -47,14 +60,65 @@ def _alembic_config() -> Config:
     return cfg
 
 
+_TEMPLATE_LOCK = 4_242_017  # pg_advisory_lock key: one worker at a time builds or copies the template
+
+
+async def _worker_database() -> None:
+    """An xdist worker's database is a copy of a template migrated once per run. Sixteen workers each migrating a
+    fresh database at once exhaust Postgres's shared lock table; copying a template takes a handful of locks. The
+    template is rebuilt only when the migrations' head moved."""
+    import asyncpg
+    from alembic.script import ScriptDirectory
+
+    from app.core.config import get_settings
+
+    url = engine.url
+    template = f"{_db_name.removesuffix('_test')}_template_test"
+
+    def connect(database: str):
+        return asyncpg.connect(user=url.username, password=url.password, host=url.host, port=url.port,
+                               database=database)
+
+    head = ScriptDirectory.from_config(_alembic_config()).get_current_head()
+    admin = await connect("postgres")
+    try:
+        await admin.execute("SELECT pg_advisory_lock($1)", _TEMPLATE_LOCK)
+        current = None
+        if await admin.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", template):
+            conn = await connect(template)
+            try:
+                if await conn.fetchval("SELECT to_regclass('alembic_version')"):
+                    current = await conn.fetchval("SELECT version_num FROM alembic_version")
+            finally:
+                await conn.close()
+        if current != head:
+            await admin.execute(f'DROP DATABASE IF EXISTS "{template}" WITH (FORCE)')
+            await admin.execute(f'CREATE DATABASE "{template}"')
+            settings = get_settings()  # env.py migrates the database the settings name
+            before = settings.database_url
+            settings.database_url = before.rsplit("/", 1)[0] + f"/{template}"
+            try:
+                await asyncio.to_thread(command.upgrade, _alembic_config(), "head")
+            finally:
+                settings.database_url = before
+        await admin.execute(f'DROP DATABASE IF EXISTS "{url.database}" WITH (FORCE)')
+        await admin.execute(f'CREATE DATABASE "{url.database}" TEMPLATE "{template}"')
+    finally:
+        await admin.execute("SELECT pg_advisory_unlock($1)", _TEMPLATE_LOCK)
+        await admin.close()
+
+
 @pytest.fixture(scope="session", autouse=True)
 async def _migrated_database():
     assert engine.url.database and engine.url.database.endswith("_test"), engine.url.database
-    async with engine.begin() as conn:
-        await conn.execute(text("DROP SCHEMA public CASCADE"))
-        await conn.execute(text("CREATE SCHEMA public"))
-    # env.py calls asyncio.run(), so run it off the test loop
-    await asyncio.to_thread(command.upgrade, _alembic_config(), "head")
+    if _worker:
+        await _worker_database()
+    else:
+        async with engine.begin() as conn:
+            await conn.execute(text("DROP SCHEMA public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
+        # env.py calls asyncio.run(), so run it off the test loop
+        await asyncio.to_thread(command.upgrade, _alembic_config(), "head")
     yield
 
 

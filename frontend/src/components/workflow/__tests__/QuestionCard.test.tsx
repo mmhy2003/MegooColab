@@ -35,6 +35,9 @@ function setup(q: Partial<ActivityQuestion> = {}, canAct = true, answer?: Respon
   const fetchMock = vi.fn(async (...args: [url: string, init?: RequestInit]) => {
     const url = args[0];
     if (url.endsWith("/answer")) return (answer ?? new Response("{}", { status: 200 })).clone();
+    if (url === "/api/images") {
+      return new Response(JSON.stringify({ id: "img-1", filename: "a.png", size: 4, content_type: "image/png" }), { status: 201 });
+    }
     if (url.endsWith("/mockups")) {
       if (extra.mockupsFail) return new Response("{}", { status: 500 });
       return new Response(JSON.stringify([{ id: "m1", version: 2, title: "Login", choices: ["a", "b"], created_at: "x" }]), { status: 200 });
@@ -89,6 +92,19 @@ describe("QuestionCard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
     await waitFor(() => expect(answers()).toHaveLength(1));
     expect(sentBody()).toEqual({ text: "MySQL" });
+  });
+
+  it("sends images with an answer in its own words", async () => {
+    const { answers, sentBody } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Other" }));
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "This one" } });
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="file"]')!, {
+      target: { files: [new File(["PNG"], "a.png", { type: "image/png" })] },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send answer" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    await waitFor(() => expect(answers()).toHaveLength(1));
+    expect(sentBody()).toEqual({ text: "This one", image_ids: ["img-1"] });
   });
 
   it("says someone already answered on a 409", async () => {

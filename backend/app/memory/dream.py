@@ -38,7 +38,8 @@ log = logging.getLogger(__name__)
 PAIR_LIMIT = 200
 PAIRS_PER_RUN = 50
 MAX_CONSECUTIVE_FAILURES = 3
-MAX_TOKENS = 8000
+# the reply and, for a thinking model, its reasoning: both count against this
+MAX_TOKENS = 16000
 MAX_OPS = 20
 TEXT_MAX = 500
 CARD_MAX = 2000
@@ -229,11 +230,26 @@ async def _set_run(run_id: uuid.UUID, **values) -> None:
             await s.commit()
 
 
+def _key(entity_id: uuid.UUID, scope) -> str:
+    kind, ref = scope
+    return f"{entity_id}:{ScopeKind(kind).value}:{ref or ''}"
+
+
+async def _failed_last_time(db: AsyncSession, run_id: uuid.UUID) -> set[str]:
+    """The pairs the previous run could not dream."""
+    stats = await db.scalar(
+        select(MemDreamRun.stats).where(MemDreamRun.id != run_id).order_by(MemDreamRun.started_at.desc()).limit(1)
+    )
+    return set((stats or {}).get("failed_keys", []))
+
+
 @queue.register("mem.dream")
 async def dream(db: AsyncSession, payload: dict) -> None:
-    """Dreams up to PAIRS_PER_RUN pairs, each in its own transaction (the rest go to the next run). The run
-    fails visibly when every pair failed, after MAX_CONSECUTIVE_FAILURES failures in a row, or when the
-    dreaming model is not configured."""
+    """Dreams up to PAIRS_PER_RUN pairs, each in its own transaction (the rest go to the next run); the pairs the
+    last run could not dream come last, so they can't keep the others waiting. A pair whose reply was unusable (cut
+    off, not JSON) is skipped and the run goes on. The run fails visibly when every pair failed, after
+    MAX_CONSECUTIVE_FAILURES other failures in a row (the provider down, a bad key), or when the dreaming model is not
+    configured."""
     run_id = uuid.UUID(payload["run_id"]) if payload.get("run_id") else None
     if run_id is None:
         async with SessionLocal() as s:
@@ -244,7 +260,11 @@ async def dream(db: AsyncSession, payload: dict) -> None:
     stats = {"pairs": 0, "replaced": 0, "deduced": 0, "induced": 0, "cards": 0, "dropped": 0, "failed_pairs": 0}
     first_error: str | None = None
     in_a_row = 0
-    for entity_id, scope in (await _pairs(db))[:PAIRS_PER_RUN]:
+    failed_keys: list[str] = []
+    waited = await _failed_last_time(db, run_id)
+    # sorted is stable: the pairs keep their order, those that failed last time move to the back
+    pairs = sorted(await _pairs(db), key=lambda p: _key(*p) in waited)
+    for entity_id, scope in pairs[:PAIRS_PER_RUN]:
         pair = dict.fromkeys(stats, 0)
         try:
             async with SessionLocal() as s:
@@ -260,10 +280,15 @@ async def dream(db: AsyncSession, payload: dict) -> None:
             log.warning("dreaming failed for entity %s", entity_id, exc_info=True)
             stats["pairs"] += 1
             stats["failed_pairs"] += 1
+            failed_keys.append(_key(entity_id, scope))
             first_error = first_error or f"{type(exc).__name__}: {exc}"[:ERROR_MAX]
+            if isinstance(exc, ai.AiBadOutput):
+                # this pair's reply (too long for the budget, not JSON): the next pair may well fit
+                continue
             in_a_row += 1
             if in_a_row >= MAX_CONSECUTIVE_FAILURES:
-                await _set_run(run_id, status="failed", error=first_error, stats=stats, finished_at=utcnow())
+                await _set_run(run_id, status="failed", error=first_error, stats=stats | {"failed_keys": failed_keys},
+                               finished_at=utcnow())
                 return
             continue
         in_a_row = 0
@@ -273,7 +298,7 @@ async def dream(db: AsyncSession, payload: dict) -> None:
                 stats[k] += v
     failed = stats["pairs"] > 0 and stats["failed_pairs"] == stats["pairs"]
     await _set_run(run_id, status="failed" if failed else "done", error=first_error if failed else None,
-                   stats=stats, finished_at=utcnow())
+                   stats=stats | {"failed_keys": failed_keys}, finished_at=utcnow())
 
 
 @queue.register("mem.dream_tick")

@@ -183,3 +183,70 @@ async def test_failed_pair_does_not_abort_run(client, db, monkeypatch):
 
 async def test_entities_module_used(db):
     assert (await entities.org_entity(db)).name == "Organization"
+
+
+async def _projects(client, db, keys):
+    """A conclusion in each project's scope: one pair to dream per project."""
+    for key in keys:
+        p, _, _ = await make_project(client, db, key)
+        await _add(db, f"Fact about {key}", scope=(ScopeKind.project, uuid.UUID(p["id"])))
+
+
+async def test_a_cut_off_reply_skips_only_that_pair(client, db, monkeypatch):
+    # five big pairs whose reply is cut off and one that fits: however they are ordered, three cut-off ones come in
+    # a row; that is about those pairs, not the provider, so the run goes on to the one that fits
+    await _projects(client, db, ["BA", "BB", "BC", "BD", "BE"])
+    await _add(db, "A small org fact")
+
+    def cut_off(messages):
+        if "Fact about B" in messages[-1]["content"]:
+            raise ai.AiBadOutput("truncated: the reply hit max_tokens")
+        return fakes.fake_dreaming(messages)
+
+    monkeypatch.setitem(ai.FAKE_COMPLETIONS, "dreaming", cut_off)
+    run = await _dream()
+    assert run.status == "done"
+    assert (run.stats["failed_pairs"], run.stats["cards"]) == (5, 1)
+
+
+async def test_errors_that_hit_every_pair_still_stop_the_run(client, db, monkeypatch):
+    await _projects(client, db, ["SA", "SB", "SC", "SD"])
+
+    def down(messages):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setitem(ai.FAKE_COMPLETIONS, "dreaming", down)
+    run = await _dream()
+    assert run.status == "failed" and run.stats["pairs"] == dream.MAX_CONSECUTIVE_FAILURES
+
+
+async def test_pairs_that_failed_go_to_the_back_of_the_next_run(client, db, monkeypatch):
+    await _projects(client, db, ["QA", "QB", "QC"])
+    monkeypatch.setattr(dream, "PAIRS_PER_RUN", 1)
+
+    def cut_off(messages):
+        raise ai.AiBadOutput("truncated: the reply hit max_tokens")
+
+    monkeypatch.setitem(ai.FAKE_COMPLETIONS, "dreaming", cut_off)
+    first = await _dream()
+    assert first.stats["failed_pairs"] == 1
+    tried: list[str] = []
+
+    def fits(messages):
+        tried.append(messages[-1]["content"])
+        return fakes.fake_dreaming(messages)
+
+    monkeypatch.setitem(ai.FAKE_COMPLETIONS, "dreaming", fits)
+    await _dream()
+    # the one run of one pair tried another pair, not the one that failed last time
+    failed_key = first.stats["failed_keys"][0]
+    async with SessionLocal() as s:
+        cards = (await s.execute(select(MemCard))).scalars().all()
+    assert len(cards) == 1 and str(cards[0].scope_project_id) not in failed_key
+
+
+def test_the_instructions_keep_the_reply_small():
+    from app.memory import prompts
+
+    assert "at most 10" in prompts.DREAMING_SYSTEM
+    assert dream.MAX_TOKENS >= 16000

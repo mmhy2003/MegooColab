@@ -20,16 +20,16 @@ async def test_project_workflow_settings_defaults_and_patch(client, client_facto
     await make_project(client, db, "PAY", member)  # client is logged in as the project manager
     got = (await client.get("/api/projects/PAY")).json()
     assert got["finishing_option"] == "pull_request"
-    assert got["require_human_code_review"] is False
+    assert got["pr_review"] == "none"
     assert got["commit_docs_to_repo"] is False
 
     r = await client.patch(
         "/api/projects/PAY",
-        json={"finishing_option": "keep_branch", "require_human_code_review": True, "commit_docs_to_repo": True},
+        json={"finishing_option": "keep_branch", "pr_review": "human", "commit_docs_to_repo": True},
     )
     assert r.status_code == 200, r.text
-    assert (r.json()["finishing_option"], r.json()["require_human_code_review"], r.json()["commit_docs_to_repo"]) == (
-        "keep_branch", True, True)
+    assert (r.json()["finishing_option"], r.json()["pr_review"], r.json()["commit_docs_to_repo"]) == (
+        "keep_branch", "human", True)
     assert (await client.patch("/api/projects/PAY", json={"finishing_option": "bogus"})).status_code == 422
 
     other = client_factory()

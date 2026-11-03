@@ -289,6 +289,15 @@ class RunBranch(BaseModel):
     repositories: list[RunBranchRepo] = []
 
 
+class RunImage(BaseModel):
+    """An image for the agent (capability images/1): the runner downloads it from /api/runner/images/{id}."""
+
+    id: uuid.UUID
+    filename: str
+    content_type: str
+    size: int
+
+
 class RunStart(BaseModel):
     type: Literal["run_start"] = "run_start"
     run_id: uuid.UUID
@@ -307,6 +316,7 @@ class RunStart(BaseModel):
     files: list[RunFile] = []
     repo_files: list[RunFile] = []
     commit_message: str | None = None
+    images: list[RunImage] = []  # only to a runner with images/1, in the order the prompt names them
     # every task run, workflow or not (a branch/1 runner); None for answering runs
     branch: RunBranch | None = None
 
@@ -350,6 +360,7 @@ class RunSteer(BaseModel):
     run_id: uuid.UUID
     message_id: uuid.UUID
     text: str
+    images: list[RunImage] = []  # only to a runner with images/1
 
 
 ServerMessage = Welcome | RunStart | RunCancel | ConfigChanged | RunSteer | ToolsPush | ToolsScan

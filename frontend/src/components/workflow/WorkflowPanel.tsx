@@ -8,6 +8,7 @@ import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PullRequestBadge } from "@/components/git/PullRequestBadge";
 import { Button } from "@/components/ui/Button";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api, ApiError } from "@/lib/api";
 import { runReasonText, useAgentRuns } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
@@ -15,6 +16,7 @@ import { qk } from "@/lib/queries";
 import type { AgentRun, ProjectAgent } from "@/lib/types";
 import {
   ACCEPTABLE_REASONS,
+  FINISHING_HELP,
   FINISHING_LABEL,
   STAGES,
   branchLine,
@@ -59,6 +61,7 @@ export function WorkflowPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showRuns, setShowRuns] = useState(false);
+  const { ask, dialog } = useConfirm();
 
   const wf = workflow.data;
   const decisionCount = records.data?.decisions?.length ?? 0;
@@ -97,6 +100,12 @@ export function WorkflowPanel({
   const { status } = wf;
   const latest = runs.data?.[0];
   const escalating = status === "waiting_human" && wf.needs === "escalation";
+  // a review on the pull request sent the task back: its agent's fix run is what is running (piece 3); a retried
+  // fix keeps the Done stage, and an old request never speaks for another run
+  const fixTrigger = status === "running" && latest?.workflow_role === "pr_fix" ? wf.pr_fix_trigger : null;
+  // an agent reviews the pull request (piece 4): its review run is what is running
+  const reviewing = status === "running" && latest?.workflow_role === "pr_review" && (latest.status === "running" || latest.status === "queued");
+  const prNumber = /\/(?:pull|pulls|merge_requests)\/(\d+)\/?$/.exec(wf.pr_url ?? "")?.[1];
   // set_finishing needs a started workflow and is closed from done on
   const showFinishing = agentDriven && status !== "idle" && status !== "finished" && wf.stage !== "done";
   const showChecklist = unassigned && !agent && wf.can_set_manual && !disabled && status !== "running" && status !== "waiting_human";
@@ -159,6 +168,38 @@ export function WorkflowPanel({
         <Button variant="ghost" disabled={busy} onClick={() => void post("pause")}>Pause</Button>
       )}
 
+      {reviewing && (
+        <p className="rounded border border-cyan/50 p-2">
+          {`${latest?.agent?.name ?? "The reviewer"} is reviewing ${prNumber ? `PR #${prNumber}` : "the pull request"}`}
+        </p>
+      )}
+
+      {fixTrigger && (
+        <div className="space-y-2 rounded border border-amber/60 p-2">
+          <p>
+            {`Changes requested on PR #${Number(fixTrigger.pr_number ?? 0)} by ${String(fixTrigger.by ?? "a reviewer")} · ` +
+              `${agent?.name ?? "the agent"} is fixing them · round ${wf.pr_fix_rounds} of 3`}
+          </p>
+          {canDecide && (
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={async () => {
+                const sure = await ask({
+                  tone: "warn",
+                  title: "Stop the fix?",
+                  text: "The agent stops, and the task waits for the merge again. This round still counts.",
+                  ok: "Don't send back",
+                });
+                if (sure) void post("send-back/cancel");
+              }}
+            >
+              Don&apos;t send back
+            </Button>
+          )}
+        </div>
+      )}
+
       {status === "waiting_human" && wf.needs === "human_code_review" && canDecide && (
         <div data-waiting="code_review" className="w-fit rounded">
           <Button disabled={busy} onClick={() => void post("human-review", { approved: true })}>Mark merged</Button>
@@ -185,6 +226,7 @@ export function WorkflowPanel({
                   <option key={o} value={o}>{FINISHING_LABEL[o]}</option>
                 ))}
               </select>
+              <span className="block">{FINISHING_HELP[wf.finishing_option]}</span>
             </label>
           ) : (
             <p className="text-xs text-muted-foreground">
@@ -287,6 +329,7 @@ export function WorkflowPanel({
         </div>
       )}
       {error && <p role="alert" className="text-xs text-pink">{error}</p>}
+      {dialog}
     </section>
   );
 }

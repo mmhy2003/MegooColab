@@ -44,7 +44,9 @@ async def activity(db: AsyncSession, scope: Scope, limit: int = ACTIVITY_SHOWN) 
         .join(Task, Task.id == TaskEvent.task_id).join(Project, Project.id == Task.project_id)
         .where(TaskEvent.created_at >= datetime.now(UTC) - timedelta(days=ACTIVITY_DAYS),
                scope.in_projects(Task.project_id), scope.board_tasks(), TaskEvent.kind.not_in(STREAMED),
-               TaskEvent.kind.not_like("question.%"))
+               TaskEvent.kind.not_like("question.%"),
+               # a pull request's traffic stays on the task's own Activity
+               TaskEvent.kind.not_like("git.%"), TaskEvent.kind != "pr.status")
         .order_by(TaskEvent.created_at.desc(), TaskEvent.id.desc()).limit(limit)
     )).all()
     events = [e for e, _, _ in rows]

@@ -200,7 +200,7 @@ async def test_previous_findings_are_untrusted_and_bounded(client, db):
 async def test_require_human_review_forces_pr_and_waits_then_approval_finishes(db, tc_factory):
     tc, other = tc_factory(lifespan=True), tc_factory()
     b, review = await _final_review(db, tc)
-    _patch_project(tc, finishing_option="merge_local", require_human_code_review=True)
+    _patch_project(tc, finishing_option="merge_local", pr_review="human")
     assert tc.put(f"/api/tasks/{b.key}/workflow/finishing", json={"option": "keep_branch"}).status_code == 200
     await _review(review, "approved")
     await _finish(b.manager.id, review, "completed")
@@ -434,7 +434,7 @@ async def test_finishing_override_needs_a_started_workflow_and_creates_no_row(db
 async def test_finishing_is_frozen_when_done_begins(db, tc_factory):
     tc = tc_factory(lifespan=True)
     b, run = await _to_finish(db, tc)  # pull_request, no human review
-    _patch_project(tc, finishing_option="keep_branch", require_human_code_review=True)
+    _patch_project(tc, finishing_option="keep_branch", pr_review="human")
     assert tc.get(f"/api/tasks/{b.key}/workflow").json()["finishing_option"] == "pull_request"
     assert await _report_code(run, "branch_kept", pr_url=None) == (422, "wrong_finish")
     await _report(run)
@@ -446,11 +446,11 @@ async def test_finishing_is_frozen_when_done_begins(db, tc_factory):
 async def test_frozen_human_review_still_waits_when_setting_is_turned_off(db, tc_factory):
     tc = tc_factory(lifespan=True)
     b, review = await _final_review(db, tc)
-    _patch_project(tc, require_human_code_review=True)
+    _patch_project(tc, pr_review="human")
     await _review(review, "approved")
     await _finish(b.manager.id, review, "completed")
     run = await _last(b.task_id)
-    _patch_project(tc, require_human_code_review=False)
+    _patch_project(tc, pr_review="none")
     await _report(run)
     await _finish(b.manager.id, run, "completed")
     assert (await _wf(b.task_id)).needs == "human_code_review"
@@ -485,7 +485,7 @@ async def test_escalation_retry_resets_nudge(db, tc_factory):
 async def test_concurrent_human_review_approval_one_wins(db, tc_factory, client_factory):
     tc = tc_factory(lifespan=True)
     b, review = await _final_review(db, tc)
-    _patch_project(tc, require_human_code_review=True)
+    _patch_project(tc, pr_review="human")
     await _review(review, "approved")
     await _finish(b.manager.id, review, "completed")
     run = await _last(b.task_id)
@@ -505,7 +505,7 @@ async def test_concurrent_human_review_approval_one_wins(db, tc_factory, client_
 async def test_human_review_requirement_survives_pause_reassign_resume(db, tc_factory):
     tc = tc_factory(lifespan=True)
     b, review = await _final_review(db, tc)
-    _patch_project(tc, require_human_code_review=True)
+    _patch_project(tc, pr_review="human")
     await _review(review, "approved")
     await _finish(b.manager.id, review, "completed")
     assert tc.post(f"/api/tasks/{b.key}/workflow/pause").json()["status"] == "paused"
@@ -556,7 +556,7 @@ async def test_board_without_review_column_still_leaves_build_and_finishes(db, t
 async def test_pause_and_resume_while_waiting_for_pr_approval_waits_again(db, tc_factory):
     tc = tc_factory(lifespan=True)
     b, review = await _final_review(db, tc)
-    _patch_project(tc, require_human_code_review=True)
+    _patch_project(tc, pr_review="human")
     await _review(review, "approved")
     await _finish(b.manager.id, review, "completed")
     run = await _last(b.task_id)
@@ -595,7 +595,7 @@ async def test_resume_after_a_failing_finish_report_runs_finish_again(db, tc_fac
     """A report with failing tests is no PR to approve: resume re-runs the finish role."""
     tc = tc_factory(lifespan=True)
     b, review = await _final_review(db, tc)
-    _patch_project(tc, require_human_code_review=True)
+    _patch_project(tc, pr_review="human")
     await _review(review, "approved")
     await _finish(b.manager.id, review, "completed")
     run = await _last(b.task_id)
@@ -608,3 +608,15 @@ async def test_resume_after_a_failing_finish_report_runs_finish_again(db, tc_fac
     assert (r.json()["status"], r.json()["needs"]) == ("running", None)
     again = await _last(b.task_id)
     assert again.id != nudge.id and again.workflow_role == "finish"
+
+
+def test_the_review_mode_is_frozen_at_done():
+    """Piece 4: once the Done stage began, the review chosen then holds, whatever the project says now."""
+    from app.projects.models import Project, PrReview
+    from app.workflow.models import Stage, TaskWorkflow
+
+    project = Project(key="PAY", name="P", pr_review=PrReview.human)
+    before = TaskWorkflow(stage=Stage.review)
+    assert engine.pr_review_mode(project, before) == PrReview.human
+    frozen = TaskWorkflow(stage=Stage.done, finish_requires_human_review=True, finish_pr_review="agent")
+    assert engine.pr_review_mode(project, frozen) == PrReview.agent

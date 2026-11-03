@@ -112,7 +112,8 @@ def _known(job: str) -> None:
 async def list_jobs(db: DbSession, _admin: AdminUser) -> list[JobModelOut]:
     rows = {r.job: r for r in (await db.execute(select(AiJobModel))).scalars()}
     return [
-        JobModelOut(job=j, provider_id=rows[j].provider_id if j in rows else None, model=rows[j].model if j in rows else "")
+        JobModelOut(job=j, provider_id=rows[j].provider_id if j in rows else None, model=rows[j].model if j in rows else "",
+                    effort=rows[j].effort if j in rows else None)
         for j in ai.JOBS
     ]
 
@@ -120,6 +121,9 @@ async def list_jobs(db: DbSession, _admin: AdminUser) -> list[JobModelOut]:
 @router.put("/jobs/{job}")
 async def put_job(job: str, body: JobModelIn, db: DbSession, admin: AdminUser) -> JobModelOut:
     _known(job)
+    if job == "embeddings" and body.effort is not None:
+        # an embedding model doesn't think
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "no_effort_for_embeddings")
     if body.provider_id is not None:
         await _provider(db, body.provider_id)
     before = await ai.configured_model(db, job)
@@ -129,16 +133,17 @@ async def put_job(job: str, body: JobModelIn, db: DbSession, admin: AdminUser) -
         db.add(row)
     row.provider_id = body.provider_id
     row.model = body.model.strip()
+    row.effort = body.effort
     await db.flush()
     await audit.record(db, "ai.job.updated", actor_id=admin.id, target_type="ai_job",
                        data={"job": job, "provider_id": str(body.provider_id) if body.provider_id else None,
-                             "model": row.model})
+                             "model": row.model, "effort": row.effort})
     if job == "embeddings":
         await _embeddings_settings_changed(db, before)
     elif job == "extraction" and row.model:
         # learn what was written before extraction was configured (paged, deduplicated)
         await queue.enqueue(db, "mem.backfill", {}, dedupe_key="mem.backfill")
-    return JobModelOut(job=job, provider_id=row.provider_id, model=row.model)
+    return JobModelOut(job=job, provider_id=row.provider_id, model=row.model, effort=row.effort)
 
 
 async def _embeddings_settings_changed(db, before: str | None) -> None:
@@ -166,8 +171,9 @@ async def test_job(job: str, request: Request, db: DbSession, _admin: AdminUser)
         if job == "embeddings":
             model, _ = await ai.embed(db, ["ping"], job=job)
         else:
+            # room for a thinking model's reasoning before its few words of answer
             await ai.complete(db, job, [{"role": "user", "content": 'Reply with the JSON object {"ok": true}'}], timeout=30,
-                              max_tokens=20)
+                              max_tokens=2000)
     except ai.AiNotConfigured:
         return TestResult(ok=False, model=None, error="not_configured")
     except Exception as exc:  # noqa: BLE001 - shown to the admin

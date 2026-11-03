@@ -10,7 +10,7 @@ export function Select({
   const auto = useId();
   const selectId = id ?? auto;
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       {label && (
         <label htmlFor={selectId} className="text-xs tracking-wider text-muted-foreground uppercase">
           {label}
@@ -18,7 +18,7 @@ export function Select({
       )}
       <select
         id={selectId}
-        className={`w-full rounded border border-line bg-surface-2 px-2 py-2 text-sm text-fg focus:border-cyan focus:outline-none ${className}`}
+        className={`w-full min-w-0 rounded border border-line bg-surface-2 px-2 py-2 text-sm text-fg focus:border-cyan focus:outline-none ${className}`}
         {...props}
       >
         {children}

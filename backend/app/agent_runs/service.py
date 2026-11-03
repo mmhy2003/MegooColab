@@ -25,6 +25,7 @@ from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.events import Event, publish
 from app.core.text import strip_nul
+from app.images import delivery as image_delivery
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.models import Project, ProjectRepository
@@ -32,16 +33,17 @@ from app.runner.protocol import (
     CLOSE_UNAUTHORIZED,
     V2_START_FIELDS,
     McpAccess,
-    RunCancel,
-    RunFile,
     RunBranch,
     RunBranchRepo,
+    RunCancel,
+    RunFile,
     RunFinished,
     RunStart,
     RunTask,
 )
 from app.runner.registry import (
     BRANCH_CAPABILITY,
+    IMAGES_CAPABILITY,
     MODEL_CAPABILITY,
     OMP_CAPABILITY,
     WORKFLOW_CAPABILITY,
@@ -63,6 +65,7 @@ from app.workflow.models import (
 # roles whose runs carry the approved design and plan into the worktree
 DOC_ROLES = {
     RunRole.implement, RunRole.step_review, RunRole.step_fix, RunRole.final_review, RunRole.final_fix, RunRole.finish,
+    RunRole.pr_fix, RunRole.pr_review,
 }
 # the runner's stable failure codes, kept as a failed run's reason; any other runner error is agent_error
 RUNNER_FAILURE_CODES = frozenset({
@@ -194,10 +197,13 @@ async def _claim_next(
         # without branch/1 leaves every task run queued (it would start the task's branch from whatever is checked out)
         workflow = registry.agent_supports(agent.id, WORKFLOW_CAPABILITY)
         branch = registry.agent_supports(agent.id, BRANCH_CAPABILITY)
+        # one without images/1 leaves runs whose task has images the agent never had: it could not show them
+        images = registry.agent_supports(agent.id, IMAGES_CAPABILITY)
         task_run = AgentRun.question_id.is_(None)
         runnable = and_(
             true() if workflow else and_(AgentRun.workflow_role.is_(None), task_run),
             true() if branch else ~task_run,
+            true() if images else ~image_delivery.undelivered_for_run(),
         )
         sibling = aliased(AgentRun)
         task_running = (
@@ -317,12 +323,24 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     # waiting messages for the agent go out with this run: the workflow lock is held, so none can slip between
     new_instructions, given = await instructions.take_waiting(db, run, task)
     prompt = run.prompt
+    images: list = []
     try:
         v2 = await _v2_start_fields(db, run, task, task_key) if run.workflow_role else {}
         if resumed and (earlier or new_instructions):
             v2["resume_prompt"] = "\n\n".join(p for p in (run.resume_prompt, earlier, new_instructions) if p)
         elif new_instructions:
             prompt = f"{prompt}\n\n{new_instructions}"
+        if run.workflow_role:
+            images, section = await image_delivery.images_for_start(db, run, task, resumed=resumed, given=given)
+            if images:
+                if IMAGES_CAPABILITY in conn.capabilities:
+                    v2["images"] = image_delivery.run_images(images)
+                else:  # only images the agent already had get here (_claim_next): it is told their names
+                    section, images = image_delivery.names_only(images), []
+                if resumed:
+                    v2["resume_prompt"] = "\n\n".join(p for p in (v2.get("resume_prompt"), section) if p)
+                else:
+                    prompt = f"{prompt}\n\n{section}"
         repos = await db.execute(
             select(ProjectRepository.url, ProjectRepository.default_branch)
             .where(ProjectRepository.project_id == task.project_id)
@@ -367,6 +385,7 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
         run.mcp_token_hash = None
         await db.commit()
         return False
+    image_delivery.mark_sent(images, run.id)
     await record_event(db, task, None, "agent_run_started", {"run_id": str(run.id), "agent_id": str(agent_id)})
     await _audit_started(db, run, owner_id)
     await _announce(db, task, owner_id)

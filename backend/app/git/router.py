@@ -4,35 +4,53 @@ providers' webhooks (GIT-3)."""
 import hashlib
 import hmac
 import json
+import logging
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
 from app.audit import service as audit
 from app.auth.deps import AdminUser, AuthedUser
 from app.core.crypto import decrypt, encrypt
 from app.core.db import DbSession
-from app.git import providers, service
-from app.git.models import GitConnection, GitKind
+from app.git import activity, events, providers, service
+from app.git.models import GitConnection, GitDelivery, GitKind
 from app.git.schemas import (
     ConnectionRef,
     GitConnectionIn,
     GitConnectionOut,
     GitConnectionPatch,
     GitConnectionTest,
+    WaitingRepo,
 )
+from app.projects.models import Project, ProjectRepository
 from app.ratelimit import guards
 from app.ratelimit.clientip import client_ip
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/git-connections", tags=["git"])
 names_router = APIRouter(prefix="/api/git/connections", tags=["git"])
 
 
-def _out(c: GitConnection) -> GitConnectionOut:
-    return GitConnectionOut(id=c.id, name=c.name, kind=c.kind, base_url=c.base_url, token_set=bool(c.token_enc),
-                            webhook_secret_set=bool(c.webhook_secret_enc))
+async def _out(db, c: GitConnection) -> GitConnectionOut:
+    waiting: list[WaitingRepo] = []
+    if c.webhook_secret_enc:
+        # before the shared secret goes: the repositories still relying on it (nothing at their own address yet)
+        rows = await db.execute(
+            select(Project.key, ProjectRepository.name)
+            .join(Project, Project.id == ProjectRepository.project_id)
+            .where(ProjectRepository.connection_id == c.id, ProjectRepository.webhook_last_at.is_(None))
+            .order_by(Project.key, ProjectRepository.name)
+        )
+        waiting = [WaitingRepo(project_key=k, name=n) for k, n in rows.all()]
+    return GitConnectionOut(id=c.id, name=c.name, kind=c.kind, base_url=c.base_url, hosted=providers.is_hosted(c),
+                            token_set=bool(c.token_enc), webhook_secret_set=bool(c.webhook_secret_enc),
+                            waiting_repositories=waiting)
 
 
 async def _connection(db, connection_id: uuid.UUID) -> GitConnection:
@@ -53,26 +71,25 @@ async def _flush_unique(db) -> None:
 @router.get("")
 async def list_connections(db: DbSession, _admin: AdminUser) -> list[GitConnectionOut]:
     rows = await db.execute(select(GitConnection).order_by(GitConnection.created_at, GitConnection.name))
-    return [_out(c) for c in rows.scalars()]
+    return [await _out(db, c) for c in rows.scalars()]
 
 
 @names_router.get("")
 async def connection_names(db: DbSession, _user: AuthedUser) -> list[ConnectionRef]:
-    """For linking a project's repositories (a project manager's choice): names only."""
-    rows = await db.execute(select(GitConnection.id, GitConnection.name).order_by(GitConnection.name))
-    return [ConnectionRef(id=i, name=n) for i, n in rows.all()]
+    """For linking a project's repositories (a project manager's choice): names and kinds only."""
+    rows = await db.execute(select(GitConnection.id, GitConnection.name, GitConnection.kind).order_by(GitConnection.name))
+    return [ConnectionRef(id=i, name=n, kind=k) for i, n, k in rows.all()]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_connection(body: GitConnectionIn, db: DbSession, admin: AdminUser) -> GitConnectionOut:
-    c = GitConnection(name=body.name, kind=body.kind, base_url=body.base_url, token_enc=encrypt(body.token),
-                      webhook_secret_enc=encrypt(body.webhook_secret) if body.webhook_secret else None,
-                      created_by=admin.id)
+    c = GitConnection(name=body.name, kind=body.kind, base_url=body.base_url or providers.HOSTED[body.kind],
+                      token_enc=encrypt(body.token), created_by=admin.id)
     db.add(c)
     await _flush_unique(db)
     await audit.record(db, "git.connection.created", actor_id=admin.id, target_type="git_connection", target_id=c.id,
                        data={"name": c.name, "kind": str(c.kind), "base_url": c.base_url})
-    return _out(c)
+    return await _out(db, c)
 
 
 @router.patch("/{connection_id}")
@@ -92,12 +109,16 @@ async def update_connection(
     await _flush_unique(db)
     await audit.record(db, "git.connection.updated", actor_id=admin.id, target_type="git_connection", target_id=c.id,
                        data={"fields": sorted(fields)})  # names only, never the values
-    return _out(c)
+    return await _out(db, c)
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(connection_id: uuid.UUID, db: DbSession, admin: AdminUser) -> Response:
     c = await _connection(db, connection_id)
+    # while its token is still here: the webhooks it made go too (best-effort), or they would post here for nothing
+    for repo in (await db.execute(select(ProjectRepository).where(ProjectRepository.connection_id == c.id))).scalars().all():
+        if error := await service.forget_hook(repo, c):
+            log.warning("could not delete repository %s's webhook on its host: %s", repo.id, error)
     await db.delete(c)
     await audit.record(db, "git.connection.deleted", actor_id=admin.id, target_type="git_connection",
                        target_id=connection_id, data={"name": c.name})
@@ -131,9 +152,9 @@ async def _body(request: Request) -> bytes:
     return body
 
 
-def _signed(conn: GitConnection, secret: str, request: Request, body: bytes) -> bool:
+def _verified(kind: GitKind, secret: str, request: Request, body: bytes) -> bool:
     """GitHub and Gitea/Forgejo: X-Hub-Signature-256 = sha256=<hex HMAC of the raw body>. GitLab: X-Gitlab-Token."""
-    if conn.kind == GitKind.gitlab:
+    if kind == GitKind.gitlab:
         token = request.headers.get("x-gitlab-token", "")
         return hmac.compare_digest(token.encode(), secret.encode())
     given = request.headers.get("x-hub-signature-256", "")
@@ -181,16 +202,79 @@ async def receive_webhook(connection_id: uuid.UUID, request: Request, db: DbSess
         await guards.count("api_ip", ip)
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
     body = await _body(request)
-    if not _signed(conn, decrypt(conn.webhook_secret_enc), request, body):
+    if not _verified(GitKind(conn.kind), decrypt(conn.webhook_secret_enc), request, body):
         await guards.count("api_ip", ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_signature")
     await guards.hit("webhook_connection", str(conn.id), request)
+    return await _handle(db, conn, request, body, f"c:{conn.id}", None)
+
+
+# a host's id for each delivery: a retry carries the same one (GitLab's event id is shared by every webhook one event
+# fires, so its Idempotency-Key, from GitLab 17.4, comes first)
+DELIVERY_HEADERS = ("x-github-delivery", "idempotency-key", "x-gitlab-event-uuid", "x-gitea-delivery")
+DELIVERY_DAYS = 3
+
+
+async def _seen(db, request: Request, scope: str) -> bool:
+    """Notes the delivery's id at this address (scope); True when it was handled here already (the host retrying).
+    Old ids are let go."""
+    delivery = next((request.headers[h] for h in DELIVERY_HEADERS if request.headers.get(h)), None)
+    if not delivery:
+        return False
+    delivery = f"{scope}:{delivery}"[:100]
+    await db.execute(delete(GitDelivery).where(GitDelivery.received_at < datetime.now(UTC) - timedelta(days=DELIVERY_DAYS)))
+    inserted = await db.execute(
+        pg_insert(GitDelivery).values(delivery_id=delivery).on_conflict_do_nothing().returning(GitDelivery.delivery_id)
+    )
+    return inserted.scalar_one_or_none() is None
+
+
+async def _handle(
+    db, conn: GitConnection, request: Request, body: bytes, scope: str, repo: ProjectRepository | None
+) -> Response:
+    """A verified delivery: parsed, the tracked pull requests it names queued for a refresh, and what it says happened
+    written on its task's Activity (once per delivery)."""
     try:
         payload = json.loads(body)
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_payload") from None
+    if await _seen(db, request, scope):
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     if isinstance(payload, dict):
         path, number, sha = _about(conn, payload)
         for task_id in await service.rows_for_delivery(db, conn, path, number, sha):
             await service.queue_refresh(db, task_id)
+        try:  # the task's Activity never costs the delivery (a 500 makes hosts retry, then disable the hook)
+            async with db.begin_nested():
+                await activity.record(db, conn, events.parse_delivery(GitKind(conn.kind), request.headers, payload),
+                                      repo=repo)
+        except Exception:
+            log.exception("git: recording a delivery on the task's Activity failed")
+    # a send-back queued its fix run: commit, then hand it to the agent's runner
+    from app.workflow import engine  # local: the workflow imports the git modules
+
+    await engine.dispatch_queued(db)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@webhook_router.post("/repos/{repo_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def receive_repository_webhook(repo_id: uuid.UUID, request: Request, db: DbSession) -> Response:
+    """A repository's own webhook: verified with its own secret, and its status kept (working, or failing on a bad
+    signature) so the project's settings can show whether its webhook works."""
+    ip = client_ip(request)
+    await guards.check("api_ip", ip, request)
+    repo = await db.get(ProjectRepository, repo_id)
+    conn = await db.get(GitConnection, repo.connection_id) if repo is not None and repo.connection_id else None
+    if repo is None or conn is None or not repo.webhook_secret_enc:
+        await guards.count("api_ip", ip)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
+    body = await _body(request)
+    if not _verified(GitKind(conn.kind), decrypt(repo.webhook_secret_enc), request, body):
+        repo.webhook_failing = True
+        await db.commit()
+        await guards.count("api_ip", ip)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_signature")
+    await guards.hit("webhook_connection", str(conn.id), request)
+    repo.webhook_last_at = datetime.now(UTC)
+    repo.webhook_failing = False
+    return await _handle(db, conn, request, body, f"r:{repo.id}", repo)

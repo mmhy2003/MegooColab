@@ -13,9 +13,9 @@ function renderField(max: number, running = 0) {
 }
 
 describe("parseRuns", () => {
-  it("takes a whole number from 1 to 3", () => {
-    expect(["1", "2", " 3 "].map(parseRuns)).toEqual([1, 2, 3]);
-    expect(["0", "4", "", "1.5", "-1", "two"].map(parseRuns)).toEqual([null, null, null, null, null, null]);
+  it("takes a whole number from 1 to 5", () => {
+    expect(["1", "2", " 3 ", "5"].map(parseRuns)).toEqual([1, 2, 3, 5]);
+    expect(["0", "6", "", "1.5", "-1", "two"].map(parseRuns)).toEqual([null, null, null, null, null, null]);
   });
 });
 
@@ -37,10 +37,10 @@ describe("RunsField", () => {
     await userEvent.click(screen.getByRole("button", { name: "More runs at once" }));
     expect(input).toHaveValue(2);
     await userEvent.clear(input);
-    await userEvent.type(input, "3");
+    await userEvent.type(input, "5");
     expect(screen.getByRole("button", { name: "More runs at once" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "Save runs at once" }));
-    expect(onSave).toHaveBeenLastCalledWith(3);
+    expect(onSave).toHaveBeenLastCalledWith(5);
   });
 
   it("lowers the limit", async () => {
@@ -50,12 +50,12 @@ describe("RunsField", () => {
     expect(onSave).toHaveBeenLastCalledWith(2);
   });
 
-  it("refuses a number outside 1 to 3", async () => {
+  it("refuses a number outside 1 to 5", async () => {
     const onSave = renderField(2);
     const input = screen.getByLabelText("Runs at once");
     await userEvent.clear(input);
-    await userEvent.type(input, "5");
-    expect(screen.getByText("Choose a whole number from 1 to 3.")).toBeInTheDocument();
+    await userEvent.type(input, "6");
+    expect(screen.getByText("Choose a whole number from 1 to 5.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save runs at once" })).toBeDisabled();
     expect(onSave).not.toHaveBeenCalled();
   });

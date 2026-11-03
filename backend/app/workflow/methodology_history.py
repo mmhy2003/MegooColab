@@ -7,6 +7,12 @@ fails until you do.
 """
 
 DEFAULT_HISTORY: dict[str, list[str]] = {
+    "pr_review": [
+        "f117ba33749e48e554e25366550ca3ae550579a0541b7ed7425fa0d7e7026ed7",
+    ],
+    "pr_fix": [
+        "b9b52da52cfcd977cd5c98f7865ffd01c9c192639182760a920ac99d9f3fb293",
+    ],
     "brainstorm": [
         "48f368064a035a3c5afec8b14889fd152d37d64cc517d10ff5ab44b14b8ce533",
         "c2776fe8cc214c15ed439d13acdbe031b3aaf79a51f6b716c93710ca8e90440a",

@@ -68,6 +68,12 @@ async function makeToken() {
 }
 
 describe("AddMachine", () => {
+  it("Machine name stacks above Make token on phones", async () => {
+    show();
+    const input = await screen.findByLabelText("Machine name");
+    expect(input.closest("form")).toHaveClass("max-sm:flex-col", "max-sm:items-stretch");
+  });
+
   it("makes a runner token and fills it into the sign-in command", async () => {
     show();
     await screen.findByLabelText("Machine name");

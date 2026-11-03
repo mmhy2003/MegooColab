@@ -1,11 +1,11 @@
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.core.text import NoNulStr
-from app.projects.models import ColumnCategory, ProjectStatus, RepoProvider
+from app.projects.models import ColumnCategory, ProjectStatus, PrReview, RepoProvider
 from app.workflow.models import FinishingOption
 
 ProjectKey = Annotated[str, StringConstraints(pattern=r"^[A-Z][A-Z0-9]{1,9}$")]
@@ -24,7 +24,9 @@ class ProjectPatch(BaseModel):
     description: NoNulStr | None = None
     sprints_enabled: bool | None = None
     finishing_option: FinishingOption | None = None
-    require_human_code_review: bool | None = None
+    pr_review: PrReview | None = None
+    pr_reviewer_agent_id: uuid.UUID | None = None  # sent as null: the task's own agent reviews
+    send_back_on_changes_requested: bool | None = None
     commit_docs_to_repo: bool | None = None
     team_ids: list[uuid.UUID] | None = Field(default=None, min_length=1)
 
@@ -36,7 +38,9 @@ class ProjectOut(BaseModel):
     description: str
     sprints_enabled: bool
     finishing_option: FinishingOption
-    require_human_code_review: bool
+    pr_review: PrReview
+    pr_reviewer_agent_id: uuid.UUID | None
+    send_back_on_changes_requested: bool
     commit_docs_to_repo: bool
     team_ids: list[uuid.UUID]
     status: ProjectStatus
@@ -91,6 +95,43 @@ class RepoPatch(BaseModel):
     connection_id: uuid.UUID | None = None  # an explicit null unlinks
 
 
+class RepoChoiceOut(BaseModel):
+    path: str
+    url: str
+    default_branch: str | None
+
+
+class RepoChoicesOut(BaseModel):
+    """A page of the repositories a connection's token can see, to add one to a project."""
+
+    items: list[RepoChoiceOut]
+    more: bool
+
+
+class WebhookOut(BaseModel):
+    """A repository's Webhook dialog: where its host posts, and how it is going. Never the secret."""
+
+    url: str
+    kind: str
+    hook_page_url: str
+    status: Literal["not_set_up", "working", "failing"]
+    last_at: datetime | None
+    installed: bool  # MegooColab made the webhook on the host (Create it for me)
+    public_url_is_default: bool  # still the localhost default: a host can't reach it
+
+
+class WebhookSecretOut(BaseModel):
+    secret: str
+
+
+class WebhookRenewOut(WebhookSecretOut):
+    host_updated: bool | None  # None: no webhook made by MegooColab to update
+
+
+class WebhookInstallOut(BaseModel):
+    installed: bool
+
+
 class RepoConnection(BaseModel):
     id: uuid.UUID
     name: str
@@ -105,6 +146,12 @@ class RepoOut(BaseModel):
     provider: RepoProvider
     default_branch: str
     connection: RepoConnection | None = None
+    # its own webhook: not_set_up (nothing received at its own address yet), working, or failing (the last delivery's
+    # signature was wrong)
+    webhook_status: Literal["not_set_up", "working", "failing"] = "not_set_up"
+    webhook_last_at: datetime | None = None
+    # after a change: the old host would not delete the webhook MegooColab made there (its error code)
+    warning: str | None = None
 
 
 class LabelIn(BaseModel):

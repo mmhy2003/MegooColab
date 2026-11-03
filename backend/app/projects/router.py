@@ -1,15 +1,18 @@
+import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.a2a.models import Question
 from app.agent_runs.service import stop_runs_before_delete
+from app.agents.models import Agent
 from app.audit import service as audit
 from app.auth.deps import AuthedUser
 from app.auth.models import Role
+from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.events import Event, publish
 from app.kb import access as kb_access
@@ -31,16 +34,23 @@ from app.projects.schemas import (
     ProjectOut,
     ProjectPatch,
     ProjectStatusIn,
+    RepoChoiceOut,
+    RepoChoicesOut,
     RepoConnection,
     RepoIn,
     RepoOut,
     RepoPatch,
+    WebhookInstallOut,
+    WebhookOut,
+    WebhookRenewOut,
+    WebhookSecretOut,
     WorkflowCountOut,
 )
 from app.tasks import uploads
 from app.tasks.branches import valid_branch_name
 from app.tasks.models import Task
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
@@ -83,7 +93,7 @@ async def create_project(body: ProjectIn, user: AuthedUser, db: DbSession) -> Pr
     org = await db.get(OrgSettings, ORG_SETTINGS_ID)
     if org is not None:  # ADM-1: the organization's defaults for new projects
         project.finishing_option = org.default_finishing_option
-        project.require_human_code_review = org.default_require_human_code_review
+        project.pr_review = org.default_pr_review
         project.sprints_enabled = org.default_sprints_enabled
         project.commit_docs_to_repo = org.default_commit_docs_to_repo
     db.add(project)
@@ -114,10 +124,16 @@ async def update_project(ref: str, body: ProjectPatch, user: AuthedUser, db: DbS
         project.sprints_enabled = body.sprints_enabled
     if body.finishing_option is not None:
         project.finishing_option = body.finishing_option
-    if body.require_human_code_review is not None:
-        project.require_human_code_review = body.require_human_code_review
+    if body.pr_review is not None:
+        project.pr_review = body.pr_review
+    if "pr_reviewer_agent_id" in body.model_fields_set:
+        if body.pr_reviewer_agent_id is not None and await db.get(Agent, body.pr_reviewer_agent_id) is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_agent")
+        project.pr_reviewer_agent_id = body.pr_reviewer_agent_id
     if body.commit_docs_to_repo is not None:
         project.commit_docs_to_repo = body.commit_docs_to_repo
+    if body.send_back_on_changes_requested is not None:
+        project.send_back_on_changes_requested = body.send_back_on_changes_requested
     if body.team_ids is not None:
         new_ids = set(body.team_ids)
         added = new_ids - await service.project_team_ids(db, project.id)
@@ -157,6 +173,12 @@ async def delete_project(ref: str, user: AuthedUser, db: DbSession) -> None:
     question_ids = select(Question.id).where(Question.target_project_id == project.id)
     await stop_runs_before_delete(db, task_ids, question_ids)
     uploads.remove_after_commit(db, (await db.execute(task_ids)).scalars().all())
+    # the webhooks its repositories had on their hosts go too (best-effort), or they would post here for nothing
+    linked = select(ProjectRepository).where(ProjectRepository.project_id == project.id,
+                                             ProjectRepository.connection_id.is_not(None))
+    for repo in (await db.execute(linked)).scalars().all():
+        if (warning := await _forget_hook(db, repo)) is not None:
+            log.warning("could not delete repository %s's webhook on its host: %s", repo.id, warning)
     await _project_changed(db, project)
     await db.delete(project)
     # local: memory imports the task modules
@@ -244,6 +266,8 @@ async def _repo_out(db: AsyncSession, repo: ProjectRepository) -> RepoOut:
     out = RepoOut.model_validate(repo)
     conn = await db.get(GitConnection, repo.connection_id) if repo.connection_id else None
     out.connection = RepoConnection(id=conn.id, name=conn.name) if conn is not None else None
+    if conn is not None:
+        out.webhook_status = "failing" if repo.webhook_failing else "working" if repo.webhook_last_at else "not_set_up"
     return out
 
 
@@ -252,6 +276,27 @@ async def _check_connection(db: AsyncSession, connection_id: uuid.UUID | None) -
 
     if connection_id is not None and await db.get(GitConnection, connection_id) is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "git_connection_not_found")
+
+
+@router.get("/{ref}/repositories/choices")
+async def repository_choices(
+    ref: str, connection_id: uuid.UUID, user: AuthedUser, db: DbSession, q: str = "", page: int = Query(1, ge=1, le=100),
+) -> RepoChoicesOut:
+    """The repositories a connection's token can see, for a manager adding one to the project. A provider's refusal
+    comes back as 502 with its code (unauthorized, forbidden, unreachable…); the token never does."""
+    from app.git import providers  # local: git imports the project models
+    from app.git.models import GitConnection
+
+    await _managed(db, user, ref)
+    conn = await db.get(GitConnection, connection_id)
+    if conn is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "git_connection_not_found")
+    try:
+        items, more = await providers.list_repositories(conn, q=q[:200], page=page)
+    except providers.GitProviderError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, e.code) from None
+    return RepoChoicesOut(items=[RepoChoiceOut(path=i.path, url=i.url, default_branch=i.default_branch) for i in items],
+                          more=more)
 
 
 @router.get("/{ref}/repositories")
@@ -289,20 +334,100 @@ async def update_repository(ref: str, repo_id: uuid.UUID, body: RepoPatch, user:
     repo = await _repo(db, project, repo_id)
     if body.default_branch is not None:
         body.default_branch = _default_branch(body.default_branch)
+    linked_to = repo.connection_id
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(repo, field, value)
+    warning = None
     if "connection_id" in body.model_fields_set:
         await _check_connection(db, body.connection_id)
+        if body.connection_id != linked_to:
+            repo.connection_id = linked_to  # the webhook to remove is on the old host
+            # its webhook belongs to the old host: removed there, and set up afresh on the new one
+            warning = await _forget_hook(db, repo)
         repo.connection_id = body.connection_id
     await db.flush()
     await _project_changed(db, project)
-    return await _repo_out(db, repo)
+    out = await _repo_out(db, repo)
+    out.warning = warning
+    return out
+
+
+async def _forget_hook(db: AsyncSession, repo: ProjectRepository) -> str | None:
+    from app.git import service as git_service  # local: git imports the project models
+    from app.git.models import GitConnection
+
+    conn = await db.get(GitConnection, repo.connection_id) if repo.connection_id else None
+    return await git_service.forget_hook(repo, conn)
+
+
+async def _connected(db: AsyncSession, user, ref: str, repo_id: uuid.UUID):
+    """A managed project's repository and its connection, for the Webhook dialog."""
+    from app.git.models import GitConnection  # local: git imports the project models
+
+    project = await _managed(db, user, ref)
+    repo = await _repo(db, project, repo_id)
+    conn = await db.get(GitConnection, repo.connection_id) if repo.connection_id else None
+    if conn is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "repository_not_connected")
+    return project, repo, conn
+
+
+@router.get("/{ref}/repositories/{repo_id}/webhook")
+async def repository_webhook(ref: str, repo_id: uuid.UUID, user: AuthedUser, db: DbSession) -> WebhookOut:
+    from app.git import providers, service  # local: git imports the project models
+
+    _, repo, conn = await _connected(db, user, ref, repo_id)
+    service.ensure_secret(repo)
+    path = providers.repo_path(repo.url) or repo.name
+    return WebhookOut(
+        url=service.webhook_url(repo.id), kind=str(conn.kind), hook_page_url=providers.hook_page_url(conn, path),
+        status="failing" if repo.webhook_failing else "working" if repo.webhook_last_at else "not_set_up",
+        last_at=repo.webhook_last_at, installed=bool(repo.webhook_hook_id),
+        public_url_is_default=get_settings().public_url.rstrip("/") == "http://localhost:8080",
+    )
+
+
+@router.get("/{ref}/repositories/{repo_id}/webhook/secret")
+async def repository_webhook_secret(ref: str, repo_id: uuid.UUID, user: AuthedUser, db: DbSession) -> WebhookSecretOut:
+    from app.git import service  # local: git imports the project models
+
+    _, repo, _ = await _connected(db, user, ref, repo_id)
+    return WebhookSecretOut(secret=service.ensure_secret(repo))
+
+
+@router.post("/{ref}/repositories/{repo_id}/webhook/secret")
+async def renew_repository_webhook_secret(ref: str, repo_id: uuid.UUID, user: AuthedUser, db: DbSession) -> WebhookRenewOut:
+    from app.git import service  # local: git imports the project models
+
+    _, repo, conn = await _connected(db, user, ref, repo_id)
+    secret, host_updated = await service.renew_secret(repo, conn)
+    await audit.record(db, "git.webhook.secret_renewed", actor_id=user.id, target_type="project_repository",
+                       target_id=repo.id, data={"host_updated": host_updated})
+    return WebhookRenewOut(secret=secret, host_updated=host_updated)
+
+
+@router.post("/{ref}/repositories/{repo_id}/webhook/install")
+async def install_repository_webhook(ref: str, repo_id: uuid.UUID, user: AuthedUser, db: DbSession) -> WebhookInstallOut:
+    """Create it for me: refused plainly (forbidden, not_found, unauthorized, unreachable…) when the host won't."""
+    from app.git import providers, service  # local: git imports the project models
+
+    _, repo, conn = await _connected(db, user, ref, repo_id)
+    try:
+        await service.install_hook(repo, conn)
+    except providers.GitProviderError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, e.code) from None
+    await audit.record(db, "git.webhook.installed", actor_id=user.id, target_type="project_repository",
+                       target_id=repo.id, data={"hook_id": repo.webhook_hook_id})
+    return WebhookInstallOut(installed=True)
 
 
 @router.delete("/{ref}/repositories/{repo_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_repository(ref: str, repo_id: uuid.UUID, user: AuthedUser, db: DbSession) -> None:
     project = await _managed(db, user, ref)
-    await db.delete(await _repo(db, project, repo_id))
+    repo = await _repo(db, project, repo_id)
+    if (warning := await _forget_hook(db, repo)) is not None:
+        log.warning("could not delete repository %s's webhook on its host: %s", repo.id, warning)
+    await db.delete(repo)
     await _project_changed(db, project)
 
 

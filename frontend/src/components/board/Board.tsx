@@ -15,6 +15,7 @@ import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import { ScrollX } from "@/components/ui/ScrollX";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { Column, Task } from "@/lib/types";
@@ -120,7 +121,7 @@ export function Board({
         onDragCancel={() => setDragging(null)}
         onDragEnd={onDragEnd}
       >
-        <div className="flex gap-3 overflow-x-auto pb-4">
+        <ScrollX innerClassName="flex gap-3 pb-4">
           {columns.map((c) => (
             <BoardColumn
               key={c.id}
@@ -132,7 +133,7 @@ export function Board({
               onCreate={(title) => onCreate(c.id, title)}
             />
           ))}
-        </div>
+        </ScrollX>
         <DragOverlay>
           {dragging && (
             <TaskCardView

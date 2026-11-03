@@ -203,11 +203,16 @@ def machine_os(goos: str) -> str:
     return {"darwin": "macos"}.get(goos, goos)[:10]
 
 
-async def _remember_os(conn: RunnerConn, goos: str) -> None:
+async def _remember_machine(conn: RunnerConn, goos: str) -> None:
+    """The machine's system and capabilities as its hello said, kept on its token for while it is offline."""
     async with SessionLocal() as db:
         token = await db.get(PersonalAccessToken, conn.token_id)
-        if token is not None and token.runner_os != machine_os(goos):
+        if token is None:
+            return
+        caps = sorted(conn.capabilities)
+        if token.runner_os != machine_os(goos) or token.runner_capabilities != caps:
             token.runner_os = machine_os(goos)
+            token.runner_capabilities = caps
             await db.commit()
 
 
@@ -231,7 +236,7 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
     if isinstance(msg, Hello):
         conn.capabilities = set(msg.capabilities)
         conn.version, conn.os = msg.runner_version, msg.os
-        await _remember_os(conn, msg.os)
+        await _remember_machine(conn, msg.os)
         if "tools/1" in conn.capabilities:
             await _hub(conn, lambda db, token: hub_machines.deliver(db, token))
         await _fail_unclaimed(conn)

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.text import NoNulStr
 from app.workflow.models import (
@@ -57,7 +57,11 @@ class KbFiled(BaseModel):
 
 
 class WorkflowOut(TaskWorkflowOut):
+    # changes requested on the pull request (piece 3): rounds used, and what asked last
+    pr_fix_rounds: int = 0
+    pr_fix_trigger: dict | None = None
     finishing_option: FinishingOption  # the effective option
+    takes_images: bool = False  # messages to its agent may carry images (app.images.support)
     finishing_forced: bool = False  # human code review forces a pull request
     can_set_manual: bool = False  # WF-11: the viewer may switch this task to the checklist
     branch: str | None
@@ -117,6 +121,7 @@ class DocumentOut(DocumentInfo):
 
 
 class DocumentDecisionIn(BaseModel):
+    image_ids: list[uuid.UUID] = Field(default=[], max_length=6)  # unsent images (POST /api/images) a change request sends
     approve: bool
     comment: NoNulStr | None = None
 

@@ -1170,6 +1170,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{ref}/repositories/choices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Repository Choices
+         * @description The repositories a connection's token can see, for a manager adding one to the project. A provider's refusal
+         *     comes back as 502 with its code (unauthorized, forbidden, unreachable…); the token never does.
+         */
+        get: operations["repository_choices_api_projects__ref__repositories_choices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{ref}/repositories": {
         parameters: {
             query?: never;
@@ -1204,6 +1225,61 @@ export interface paths {
         head?: never;
         /** Update Repository */
         patch: operations["update_repository_api_projects__ref__repositories__repo_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{ref}/repositories/{repo_id}/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Repository Webhook */
+        get: operations["repository_webhook_api_projects__ref__repositories__repo_id__webhook_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/repositories/{repo_id}/webhook/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Repository Webhook Secret */
+        get: operations["repository_webhook_secret_api_projects__ref__repositories__repo_id__webhook_secret_get"];
+        put?: never;
+        /** Renew Repository Webhook Secret */
+        post: operations["renew_repository_webhook_secret_api_projects__ref__repositories__repo_id__webhook_secret_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/repositories/{repo_id}/webhook/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install Repository Webhook
+         * @description Create it for me: refused plainly (forbidden, not_found, unauthorized, unreachable…) when the host won't.
+         */
+        post: operations["install_repository_webhook_api_projects__ref__repositories__repo_id__webhook_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{ref}/labels": {
@@ -1531,7 +1607,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Attachment */
+        /**
+         * Download Attachment
+         * @description The file, as a download; `inline` shows it in the page instead, only for an image checked by its bytes
+         *     (never SVG or HTML). The browser is told not to guess the type either way.
+         */
         get: operations["download_attachment_api_attachments__attachment_id__get"];
         put?: never;
         post?: never;
@@ -1868,6 +1948,26 @@ export interface paths {
         put?: never;
         /** Approve Human Review */
         post: operations["approve_human_review_api_tasks__key__workflow_human_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{key}/workflow/send-back/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Send Back
+         * @description Don't send back: stop the fix run a review on the pull request started, and wait for the merge again.
+         */
+        post: operations["cancel_send_back_api_tasks__key__workflow_send_back_cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2934,7 +3034,7 @@ export interface paths {
         };
         /**
          * Connection Names
-         * @description For linking a project's repositories (a project manager's choice): names only.
+         * @description For linking a project's repositories (a project manager's choice): names and kinds only.
          */
         get: operations["connection_names_api_git_connections_get"];
         put?: never;
@@ -2962,6 +3062,27 @@ export interface paths {
          *     signature counts against the sender's address, so a forged flood cannot use up a real connection's budget.
          */
         post: operations["receive_webhook_api_git_webhooks__connection_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git/webhooks/repos/{repo_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive Repository Webhook
+         * @description A repository's own webhook: verified with its own secret, and its status kept (working, or failing on a bad
+         *     signature) so the project's settings can show whether its webhook works.
+         */
+        post: operations["receive_repository_webhook_api_git_webhooks_repos__repo_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3260,6 +3381,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Image */
+        post: operations["upload_image_api_images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Unsent Image
+         * @description Takes back an image added to a message that was not sent (taken out of the box): only its uploader's, and
+         *     only while unsent. A sent one is a task attachment, deleted there.
+         */
+        delete: operations["delete_unsent_image_api_images__image_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runner/images/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Runner Image
+         * @description The image, when a run of one of this runner's agents is running on its task (or, for a chat, on a round of
+         *     that chat: messages to the agent are kept across rounds). 404 otherwise, as for an image that doesn't exist.
+         */
+        get: operations["runner_image_api_runner_images__image_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3319,6 +3499,11 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             to_agent?: components["schemas"]["AgentMessageOut"] | null;
+            /**
+             * Images
+             * @default []
+             */
+            images: components["schemas"]["ImageRef"][];
         };
         /** ActivityRow */
         ActivityRow: {
@@ -3670,6 +3855,15 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Image
+             * @default false
+             */
+            image: boolean;
+            /** Message Kind */
+            message_kind?: string | null;
+            /** Message Id */
+            message_id?: string | null;
         };
         /** AuditOut */
         AuditOut: {
@@ -3767,6 +3961,11 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_image_api_images_post */
+        Body_upload_image_api_images_post: {
+            /** File */
+            file: string;
+        };
         /** BurndownPoint */
         BurndownPoint: {
             /**
@@ -3839,6 +4038,11 @@ export interface components {
             agent_id?: string | null;
             /** Message */
             message: string;
+            /**
+             * Image Ids
+             * @default []
+             */
+            image_ids: string[];
         };
         /** ChatOut */
         ChatOut: {
@@ -3879,6 +4083,11 @@ export interface components {
             can_act: boolean;
             /** Rounds */
             rounds: components["schemas"]["RoundOut"][];
+            /**
+             * Takes Images
+             * @default false
+             */
+            takes_images: boolean;
         };
         /**
          * ChatStatus
@@ -3953,6 +4162,11 @@ export interface components {
              * @default false
              */
             to_agent: boolean;
+            /**
+             * Image Ids
+             * @default []
+             */
+            image_ids: string[];
         };
         /** CommentOut */
         CommentOut: {
@@ -4045,6 +4259,7 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            kind: components["schemas"]["GitKind"];
         };
         /** CorrectIn */
         CorrectIn: {
@@ -4215,6 +4430,11 @@ export interface components {
         DocStatus: "submitted" | "approved" | "rejected" | "superseded";
         /** DocumentDecisionIn */
         DocumentDecisionIn: {
+            /**
+             * Image Ids
+             * @default []
+             */
+            image_ids: string[];
             /** Approve */
             approve: boolean;
             /** Comment */
@@ -4471,14 +4691,9 @@ export interface components {
             name: string;
             kind: components["schemas"]["GitKind"];
             /** Base Url */
-            base_url: string;
+            base_url?: string | null;
             /** Token */
             token: string;
-            /**
-             * Webhook Secret
-             * @default
-             */
-            webhook_secret: string;
         };
         /** GitConnectionOut */
         GitConnectionOut: {
@@ -4492,10 +4707,20 @@ export interface components {
             kind: components["schemas"]["GitKind"];
             /** Base Url */
             base_url: string;
+            /**
+             * Hosted
+             * @default false
+             */
+            hosted: boolean;
             /** Token Set */
             token_set: boolean;
             /** Webhook Secret Set */
             webhook_secret_set: boolean;
+            /**
+             * Waiting Repositories
+             * @default []
+             */
+            waiting_repositories: components["schemas"]["WaitingRepo"][];
         };
         /** GitConnectionPatch */
         GitConnectionPatch: {
@@ -4648,6 +4873,35 @@ export interface components {
              */
             approved: true;
         };
+        /** ImageOut */
+        ImageOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string;
+            /** Size */
+            size: number;
+        };
+        /**
+         * ImageRef
+         * @description An image as a message shows it: /api/attachments/{id} serves it.
+         */
+        ImageRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Filename */
+            filename: string;
+            /** Size */
+            size: number;
+        };
         /** ImportEntry */
         ImportEntry: {
             /** Name */
@@ -4733,6 +4987,8 @@ export interface components {
              * @default
              */
             model: string;
+            /** Effort */
+            effort?: ("none" | "low" | "medium" | "high" | "max") | null;
         };
         /** JobModelOut */
         JobModelOut: {
@@ -4742,6 +4998,8 @@ export interface components {
             provider_id: string | null;
             /** Model */
             model: string;
+            /** Effort */
+            effort?: ("none" | "low" | "medium" | "high" | "max") | null;
         };
         /** JobOut */
         JobOut: {
@@ -5012,6 +5270,11 @@ export interface components {
         MessageIn: {
             /** Body */
             body: string;
+            /**
+             * Image Ids
+             * @default []
+             */
+            image_ids: string[];
         };
         /** MessageOut */
         MessageOut: {
@@ -5380,6 +5643,12 @@ export interface components {
             pinned: boolean;
         };
         /**
+         * PrReview
+         * @description Who reviews a task's pull request before it is Done (piece 4): nobody, a person, or an agent that merges it.
+         * @enum {string}
+         */
+        PrReview: "none" | "human" | "agent";
+        /**
          * Preference
          * @description Who the asker wants to answer; with if_busy "wait" the question waits for them.
          */
@@ -5482,11 +5751,8 @@ export interface components {
         ProjectDefaults: {
             /** @default pull_request */
             finishing_option: components["schemas"]["FinishingOption"];
-            /**
-             * Require Human Code Review
-             * @default false
-             */
-            require_human_code_review: boolean;
+            /** @default none */
+            pr_review: components["schemas"]["PrReview"];
             /**
              * Sprints Enabled
              * @default true
@@ -5537,8 +5803,11 @@ export interface components {
             /** Sprints Enabled */
             sprints_enabled: boolean;
             finishing_option: components["schemas"]["FinishingOption"];
-            /** Require Human Code Review */
-            require_human_code_review: boolean;
+            pr_review: components["schemas"]["PrReview"];
+            /** Pr Reviewer Agent Id */
+            pr_reviewer_agent_id: string | null;
+            /** Send Back On Changes Requested */
+            send_back_on_changes_requested: boolean;
             /** Commit Docs To Repo */
             commit_docs_to_repo: boolean;
             /** Team Ids */
@@ -5559,8 +5828,11 @@ export interface components {
             /** Sprints Enabled */
             sprints_enabled?: boolean | null;
             finishing_option?: components["schemas"]["FinishingOption"] | null;
-            /** Require Human Code Review */
-            require_human_code_review?: boolean | null;
+            pr_review?: components["schemas"]["PrReview"] | null;
+            /** Pr Reviewer Agent Id */
+            pr_reviewer_agent_id?: string | null;
+            /** Send Back On Changes Requested */
+            send_back_on_changes_requested?: boolean | null;
             /** Commit Docs To Repo */
             commit_docs_to_repo?: boolean | null;
             /** Team Ids */
@@ -5826,6 +6098,25 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** RepoChoiceOut */
+        RepoChoiceOut: {
+            /** Path */
+            path: string;
+            /** Url */
+            url: string;
+            /** Default Branch */
+            default_branch: string | null;
+        };
+        /**
+         * RepoChoicesOut
+         * @description A page of the repositories a connection's token can see, to add one to a project.
+         */
+        RepoChoicesOut: {
+            /** Items */
+            items: components["schemas"]["RepoChoiceOut"][];
+            /** More */
+            more: boolean;
+        };
         /** RepoConnection */
         RepoConnection: {
             /**
@@ -5866,6 +6157,16 @@ export interface components {
             /** Default Branch */
             default_branch: string;
             connection?: components["schemas"]["RepoConnection"] | null;
+            /**
+             * Webhook Status
+             * @default not_set_up
+             * @enum {string}
+             */
+            webhook_status: "not_set_up" | "working" | "failing";
+            /** Webhook Last At */
+            webhook_last_at?: string | null;
+            /** Warning */
+            warning?: string | null;
         };
         /** RepoPatch */
         RepoPatch: {
@@ -5985,6 +6286,11 @@ export interface components {
             branch_from: string | null;
             /** Board */
             board: ("pending" | "added" | "declined") | null;
+            /**
+             * Images
+             * @default []
+             */
+            images: components["schemas"]["ImageRef"][];
         };
         /** RunAgentOut */
         RunAgentOut: {
@@ -7151,6 +7457,53 @@ export interface components {
             /** Completed Points */
             completed_points: number;
         };
+        /** WaitingRepo */
+        WaitingRepo: {
+            /** Project Key */
+            project_key: string;
+            /** Name */
+            name: string;
+        };
+        /** WebhookInstallOut */
+        WebhookInstallOut: {
+            /** Installed */
+            installed: boolean;
+        };
+        /**
+         * WebhookOut
+         * @description A repository's Webhook dialog: where its host posts, and how it is going. Never the secret.
+         */
+        WebhookOut: {
+            /** Url */
+            url: string;
+            /** Kind */
+            kind: string;
+            /** Hook Page Url */
+            hook_page_url: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_set_up" | "working" | "failing";
+            /** Last At */
+            last_at: string | null;
+            /** Installed */
+            installed: boolean;
+            /** Public Url Is Default */
+            public_url_is_default: boolean;
+        };
+        /** WebhookRenewOut */
+        WebhookRenewOut: {
+            /** Secret */
+            secret: string;
+            /** Host Updated */
+            host_updated: boolean | null;
+        };
+        /** WebhookSecretOut */
+        WebhookSecretOut: {
+            /** Secret */
+            secret: string;
+        };
         /** Who */
         Who: {
             user: components["schemas"]["Ref"] | null;
@@ -7186,7 +7539,21 @@ export interface components {
              * @default false
              */
             can_act: boolean;
+            /**
+             * Pr Fix Rounds
+             * @default 0
+             */
+            pr_fix_rounds: number;
+            /** Pr Fix Trigger */
+            pr_fix_trigger?: {
+                [key: string]: unknown;
+            } | null;
             finishing_option: components["schemas"]["FinishingOption"];
+            /**
+             * Takes Images
+             * @default false
+             */
+            takes_images: boolean;
             /**
              * Finishing Forced
              * @default false
@@ -7292,6 +7659,11 @@ export interface components {
             choice?: string | null;
             /** Text */
             text?: string | null;
+            /**
+             * Image Ids
+             * @default []
+             */
+            image_ids: string[];
         };
     };
     responses: never;
@@ -9780,6 +10152,41 @@ export interface operations {
             };
         };
     };
+    repository_choices_api_projects__ref__repositories_choices_get: {
+        parameters: {
+            query: {
+                connection_id: string;
+                q?: string;
+                page?: number;
+            };
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RepoChoicesOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_repositories_api_projects__ref__repositories_get: {
         parameters: {
             query?: never;
@@ -9899,6 +10306,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RepoOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    repository_webhook_api_projects__ref__repositories__repo_id__webhook_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    repository_webhook_secret_api_projects__ref__repositories__repo_id__webhook_secret_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookSecretOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    renew_repository_webhook_secret_api_projects__ref__repositories__repo_id__webhook_secret_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookRenewOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    install_repository_webhook_api_projects__ref__repositories__repo_id__webhook_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookInstallOut"];
                 };
             };
             /** @description Validation Error */
@@ -10777,7 +11312,9 @@ export interface operations {
     };
     download_attachment_api_attachments__attachment_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                inline?: boolean;
+            };
             header?: never;
             path: {
                 attachment_id: string;
@@ -11516,6 +12053,37 @@ export interface operations {
                 "application/json": components["schemas"]["HumanReviewIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_send_back_api_tasks__key__workflow_send_back_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -13838,6 +14406,35 @@ export interface operations {
             };
         };
     };
+    receive_repository_webhook_api_git_webhooks_repos__repo_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                repo_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_notifications_api_notifications_get: {
         parameters: {
             query?: {
@@ -14322,6 +14919,99 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelegramLinkUrl"];
+                };
+            };
+        };
+    };
+    upload_image_api_images_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_image_api_images_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_unsent_image_api_images__image_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    runner_image_api_runner_images__image_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

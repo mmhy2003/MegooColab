@@ -59,20 +59,20 @@ export function AskMemory() {
             required
             maxLength={QUESTION_MAX}
             rows={2}
-            placeholder="What is the Payments project trying to achieve this quarter?"
+            placeholder="What is Payments aiming for?"
             className="w-full rounded border border-line bg-surface-2 px-3 py-2 text-sm text-fg focus:border-cyan focus:outline-none"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
           />
         </div>
         <div className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col gap-1">
+          <div className="flex min-w-0 max-w-full flex-col gap-1">
             <label htmlFor="mem-project" className="text-xs tracking-wider text-muted-foreground uppercase">
               Project (optional)
             </label>
             <select
               id="mem-project"
-              className="rounded border border-line bg-surface-2 px-2 py-2 text-sm text-fg"
+              className="max-w-full min-w-0 rounded border border-line bg-surface-2 px-2 py-2 text-sm text-fg"
               value={project}
               onChange={(e) => setProject(e.target.value)}
             >

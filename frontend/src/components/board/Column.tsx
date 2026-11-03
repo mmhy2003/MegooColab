@@ -28,7 +28,7 @@ export function BoardColumn({
   return (
     <section
       aria-label={`${column.name} column`}
-      className={`flex w-72 shrink-0 flex-col rounded border bg-surface-2/50 ${isOver ? "border-cyan" : "border-line"}`}
+      className={`flex w-72 max-w-[calc(100vw-3rem)] shrink-0 flex-col rounded border bg-surface-2/50 ${isOver ? "border-cyan" : "border-line"}`}
     >
       <header className="flex items-center gap-2 px-3 pt-3 pb-2">
         <h2 className="font-display text-[11px] tracking-widest text-muted-foreground uppercase">{column.name}</h2>

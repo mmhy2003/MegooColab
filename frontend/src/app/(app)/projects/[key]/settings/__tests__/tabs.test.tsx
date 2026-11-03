@@ -43,7 +43,8 @@ describe("Project settings tabs", () => {
     renderPage();
     const tabs = await screen.findAllByRole("tab");
     expect(tabs.map((t) => t.textContent)).toEqual(["General", "Columns", "Repositories", "Labels", "Workflow"]);
-    expect(screen.getByRole("tablist", { name: "Settings sections" })).toHaveClass("border-b");
+    // the underline is the tab bar's (its ScrollX box), as on the admin pages
+    expect(screen.getByRole("tablist", { name: "Settings sections" }).closest(".border-b")).not.toBeNull();
     expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute("aria-selected", "true");
   });
 

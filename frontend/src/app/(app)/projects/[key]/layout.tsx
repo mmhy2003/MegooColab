@@ -5,6 +5,7 @@ import { useParams, usePathname } from "next/navigation";
 
 import { StatusBanner } from "@/components/project/StatusBanner";
 import { NotFoundView } from "@/components/shell/NotFound";
+import { ScrollX } from "@/components/ui/ScrollX";
 import { errorMessage, isNotFound } from "@/lib/errors";
 import { canManage, useMe } from "@/lib/me";
 import { useProject } from "@/lib/project";
@@ -13,11 +14,21 @@ import { usePageTitle } from "@/lib/title";
 import { useTrail } from "@/lib/trail";
 
 /** Questions other projects asked this one that need a person to answer. */
-function IncomingQuestions({ projectKey }: { projectKey: string }) {
+/** The project's incoming questions: a link beside the tabs on a wide screen; on a phone the tab bar's last item
+ * ("Questions"), so it takes no row of its own. Either way it opens the Questions page, so it is never the current tab. */
+function IncomingQuestions({ projectKey, variant }: { projectKey: string; variant: "tab" | "link" }) {
   const waiting = useQuestions("incoming", projectKey, "needs_human").data?.length ?? 0;
+  const tab = variant === "tab";
   return (
-    <Link href={`/questions?tab=incoming&project=${projectKey}`} className="ml-auto pb-2 text-sm text-muted-foreground no-underline hover:text-fg">
-      Incoming questions
+    <Link
+      href={`/questions?tab=incoming&project=${projectKey}`}
+      className={
+        tab
+          ? "shrink-0 border-b-2 border-transparent px-3 pb-2 text-sm whitespace-nowrap text-muted-foreground no-underline hover:text-fg md:hidden"
+          : "ml-auto pb-2 text-sm text-muted-foreground no-underline hover:text-fg max-md:hidden"
+      }
+    >
+      {tab ? "Questions" : "Incoming questions"}
       {waiting > 0 && (
         <span className="ml-1.5 rounded-full border border-pink px-1.5 text-xs text-pink" aria-label={`${waiting} need an answer`}>
           {waiting}
@@ -69,11 +80,12 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-x-6 gap-y-2 border-b border-line">
-        <h1 className="pb-2 text-base font-bold">
+        {/* on a phone the name keeps to one line, cut short; the whole of it shows on hover */}
+        <h1 title={`${p.key} ${p.name}`} className="pb-2 text-base font-bold max-md:w-full max-md:truncate">
           <span className="text-muted-foreground">{p.key}</span> <span className="text-cyan-ink glow-cyan">{p.name}</span>
         </h1>
-        {/* on a narrow phone the tabs scroll sideways instead of widening the page */}
-        <nav aria-label="Project" className="flex max-w-full min-w-0 gap-1 overflow-x-auto">
+        {/* on a narrow phone the tabs scroll sideways instead of widening the page, the edge faded where more hide */}
+        <ScrollX as="nav" label="Project" chevron className="max-w-full" innerClassName="flex gap-1">
           {tabs.map((t) => {
             const active = pathname.startsWith(t.href);
             return (
@@ -87,8 +99,9 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
               </Link>
             );
           })}
-        </nav>
-        <IncomingQuestions projectKey={p.key} />
+          <IncomingQuestions projectKey={p.key} variant="tab" />
+        </ScrollX>
+        <IncomingQuestions projectKey={p.key} variant="link" />
       </div>
       <StatusBanner project={p} canChange={canManage(me)} />
       {children}
