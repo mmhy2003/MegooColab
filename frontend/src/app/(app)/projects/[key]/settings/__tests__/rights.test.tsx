@@ -59,6 +59,7 @@ async function expectReadOnly() {
   expect(panel("Columns").queryByRole("button", { name: "Add column", hidden: true })).toBeNull();
   expect(panel("Columns").queryByRole("button", { name: "Delete To Do", hidden: true })).toBeNull();
   expect(panel("Repositories").queryByRole("button", { name: "Add", hidden: true })).toBeNull();
+  expect(panel("Repositories").queryByRole("button", { name: "Enter it by hand", hidden: true })).toBeNull();
   expect(panel("Repositories").queryByRole("button", { name: "Remove pay", hidden: true })).toBeNull();
   expect(panel("Labels").queryByRole("button", { name: "Add label", hidden: true })).toBeNull();
   expect(panel("Labels").queryByRole("button", { name: "Delete label urgent", hidden: true })).toBeNull();
@@ -82,7 +83,8 @@ describe("Project settings rights", () => {
     await screen.findByText("urgent");
     expect(panel("General").getByRole("button", { name: "Save" })).toBeInTheDocument();
     expect(panel("Columns").getByRole("button", { name: "Add column", hidden: true })).toBeInTheDocument();
-    expect(panel("Repositories").getByRole("button", { name: "Add", hidden: true })).toBeInTheDocument();
+    // adding one: picked from a provider, or entered by hand
+    expect(panel("Repositories").getByRole("button", { name: "Enter it by hand", hidden: true })).toBeInTheDocument();
     expect(panel("Labels").getByRole("button", { name: "Add label", hidden: true })).toBeInTheDocument();
   });
 

@@ -73,9 +73,9 @@ async def list_connections(db: DbSession, _admin: AdminUser) -> list[GitConnecti
 
 @names_router.get("")
 async def connection_names(db: DbSession, _user: AuthedUser) -> list[ConnectionRef]:
-    """For linking a project's repositories (a project manager's choice): names only."""
-    rows = await db.execute(select(GitConnection.id, GitConnection.name).order_by(GitConnection.name))
-    return [ConnectionRef(id=i, name=n) for i, n in rows.all()]
+    """For linking a project's repositories (a project manager's choice): names and kinds only."""
+    rows = await db.execute(select(GitConnection.id, GitConnection.name, GitConnection.kind).order_by(GitConnection.name))
+    return [ConnectionRef(id=i, name=n, kind=k) for i, n, k in rows.all()]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

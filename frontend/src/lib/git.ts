@@ -12,6 +12,46 @@ export type GitKind = GitConnection["kind"];
 export type GitConnectionTest = S["GitConnectionTest"];
 export type ConnectionRef = S["ConnectionRef"];
 export type PullRequest = S["PullRequestOut"];
+export type RepoChoices = S["RepoChoicesOut"];
+export type WebhookInfo = S["WebhookOut"];
+export type WebhookRenewed = S["WebhookRenewOut"];
+
+/** The host's own name, as its people say it. */
+export const HOST_NAME: Record<GitKind, string> = { github: "GitHub", gitlab: "GitLab", gitea: "Gitea" };
+
+/** How to add a repository's webhook by hand, in each host's own words. */
+export const HOOK_STEPS: Record<GitKind, string[]> = {
+  github: [
+    "Open the repository › Settings › Webhooks › Add webhook.",
+    "Paste the Payload URL, set Content type to application/json, and paste the Secret.",
+    "Choose Let me select individual events: Pull requests, Pull request reviews, Pull request review comments, Issue " +
+      "comments, Pushes, Check runs, Check suites and Statuses.",
+    "Save. GitHub sends a test event, and this turns to working.",
+  ],
+  gitlab: [
+    "Open the project › Settings › Webhooks › Add new webhook.",
+    "Paste the URL, and paste the secret into Secret token.",
+    "Under Trigger, tick Push events, Comments, Merge request events and Pipeline events.",
+    "Save, then Test › Merge request events: this turns to working.",
+  ],
+  gitea: [
+    "Open the repository › Settings › Webhooks › Add webhook › Gitea.",
+    "Paste the Target URL, choose the JSON content type, and paste the Secret.",
+    "Choose Custom events: Push, Pull request, Pull request synchronized, Pull request comment, Pull request reviewed " +
+      "(approved, rejected, comment), Issue comment and Status.",
+    "Add the webhook, then Test delivery: this turns to working.",
+  ],
+};
+
+const HOOK_ERRORS: Record<string, string> = {
+  forbidden: "This token can't manage webhooks. Use the steps above, or give the token webhook permission.",
+  not_found: "The host can't find this repository with this token.",
+};
+
+/** Why Create it for me couldn't, in plain words. */
+export function hookError(code: string): string {
+  return HOOK_ERRORS[code] ?? gitTestError(code);
+}
 
 export const GIT_KINDS: { value: GitKind; label: string }[] = [
   { value: "github", label: "GitHub" },

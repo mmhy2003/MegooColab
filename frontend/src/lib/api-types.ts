@@ -3014,7 +3014,7 @@ export interface paths {
         };
         /**
          * Connection Names
-         * @description For linking a project's repositories (a project manager's choice): names only.
+         * @description For linking a project's repositories (a project manager's choice): names and kinds only.
          */
         get: operations["connection_names_api_git_connections_get"];
         put?: never;
@@ -4239,6 +4239,7 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            kind: components["schemas"]["GitKind"];
         };
         /** CorrectIn */
         CorrectIn: {

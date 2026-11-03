@@ -79,3 +79,4 @@ class GitConnectionTest(BaseModel):
 class ConnectionRef(BaseModel):
     id: uuid.UUID
     name: str
+    kind: GitKind

@@ -123,7 +123,8 @@ async def test_connection_names_for_repository_links(client, client_factory, db)
     member = client_factory()
     await login(member, await make_user(db))
     r = await member.get("/api/git/connections")
-    assert r.status_code == 200 and r.json() == [{"id": conn["id"], "name": "GitHub"}]
+    # the kind too: a repository picked from it takes its provider from it
+    assert r.status_code == 200 and r.json() == [{"id": conn["id"], "name": "GitHub", "kind": "github"}]
     assert (await client_factory().get("/api/git/connections")).status_code == 401
 
 
