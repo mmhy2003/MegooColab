@@ -182,3 +182,109 @@ async def test_redirect_to_another_host_is_not_followed():
         await providers.whoami(_conn("gitea", "https://gitea.acme.io"),
                                client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     assert e.value.code == "bad_response"
+
+
+# -- piece 1: listing repositories and managing their webhooks ----------------------------------------------
+
+
+def _recorder(answer):
+    """A client whose handler records (method, raw path, query, JSON body) and answers answer(method, path)."""
+    calls: list[tuple[str, str, dict, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.raw_path.decode().split("?")[0]
+        body = json.loads(request.content) if request.content else None
+        calls.append((request.method, path, dict(request.url.params), body))
+        status, payload = answer(request.method, path)
+        return httpx.Response(status, json=payload)
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler)), calls
+
+
+async def test_github_lists_repositories_filtered_and_paged():
+    repos = [{"full_name": "acme/pay", "html_url": "https://github.com/acme/pay", "default_branch": "main"},
+             {"full_name": "acme/web", "html_url": "https://github.com/acme/web", "default_branch": "develop"}]
+    client, calls = _recorder(lambda m, p: (200, repos if "page" else []))
+    items, more = await providers.list_repositories(_conn("github", "https://github.com"), q="PAY", client=client)
+    assert items == [providers.RepoChoice("acme/pay", "https://github.com/acme/pay", "main")] and more is False
+    assert calls[0][1] == "/user/repos" and calls[0][2]["affiliation"] == "owner,collaborator,organization_member"
+
+
+async def test_gitlab_lists_with_server_search():
+    repos = [{"path_with_namespace": "grp/sub/pay", "web_url": "https://lab.acme.io/grp/sub/pay", "default_branch": "main"}]
+    client, calls = _recorder(lambda m, p: (200, repos))
+    items, more = await providers.list_repositories(_conn("gitlab", "https://lab.acme.io"), q="pay", client=client)
+    assert items == [providers.RepoChoice("grp/sub/pay", "https://lab.acme.io/grp/sub/pay", "main")] and more is False
+    assert calls[0][1] == "/api/v4/projects"
+    assert calls[0][2]["search"] == "pay" and calls[0][2]["membership"] == "true"
+
+
+async def test_gitea_lists_repositories():
+    repos = [{"full_name": "o/r", "html_url": "https://tea.acme.io/o/r", "default_branch": "main"},
+             {"full_name": "o/other", "html_url": "https://tea.acme.io/o/other", "default_branch": "main"}]
+    client, calls = _recorder(lambda m, p: (200, repos))
+    items, _ = await providers.list_repositories(_conn("gitea", "https://tea.acme.io"), q="/r", client=client)
+    assert [i.path for i in items] == ["o/r"] and calls[0][1] == "/api/v1/user/repos"
+
+
+async def test_github_hook_create_update_list_delete():
+    conn = _conn("github", "https://github.com")
+
+    def answer(method, path):
+        if method == "POST":
+            return 201, {"id": 123}
+        if method == "GET":
+            return 200, [{"id": 123, "config": {"url": "https://colab/x"}}]
+        return 200, {}
+
+    client, calls = _recorder(answer)
+    assert await providers.create_hook(conn, "acme/pay", "https://colab/x", "s3cret", client=client) == "123"
+    method, path, _, body = calls[-1]
+    assert (method, path) == ("POST", "/repos/acme/pay/hooks")
+    assert body["config"] == {"url": "https://colab/x", "content_type": "json", "secret": "s3cret", "insecure_ssl": "0"}
+    assert body["events"] == providers.HOOK_EVENTS[providers.GitKind.github] and body["active"] is True
+    await providers.update_hook(conn, "acme/pay", "123", "https://colab/x", "new", client=client)
+    assert calls[-1][:2] == ("PATCH", "/repos/acme/pay/hooks/123") and calls[-1][3]["config"]["secret"] == "new"
+    assert await providers.list_hooks(conn, "acme/pay", client=client) == [("123", "https://colab/x")]
+    await providers.delete_hook(conn, "acme/pay", "123", client=client)
+    assert calls[-1][:2] == ("DELETE", "/repos/acme/pay/hooks/123")
+
+
+async def test_gitlab_hooks_use_the_encoded_path():
+    conn = _conn("gitlab", "https://lab.acme.io")
+    client, calls = _recorder(lambda m, p: (201, {"id": 7}) if m == "POST" else (200, [{"id": 7, "url": "https://colab/x"}]))
+    assert await providers.create_hook(conn, "grp/sub/pay", "https://colab/x", "s", client=client) == "7"
+    method, path, _, body = calls[-1]
+    assert (method, path) == ("POST", "/api/v4/projects/grp%2Fsub%2Fpay/hooks")
+    assert body["token"] == "s" and body["url"] == "https://colab/x"
+    assert all(body[k] is True for k in ("push_events", "note_events", "merge_requests_events", "pipeline_events"))
+    assert await providers.list_hooks(conn, "grp/sub/pay", client=client) == [("7", "https://colab/x")]
+    await providers.update_hook(conn, "grp/sub/pay", "7", "https://colab/x", "s2", client=client)
+    assert calls[-1][:2] == ("PUT", "/api/v4/projects/grp%2Fsub%2Fpay/hooks/7")
+
+
+async def test_gitea_hook_events():
+    conn = _conn("gitea", "https://tea.acme.io")
+    client, calls = _recorder(lambda m, p: (201, {"id": 5}))
+    await providers.create_hook(conn, "o/r", "https://colab/x", "s", client=client)
+    body = calls[-1][3]
+    assert body["type"] == "gitea" and body["config"]["secret"] == "s"
+    assert set(body["events"]) >= {"push", "pull_request", "pull_request_review_rejected", "pull_request_comment", "status"}
+
+
+async def test_a_403_without_rate_limit_is_forbidden():
+    client, _ = _recorder(lambda m, p: (403, {"message": "Must have admin rights"}))
+    with pytest.raises(GitProviderError) as e:
+        await providers.create_hook(_conn("github", "https://github.com"), "a/b", "u", "s", client=client)
+    assert e.value.code == "forbidden"
+
+
+async def test_delete_hook_treats_404_as_done():
+    client, _ = _recorder(lambda m, p: (404, {"message": "Not Found"}))
+    await providers.delete_hook(_conn("github", "https://github.com"), "a/b", "1", client=client)
+
+
+def test_hook_page_url_per_kind():
+    assert providers.hook_page_url(_conn("github", "https://github.com"), "acme/pay") == "https://github.com/acme/pay/settings/hooks"
+    assert providers.hook_page_url(_conn("gitlab", "https://lab.acme.io"), "grp/sub/pay") == "https://lab.acme.io/grp/sub/pay/-/hooks"
+    assert providers.hook_page_url(_conn("gitea", "https://tea.acme.io"), "o/r") == "https://tea.acme.io/o/r/settings/hooks"
