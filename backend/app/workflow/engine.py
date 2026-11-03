@@ -73,9 +73,10 @@ ROLE_POLICY: dict[RunRole, RunPolicy] = {
     RunRole.final_review: RunPolicy.read_only,
     RunRole.final_fix: RunPolicy.workspace,
     RunRole.finish: RunPolicy.workspace,
+    RunRole.pr_fix: RunPolicy.workspace,
 }
 READ_ONLY_ROLES = {role for role, policy in ROLE_POLICY.items() if policy == RunPolicy.read_only}
-FRESH_ROLES = {RunRole.step_review, RunRole.final_review, RunRole.final_fix, RunRole.finish}  # never resumed
+FRESH_ROLES = {RunRole.step_review, RunRole.final_review, RunRole.final_fix, RunRole.finish, RunRole.pr_fix}  # never resumed
 # the role a stage runs when there is no earlier run to repeat
 STAGE_ROLE: dict[Stage, RunRole] = {
     Stage.brainstorm: RunRole.brainstorm,

@@ -65,6 +65,7 @@ class RunRole(StrEnum):
     final_review = "final_review"
     final_fix = "final_fix"
     finish = "finish"
+    pr_fix = "pr_fix"  # changes requested on the pull request (piece 3): fix, push to the same branch
 
 
 class FinishingOption(StrEnum):

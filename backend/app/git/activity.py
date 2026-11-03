@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent_runs.models import AgentRun, RunStatus
 from app.agents.models import Agent
 from app.core.events import Event, publish
-from app.git import providers
+from app.git import providers, send_back
 from app.git.events import GitEvent
 from app.git.models import GitConnection, GitKind, GitPrLink, TaskPullRequest
 from app.projects.models import Project, ProjectRepository
@@ -163,8 +163,16 @@ async def record(db: AsyncSession, conn: GitConnection, events: list[GitEvent], 
             actor = {**agent, "login": ev.actor.get("login")}
         base = {"host": GitKind(conn.kind).value, "actor": actor, "pr": pr}
 
+        trigger = None
         if ev.kind in ("git.reviewed", "git.review_comment"):
-            await _fold_review(db, task, ev, base)
+            review = await _fold_review(db, task, ev, base)
+            if review is not None:  # its verdict just became "changes requested"
+                first = review.get("first") or {}
+                where = f"{first['file']}:{first['line']}" if first.get("file") and first.get("line") else first.get("file")
+                trigger = send_back.Trigger(
+                    kind="review", pr_url=(pr or {}).get("url"), pr_number=ev.number, by=actor["name"],
+                    excerpt=review.get("excerpt") or first.get("excerpt") or "", where=where,
+                    association=ev.data.get("association"), host=base["host"])
         elif ev.kind == "git.pushed":
             await record_workflow_event(db, task, None, ev.kind, {**base, "branch": ev.branch, **ev.data})
         elif ev.kind == "git.pr_opened":
@@ -172,14 +180,22 @@ async def record(db: AsyncSession, conn: GitConnection, events: list[GitEvent], 
             await record_workflow_event(db, task, None, ev.kind, {**base, "branch": ev.branch, **details})
         elif ev.kind == "git.commented":
             await record_workflow_event(db, task, None, ev.kind, {**base, **ev.data})
+            if send_back.is_fix_comment(ev.data.get("excerpt")):
+                trigger = send_back.Trigger(
+                    kind="fix_comment", pr_url=(pr or {}).get("url"), pr_number=ev.number, by=actor["name"],
+                    excerpt=ev.data.get("excerpt") or "", where=None, association=ev.data.get("association"),
+                    host=base["host"])
         else:
             await record_workflow_event(db, task, None, ev.kind, base)
         written += 1
+        if trigger is not None:
+            await send_back.consider(db, task, trigger)
     return written
 
 
-async def _fold_review(db: AsyncSession, task: Task, ev: GitEvent, base: dict) -> None:
-    """One entry per review: its line comments add to it, whichever arrives first."""
+async def _fold_review(db: AsyncSession, task: Task, ev: GitEvent, base: dict) -> dict | None:
+    """One entry per review: its line comments add to it, whichever arrives first. Returns the entry's data when
+    its verdict has just become "changes requested" (a send-back trigger), else None."""
     # local: the workflow imports the git modules
     from app.workflow.engine import record_workflow_event
 
@@ -190,15 +206,18 @@ async def _fold_review(db: AsyncSession, task: Task, ev: GitEvent, base: dict) -
             await record_workflow_event(db, task, None, "git.reviewed", {
                 **base, "review_id": ev.data["review_id"], "verdict": "commented", "excerpt": "", "url": None,
                 "comments": 1, "first": first})
-            return
+            return None
         data = dict(entry.data)
         data["comments"] = int(data.get("comments") or 0) + 1
         data["first"] = data.get("first") or first
     else:
         if entry is None:
-            await record_workflow_event(db, task, None, "git.reviewed", {**base, **ev.data, "comments": 0, "first": None})
-            return
+            data = {**base, **ev.data, "comments": 0, "first": None}
+            await record_workflow_event(db, task, None, "git.reviewed", data)
+            return data if data["verdict"] == "changes_requested" else None
+        became = entry.data.get("verdict") != "changes_requested" and ev.data["verdict"] == "changes_requested"
         data = {**entry.data, "verdict": ev.data["verdict"], "excerpt": ev.data["excerpt"], "url": ev.data["url"],
                 "actor": base["actor"]}
     entry.data = data  # a new dict, so the JSONB change is saved
     await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
+    return data if ev.kind == "git.reviewed" and became else None

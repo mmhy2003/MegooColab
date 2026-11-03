@@ -55,6 +55,12 @@ def _who(name: object, login: object) -> dict | None:
     return {"name": name or login, "login": login} if name or login else None
 
 
+def _association(item: dict) -> dict:
+    """GitHub's author_association (OWNER, MEMBER, COLLABORATOR...), when the payload has it."""
+    value = _str(item.get("author_association"))
+    return {"association": value} if value else {}
+
+
 def _titles(commits: list) -> list[str]:
     titles = [excerpt(c.get("message", "").split("\n", 1)[0]) for c in commits if isinstance(c, dict) and _str(c.get("message"))]
     return [t for t in titles if t][:TITLES]
@@ -103,7 +109,8 @@ def _github_like(kind: GitKind, event: str, p: dict) -> list[GitEvent]:
         number = _int(issue.get("number"))
         if not on_pr or number is None:
             return []
-        data = {"url": _str(comment.get("html_url")), "excerpt": excerpt(comment.get("body"))}
+        data = {"url": _str(comment.get("html_url")), "excerpt": excerpt(comment.get("body")),
+                **_association(comment)}
         return [GitEvent("git.commented", path, number, None, actor, data)]
     if event == "pull_request_review" and action == "submitted" and number and actor:
         review = _dict(p.get("review"))
@@ -116,7 +123,7 @@ def _github_like(kind: GitKind, event: str, p: dict) -> list[GitEvent]:
             return []  # only its line comments carry anything, and they are folded into it
         review_id = review.get("id")
         data = {"review_id": None if review_id is None else str(review_id), "verdict": verdict, "excerpt": body,
-                "url": _str(review.get("html_url"))}
+                "url": _str(review.get("html_url")), **_association(review)}
         return [GitEvent("git.reviewed", path, number, branch, actor, data)]
     if event == "pull_request_review_comment" and action == "created" and number and actor:
         comment = _dict(p.get("comment"))

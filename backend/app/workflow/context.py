@@ -41,6 +41,7 @@ ROLE_KEY: dict[RunRole, str] = {
     RunRole.final_review: "review_final",
     RunRole.final_fix: "review_fix",
     RunRole.finish: "finish",
+    RunRole.pr_fix: "pr_fix",
 }
 
 MAX_PROMPT_CHARS = 60_000

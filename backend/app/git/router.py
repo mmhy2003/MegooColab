@@ -250,6 +250,10 @@ async def _handle(
                                       repo=repo)
         except Exception:
             log.exception("git: recording a delivery on the task's Activity failed")
+    # a send-back queued its fix run: commit, then hand it to the agent's runner
+    from app.workflow import engine  # local: the workflow imports the git modules
+
+    await engine.dispatch_queued(db)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
