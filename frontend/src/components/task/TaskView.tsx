@@ -34,6 +34,7 @@ import { CommentBox } from "./CommentBox";
 import { Description } from "./Description";
 import { JumpButtons, useLiftAbove } from "./JumpButtons";
 import { Links } from "./Links";
+import { PhoneComposer } from "./PhoneComposer";
 import { Subtasks } from "./Subtasks";
 import { TaskFields } from "./TaskFields";
 import { TaskTitle } from "./TaskTitle";
@@ -200,7 +201,7 @@ export function TaskView({
               relative: what is positioned inside (screen reader text) is held in it too; otherwise it would stretch
               the page under a task's own page */}
           <div ref={scrollRef} className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto px-4 pt-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-            <div className="min-w-0 space-y-6 pb-4">
+            <div className="min-w-0 space-y-6 pb-4 max-md:pb-16">
               <Section title="Description">
                 <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />
               </Section>
@@ -285,16 +286,18 @@ export function TaskView({
                 // a child of the whole column, not of Activity, so it floats at the bottom edge while the person
                 // reads anywhere in the task, and settles at the end of Activity
                 <div ref={setComposer} data-composer className="sticky bottom-0 z-10 !mt-2 bg-linear-to-t from-surface from-80% to-transparent pt-3 pb-2">
-                  <CommentBox
-                    users={activeUsers}
-                    agent={assignedAgent}
-                    canTellAgent={workflow.data?.can_act === true}
-                    takesImages={workflow.data?.takes_images === true}
-                    hint={assignedAgent ? hintText(agentHint(runs.data ?? [], workflow.data), assignedAgent.name, workflow.data?.stage) : undefined}
-                    onSubmit={(body_md, to_agent, image_ids) =>
-                      run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md, to_agent, image_ids } }))
-                    }
-                  />
+                  <PhoneComposer label="Add a comment…">
+                    <CommentBox
+                      users={activeUsers}
+                      agent={assignedAgent}
+                      canTellAgent={workflow.data?.can_act === true}
+                      takesImages={workflow.data?.takes_images === true}
+                      hint={assignedAgent ? hintText(agentHint(runs.data ?? [], workflow.data), assignedAgent.name, workflow.data?.stage) : undefined}
+                      onSubmit={(body_md, to_agent, image_ids) =>
+                        run(() => api(`/api/tasks/${t.key}/comments`, { method: "POST", json: { body_md, to_agent, image_ids } }))
+                      }
+                    />
+                  </PhoneComposer>
                 </div>
               )}
             </div>

@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useContext, useLayoutEffect, useRef, useState } from "react";
 
 import { ImageAttach, ImageDropZone } from "@/components/images/ImageAttach";
 import { Command, CommandItem, CommandList } from "@/components/shadcn/command";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/shadcn/popover";
+import { PhoneComposerContext } from "@/components/task/PhoneComposer";
 import { Button } from "@/components/ui/Button";
 import { hasAgentMention, removeAgentMentions } from "@/lib/agentMessages";
 import { useImageDraft } from "@/lib/images";
@@ -45,6 +46,7 @@ export function CommentBox({
 }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const phone = useContext(PhoneComposerContext);
   const [manualOn, setManualOn] = useState(false);
   const [focused, setFocused] = useState(false);
   const [mention, setMention] = useState<{ start: number; end: number; query: string } | null>(null);
@@ -102,6 +104,7 @@ export function CommentBox({
           setPicked([]);
           setManualOn(false);
           images.clear();
+          phone?.close();
         } finally {
           setBusy(false);
         }
