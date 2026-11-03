@@ -268,3 +268,20 @@ async def renew_secret(repo: ProjectRepository, conn: GitConnection) -> tuple[st
     except providers.GitProviderError:
         return secret, False
     return secret, True
+
+
+async def forget_hook(repo: ProjectRepository, conn: GitConnection | None) -> str | None:
+    """The repository leaves its connection (moved, unlinked, removed): the webhook MegooColab made on the old host is
+    deleted there, best-effort, and its webhook starts afresh. Returns the host's error code when the delete failed,
+    which never blocks the change."""
+    error = None
+    if repo.webhook_hook_id and conn is not None:
+        try:
+            await providers.delete_hook(conn, _path(repo), repo.webhook_hook_id)
+        except providers.GitProviderError as e:
+            error = e.code
+    repo.webhook_secret_enc = None
+    repo.webhook_hook_id = None
+    repo.webhook_last_at = None
+    repo.webhook_failing = False
+    return error

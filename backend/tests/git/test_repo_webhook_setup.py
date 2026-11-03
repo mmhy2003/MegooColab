@@ -157,3 +157,53 @@ async def test_members_get_403_and_unconnected_repositories_422(client, client_f
                                json={"name": "p", "url": "https://git.example/p", "provider": "plain"})).json()
     r = await client.get(f"/api/projects/PAY/repositories/{plain['id']}/webhook")
     assert (r.status_code, r.json()["detail"]) == (422, "repository_not_connected")
+
+
+# -- when a repository changes connection or goes away ---------------------------------------------------------
+
+
+async def test_relinking_clears_the_webhook_and_removes_ours(client, db, github):
+    from datetime import UTC, datetime
+
+    _, repo = await _world(client, db)
+    await client.post(f"{_base(repo)}/install")
+    (hook_id,) = github.hooks
+    async with SessionLocal() as s:
+        row = await s.get(ProjectRepository, repo.id)
+        row.webhook_last_at = datetime.now(UTC)
+        other = GitConnection(name="Other", kind="github", base_url="https://github.com", token_enc=encrypt(TOKEN))
+        s.add(other)
+        await s.commit()
+        other_id = other.id
+    r = await client.patch(f"/api/projects/PAY/repositories/{repo.id}", json={"connection_id": str(other_id)})
+    assert r.status_code == 200, r.text
+    assert r.json()["warning"] is None and r.json()["webhook_status"] == "not_set_up"
+    assert ("DELETE", f"/repos/acme/pay/hooks/{hook_id}") in [(m, p) for m, p, _ in github.calls]
+    row = await _row(repo.id)
+    assert (row.webhook_secret_enc, row.webhook_hook_id, row.webhook_last_at, row.webhook_failing) == (None, None, None, False)
+
+
+async def test_unlinking_and_deleting_remove_ours_best_effort(client, db, github):
+    _, repo = await _world(client, db)
+    await client.post(f"{_base(repo)}/install")
+    github.refuse = 500
+    r = await client.patch(f"/api/projects/PAY/repositories/{repo.id}", json={"connection_id": None})
+    assert r.status_code == 200 and r.json()["warning"] == "bad_response"
+    assert (await _row(repo.id)).webhook_hook_id is None
+    github.refuse = None
+    async with SessionLocal() as s:  # linked again and set up, then removed: its webhook goes with it
+        row = await s.get(ProjectRepository, repo.id)
+        row.connection_id = (await s.execute(select(GitConnection.id))).scalars().first()
+        await s.commit()
+    await client.post(f"{_base(repo)}/install")
+    (hook_id,) = github.hooks
+    assert (await client.delete(f"/api/projects/PAY/repositories/{repo.id}")).status_code == 204
+    assert github.hooks == {}
+
+
+async def test_an_unchanged_connection_keeps_the_webhook(client, db, github):
+    conn, repo = await _world(client, db)
+    await client.post(f"{_base(repo)}/install")
+    r = await client.patch(f"/api/projects/PAY/repositories/{repo.id}",
+                           json={"connection_id": str(conn.id), "default_branch": "develop"})
+    assert r.status_code == 200 and (await _row(repo.id)).webhook_hook_id is not None

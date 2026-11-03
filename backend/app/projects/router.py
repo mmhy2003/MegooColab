@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -48,6 +49,7 @@ from app.tasks import uploads
 from app.tasks.branches import valid_branch_name
 from app.tasks.models import Task
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
@@ -319,14 +321,30 @@ async def update_repository(ref: str, repo_id: uuid.UUID, body: RepoPatch, user:
     repo = await _repo(db, project, repo_id)
     if body.default_branch is not None:
         body.default_branch = _default_branch(body.default_branch)
+    linked_to = repo.connection_id
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(repo, field, value)
+    warning = None
     if "connection_id" in body.model_fields_set:
         await _check_connection(db, body.connection_id)
+        if body.connection_id != linked_to:
+            repo.connection_id = linked_to  # the webhook to remove is on the old host
+            # its webhook belongs to the old host: removed there, and set up afresh on the new one
+            warning = await _forget_hook(db, repo)
         repo.connection_id = body.connection_id
     await db.flush()
     await _project_changed(db, project)
-    return await _repo_out(db, repo)
+    out = await _repo_out(db, repo)
+    out.warning = warning
+    return out
+
+
+async def _forget_hook(db: AsyncSession, repo: ProjectRepository) -> str | None:
+    from app.git import service as git_service  # local: git imports the project models
+    from app.git.models import GitConnection
+
+    conn = await db.get(GitConnection, repo.connection_id) if repo.connection_id else None
+    return await git_service.forget_hook(repo, conn)
 
 
 async def _connected(db: AsyncSession, user, ref: str, repo_id: uuid.UUID):
@@ -393,7 +411,10 @@ async def install_repository_webhook(ref: str, repo_id: uuid.UUID, user: AuthedU
 @router.delete("/{ref}/repositories/{repo_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_repository(ref: str, repo_id: uuid.UUID, user: AuthedUser, db: DbSession) -> None:
     project = await _managed(db, user, ref)
-    await db.delete(await _repo(db, project, repo_id))
+    repo = await _repo(db, project, repo_id)
+    if (warning := await _forget_hook(db, repo)) is not None:
+        log.warning("could not delete repository %s's webhook on its host: %s", repo.id, warning)
+    await db.delete(repo)
     await _project_changed(db, project)
 
 

@@ -146,6 +146,8 @@ class RepoOut(BaseModel):
     # signature was wrong)
     webhook_status: Literal["not_set_up", "working", "failing"] = "not_set_up"
     webhook_last_at: datetime | None = None
+    # after a change: the old host would not delete the webhook MegooColab made there (its error code)
+    warning: str | None = None
 
 
 class LabelIn(BaseModel):
