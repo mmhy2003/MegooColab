@@ -17,7 +17,7 @@ from app.audit import service as audit
 from app.auth.deps import AdminUser, AuthedUser
 from app.core.crypto import decrypt, encrypt
 from app.core.db import DbSession
-from app.git import providers, service
+from app.git import activity, events, providers, service
 from app.git.models import GitConnection, GitDelivery, GitKind
 from app.git.schemas import (
     ConnectionRef,
@@ -206,7 +206,7 @@ async def receive_webhook(connection_id: uuid.UUID, request: Request, db: DbSess
         await guards.count("api_ip", ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_signature")
     await guards.hit("webhook_connection", str(conn.id), request)
-    return await _handle(db, conn, request, body, f"c:{conn.id}")
+    return await _handle(db, conn, request, body, f"c:{conn.id}", None)
 
 
 # a host's id for each delivery: a retry carries the same one (GitLab's event id is shared by every webhook one event
@@ -229,8 +229,11 @@ async def _seen(db, request: Request, scope: str) -> bool:
     return inserted.scalar_one_or_none() is None
 
 
-async def _handle(db, conn: GitConnection, request: Request, body: bytes, scope: str) -> Response:
-    """A verified delivery: parsed, and the tracked pull requests it names queued for a refresh (once per delivery)."""
+async def _handle(
+    db, conn: GitConnection, request: Request, body: bytes, scope: str, repo: ProjectRepository | None
+) -> Response:
+    """A verified delivery: parsed, the tracked pull requests it names queued for a refresh, and what it says happened
+    written on its task's Activity (once per delivery)."""
     try:
         payload = json.loads(body)
     except ValueError:
@@ -241,6 +244,7 @@ async def _handle(db, conn: GitConnection, request: Request, body: bytes, scope:
         path, number, sha = _about(conn, payload)
         for task_id in await service.rows_for_delivery(db, conn, path, number, sha):
             await service.queue_refresh(db, task_id)
+        await activity.record(db, conn, events.parse_delivery(GitKind(conn.kind), request.headers, payload), repo=repo)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -264,4 +268,4 @@ async def receive_repository_webhook(repo_id: uuid.UUID, request: Request, db: D
     await guards.hit("webhook_connection", str(conn.id), request)
     repo.webhook_last_at = datetime.now(UTC)
     repo.webhook_failing = False
-    return await _handle(db, conn, request, body, f"r:{repo.id}")
+    return await _handle(db, conn, request, body, f"r:{repo.id}", repo)

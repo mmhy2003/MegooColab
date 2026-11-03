@@ -64,3 +64,20 @@ class GitDelivery(Base):
 
     delivery_id: Mapped[str] = mapped_column(String(100), primary_key=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class GitPrLink(Base):
+    """A pull request seen opened from a task's branch: later deliveries about it (comments, reviews, the merge),
+    which name only its number, find the task here even before MegooColab tracks the pull request."""
+
+    __tablename__ = "git_pr_links"
+
+    connection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("git_connections.id", ondelete="CASCADE"), primary_key=True
+    )
+    path: Mapped[str] = mapped_column(String(500), primary_key=True)
+    number: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    url: Mapped[str | None] = mapped_column(Text)
+    head_branch: Mapped[str | None] = mapped_column(String(255))
+    open: Mapped[bool] = mapped_column(default=True)
