@@ -8,6 +8,7 @@ import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PullRequestBadge } from "@/components/git/PullRequestBadge";
 import { Button } from "@/components/ui/Button";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api, ApiError } from "@/lib/api";
 import { runReasonText, useAgentRuns } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
@@ -60,6 +61,7 @@ export function WorkflowPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showRuns, setShowRuns] = useState(false);
+  const { ask, dialog } = useConfirm();
 
   const wf = workflow.data;
   const decisionCount = records.data?.decisions?.length ?? 0;
@@ -98,6 +100,8 @@ export function WorkflowPanel({
   const { status } = wf;
   const latest = runs.data?.[0];
   const escalating = status === "waiting_human" && wf.needs === "escalation";
+  // a review on the pull request sent the task back: its agent is fixing what was asked (piece 3)
+  const fixTrigger = status === "running" && wf.stage === "build" ? wf.pr_fix_trigger : null;
   // set_finishing needs a started workflow and is closed from done on
   const showFinishing = agentDriven && status !== "idle" && status !== "finished" && wf.stage !== "done";
   const showChecklist = unassigned && !agent && wf.can_set_manual && !disabled && status !== "running" && status !== "waiting_human";
@@ -158,6 +162,32 @@ export function WorkflowPanel({
           assignee's next stage tool resumes it */}
       {wf.driver === "connect_only" && (status === "running" || status === "waiting_human") && canDecide && (
         <Button variant="ghost" disabled={busy} onClick={() => void post("pause")}>Pause</Button>
+      )}
+
+      {fixTrigger && (
+        <div className="space-y-2 rounded border border-amber/60 p-2">
+          <p>
+            {`Changes requested on PR #${Number(fixTrigger.pr_number ?? 0)} by ${String(fixTrigger.by ?? "a reviewer")} · ` +
+              `${agent?.name ?? "the agent"} is fixing them · round ${wf.pr_fix_rounds} of 3`}
+          </p>
+          {canDecide && (
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={async () => {
+                const sure = await ask({
+                  tone: "warn",
+                  title: "Stop the fix?",
+                  text: "The agent stops, and the task waits for the merge again. This round still counts.",
+                  ok: "Don't send back",
+                });
+                if (sure) void post("send-back/cancel");
+              }}
+            >
+              Don&apos;t send back
+            </Button>
+          )}
+        </div>
       )}
 
       {status === "waiting_human" && wf.needs === "human_code_review" && canDecide && (
@@ -289,6 +319,7 @@ export function WorkflowPanel({
         </div>
       )}
       {error && <p role="alert" className="text-xs text-pink">{error}</p>}
+      {dialog}
     </section>
   );
 }

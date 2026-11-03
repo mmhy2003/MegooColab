@@ -28,3 +28,12 @@ describe("testRunText", () => {
     expect(testRunText(run({ passed: false }))).toBe("✗ failed — uv run pytest");
   });
 });
+
+describe("escalations of a task sent back by its pull request", () => {
+  it("are worded and can be accepted", async () => {
+    const { escalationReasonText, ACCEPTABLE_REASONS } = await import("@/lib/workflow");
+    expect(escalationReasonText("pr_fix_rounds_exhausted")).toBe("Changes were requested again after 3 fix rounds.");
+    expect(escalationReasonText("pr_fix_incomplete")).toBe("The fix run ended without pushing a fix with passing tests.");
+    expect(ACCEPTABLE_REASONS).toEqual(expect.arrayContaining(["pr_fix_rounds_exhausted", "pr_fix_incomplete"]));
+  });
+});

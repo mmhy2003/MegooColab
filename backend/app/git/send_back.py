@@ -140,6 +140,26 @@ async def _accept_back_to_waiting(db: AsyncSession, wf, task: Task, user) -> Non
     await engine.wait_for(db, wf, Needs.human_code_review, actor_id=user.id)
 
 
+async def cancel(db: AsyncSession, user, task: Task) -> None:
+    """Don't send back: the fix run stops and the workflow waits for the merge again (the round still counts). The
+    workflow leaves "running" before the run is cancelled, so the run's end is not taken for a failure."""
+    from fastapi import HTTPException, status
+
+    from app.agent_runs import service as runs  # local: agent runs import the workflow
+    from app.workflow import engine
+    from app.workflow.models import Needs, RunRole, Stage
+
+    wf = await engine.lock_task(db, task)
+    await engine.require_actor(db, user, task, wf)
+    run = await engine.active_run(db, task.id)
+    if wf is None or run is None or run.workflow_role != RunRole.pr_fix:
+        raise HTTPException(status.HTTP_409_CONFLICT, "no_fix_running")
+    await engine.set_stage(db, wf, task, Stage.done)
+    await engine.wait_for(db, wf, Needs.human_code_review, actor_id=user.id)
+    await engine.record_workflow_event(db, task, user.id, "pr.send_back_cancelled", {"pr_url": wf.pr_url})
+    await runs.cancel_run(db, user, run)
+
+
 def _register() -> None:
     from app.workflow import engine
     from app.workflow.models import RunRole

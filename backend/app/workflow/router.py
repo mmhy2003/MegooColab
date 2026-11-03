@@ -284,6 +284,16 @@ async def approve_human_review(key: str, body: HumanReviewIn, user: AuthedUser, 
     return await workflow_out(db, task, user)
 
 
+@router.post("/api/tasks/{key}/workflow/send-back/cancel")
+async def cancel_send_back(key: str, user: AuthedUser, db: DbSession) -> WorkflowOut:
+    """Don't send back: stop the fix run a review on the pull request started, and wait for the merge again."""
+    from app.git import send_back  # local: the git modules import the workflow
+
+    task, _ = await get_task_for(db, user, key, write=True)
+    await send_back.cancel(db, user, task)
+    return await workflow_out(db, task, user)
+
+
 @router.put("/api/tasks/{key}/workflow/finishing")
 async def set_finishing(key: str, body: FinishingIn, user: AuthedUser, db: DbSession) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)

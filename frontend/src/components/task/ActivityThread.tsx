@@ -152,6 +152,14 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
       return DECISION_TEXT[str(data.action) ?? ""] ?? "decided how to continue";
     case "workflow.finished":
       return "The workflow finished";
+    case "pr.sent_back": {
+      const what = data.kind === "fix_comment" ? "/fix" : "changes requested";
+      return `Sent back to its agent: ${what} on PR #${num(data.pr_number)} by ${str(data.by) ?? "someone"} (round ${num(data.round)} of ${num(data.of)})`;
+    }
+    case "pr.fix_pushed":
+      return `Fixed and pushed to PR #${num(data.pr_number)} (round ${num(data.round)} of ${num(data.of)})`;
+    case "pr.send_back_cancelled":
+      return "stopped the fix: back to waiting for the merge";
     case "finishing.changed": {
       const option = str(data.option) as FinishingOption | undefined;
       return option && FINISHING_LABEL[option] ? `set the finishing option to ${FINISHING_LABEL[option]}` : "reset the finishing option";
@@ -212,6 +220,8 @@ const STANDALONE = new Set([
   "workflow.no_column",
   "workflow.escalated",
   "workflow.finished",
+  "pr.sent_back",
+  "pr.fix_pushed",
 ]);
 
 function isSafeUrl(url: string | undefined): url is string {
@@ -305,6 +315,7 @@ export function ActivityThread({
         const docKind = kind.startsWith("document.") && (data.kind === "design" || data.kind === "plan") ? data.kind : undefined;
         const reviewId = kind === "review.result" ? str(data.review_id) : undefined;
         const prUrl = kind === "finish.reported" ? str(data.pr_url) : undefined;
+        const fixSummary = kind === "pr.fix_pushed" ? str(data.summary) : undefined;
         return (
           <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind} docVersion={num(data.version)}
             images={item.images}>
@@ -317,6 +328,7 @@ export function ActivityThread({
               </>
             )}
             {reviewId && <ReviewResult taskKey={taskKey} reviewId={reviewId} total={findingTotal(data)} />}
+            {fixSummary && <span className="mt-1 block border-l-2 border-line pl-2">{fixSummary}</span>}
           </EventRow>
         );
       })}

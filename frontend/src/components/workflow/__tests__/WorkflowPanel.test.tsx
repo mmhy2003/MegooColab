@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WorkflowPanel } from "@/components/workflow/WorkflowPanel";
@@ -327,5 +327,30 @@ describe("WorkflowPanel branches", () => {
       start_branch: "main", back_merge_into: "develop", finish_outcome: "branch_kept",
     } as Partial<Workflow>));
     expect(await screen.findByText("This fix still has to reach main and develop.")).toBeInTheDocument();
+  });
+});
+
+describe("WorkflowPanel: sent back by a review on the pull request", () => {
+  const fixing = () =>
+    wf({
+      stage: "build", status: "running", pr_url: "https://github.com/acme/pay/pull/42", branch: "megoo/PAY-1-retries",
+      pr_fix_rounds: 2, pr_fix_trigger: { kind: "review", by: "rev", pr_number: 42, excerpt: "Two things", round: 2 },
+    } as Partial<Workflow>);
+
+  it("says who asked, who is fixing and the round, and Don't send back stops it", async () => {
+    const fetchMock = setup(fixing(), { post: new Response(JSON.stringify(fixing()), { status: 200 }) });
+    expect(await screen.findByText("Changes requested on PR #42 by rev · Ann's Codex is fixing them · round 2 of 3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Don't send back" }));
+    const confirm = await screen.findByRole("alertdialog");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Don't send back" }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u, i]) => String(u) === "/api/tasks/PAY-1/workflow/send-back/cancel" && i?.method === "POST")).toBe(true),
+    );
+  });
+
+  it("shows nothing of the kind outside a fix round", async () => {
+    setup(wf({ status: "running", stage: "build" }));
+    await screen.findAllByText(/Build/);
+    expect(screen.queryByRole("button", { name: "Don't send back" })).toBeNull();
   });
 });

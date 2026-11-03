@@ -328,3 +328,26 @@ describe("ActivityThread workflow events", () => {
     });
   });
 });
+
+describe("ActivityThread: a task sent back by its pull request", () => {
+  const at = "2026-11-03T10:00:00Z";
+  it("words the send-back, the fix and the stop", () => {
+    const rows: ActivityItem[] = [
+      { type: "event", id: "s1", at, actor: null, kind: "pr.sent_back",
+        data: { pr_number: 42, by: "rev", kind: "review", round: 2, of: 3, excerpt: "Two things" } },
+      { type: "event", id: "s2", at, actor: null, kind: "pr.sent_back",
+        data: { pr_number: 42, by: "mo", kind: "fix_comment", round: 3, of: 3, excerpt: "/fix the timeout" } },
+      { type: "event", id: "s3", at, actor: null, kind: "pr.fix_pushed",
+        data: { pr_number: 42, round: 2, of: 3, summary: "Added a <b>back-off</b>" } },
+      { type: "event", id: "s4", at, actor, kind: "pr.send_back_cancelled", data: {} },
+    ];
+    render(<ActivityThread items={rows} columnNames={new Map()} userNames={new Map()} />);
+    const text = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(text[0]).toContain("Sent back to its agent: changes requested on PR #42 by rev (round 2 of 3)");
+    expect(text[1]).toContain("Sent back to its agent: /fix on PR #42 by mo (round 3 of 3)");
+    expect(text[2]).toContain("Fixed and pushed to PR #42 (round 2 of 3)");
+    expect(screen.getByText("Added a <b>back-off</b>")).toBeInTheDocument();
+    expect(text[3]).toContain("Ahmed Ali stopped the fix: back to waiting for the merge");
+    expect(text[0]).not.toContain("Someone");
+  });
+});

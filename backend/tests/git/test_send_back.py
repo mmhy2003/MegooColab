@@ -54,7 +54,7 @@ async def _world(client, db, *, kind="github", on=True) -> tuple[World, ProjectR
     db.add_all([
         TaskWorkflow(task_id=task.id, stage=Stage.done, status=WorkflowStatus.waiting_human,
                      needs=Needs.human_code_review, agent_id=agent.id, branch=BRANCH, pr_url=w.pr_url,
-                     finish_outcome="pr_opened", finish_requires_human_review=True),
+                     finish_outcome="pr_opened", finish_requires_human_review=True, finishing_override="pull_request"),
         TaskPullRequest(task_id=task.id, url=w.pr_url, connection_id=conn.id, state="open"),
     ])
     await db.commit()
@@ -308,3 +308,25 @@ async def test_accept_returns_to_waiting_for_the_merge(client, db):
             await s.commit()
         wf = await _wf(task.id)
         assert (wf.stage, wf.status, wf.needs) == ("done", "waiting_human", "human_code_review"), reason
+
+
+# -- "Don't send back" (Task 4) ---------------------------------------------------------------------------------
+
+
+async def test_dont_send_back_cancels_without_a_rerun(client, db):
+    w, repo, task = await _world(client, db)
+    await _send(client, w, repo, "pull_request_review", _review(w))  # the manager (the agent's owner) is logged in
+    r = await client.post("/api/tasks/PAY-1/workflow/send-back/cancel")
+    assert r.status_code == 200, r.text
+    wf = await _wf(task.id)
+    assert (wf.stage, wf.status, wf.needs, wf.pr_fix_rounds) == ("done", "waiting_human", "human_code_review", 1)
+    (run,) = await _fix_runs(task.id)
+    assert run.status == RunStatus.cancelled
+    (stopped,) = await _kinds(task.id, "pr.send_back_cancelled")
+    assert stopped.actor_user_id == await _owner(task)
+
+
+async def test_dont_send_back_needs_a_fix_running(client, db):
+    await _world(client, db)
+    r = await client.post("/api/tasks/PAY-1/workflow/send-back/cancel")
+    assert r.status_code == 409 and r.json()["detail"] == "no_fix_running"
