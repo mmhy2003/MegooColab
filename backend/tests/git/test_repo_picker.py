@@ -2,10 +2,10 @@
 
 import httpx
 import pytest
-
 from app.core.crypto import encrypt
 from app.git import providers
 from app.git.models import GitConnection
+
 from tests.factories import login, make_project, make_user
 
 TOKEN = "ghp_PickerToken"
