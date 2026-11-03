@@ -23,6 +23,7 @@ const AGENT_NAME = `${ADMIN.name}'s Claude Code`;
 const TOKEN = "ghp_e2eFakeReadOnlyToken";
 const FIRST = "GIT-1"; // its plan's one step becomes GIT-2
 const SECOND = "GIT-3";
+const THIRD = "GIT-5"; // GIT-3's plan step is GIT-4
 
 // what each run's prompt starts with (backend/app/workflow/methodology_texts/defaults)
 const BRAINSTORM = "# Brainstorm: turn the task into an approved design";
@@ -32,6 +33,7 @@ const STEP_REVIEW = "# Build: review one implemented step";
 const FINAL_REVIEW = "# Review: final review of the whole change";
 const FINISH = "# Finish: verify and integrate the finished work";
 const PR_FIX = "# Fix: address the changes requested on the pull request";
+const PR_REVIEW = "# Review: the pull request on the host";
 
 /** The whole workflow for one task, finishing with a pull request at `prUrl`. */
 function workflowFor(key: string, prUrl: string) {
@@ -54,6 +56,15 @@ function workflowFor(key: string, prUrl: string) {
       { write: { path: `${key}-fix.txt`, content: "backed off\n" } },
       { commit: { message: `${key}: back off between retries`, all: true } },
       mcp("report_pr_fix", { key, summary: "Added a back-off", tests_passed: true }),
+    ),
+    // the project's agent reviews the pull request: changes first, then it approves and merges
+    onPrompt(
+      PR_REVIEW,
+      onPrompt("review round 1", mcp("submit_pr_review", {
+        key, verdict: "changes_requested", summary: "Retry needs a back-off",
+        findings: [{ severity: "important", file: `${key}.txt`, line: 1, summary: "No back-off" }],
+      })),
+      onPrompt("review round 2", mcp("submit_pr_review", { key, verdict: "approved", summary: "Looks good", merged: true })),
     ),
   );
 }
@@ -191,7 +202,7 @@ test("a pull request followed through a git connection", async ({ browser }) => 
     token: runnerToken,
     home: join(work, "home"),
     adapterOverride: bins.fakeAgent,
-    scenario: [workflowFor(FIRST, prUrl(1)), workflowFor(SECOND, prUrl(2))],
+    scenario: [workflowFor(FIRST, prUrl(1)), workflowFor(SECOND, prUrl(2)), workflowFor(THIRD, prUrl(3))],
     runnerBin: bins.runner,
   });
   await expect.poll(async () => (await get<{ id: string; status: string }[]>(request, "/api/agents/mine")).find((a) => a.id === agent.id)?.status, {
@@ -287,4 +298,33 @@ test("a pull request followed through a git connection", async ({ browser }) => 
   await expect(second.getByRole("link", { name: "PR closed" })).toBeVisible();
   await second.getByRole("button", { name: "Accept" }).click();
   await expect(second.getByText("Finished", { exact: true })).toBeVisible({ timeout: 15_000 });
+
+  // 7. the project's pull requests are reviewed by an agent: GIT-5's agent reviews PR #3, asks for changes (the task goes
+  // back to its agent, which fixes it), then approves and merges; MegooColab sees the merge and the task is done
+  await page.keyboard.press("Escape");
+  const agentReview = await request.patch("/api/projects/GIT", { data: { pr_review: "agent" }, headers: WEB });
+  expect(agentReview.ok(), await agentReview.text()).toBeTruthy();
+  fake.prs.set(3, { state: "open", merged: false, checks: "success", reviews: [] });
+  await post(request, "/api/projects/GIT/tasks", { title: "Reviewed by an agent", type: "task", assignee_agent_id: agent.id });
+  await post(request, `/api/tasks/${THIRD}/workflow/start`, {});
+  await approve(request, THIRD, "design");
+  await approve(request, THIRD, "plan");
+  await page.goto(`/projects/GIT/board?task=${THIRD}`);
+  const third = page.getByRole("dialog", { name: THIRD });
+  const thirdActivity = (text: string) => third.getByRole("listitem").filter({ hasText: text });
+  await expect(thirdActivity("requested changes on PR #3 · 1 finding")).toBeVisible({ timeout: 120_000 });
+  await expect(thirdActivity("requested changes on PR #3 · 1 finding")).toContainText(AGENT_NAME);
+  await expect(thirdActivity("Sent back to its agent: changes requested on PR #3")).toBeVisible({ timeout: 15_000 });
+  await expect(thirdActivity("Fixed and pushed to PR #3 (round 1 of 3)")).toBeVisible({ timeout: 60_000 });
+  await expect(thirdActivity("approved PR #3 and merged it")).toBeVisible({ timeout: 60_000 });
+  // the agent merged it on the host; the host's webhook tells MegooColab
+  fake.prs.set(3, { state: "closed", merged: true, checks: "success", reviews: [] });
+  const merged3 = delivery("pull_request", {
+    action: "closed", number: 3, sender: { login: "admin-gh" },
+    pull_request: { number: 3, html_url: prUrl(3), merged: true, head: { ref: `megoo/${THIRD}` }, base: { ref: "main" } },
+  }, made.secret);
+  expect((await request.post(hookUrl, { data: merged3.body, headers: merged3.headers })).status()).toBe(204);
+  await expect
+    .poll(async () => (await get<Workflow>(request, `/api/tasks/${THIRD}/workflow`)).status, { timeout: 30_000 })
+    .toBe("finished");
 });
