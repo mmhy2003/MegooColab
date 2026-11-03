@@ -5,14 +5,14 @@ import hmac
 import json
 import uuid
 
+from sqlalchemy import select, update
+
 from app.core.crypto import encrypt
 from app.core.db import SessionLocal
 from app.git.models import GitConnection, TaskPullRequest
 from app.jobs.models import Job, JobStatus
 from app.projects.models import BoardColumn, Project, ProjectRepository
 from app.tasks.models import Task
-from sqlalchemy import select, update
-
 from tests.factories import make_project
 
 REPO_SECRET = "repo-secret"
