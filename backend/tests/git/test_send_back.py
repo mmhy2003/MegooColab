@@ -392,3 +392,14 @@ async def test_a_review_stays_in_activity_when_the_task_cannot_be_sent_back(clie
     assert len(await _kinds(task.id, "git.reviewed")) == 1
     assert await _kinds(task.id, "pr.sent_back") == []
     assert (await _wf(task.id)).status == "waiting_human"
+
+
+async def test_a_workflow_never_started_reads_zero_rounds(client, db):
+    """A task whose workflow never started is shown from an unsaved workflow: its fix rounds read 0, not a 500."""
+    _, _, task = await _world(client, db)
+    async with SessionLocal() as s:
+        await s.execute(TaskWorkflow.__table__.delete().where(TaskWorkflow.task_id == task.id))
+        await s.commit()
+    r = await client.get("/api/tasks/PAY-1/workflow")
+    assert r.status_code == 200, r.text
+    assert (r.json()["pr_fix_rounds"], r.json()["pr_fix_trigger"], r.json()["status"]) == (0, None, "idle")
