@@ -10,6 +10,7 @@ from app.agent_runs.service import stop_runs_before_delete
 from app.audit import service as audit
 from app.auth.deps import AuthedUser
 from app.auth.models import Role
+from app.core.config import get_settings
 from app.core.db import DbSession
 from app.core.events import Event, publish
 from app.kb import access as kb_access
@@ -37,6 +38,10 @@ from app.projects.schemas import (
     RepoIn,
     RepoOut,
     RepoPatch,
+    WebhookInstallOut,
+    WebhookOut,
+    WebhookRenewOut,
+    WebhookSecretOut,
     WorkflowCountOut,
 )
 from app.tasks import uploads
@@ -322,6 +327,67 @@ async def update_repository(ref: str, repo_id: uuid.UUID, body: RepoPatch, user:
     await db.flush()
     await _project_changed(db, project)
     return await _repo_out(db, repo)
+
+
+async def _connected(db: AsyncSession, user, ref: str, repo_id: uuid.UUID):
+    """A managed project's repository and its connection, for the Webhook dialog."""
+    from app.git.models import GitConnection  # local: git imports the project models
+
+    project = await _managed(db, user, ref)
+    repo = await _repo(db, project, repo_id)
+    conn = await db.get(GitConnection, repo.connection_id) if repo.connection_id else None
+    if conn is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "repository_not_connected")
+    return project, repo, conn
+
+
+@router.get("/{ref}/repositories/{repo_id}/webhook")
+async def repository_webhook(ref: str, repo_id: uuid.UUID, user: AuthedUser, db: DbSession) -> WebhookOut:
+    from app.git import providers, service  # local: git imports the project models
+
+    _, repo, conn = await _connected(db, user, ref, repo_id)
+    service.ensure_secret(repo)
+    path = providers.repo_path(repo.url) or repo.name
+    return WebhookOut(
+        url=service.webhook_url(repo.id), kind=str(conn.kind), hook_page_url=providers.hook_page_url(conn, path),
+        status="failing" if repo.webhook_failing else "working" if repo.webhook_last_at else "not_set_up",
+        last_at=repo.webhook_last_at, installed=bool(repo.webhook_hook_id),
+        public_url_is_default=get_settings().public_url.rstrip("/") == "http://localhost:8080",
+    )
+
+
+@router.get("/{ref}/repositories/{repo_id}/webhook/secret")
+async def repository_webhook_secret(ref: str, repo_id: uuid.UUID, user: AuthedUser, db: DbSession) -> WebhookSecretOut:
+    from app.git import service  # local: git imports the project models
+
+    _, repo, _ = await _connected(db, user, ref, repo_id)
+    return WebhookSecretOut(secret=service.ensure_secret(repo))
+
+
+@router.post("/{ref}/repositories/{repo_id}/webhook/secret")
+async def renew_repository_webhook_secret(ref: str, repo_id: uuid.UUID, user: AuthedUser, db: DbSession) -> WebhookRenewOut:
+    from app.git import service  # local: git imports the project models
+
+    _, repo, conn = await _connected(db, user, ref, repo_id)
+    secret, host_updated = await service.renew_secret(repo, conn)
+    await audit.record(db, "git.webhook.secret_renewed", actor_id=user.id, target_type="project_repository",
+                       target_id=repo.id, data={"host_updated": host_updated})
+    return WebhookRenewOut(secret=secret, host_updated=host_updated)
+
+
+@router.post("/{ref}/repositories/{repo_id}/webhook/install")
+async def install_repository_webhook(ref: str, repo_id: uuid.UUID, user: AuthedUser, db: DbSession) -> WebhookInstallOut:
+    """Create it for me: refused plainly (forbidden, not_found, unauthorized, unreachable…) when the host won't."""
+    from app.git import providers, service  # local: git imports the project models
+
+    _, repo, conn = await _connected(db, user, ref, repo_id)
+    try:
+        await service.install_hook(repo, conn)
+    except providers.GitProviderError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, e.code) from None
+    await audit.record(db, "git.webhook.installed", actor_id=user.id, target_type="project_repository",
+                       target_id=repo.id, data={"hook_id": repo.webhook_hook_id})
+    return WebhookInstallOut(installed=True)
 
 
 @router.delete("/{ref}/repositories/{repo_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -10,6 +10,7 @@ fix (Branch from) has two rows, its own pull request and the back-merge into the
 when both are merged, and either one closed escalates (`back_merge_pr_closed` for the back-merge one).
 """
 
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import service as audit
 from app.core.config import get_settings
+from app.core.crypto import decrypt, encrypt
 from app.git import providers
 from app.git.models import PR_BACK_MERGE, PR_MAIN, GitConnection, TaskPullRequest
 from app.jobs import queue
@@ -219,3 +221,50 @@ def webhook_url(repo_id: uuid.UUID) -> str:
 def shared_webhook_url(connection_id: uuid.UUID) -> str:
     """A connection's old shared webhook address (before repositories had their own)."""
     return f"{get_settings().public_url.rstrip('/')}/api/git/webhooks/{connection_id}"
+
+
+def ensure_secret(repo: ProjectRepository) -> str:
+    """The repository's own webhook secret, made on first use."""
+    if not repo.webhook_secret_enc:
+        repo.webhook_secret_enc = encrypt(secrets.token_urlsafe(32))
+    return decrypt(repo.webhook_secret_enc)
+
+
+def _path(repo: ProjectRepository) -> str:
+    path = providers.repo_path(repo.url)
+    if path is None:
+        raise providers.GitProviderError("not_found")
+    return path
+
+
+async def install_hook(repo: ProjectRepository, conn: GitConnection) -> None:
+    """Create it for me: the repository's webhook on its host, at its own address with its own secret. A webhook
+    already at that address (made earlier, or by hand from the steps) is updated rather than duplicated; one at the
+    connection's old shared address is removed, as both point here; webhooks pointing anywhere else are not touched."""
+    path = _path(repo)
+    own, shared = webhook_url(repo.id), shared_webhook_url(conn.id)
+    secret = ensure_secret(repo)
+    hooks = await providers.list_hooks(conn, path)
+    ours = next((hook_id for hook_id, url in hooks if url == own), None)
+    if ours is not None:
+        await providers.update_hook(conn, path, ours, own, secret)
+    else:
+        ours = await providers.create_hook(conn, path, own, secret)
+    for hook_id, url in hooks:
+        if url == shared:
+            await providers.delete_hook(conn, path, hook_id)
+    repo.webhook_hook_id = ours
+
+
+async def renew_secret(repo: ProjectRepository, conn: GitConnection) -> tuple[str, bool | None]:
+    """A new secret (the old one stops working at once) and whether the webhook MegooColab made has it too: None when
+    there is none on record, False when the host would not take it."""
+    repo.webhook_secret_enc = None
+    secret = ensure_secret(repo)
+    if not repo.webhook_hook_id:
+        return secret, None
+    try:
+        await providers.update_hook(conn, _path(repo), repo.webhook_hook_id, webhook_url(repo.id), secret)
+    except providers.GitProviderError:
+        return secret, False
+    return secret, True

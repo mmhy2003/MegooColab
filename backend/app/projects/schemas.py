@@ -104,6 +104,30 @@ class RepoChoicesOut(BaseModel):
     more: bool
 
 
+class WebhookOut(BaseModel):
+    """A repository's Webhook dialog: where its host posts, and how it is going. Never the secret."""
+
+    url: str
+    kind: str
+    hook_page_url: str
+    status: Literal["not_set_up", "working", "failing"]
+    last_at: datetime | None
+    installed: bool  # MegooColab made the webhook on the host (Create it for me)
+    public_url_is_default: bool  # still the localhost default: a host can't reach it
+
+
+class WebhookSecretOut(BaseModel):
+    secret: str
+
+
+class WebhookRenewOut(WebhookSecretOut):
+    host_updated: bool | None  # None: no webhook made by MegooColab to update
+
+
+class WebhookInstallOut(BaseModel):
+    installed: bool
+
+
 class RepoConnection(BaseModel):
     id: uuid.UUID
     name: str
