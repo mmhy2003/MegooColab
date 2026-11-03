@@ -39,7 +39,7 @@ async def test_review_prompt_names_the_pr_and_round_and_keeps_the_workflow_agent
         run = await engine.enqueue(s, wf, await s.get(Task, task.id), RunRole.pr_review,
                                    requested_by=await _owner(task), agent_id=other.id)
         await s.commit()
-    assert run.agent_id == other.id and run.policy == "read_only"
+    assert run.agent_id == other.id and run.policy == "workspace"
     assert run.prompt.startswith("# Review: the pull request on the host")
     assert "## Pull request to review" in run.prompt
     assert f"Pull request: {w.pr_url} (branch {BRANCH}) · review round 1" in run.prompt
@@ -113,7 +113,7 @@ async def test_finish_with_agent_review_starts_a_review_run(client, db):
     _, task, owner, _ = await _agent_review(client, db)
     await _end(task, owner, "finish", {"tests_passed": True})
     run = await _queued_review(task.id)
-    assert run.agent_id == task.assignee_agent_id and run.policy == "read_only"
+    assert run.agent_id == task.assignee_agent_id and run.policy == "workspace"
     wf = await _wf(task.id)
     assert (wf.status, wf.stage) == ("running", "done")
 
@@ -226,3 +226,91 @@ async def test_human_review_is_unchanged(client, db):
     wf = await _wf(task.id)
     assert (wf.status, wf.needs) == ("waiting_human", "human_code_review")
     assert await _review_runs(task.id) == []
+
+
+# -- the final review's findings ---------------------------------------------------------------------------------
+
+
+async def test_the_review_run_can_use_the_host_tools_but_must_not_change_the_repository(client, db):
+    """The reviewer runs gh/glab/tea (refused by the read-only policy), so it runs in the workspace; a change to the
+    repository is still caught as in a read-only stage."""
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    run = await _queued_review(task.id)
+    assert run.policy == "workspace"
+    async with SessionLocal() as s:
+        await s.execute(update(AgentRun).where(AgentRun.id == run.id).values(
+            step_result=CHANGES, git_before={"head": "a", "branch": "x", "dirty": False},
+            git_after={"head": "b", "branch": "x", "dirty": False}))
+        await s.commit()
+    await _finish(owner, run)
+    wf = await _wf(task.id)
+    assert (wf.needs, wf.escalation_reason) == ("escalation", "enforcement_violation")
+
+
+async def test_the_design_and_plan_reach_the_review_and_fix_runs(client, db):
+    from app.agent_runs import service as runs
+
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    run = await _queued_review(task.id)
+    async with SessionLocal() as s:
+        fields = await runs._v2_start_fields(s, await s.get(AgentRun, run.id), await s.get(Task, task.id), "PAY-1")
+    assert "files" in fields  # .megoocolab/design.md and plan.md, as for every Build and Review role
+    await _end_review(task, owner, CHANGES)
+    (fix,) = await _fix_runs(task.id)
+    async with SessionLocal() as s:
+        fields = await runs._v2_start_fields(s, await s.get(AgentRun, fix.id), await s.get(Task, task.id), "PAY-1")
+    assert "files" in fields
+
+
+async def test_resume_after_a_pause_during_the_review_reviews_again(client, db):
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    await _queued_review(task.id)
+    async with SessionLocal() as s:  # as for any task's agent: bound to the project (resume checks it)
+        project = (await s.execute(select(Project).where(Project.key == "PAY"))).scalar_one()
+        s.add(AgentBinding(agent_id=task.assignee_agent_id, project_id=project.id, local_path="C:/work/pay"))
+        await s.commit()
+    assert (await client.post("/api/tasks/PAY-1/workflow/pause")).status_code == 200
+    async with SessionLocal() as s:  # the paused review run is over
+        await s.execute(update(AgentRun).where(AgentRun.workflow_role == "pr_review").values(status="cancelled"))
+        await s.commit()
+    r = await client.post("/api/tasks/PAY-1/workflow/resume")
+    assert r.status_code == 200, r.text
+    wf = await _wf(task.id)
+    assert (wf.status, wf.needs) == ("running", None)
+    assert len([x for x in await _review_runs(task.id) if x.status == RunStatus.queued]) == 1
+
+
+async def test_retry_when_the_reviewer_is_unavailable_starts_a_review(client, db):
+    from app.auth.models import User
+
+    _, task, owner, reviewer = await _agent_review(client, db, reviewer_name="review-bot", bound=False)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    assert (await _wf(task.id)).escalation_reason == "agent_review_unavailable"
+    async with SessionLocal() as s:  # the person binds the reviewer, then retries
+        project = (await s.execute(select(Project).where(Project.key == "PAY"))).scalar_one()
+        s.add(AgentBinding(agent_id=reviewer.id, project_id=project.id, local_path="C:/work/pay"))
+        await s.commit()
+    async with SessionLocal() as s:
+        await engine.decide_escalation(s, await s.get(User, owner), await s.get(Task, task.id), "retry")
+        await s.commit()
+    assert (await _queued_review(task.id)).agent_id == reviewer.id
+    async with SessionLocal() as s:
+        finishes = (await s.execute(select(AgentRun).where(AgentRun.task_id == task.id,
+                                                           AgentRun.workflow_role == "finish"))).scalars().all()
+    assert len(finishes) == 1  # no second Finish run
+
+
+async def test_no_awaits_your_review_notice_while_an_agent_handles_the_pr(client, db):
+    from app.notifications.models import Notification
+
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    await _end_review(task, owner, CHANGES)
+    await _end_fix(task, owner)
+    await _end_review(task, owner, APPROVED)
+    async with SessionLocal() as s:
+        titles = (await s.execute(select(Notification.title))).scalars().all()
+    assert not [t for t in titles if "awaits your review" in t], titles

@@ -33,7 +33,13 @@ from app.git.models import PR_BACK_MERGE
 from app.kb import filing
 from app.notifications import service as notifications
 from app.notifications.models import Kind
-from app.projects.models import ColumnCategory, Project, ProjectRepository, RepoProvider
+from app.projects.models import (
+    ColumnCategory,
+    Project,
+    ProjectRepository,
+    PrReview,
+    RepoProvider,
+)
 from app.tasks.models import Task
 from app.workflow import build, engine, questions
 from app.workflow.models import (
@@ -275,7 +281,8 @@ async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Ag
         if waits and engine.finishing_option(project, wf) == FinishingOption.pull_request:
             from app.git import service as git  # local: git imports the workflow
 
-            await engine.wait_for(db, wf, Needs.human_code_review)
+            agent_reviews = engine.pr_review_mode(project, wf) == PrReview.agent
+            await engine.wait_for(db, wf, Needs.human_code_review, notify=not agent_reviews)
             # a tracked pull request merged (or closed) before this run ended moves on at once; else an agent reviews
             # it when the project asks for one (piece 4)
             if not await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):

@@ -74,9 +74,12 @@ ROLE_POLICY: dict[RunRole, RunPolicy] = {
     RunRole.final_fix: RunPolicy.workspace,
     RunRole.finish: RunPolicy.workspace,
     RunRole.pr_fix: RunPolicy.workspace,
-    RunRole.pr_review: RunPolicy.read_only,
+    # the reviewer runs the host's CLI (gh, glab, tea), which the read-only policy refuses; R1 still holds it to
+    # changing nothing in the repository
+    RunRole.pr_review: RunPolicy.workspace,
 }
 READ_ONLY_ROLES = {role for role, policy in ROLE_POLICY.items() if policy == RunPolicy.read_only}
+R1_ROLES = READ_ONLY_ROLES | {RunRole.pr_review}  # runs that must leave the repository as they found it
 FRESH_ROLES = {RunRole.step_review, RunRole.final_review, RunRole.final_fix, RunRole.finish, RunRole.pr_fix,
                RunRole.pr_review}  # never resumed
 # the role a stage runs when there is no earlier run to repeat
@@ -283,11 +286,16 @@ NEEDS_TITLES = {
 }
 
 
-async def wait_for(db: AsyncSession, wf: TaskWorkflow, needs: Needs, *, actor_id: uuid.UUID | None = None) -> None:
-    """The workflow waits on a person: the agent's owner and the task's human assignee are told (NOT-1)."""
+async def wait_for(
+    db: AsyncSession, wf: TaskWorkflow, needs: Needs, *, actor_id: uuid.UUID | None = None, notify: bool = True
+) -> None:
+    """The workflow waits on a person: the agent's owner and the task's human assignee are told (NOT-1), unless
+    `notify` is off (the wait is only a resting state: an agent's review of the pull request handles it)."""
     wf.status = WorkflowStatus.waiting_human
     wf.needs = Needs(needs)
     wf.waiting_since = datetime.now(UTC)
+    if not notify:
+        return
     task = await db.get(Task, wf.task_id)
     project = await db.get(Project, task.project_id)
     agent_id = wf.agent_id or task.assignee_agent_id
@@ -645,9 +653,14 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
             .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
             .limit(1)
         )
-        if (reported or {}).get("tests_passed") is True and requires_human_review(
-            await db.get(Project, task.project_id), wf
-        ):
+        project = await db.get(Project, task.project_id)
+        if (reported or {}).get("tests_passed") is True and requires_human_review(project, wf):
+            last = await latest_run(db, wf.task_id)
+            if (
+                pr_review_mode(project, wf) == PrReview.agent and last is not None
+                and last.workflow_role == RunRole.pr_review and not (last.step_result or {}).get("verdict")
+            ):
+                return None  # the agent's review never finished: it runs again
             return Needs.human_code_review
     return None
 
@@ -690,6 +703,9 @@ AcceptHandler = Callable[[AsyncSession, TaskWorkflow, Task, User], Awaitable[Non
 # reason -> what `accept` does. Accept applies only to review_rounds_exhausted, final_review_not_clean
 # (registered by the build and review stages) and enforcement_violation; any other reason gets 422.
 ACCEPT_HANDLERS: dict[str, AcceptHandler] = {}
+# reason -> what `retry` does, where repeating the latest run is not it (piece 4: an unavailable reviewer's review
+# starts again, rather than the Finish or fix run before it)
+RETRY_HANDLERS: dict[str, AcceptHandler] = {}
 
 
 async def _accept_violation(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
@@ -724,7 +740,10 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
         wf.failures = 0
         wf.nudged = False
         wf.status = WorkflowStatus.running
-        await rerun(db, wf, task, requested_by=user.id)
+        if reason in RETRY_HANDLERS:
+            await RETRY_HANDLERS[reason](db, wf, task, user)
+        else:
+            await rerun(db, wf, task, requested_by=user.id)
     else:
         wf.status = WorkflowStatus.running
         await ACCEPT_HANDLERS[reason](db, wf, task, user)
@@ -922,7 +941,7 @@ async def _on_run_finished(db: AsyncSession, run: AgentRun) -> None:
         wf.status = WorkflowStatus.paused
         await record_workflow_event(db, task, run.cancelled_by, "workflow.paused", {"run_id": str(run.id)})
         return
-    if role in READ_ONLY_ROLES and _git_changed(run):
+    if role in R1_ROLES and _git_changed(run):
         # R1, whatever the outcome: an agent that commits and then errors out is caught too, never retried
         wf.enforcement = Enforcement.partially_enforced
         await record_workflow_event(db, task, None, "enforcement.violation", {"stage": str(run.stage), "role": role.value})

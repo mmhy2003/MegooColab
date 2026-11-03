@@ -89,7 +89,8 @@ async def _handle_pr_review(db: AsyncSession, wf, task: Task, run) -> None:
             "agent_name": agent.name if agent else None,
         })
     await engine.set_stage(db, wf, task, Stage.done)
-    await engine.wait_for(db, wf, Needs.human_code_review)
+    # a resting state: what comes next is decided below (an escalation tells people itself)
+    await engine.wait_for(db, wf, Needs.human_code_review, notify=False)
     await git.queue_refresh(db, task.id)  # a merge it made is seen soon, not at the next poll
     if await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):
         return
@@ -134,6 +135,11 @@ async def _accept_waits_for_the_merge(db: AsyncSession, wf, task: Task, user) ->
     await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))
 
 
+async def _retry_review(db: AsyncSession, wf, task: Task, user) -> None:
+    """Retry after the reviewer was unavailable (now bound, say): the review starts again."""
+    await start_review(db, wf, task)
+
+
 def _register() -> None:
     from app.workflow import engine
     from app.workflow.models import RunRole
@@ -141,6 +147,7 @@ def _register() -> None:
     engine.ROLE_HANDLERS[RunRole.pr_review] = _handle_pr_review
     for reason in ("agent_merge_failed", "agent_review_incomplete", "agent_review_unavailable"):
         engine.ACCEPT_HANDLERS[reason] = _accept_waits_for_the_merge
+    engine.RETRY_HANDLERS["agent_review_unavailable"] = _retry_review
 
 
 _register()

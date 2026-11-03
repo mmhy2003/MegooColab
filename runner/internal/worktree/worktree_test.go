@@ -232,3 +232,42 @@ func TestEnsureStartPointErrorReturnedAsIs(t *testing.T) {
 		t.Fatalf("a worktree was left behind: %v", e)
 	}
 }
+
+// A second agent on the same clone (piece 4: the pull request's reviewer) gets the task's branch while the task's
+// own agent has it checked out: git refuses a second checkout of a branch, so the reviewer's worktree is detached at
+// the branch's commit, and the task's worktree keeps its branch.
+func TestEnsureSecondAgentGetsADetachedWorktree(t *testing.T) {
+	repo, cache := newRepo(t), t.TempDir()
+	first, branch, err := Ensure(context.Background(), io.Discard, repo, cache, "agent1", "MEG-9", "Review me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(first, "b.txt"), []byte("b"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, first, "add", ".")
+	runGit(t, first, "commit", "-q", "-m", "work")
+	tip := runGit(t, first, "rev-parse", "HEAD")
+
+	second, b2, err := Ensure(context.Background(), io.Discard, repo, cache, "agent2", "MEG-9", "Review me")
+	if err != nil {
+		t.Fatalf("second agent: %v", err)
+	}
+	if b2 != branch || second == first {
+		t.Fatalf("second = %q %q", second, b2)
+	}
+	if got := runGit(t, second, "rev-parse", "HEAD"); got != tip {
+		t.Fatalf("second HEAD = %q, want the branch tip %q", got, tip)
+	}
+	if got := runGit(t, second, "rev-parse", "--abbrev-ref", "HEAD"); got != "HEAD" {
+		t.Fatalf("second worktree is on %q, want a detached HEAD", got)
+	}
+	if got := runGit(t, first, "rev-parse", "--abbrev-ref", "HEAD"); got != branch {
+		t.Fatalf("first worktree moved to %q", got)
+	}
+	// and it is reused as it is on the next run
+	again, _, err := Ensure(context.Background(), io.Discard, repo, cache, "agent2", "MEG-9", "Review me")
+	if err != nil || again != second {
+		t.Fatalf("reuse = %q %v", again, err)
+	}
+}

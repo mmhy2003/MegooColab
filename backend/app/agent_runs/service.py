@@ -65,6 +65,7 @@ from app.workflow.models import (
 # roles whose runs carry the approved design and plan into the worktree
 DOC_ROLES = {
     RunRole.implement, RunRole.step_review, RunRole.step_fix, RunRole.final_review, RunRole.final_fix, RunRole.finish,
+    RunRole.pr_fix, RunRole.pr_review,
 }
 # the runner's stable failure codes, kept as a failed run's reason; any other runner error is agent_error
 RUNNER_FAILURE_CODES = frozenset({

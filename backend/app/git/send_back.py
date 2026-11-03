@@ -131,7 +131,11 @@ async def _handle_pr_fix(db: AsyncSession, wf, task: Task, run) -> None:
             "pr_url": wf.pr_url, "pr_number": (wf.pr_fix_trigger or {}).get("pr_number"), "round": wf.pr_fix_rounds,
             "of": MAX_PR_FIX_ROUNDS, "summary": result.get("summary") or "",
         })
-        await engine.wait_for(db, wf, Needs.human_code_review)
+        from app.projects.models import PrReview
+
+        project = await db.get(Project, task.project_id)
+        agent_reviews = engine.pr_review_mode(project, wf) == PrReview.agent
+        await engine.wait_for(db, wf, Needs.human_code_review, notify=not agent_reviews)
         if not await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):
             from app.git import agent_review  # local: agent_review imports this module
 

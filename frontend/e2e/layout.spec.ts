@@ -80,7 +80,7 @@ test("scrollbars stay hidden until the pointer is over the area, then show in cy
 test("checkboxes are on/off switches that light up cyan", async ({ page }) => {
   await setupOrSignIn(page);
   await page.goto("/admin/settings?tab=new-projects");
-  const box = page.getByRole("checkbox", { name: "Require a human code review" });
+  const box = page.getByRole("checkbox", { name: "Commit design and plan documents to the repository" });
   await expect(box).toBeVisible();
   const look = () =>
     box.evaluate((el) => {
