@@ -166,6 +166,12 @@ async def delete_project(ref: str, user: AuthedUser, db: DbSession) -> None:
     question_ids = select(Question.id).where(Question.target_project_id == project.id)
     await stop_runs_before_delete(db, task_ids, question_ids)
     uploads.remove_after_commit(db, (await db.execute(task_ids)).scalars().all())
+    # the webhooks its repositories had on their hosts go too (best-effort), or they would post here for nothing
+    linked = select(ProjectRepository).where(ProjectRepository.project_id == project.id,
+                                             ProjectRepository.connection_id.is_not(None))
+    for repo in (await db.execute(linked)).scalars().all():
+        if (warning := await _forget_hook(db, repo)) is not None:
+            log.warning("could not delete repository %s's webhook on its host: %s", repo.id, warning)
     await _project_changed(db, project)
     await db.delete(project)
     # local: memory imports the task modules

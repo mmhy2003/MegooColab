@@ -177,6 +177,12 @@ test("every page fits a phone, 280 and 344 pixels wide", async ({ browser, page 
     await p.getByRole("button", { name: /New token|Create token/ }).first().click();
     await onScreen(p.getByRole("dialog").last(), width);
     await p.keyboard.press("Escape");
+    // a repository entered by hand: its form fits too
+    await p.goto("/projects/MOB/settings");
+    await p.getByRole("tab", { name: "Repositories" }).click();
+    await p.getByRole("button", { name: "Enter it by hand" }).click();
+    await expect(p.getByLabel("Repository URL")).toBeVisible();
+    expect(await overflow(p), `repository form at ${width}`).toEqual([]);
 
     // long titles wrap rather than being cut or squeezed out
     await p.goto("/projects/MOB/backlog");

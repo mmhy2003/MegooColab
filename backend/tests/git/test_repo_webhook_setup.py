@@ -7,6 +7,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 
+from app.auth.models import Role
 from app.core.crypto import encrypt
 from app.core.db import SessionLocal
 from app.git import providers, service
@@ -196,7 +197,7 @@ async def test_unlinking_and_deleting_remove_ours_best_effort(client, db, github
         row.connection_id = (await s.execute(select(GitConnection.id))).scalars().first()
         await s.commit()
     await client.post(f"{_base(repo)}/install")
-    (hook_id,) = github.hooks
+    assert len(github.hooks) == 1
     assert (await client.delete(f"/api/projects/PAY/repositories/{repo.id}")).status_code == 204
     assert github.hooks == {}
 
@@ -207,3 +208,37 @@ async def test_an_unchanged_connection_keeps_the_webhook(client, db, github):
     r = await client.patch(f"/api/projects/PAY/repositories/{repo.id}",
                            json={"connection_id": str(conn.id), "default_branch": "develop"})
     assert r.status_code == 200 and (await _row(repo.id)).webhook_hook_id is not None
+
+
+async def test_install_after_the_address_changed_updates_our_saved_hook(client, db, github):
+    """The public address moved (a tunnel replaced by the real domain): Create it for me updates the webhook it made
+    before, by its saved id, rather than leaving it posting to the old address beside a new one."""
+    _, repo = await _world(client, db)
+    await client.post(f"{_base(repo)}/install")
+    (hook_id,) = github.hooks
+    github.hooks[hook_id]["url"] = f"https://old-tunnel.example/api/git/webhooks/repos/{repo.id}"
+    assert (await client.post(f"{_base(repo)}/install")).status_code == 200
+    assert list(github.hooks) == [hook_id]
+    assert github.hooks[hook_id]["url"] == service.webhook_url(repo.id)
+
+
+async def test_deleting_the_project_removes_its_webhooks(client, db, github):
+    _, repo = await _world(client, db)
+    await client.post(f"{_base(repo)}/install")
+    assert len(github.hooks) == 1
+    await login(client, await make_user(db, role=Role.admin))
+    r = await client.delete("/api/projects/PAY")
+    assert r.status_code == 204, r.text
+    assert github.hooks == {}
+
+
+async def test_deleting_the_connection_removes_its_webhooks(client, db, github):
+    conn, repo = await _world(client, db)
+    await client.post(f"{_base(repo)}/install")
+    assert len(github.hooks) == 1
+    await login(client, await make_user(db, role=Role.admin))
+    r = await client.delete(f"/api/admin/git-connections/{conn.id}")
+    assert r.status_code == 204, r.text
+    assert github.hooks == {}
+    row = await _row(repo.id)
+    assert (row.connection_id, row.webhook_hook_id, row.webhook_secret_enc) == (None, None, None)

@@ -144,7 +144,7 @@ export function RepoEditor({
               }}
             >
               <input aria-label="Repository name" placeholder="Name" required className={FIELD} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <input aria-label="Repository URL" placeholder="https://… or git@…" required className={`${FIELD} min-w-64 flex-1`} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+              <input aria-label="Repository URL" placeholder="https://… or git@…" required className={`${FIELD} min-w-0 flex-1 basis-64`} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
               <select aria-label="Provider" className={FIELD} value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value as Repo["provider"] })}>
                 {PROVIDERS.map((p) => (
                   <option key={p} value={p}>{p}</option>

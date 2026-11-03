@@ -288,3 +288,30 @@ def test_hook_page_url_per_kind():
     assert providers.hook_page_url(_conn("github", "https://github.com"), "acme/pay") == "https://github.com/acme/pay/settings/hooks"
     assert providers.hook_page_url(_conn("gitlab", "https://lab.acme.io"), "grp/sub/pay") == "https://lab.acme.io/grp/sub/pay/-/hooks"
     assert providers.hook_page_url(_conn("gitea", "https://tea.acme.io"), "o/r") == "https://tea.acme.io/o/r/settings/hooks"
+
+
+async def test_github_paging_reaches_every_repository():
+    """Load more never skips: 350 repositories, read 100 a host page, all come back once across the picker's pages."""
+    repos = [{"full_name": f"acme/r{i:03}", "html_url": f"https://github.com/acme/r{i:03}", "default_branch": "main"}
+             for i in range(350)]
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params["page"])
+        return httpx.Response(200, json=repos[(page - 1) * 100: page * 100])
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    page, more = 1, True
+    while more:
+        items, more = await providers.list_repositories(_conn("github", "https://github.com"), page=page, client=client)
+        seen += [i.path for i in items]
+        page += 1
+        assert page < 20
+    assert seen == [r["full_name"] for r in repos]
+
+
+async def test_github_lists_hooks_100_a_page():
+    client, calls = _recorder(lambda m, p: (200, []))
+    await providers.list_hooks(_conn("github", "https://github.com"), "acme/pay", client=client)
+    assert calls[-1][2].get("per_page") == "100"

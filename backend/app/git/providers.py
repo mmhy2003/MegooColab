@@ -366,7 +366,7 @@ async def list_repositories(
 ) -> tuple[list[RepoChoice], bool]:
     """The repositories the connection's token can see, PAGE at a time, matching q, and whether there are more.
     GitLab searches itself; GitHub and Gitea have no search on these lists, so their pages are filtered here
-    (GitHub reads up to three pages of 100 to fill one of ours)."""
+    (GitHub reads three pages of 100 for each of ours, so Load more never skips any)."""
     kind = GitKind(conn.kind)
     needle = q.strip().lower()
 
@@ -395,7 +395,7 @@ async def list_repositories(
                 raise GitProviderError("bad_response")
             found += [x for x in (_choice(i, kind) for i in raw) if x and needle in x.path.lower()]
             more = len(raw) == 100
-            if not more or len(found) >= PAGE:
+            if not more:
                 break
         return found, more
 
@@ -432,7 +432,8 @@ async def list_hooks(conn: GitConnection, path: str, *, client: httpx.AsyncClien
     """(hook id, the address it posts to) for each of the repository's webhooks."""
 
     async def call(c):
-        raw = await _get(c, conn, _hooks_path(conn, path))
+        page = {"limit": 50} if GitKind(conn.kind) == GitKind.gitea else {"per_page": 100}
+        raw = await _get(c, conn, _hooks_path(conn, path), page)
         if not isinstance(raw, list):
             raise GitProviderError("bad_response")
         out = []

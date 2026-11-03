@@ -126,3 +126,48 @@ async def test_the_shared_address_still_works_and_counts_for_no_repository(clien
     assert r.status_code == 204
     assert await _queued() == 1
     assert (await _status(client, repo))["webhook_status"] == "not_set_up"
+
+
+async def test_the_same_delivery_id_counts_once_per_address(client, db):
+    """Two repositories whose webhooks one event fires (the same id at both): each address handles it once."""
+    conn, repo, _ = await _world(client, db)
+    async with SessionLocal() as s:
+        twin = ProjectRepository(project_id=repo.project_id, name="acme/pay-twin", url="https://github.com/acme/pay",
+                                 provider="github", connection_id=conn.id, webhook_secret_enc=encrypt(REPO_SECRET))
+        s.add(twin)
+        await s.commit()
+        twin_id = twin.id
+    assert (await _post(client, f"/api/git/webhooks/repos/{repo.id}", delivery="d-1")).status_code == 204
+    assert await _queued() == 1
+    async with SessionLocal() as s:
+        await s.execute(update(Job).values(status=JobStatus.done))
+        await s.commit()
+    assert (await _post(client, f"/api/git/webhooks/repos/{twin_id}", delivery="d-1")).status_code == 204
+    assert await _queued() == 1
+    assert (await _repo(twin_id)).webhook_last_at is not None
+
+
+async def test_gitlab_retries_are_matched_by_idempotency_key(client, db):
+    """GitLab's event id is shared by every hook one event fires; its Idempotency-Key is what a retry repeats."""
+    _, repo, _ = await _world(client, db, "gitlab")
+    payload = {"object_kind": "merge_request", "object_attributes": {"iid": 7}, "project": {"path_with_namespace": "acme/pay"}}
+    body = json.dumps(payload).encode()
+    path = f"/api/git/webhooks/repos/{repo.id}"
+
+    async def send(key: str):
+        headers = {"X-Gitlab-Token": REPO_SECRET, "X-Gitlab-Event-UUID": "event-1", "Idempotency-Key": key}
+        assert (await client.post(path, content=body, headers=headers)).status_code == 204
+
+    async def settle():
+        async with SessionLocal() as s:
+            await s.execute(update(Job).values(status=JobStatus.done))
+            await s.commit()
+
+    await send("k-1")
+    assert await _queued() == 1
+    await settle()
+    await send("k-2")  # another delivery of the same event: handled
+    assert await _queued() == 1
+    await settle()
+    await send("k-2")  # its retry: ignored
+    assert await _queued() == 0

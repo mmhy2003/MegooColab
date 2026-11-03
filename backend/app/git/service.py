@@ -239,19 +239,21 @@ def _path(repo: ProjectRepository) -> str:
 
 async def install_hook(repo: ProjectRepository, conn: GitConnection) -> None:
     """Create it for me: the repository's webhook on its host, at its own address with its own secret. A webhook
-    already at that address (made earlier, or by hand from the steps) is updated rather than duplicated; one at the
-    connection's old shared address is removed, as both point here; webhooks pointing anywhere else are not touched."""
+    already at that address (made earlier, or by hand from the steps), or the one it made before at an address since
+    changed, is updated rather than duplicated; one at the connection's old shared address is removed, as both point
+    here; webhooks pointing anywhere else are not touched."""
     path = _path(repo)
     own, shared = webhook_url(repo.id), shared_webhook_url(conn.id)
     secret = ensure_secret(repo)
     hooks = await providers.list_hooks(conn, path)
-    ours = next((hook_id for hook_id, url in hooks if url == own), None)
+    ours = next((hook_id for hook_id, url in hooks if hook_id == repo.webhook_hook_id), None)
+    ours = ours or next((hook_id for hook_id, url in hooks if url.rstrip("/").lower() == own.lower()), None)
     if ours is not None:
         await providers.update_hook(conn, path, ours, own, secret)
     else:
         ours = await providers.create_hook(conn, path, own, secret)
     for hook_id, url in hooks:
-        if url == shared:
+        if url == shared and hook_id != ours:
             await providers.delete_hook(conn, path, hook_id)
     repo.webhook_hook_id = ours
 

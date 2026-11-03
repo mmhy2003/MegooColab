@@ -4,6 +4,7 @@ providers' webhooks (GIT-3)."""
 import hashlib
 import hmac
 import json
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -29,6 +30,8 @@ from app.git.schemas import (
 from app.projects.models import Project, ProjectRepository
 from app.ratelimit import guards
 from app.ratelimit.clientip import client_ip
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/git-connections", tags=["git"])
 names_router = APIRouter(prefix="/api/git/connections", tags=["git"])
@@ -112,6 +115,10 @@ async def update_connection(
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(connection_id: uuid.UUID, db: DbSession, admin: AdminUser) -> Response:
     c = await _connection(db, connection_id)
+    # while its token is still here: the webhooks it made go too (best-effort), or they would post here for nothing
+    for repo in (await db.execute(select(ProjectRepository).where(ProjectRepository.connection_id == c.id))).scalars().all():
+        if error := await service.forget_hook(repo, c):
+            log.warning("could not delete repository %s's webhook on its host: %s", repo.id, error)
     await db.delete(c)
     await audit.record(db, "git.connection.deleted", actor_id=admin.id, target_type="git_connection",
                        target_id=connection_id, data={"name": c.name})
@@ -199,20 +206,22 @@ async def receive_webhook(connection_id: uuid.UUID, request: Request, db: DbSess
         await guards.count("api_ip", ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_signature")
     await guards.hit("webhook_connection", str(conn.id), request)
-    return await _handle(db, conn, request, body)
+    return await _handle(db, conn, request, body, f"c:{conn.id}")
 
 
-# a host's id for each delivery: a retry carries the same one
-DELIVERY_HEADERS = ("x-github-delivery", "x-gitlab-event-uuid", "x-gitea-delivery")
+# a host's id for each delivery: a retry carries the same one (GitLab's event id is shared by every webhook one event
+# fires, so its Idempotency-Key, from GitLab 17.4, comes first)
+DELIVERY_HEADERS = ("x-github-delivery", "idempotency-key", "x-gitlab-event-uuid", "x-gitea-delivery")
 DELIVERY_DAYS = 3
 
 
-async def _seen(db, request: Request) -> bool:
-    """Notes the delivery's id; True when it was handled already (the host retrying). Old ids are let go."""
+async def _seen(db, request: Request, scope: str) -> bool:
+    """Notes the delivery's id at this address (scope); True when it was handled here already (the host retrying).
+    Old ids are let go."""
     delivery = next((request.headers[h] for h in DELIVERY_HEADERS if request.headers.get(h)), None)
     if not delivery:
         return False
-    delivery = delivery[:100]
+    delivery = f"{scope}:{delivery}"[:100]
     await db.execute(delete(GitDelivery).where(GitDelivery.received_at < datetime.now(UTC) - timedelta(days=DELIVERY_DAYS)))
     inserted = await db.execute(
         pg_insert(GitDelivery).values(delivery_id=delivery).on_conflict_do_nothing().returning(GitDelivery.delivery_id)
@@ -220,13 +229,13 @@ async def _seen(db, request: Request) -> bool:
     return inserted.scalar_one_or_none() is None
 
 
-async def _handle(db, conn: GitConnection, request: Request, body: bytes) -> Response:
+async def _handle(db, conn: GitConnection, request: Request, body: bytes, scope: str) -> Response:
     """A verified delivery: parsed, and the tracked pull requests it names queued for a refresh (once per delivery)."""
     try:
         payload = json.loads(body)
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_payload") from None
-    if await _seen(db, request):
+    if await _seen(db, request, scope):
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     if isinstance(payload, dict):
         path, number, sha = _about(conn, payload)
@@ -255,4 +264,4 @@ async def receive_repository_webhook(repo_id: uuid.UUID, request: Request, db: D
     await guards.hit("webhook_connection", str(conn.id), request)
     repo.webhook_last_at = datetime.now(UTC)
     repo.webhook_failing = False
-    return await _handle(db, conn, request, body)
+    return await _handle(db, conn, request, body, f"r:{repo.id}")
