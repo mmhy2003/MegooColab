@@ -91,6 +91,19 @@ class RepoPatch(BaseModel):
     connection_id: uuid.UUID | None = None  # an explicit null unlinks
 
 
+class RepoChoiceOut(BaseModel):
+    path: str
+    url: str
+    default_branch: str | None
+
+
+class RepoChoicesOut(BaseModel):
+    """A page of the repositories a connection's token can see, to add one to a project."""
+
+    items: list[RepoChoiceOut]
+    more: bool
+
+
 class RepoConnection(BaseModel):
     id: uuid.UUID
     name: str

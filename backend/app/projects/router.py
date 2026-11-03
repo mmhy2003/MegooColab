@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,8 @@ from app.projects.schemas import (
     ProjectOut,
     ProjectPatch,
     ProjectStatusIn,
+    RepoChoiceOut,
+    RepoChoicesOut,
     RepoConnection,
     RepoIn,
     RepoOut,
@@ -252,6 +254,27 @@ async def _check_connection(db: AsyncSession, connection_id: uuid.UUID | None) -
 
     if connection_id is not None and await db.get(GitConnection, connection_id) is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "git_connection_not_found")
+
+
+@router.get("/{ref}/repositories/choices")
+async def repository_choices(
+    ref: str, connection_id: uuid.UUID, user: AuthedUser, db: DbSession, q: str = "", page: int = Query(1, ge=1, le=100),
+) -> RepoChoicesOut:
+    """The repositories a connection's token can see, for a manager adding one to the project. A provider's refusal
+    comes back as 502 with its code (unauthorized, forbidden, unreachable…); the token never does."""
+    from app.git import providers  # local: git imports the project models
+    from app.git.models import GitConnection
+
+    await _managed(db, user, ref)
+    conn = await db.get(GitConnection, connection_id)
+    if conn is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "git_connection_not_found")
+    try:
+        items, more = await providers.list_repositories(conn, q=q[:200], page=page)
+    except providers.GitProviderError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, e.code) from None
+    return RepoChoicesOut(items=[RepoChoiceOut(path=i.path, url=i.url, default_branch=i.default_branch) for i in items],
+                          more=more)
 
 
 @router.get("/{ref}/repositories")
