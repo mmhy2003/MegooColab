@@ -244,7 +244,12 @@ async def _handle(
         path, number, sha = _about(conn, payload)
         for task_id in await service.rows_for_delivery(db, conn, path, number, sha):
             await service.queue_refresh(db, task_id)
-        await activity.record(db, conn, events.parse_delivery(GitKind(conn.kind), request.headers, payload), repo=repo)
+        try:  # the task's Activity never costs the delivery (a 500 makes hosts retry, then disable the hook)
+            async with db.begin_nested():
+                await activity.record(db, conn, events.parse_delivery(GitKind(conn.kind), request.headers, payload),
+                                      repo=repo)
+        except Exception:
+            log.exception("git: recording a delivery on the task's Activity failed")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

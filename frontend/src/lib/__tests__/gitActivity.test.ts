@@ -23,10 +23,13 @@ describe("describeGitEvent", () => {
     });
     const review = (verdict: string) => line("git.reviewed", { verdict, excerpt: "Two things", url: "https://github.com/r/9", comments: 2,
       first: { file: "src/a.py", line: 88, excerpt: "Add a delay" } });
-    expect(review("approved")).toMatchObject({ icon: "approved", text: "approved PR #42", quote: "Two things", where: "src/a.py:88", detail: "2 comments" });
+    // a summary is quoted alone; the place goes with the line comment's own words
+    expect(review("approved")).toMatchObject({ icon: "approved", text: "approved PR #42", quote: "Two things", where: null, detail: "2 comments" });
     expect(review("changes_requested")).toMatchObject({ icon: "changes", text: "requested changes on PR #42" });
     expect(review("commented")).toMatchObject({ icon: "reviewed", text: "reviewed PR #42" });
-    expect(line("git.reviewed", { verdict: "commented", excerpt: "", comments: 1, first: { file: "a", line: 1, excerpt: "Only this" } })?.quote).toBe("Only this");
+    expect(line("git.reviewed", { verdict: "commented", excerpt: "", comments: 1, first: { file: "a", line: 1, excerpt: "Only this" } })).toMatchObject({
+      quote: "Only this", where: "a:1",
+    });
     expect(line("git.checks", { actor: null, result: "passed" })).toMatchObject({ icon: "checks-passed", lead: null, text: "Checks passed on PR #42" });
     expect(line("git.checks", { actor: null, result: "failed" })).toMatchObject({ icon: "checks-failed", text: "Checks failed on PR #42" });
     expect(line("git.pr_merged", {})).toMatchObject({ icon: "merged", lead: "mo", text: "merged PR #42" });

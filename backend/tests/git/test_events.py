@@ -134,3 +134,24 @@ def test_odd_payloads_parse_to_nothing():
                           "commits": [{"message": 5}, "y"]})
     assert odd.data["titles"] == [] and odd.data["commits"] == 2
     assert parse_delivery(GitKind.gitlab, {}, {"object_kind": "push"}) == []
+
+
+def test_gitea_reviews_by_their_event_header():
+    """Gitea's X-Gitea-Event names a review pull_request_approved / _rejected / _comment (X-Gitea-Event-Type carries
+    the pull_request_review_* form)."""
+    sender = {"login": "rev"}
+    review = {"pull_request": PR, "repository": REPO, "sender": sender, "review": {"content": "Fix it"}}
+    got = {ev: parse_delivery(GitKind.gitea, {"x-gitea-event": ev}, review)[0].data["verdict"]
+           for ev in ("pull_request_approved", "pull_request_rejected", "pull_request_comment")}
+    assert got == {"pull_request_approved": "approved", "pull_request_rejected": "changes_requested",
+                   "pull_request_comment": "commented"}
+
+
+def test_gitlab_note_edits_and_system_notes_are_nothing():
+    base = {"merge_request": {"iid": 3, "source_branch": "megoo/PAY-7-x"}, "project": {"path_with_namespace": "g/p"},
+            "user": {"name": "Mo", "username": "mo"}}
+    note = {"noteable_type": "MergeRequest", "note": "x", "url": "https://lab/n/1"}
+    gl = lambda attrs: parse_delivery(GitKind.gitlab, {"x-gitlab-event": "Note Hook"}, {**base, "object_attributes": attrs})
+    assert len(gl({**note, "action": "create"})) == 1 and len(gl(note)) == 1
+    assert gl({**note, "action": "update"}) == []
+    assert gl({**note, "system": True}) == []

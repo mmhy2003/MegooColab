@@ -263,3 +263,78 @@ async def test_one_merge_line_whichever_comes_first(client, db):
     await _add(task, "git.pr_closed", {"pr": {"number": 3, "url": "https://github.com/acme/pay/pull/3"}}, 9)
     await _add(task, "pr.closed", {"url": "https://github.com/acme/pay/pull/3", "kind": "main"}, 8)  # then the poll
     assert [k for k in await _feed(client) if "closed" in k] == ["pr.closed", "git.pr_closed"]
+
+
+# -- the final review's findings ---------------------------------------------------------------------------------
+
+
+async def test_a_task_number_too_large_is_ignored(client, db):
+    _, repo, task, _ = await _world(client, db)
+    await _send(client, repo, "push", _push(branch="megoo/PAY-99999999999-x"))
+    assert await _git(task.id) == []
+
+
+async def test_a_failure_writing_activity_never_fails_the_delivery(client, db, monkeypatch):
+    from app.git import activity
+    from app.jobs.models import Job
+
+    conn, repo, task, _ = await _world(client, db)
+    async with SessionLocal() as s:
+        s.add(TaskPullRequest(task_id=task.id, url=PR["html_url"], connection_id=conn.id, state="open"))
+        await s.commit()
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(activity, "record", broken)
+    await _send(client, repo, "pull_request", _pr("closed", merged=True))  # 204, asserted in _send
+    async with SessionLocal() as s:  # the refresh it asked for is still queued
+        assert (await s.execute(select(Job.id).where(Job.kind == "git.pr_refresh"))).first() is not None
+
+
+async def test_one_repository_in_two_projects_records_once(client, db):
+    conn, repo, task, _ = await _world(client, db)
+    await make_project(client, db, "WEB")
+    async with SessionLocal() as s:
+        web = (await s.execute(select(Project).where(Project.key == "WEB"))).scalar_one()
+        twin = ProjectRepository(project_id=web.id, name="acme/pay", url=f"{BASE}/acme/pay", provider="github",
+                                 connection_id=conn.id, webhook_secret_enc=encrypt(SECRET))
+        s.add(twin)
+        await s.commit()
+    await _send(client, repo, "push", _push())
+    await _send(client, twin, "push", _push())  # the host delivers the same push to both projects' webhooks
+    assert len(await _git(task.id)) == 1
+
+
+async def test_a_review_waits_for_its_line_comment_in_flight(client, db):
+    """GitHub sends a review and its line comments at the same moment: the second delivery waits for the first
+    (a lock on the task), so it folds into that entry rather than making its own."""
+    import asyncio
+
+    from app.git import activity, events
+    from app.git.models import GitKind
+
+    conn, repo, task, _ = await _world(client, db)
+    gh = lambda event, payload: events.parse_delivery(GitKind.github, {"x-github-event": event}, payload)
+    comment = gh("pull_request_review_comment", {
+        "action": "created", "repository": REPO, "sender": {"login": "rev"}, "pull_request": PR,
+        "comment": {"pull_request_review_id": 9, "path": "src/a.py", "line": 1, "body": "c1", "html_url": f"{BASE}/c/1"}})
+    review = gh("pull_request_review", {
+        "action": "submitted", "repository": REPO, "sender": {"login": "rev"}, "pull_request": PR,
+        "review": {"id": 9, "state": "changes_requested", "body": "Two things"}})
+    async with SessionLocal() as first, SessionLocal() as second:
+        await activity.record(first, await first.get(GitConnection, conn.id), comment,
+                              repo=await first.get(ProjectRepository, repo.id))  # in flight: not committed yet
+
+        async def other():
+            await activity.record(second, await second.get(GitConnection, conn.id), review,
+                                  repo=await second.get(ProjectRepository, repo.id))
+            await second.commit()
+
+        waiting = asyncio.create_task(other())
+        await asyncio.sleep(0.5)
+        await first.commit()
+        await asyncio.wait_for(waiting, 10)
+    reviews = [e for e in await _git(task.id) if e.kind == "git.reviewed"]
+    assert len(reviews) == 1
+    assert (reviews[0].data["verdict"], reviews[0].data["comments"]) == ("changes_requested", 1)

@@ -42,3 +42,14 @@ async def test_activity_looks_back_30_days(client, db, world):
     await db.commit()
     await login(client, world.viewer)
     assert (await dash(client))["activity"] == []
+
+
+async def test_activity_leaves_out_pull_request_traffic(client, db, world):
+    """Pushes, comments, checks and the pull request's bare state changes belong to the task's own Activity; on the
+    dashboard they would push everything else out."""
+    task = await add_task(db, world.pay)
+    for kind in ("created", "git.pushed", "git.commented", "git.checks", "pr.status"):
+        db.add(TaskEvent(task_id=task.id, kind=kind, data={}, actor_user_id=world.viewer.id if kind == "created" else None))
+        await db.commit()
+    await login(client, world.viewer)
+    assert [r["kind"] for r in (await dash(client))["activity"]] == ["created"]

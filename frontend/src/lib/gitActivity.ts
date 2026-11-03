@@ -95,9 +95,11 @@ export function describeGitEvent(kind: string, data: Data): GitLine | null {
       const verdict = VERDICT[data.verdict as keyof typeof VERDICT] ?? VERDICT.commented;
       const first = obj(data.first);
       const count = num(data.comments) ?? 0;
+      // the summary is quoted on its own; without one, the first line comment's words with their place
+      const summary = str(data.excerpt);
       return {
         ...base, icon: verdict.icon, text: `${verdict.text} ${prRef}`, href: safe(data.url) ?? prUrl,
-        quote: str(data.excerpt) ?? str(first.excerpt), where: place(first),
+        quote: summary ?? str(first.excerpt), where: summary ? null : place(first),
         detail: count ? `${count} comment${count === 1 ? "" : "s"}` : null,
       };
     }

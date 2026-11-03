@@ -11,6 +11,8 @@ from app.git.models import GitKind
 EXCERPT = 280
 TITLES = 3
 _ZEROS = re.compile(r"^0+$")
+_GITEA_REVIEWS = {"pull_request_approved": "approved", "pull_request_rejected": "changes_requested",
+                  "pull_request_comment": "commented"}
 
 
 @dataclass(frozen=True)
@@ -125,11 +127,10 @@ def _github_like(kind: GitKind, event: str, p: dict) -> list[GitEvent]:
                 "line": _int(comment.get("line")) or _int(comment.get("original_line")),
                 "excerpt": excerpt(comment.get("body")), "url": _str(comment.get("html_url"))}
         return [GitEvent("git.review_comment", path, number, branch, actor, data)]
-    if kind == GitKind.gitea and event.startswith("pull_request_review_") and number and actor:
-        verdict = {"approved": "approved", "rejected": "changes_requested", "comment": "commented"}.get(
-            event.removeprefix("pull_request_review_"))
-        if verdict is None:
-            return []
+    # Gitea's X-Gitea-Event names a review pull_request_approved / _rejected / _comment; X-Gitea-Event-Type (and
+    # older docs) say pull_request_review_*: both are read
+    verdict = _GITEA_REVIEWS.get(event.replace("pull_request_review_", "pull_request_"))
+    if kind == GitKind.gitea and verdict and number and actor:
         data = {"review_id": None, "verdict": verdict, "excerpt": excerpt(_dict(p.get("review")).get("content")),
                 "url": _str(pr.get("html_url"))}
         return [GitEvent("git.reviewed", path, number, branch, actor, data)]
@@ -190,7 +191,9 @@ def _gitlab(event: str, p: dict) -> list[GitEvent]:
             data = {"review_id": None, "verdict": "approved", "excerpt": "", "url": url}
             return [GitEvent("git.reviewed", path, number, branch, actor, data)]
         return []
-    if event == "Note Hook" and attrs.get("noteable_type") == "MergeRequest":
+    # a note edited (newer GitLab sends those too) or written by GitLab itself is not a new comment
+    is_new = attrs.get("action") in (None, "create") and attrs.get("system") is not True
+    if event == "Note Hook" and attrs.get("noteable_type") == "MergeRequest" and is_new:
         mr = _dict(p.get("merge_request"))
         number = _int(mr.get("iid"))
         if number is None:

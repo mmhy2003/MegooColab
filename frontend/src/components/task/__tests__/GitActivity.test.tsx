@@ -31,7 +31,7 @@ describe("ActivityThread: the pull request's events", () => {
     expect(within(rows[0]).getByText("laptop-claude")).toHaveAttribute("title", "mo on GitHub");
     expect(rows[1]).toHaveTextContent("opened PR #42 · megoo/PAY-7-retries → main");
     expect(rows[2]).toHaveTextContent("rev requested changes on PR #42");
-    expect(rows[2]).toHaveTextContent("src/a.py:88");
+    expect(rows[2]).not.toHaveTextContent("src/a.py:88"); // the summary is quoted, not the line comment
     expect(rows[2]).toHaveTextContent("2 comments");
     expect(within(rows[2]).getByText("<script>alert(1)</script>")).toBeInTheDocument();
     expect(within(rows[2]).queryByText("agent")).toBeNull();

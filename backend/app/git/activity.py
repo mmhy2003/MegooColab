@@ -7,6 +7,7 @@ import re
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import AgentRun, RunStatus
@@ -19,7 +20,7 @@ from app.projects.models import Project, ProjectRepository
 from app.tasks.models import Task, TaskEvent
 
 AGENT_WINDOW = timedelta(minutes=5)
-_TASK_BRANCH = re.compile(r"^megoo/([A-Za-z][A-Za-z0-9]{1,9}-\d+)(?:-|$)")
+_TASK_BRANCH = re.compile(r"^megoo/([A-Za-z][A-Za-z0-9]{1,9}-\d{1,9})(?:-|$)")
 _PR_KINDS = ("git.pr_opened", "git.pr_merged", "git.pr_closed")
 
 
@@ -93,9 +94,10 @@ async def _review_entry(db: AsyncSession, task: Task, review_id: str | None) -> 
 
 async def record(db: AsyncSession, conn: GitConnection, events: list[GitEvent], *, repo: ProjectRepository | None) -> int:
     """Writes each event its task's Activity shows; returns how many entries were written or updated. Through a
-    repository's own address, events about another repository are dropped."""
+    repository's own address, only that repository's events reach only its project's tasks (the same repository in
+    two projects has two webhooks, each delivering every event)."""
     # local: the workflow imports the git modules
-    from app.workflow.engine import record_workflow_event
+    from app.workflow.engine import lock_task_row, record_workflow_event
 
     own = providers.repo_path(repo.url) if repo is not None else None
     written = 0
@@ -113,8 +115,16 @@ async def record(db: AsyncSession, conn: GitConnection, events: list[GitEvent], 
         if task is None and ev.number is not None:
             tracked = await _tracked(db, conn, ev.path, ev.number)
             task = None if tracked is None else await db.get(Task, tracked.task_id)
-        if task is None:
+        if task is None or (repo is not None and task.project_id != repo.project_id):
             continue
+        # one delivery at a time per task: a review and its line comments arrive together
+        if not await lock_task_row(db, task.id):
+            continue
+        link = None if ev.number is None else (
+            await db.execute(select(GitPrLink).where(
+                GitPrLink.connection_id == conn.id, GitPrLink.path == ev.path, GitPrLink.number == ev.number,
+            ).execution_options(populate_existing=True))
+        ).scalar_one_or_none()
 
         pr = None
         if ev.number is not None:
@@ -125,13 +135,16 @@ async def record(db: AsyncSession, conn: GitConnection, events: list[GitEvent], 
                 tracked = tracked or await _tracked(db, conn, ev.path, ev.number)
                 url = tracked.url if tracked is not None else None
             pr = {"number": ev.number, "url": url}
+            closing = ev.kind in ("git.pr_merged", "git.pr_closed")
             if ev.kind == "git.pr_opened" or (by_branch and link is None):
-                link = link or GitPrLink(connection_id=conn.id, path=ev.path, number=ev.number, task_id=task.id)
-                link.task_id, link.open = task.id, True
-                link.url = link.url or pr["url"]
-                link.head_branch = ev.branch or link.head_branch
-                db.add(link)
-            if ev.kind in ("git.pr_merged", "git.pr_closed") and link is not None:
+                values = {"task_id": task.id, "open": not closing, "url": (link.url if link else None) or pr["url"],
+                          "head_branch": ev.branch or (link.head_branch if link else None)}
+                await db.execute(
+                    pg_insert(GitPrLink)
+                    .values(connection_id=conn.id, path=ev.path, number=ev.number, **values)
+                    .on_conflict_do_update(index_elements=["connection_id", "path", "number"], set_=values)
+                )
+            elif closing and link is not None:
                 link.open = False
             await db.flush()
         elif ev.kind == "git.pushed":
