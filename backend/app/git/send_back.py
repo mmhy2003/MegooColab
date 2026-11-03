@@ -44,7 +44,7 @@ def _same(a: str | None, b: str | None) -> bool:
 async def consider(db: AsyncSession, task: Task, trigger: Trigger) -> str:
     """Send the task back for this trigger, escalate when the rounds are used up, or ignore it (and say why)."""
     from app.workflow import engine  # local: the workflow imports the git modules
-    from app.workflow.models import Needs, RunRole, Stage, WorkflowStatus
+    from app.workflow.models import Needs, WorkflowStatus
 
     project = await db.get(Project, task.project_id)
     if project is None or not project.send_back_on_changes_requested:
@@ -58,6 +58,15 @@ async def consider(db: AsyncSession, task: Task, trigger: Trigger) -> str:
         return "ignored:other_pr"
     if task.assignee_agent_id is None or await engine.active_run(db, task.id) is not None:
         return "ignored:cannot_run"  # no agent to send it back to, or a run still on its way out
+    return await send_back_now(db, wf, task, trigger)
+
+
+async def send_back_now(db: AsyncSession, wf, task: Task, trigger: Trigger) -> str:
+    """Send the task back to its agent for this trigger, or escalate when the rounds are used up. The caller holds
+    the workflow lock and has checked that the task can be sent back (piece 4's agent review calls this directly)."""
+    from app.workflow import engine  # local: the workflow imports the git modules
+    from app.workflow.models import RunRole, Stage
+
     if not _same(wf.pr_fix_pr_url, wf.pr_url):  # a new pull request: its rounds start again
         wf.pr_fix_rounds, wf.pr_fix_pr_url = 0, wf.pr_url
     wf.pr_fix_trigger = {**asdict(trigger), "round": min(wf.pr_fix_rounds + 1, MAX_PR_FIX_ROUNDS)}
@@ -107,8 +116,8 @@ async def report_fix(db: AsyncSession, run, summary: str, tests_passed: bool) ->
 
 
 async def _handle_pr_fix(db: AsyncSession, wf, task: Task, run) -> None:
-    """The fix run ended: pushed with passing tests, the workflow waits for the merge again; otherwise one nudge,
-    then the human decides."""
+    """The fix run ended: pushed with passing tests, the workflow waits for the merge again (with an agent's review,
+    the reviewer reviews again); otherwise one nudge, then the human decides."""
     from app.git import service as git  # local: service imports the workflow
     from app.workflow import engine, finish
     from app.workflow.models import Needs, Stage
@@ -123,7 +132,10 @@ async def _handle_pr_fix(db: AsyncSession, wf, task: Task, run) -> None:
             "of": MAX_PR_FIX_ROUNDS, "summary": result.get("summary") or "",
         })
         await engine.wait_for(db, wf, Needs.human_code_review)
-        await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))
+        if not await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):
+            from app.git import agent_review  # local: agent_review imports this module
+
+            await agent_review.review_if_agent(db, wf, task)
         return
     if not wf.nudged:
         wf.nudged = True

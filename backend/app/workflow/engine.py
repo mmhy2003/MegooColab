@@ -527,9 +527,14 @@ async def rerun(
     if resume_kind is None:
         carried = last.resume_prompt if last is not None and last.status != RunStatus.completed else None
         text = carried or CONTINUE_TEXT
+    # a review run (piece 4) runs again on the project's reviewer, when that is another agent than the task's
+    other = None
+    if role == RunRole.pr_review:
+        reviewer = (await db.get(Project, task.project_id)).pr_reviewer_agent_id
+        other = reviewer if reviewer not in (None, task.assignee_agent_id) else None
     return await enqueue(
         db, wf, task, role, step=step, resume_kind=resume_kind, payload=payload, requested_by=requested_by,
-        resume_prompt=text,
+        resume_prompt=text, agent_id=other,
     )
 
 

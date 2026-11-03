@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent_runs.models import AgentRun, RunStatus
 from app.agents.models import Agent
 from app.core.events import Event, publish
-from app.git import providers, send_back
+from app.git import agent_review, providers, send_back
 from app.git.events import GitEvent
 from app.git.models import GitConnection, GitKind, GitPrLink, TaskPullRequest
 from app.projects.models import Project, ProjectRepository
@@ -228,3 +228,7 @@ async def _fold_review(db: AsyncSession, task: Task, ev: GitEvent, base: dict) -
     entry.data = data  # a new dict, so the JSONB change is saved
     await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
     return data if ev.kind == "git.reviewed" and became else None
+
+
+# imported for its effect: the review run's end and its escalations get their handlers (piece 4)
+_REGISTERED = agent_review

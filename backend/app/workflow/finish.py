@@ -276,8 +276,12 @@ async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Ag
             from app.git import service as git  # local: git imports the workflow
 
             await engine.wait_for(db, wf, Needs.human_code_review)
-            # a tracked pull request merged (or closed) before this run ended moves on at once
-            await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))
+            # a tracked pull request merged (or closed) before this run ended moves on at once; else an agent reviews
+            # it when the project asks for one (piece 4)
+            if not await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):
+                from app.git import agent_review  # local: git imports the workflow
+
+                await agent_review.review_if_agent(db, wf, task)
         else:
             await finish_workflow(db, wf, task, None)
         return
