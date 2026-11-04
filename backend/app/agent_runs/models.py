@@ -30,14 +30,18 @@ class AgentRun(IdMixin, Base):
     __tablename__ = "agent_runs"
     __table_args__ = (
         Index("ix_agent_runs_agent_status", "agent_id", "status"),
-        # a run works on a task, or answers another project's question (§6.6)
-        CheckConstraint("(task_id IS NULL) <> (question_id IS NULL)", name="agent_runs_target_check"),
+        # a run works on a task, answers another project's question (§6.6), or writes a Knowledge Base draft
+        CheckConstraint(
+            "(task_id IS NOT NULL)::int + (question_id IS NOT NULL)::int + (draft_id IS NOT NULL)::int = 1",
+            name="agent_runs_target_check",
+        ),
     )
 
     task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
     question_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("a2a_questions.id", ondelete="CASCADE"), index=True
     )
+    draft_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("kb_drafts.id", ondelete="CASCADE"), index=True)
     agent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"))
     # None once the person who started it was deleted: the run stays in the task's history
     requested_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))

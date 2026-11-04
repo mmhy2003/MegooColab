@@ -11,6 +11,7 @@ from app.git import models as git_models  # noqa: F401
 from app.hub import models as hub_models  # noqa: F401
 from app.jobs import models as jobs_models  # noqa: F401
 from app.kb import models as kb_models  # noqa: F401
+from app.kb_drafts import models as kb_drafts_models  # noqa: F401
 from app.memory import models as memory_models  # noqa: F401
 from app.notifications import models as notifications_models  # noqa: F401
 from app.org import models as org_models  # noqa: F401
