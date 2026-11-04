@@ -2,11 +2,17 @@ import uuid
 
 from fastapi import APIRouter, Response, status
 
+from sqlalchemy import select
+
+from app.agents.models import Agent, AgentBinding
+from app.agents.service import owner_can_access
 from app.auth.deps import AuthedUser
+from app.images.support import runner_has
+from app.runner.registry import SECRETS_CAPABILITY
 from app.core.db import DbSession
 from app.projects.access import get_project_for, require_manage
 from app.secrets import service
-from app.secrets.schemas import SecretIn, SecretOut, SecretPatch, SecretValueIn
+from app.secrets.schemas import OutdatedAgent, SecretIn, SecretOut, SecretPatch, SecretValueIn
 
 router = APIRouter(tags=["secrets"])
 
@@ -17,6 +23,20 @@ router = APIRouter(tags=["secrets"])
 @router.get("/api/secrets")
 async def my_secrets(user: AuthedUser, db: DbSession) -> list[SecretOut]:
     return await service.list_secrets(db, user_id=user.id)
+
+
+@router.get("/api/secrets/outdated-agents")
+async def outdated_agents(user: AuthedUser, db: DbSession, project: str | None = None) -> list[OutdatedAgent]:
+    """The caller's own agents (or, with `project`, the project's agents) whose runner can't take secrets: an offline
+    machine counts by its last hello."""
+    if project:
+        p = await get_project_for(db, user, project)
+        stmt = (select(Agent).join(AgentBinding, AgentBinding.agent_id == Agent.id)
+                .where(AgentBinding.project_id == p.id, owner_can_access(p.id)))
+    else:
+        stmt = select(Agent).where(Agent.owner_id == user.id)
+    agents = (await db.execute(stmt.order_by(Agent.name))).scalars().unique().all()
+    return [OutdatedAgent(id=a.id, name=a.name) for a in agents if not await runner_has(db, a, SECRETS_CAPABILITY)]
 
 
 @router.post("/api/secrets", status_code=status.HTTP_201_CREATED)

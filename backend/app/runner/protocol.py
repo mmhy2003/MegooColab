@@ -304,6 +304,13 @@ class RunDraft(BaseModel):
     id: uuid.UUID
 
 
+class RunSecret(BaseModel):
+    """A secret for the agent's environment (capability secrets/1). Never logged, never stored by the runner."""
+
+    name: str
+    value: str
+
+
 class RunStart(BaseModel):
     type: Literal["run_start"] = "run_start"
     run_id: uuid.UUID
@@ -327,6 +334,8 @@ class RunStart(BaseModel):
     branch: RunBranch | None = None
     # only for a Knowledge Base draft run, to a runner with drafts/1
     draft: RunDraft | None = None
+    # only to a runner with secrets/1: the agent owner's and the project's secrets
+    secrets: list[RunSecret] = []
 
     @field_validator("files")
     @classmethod

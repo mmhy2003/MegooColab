@@ -2848,6 +2848,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/secrets/outdated-agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Outdated Agents
+         * @description The caller's own agents (or, with `project`, the project's agents) whose runner can't take secrets: an offline
+         *     machine counts by its last hello.
+         */
+        get: operations["outdated_agents_api_secrets_outdated_agents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/secrets/{secret_id}": {
         parameters: {
             query?: never;
@@ -6106,6 +6127,16 @@ export interface components {
         };
         /** OrgOut */
         OrgOut: {
+            /** Name */
+            name: string;
+        };
+        /** OutdatedAgent */
+        OutdatedAgent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Name */
             name: string;
         };
@@ -14595,6 +14626,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SecretOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    outdated_agents_api_secrets_outdated_agents_get: {
+        parameters: {
+            query?: {
+                project?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutdatedAgent"][];
                 };
             };
             /** @description Validation Error */

@@ -31,6 +31,9 @@ IMAGES_CAPABILITY = "images/1"
 # a run start may name a Knowledge Base draft (run_start.draft); its agent works in a folder kept for
 # the draft, removed on draft_done
 DRAFTS_CAPABILITY = "drafts/1"
+# a run start may carry secrets (run_start.secrets): the runner sets them on the agent's process and blanks their values
+# out of everything it sends back
+SECRETS_CAPABILITY = "secrets/1"
 
 
 class RunnerClosed(Exception):
