@@ -63,12 +63,37 @@ def refuse_run_token() -> None:
         raise ToolError("not_allowed_in_role")
 
 
-async def require_run_task(db: AsyncSession, key: str) -> None:
+async def _cron_project_key(db: AsyncSession, run: AgentRun) -> str | None:
+    from app.crons.models import Cron, CronRun  # local: crons imports the agent runs
+
+    return await db.scalar(
+        select(Project.key).join(Cron, Cron.project_id == Project.id).join(CronRun, CronRun.cron_id == Cron.id)
+        .where(CronRun.id == run.cron_run_id)
+    )
+
+
+async def require_cron_reading(db: AsyncSession, project_key: str) -> None:
+    """Reading a project's tasks: a personal token may; a run token only for a cron's run, of its own project."""
+    run = current_run.get()
+    if run is None:
+        return
+    if run.cron_run_id is None or not isinstance(project_key, str):
+        raise ToolError("not_allowed_in_role")
+    if (await _cron_project_key(db, run) or "").upper() != project_key.strip().upper():
+        raise ToolError("not_allowed_in_role")
+
+
+async def require_run_task(db: AsyncSession, key: str, *, reading: bool = False) -> None:
     """With a run token, `key` must name the run's own task (wrong_task). Checked before the key is looked up,
     so a run token never touches, or learns anything about, another task."""
     run = current_run.get()
     if run is None:
         return
+    if run.cron_run_id is not None and reading and isinstance(key, str):
+        # a cron's run reads its own project's tasks (to check what is already known), never writes them
+        project_key = await _cron_project_key(db, run)
+        if project_key and key.strip().upper().startswith(project_key.upper() + "-"):
+            return
     if run.task_id is None:  # an answering run works on a question, a draft run on its draft: never on a task
         raise ToolError("not_allowed_in_role")
     task = await db.get(Task, run.task_id)
