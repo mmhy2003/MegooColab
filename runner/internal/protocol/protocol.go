@@ -77,6 +77,10 @@ const CapabilityImages = "images/1"
 // it on draft_done.
 const CapabilityDrafts = "drafts/1"
 
+// CapabilitySecrets is advertised in every hello: the runner takes run_start.secrets, sets them on the agent's
+// process, and blanks their values out of everything it reports.
+const CapabilitySecrets = "secrets/1"
+
 // Outcomes of a run_steer.
 const (
 	SteerInjected    = "injected"    // the agent has it, in its running turn
@@ -228,6 +232,15 @@ type RunStart struct {
 
 	// Only a Knowledge Base draft's run (capability drafts/1).
 	Draft *RunDraft `json:"draft,omitempty"`
+
+	// The agent owner's and the project's secrets (capability secrets/1): never logged or written to disk.
+	Secrets []RunSecret `json:"secrets,omitempty"`
+}
+
+// RunSecret is one environment variable for the agent.
+type RunSecret struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // RunDraft names the Knowledge Base draft a run writes.
@@ -285,7 +298,7 @@ func NewHello(version, os, arch string, agents []AgentAvailability) Hello {
 		}
 		out[i] = a
 	}
-	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages, CapabilityDrafts}}
+	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages, CapabilityDrafts, CapabilitySecrets}}
 }
 
 // NewHeartbeat builds a heartbeat.

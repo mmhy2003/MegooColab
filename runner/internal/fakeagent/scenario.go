@@ -10,6 +10,7 @@ import (
 // Step is one scripted action. Exactly one field is set.
 type Step struct {
 	Say         *string     `json:"say,omitempty"`
+	SayEnv      *string     `json:"say_env,omitempty"` // says the value of this environment variable (tests)
 	Plan        [][]string  `json:"plan,omitempty"`
 	Tool        *ToolStep   `json:"tool,omitempty"`
 	Write       *FileStep   `json:"write,omitempty"`
@@ -86,6 +87,8 @@ func (s Step) typeName() string {
 	switch {
 	case s.Say != nil:
 		return "say"
+	case s.SayEnv != nil:
+		return "say_env"
 	case s.Plan != nil:
 		return "plan"
 	case s.Tool != nil:

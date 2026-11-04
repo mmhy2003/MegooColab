@@ -321,6 +321,10 @@ func (a *fakeAgent) run(ctx context.Context, sid acp.SessionId, st Step) error {
 		a.mu.Lock()
 		a.history = append(a.history, histMsg{Role: "agent", Text: *st.Say})
 		a.mu.Unlock()
+	case st.SayEnv != nil:
+		if err := a.update(ctx, sid, acp.UpdateAgentMessageText(os.Getenv(*st.SayEnv))); err != nil {
+			return err
+		}
 	case st.Plan != nil:
 		entries := make([]acp.PlanEntry, 0, len(st.Plan))
 		for _, e := range st.Plan {
