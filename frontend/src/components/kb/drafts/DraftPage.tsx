@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { DraftConversation } from "@/components/kb/drafts/DraftConversation";
 import { DraftView } from "@/components/kb/drafts/DraftView";
+import { DiscardDraftButton, SaveDraftDialog } from "@/components/kb/drafts/SaveDraftDialog";
 import { MarkdownField } from "@/components/kb/MarkdownField";
 import { NotFoundView } from "@/components/shell/NotFound";
 import { Button } from "@/components/ui/Button";
@@ -20,7 +21,7 @@ type Pane = "draft" | "conversation";
 
 /** Writing a Knowledge Base document with an agent: the draft beside the conversation (tabs on a phone). Nothing
  * reaches the Knowledge Base until Save to KB. */
-export function DraftPage({ draftId, actions }: { draftId: string; actions?: (draft: KbDraft) => React.ReactNode }) {
+export function DraftPage({ draftId }: { draftId: string }) {
   const client = useQueryClient();
   const query = useKbDraft(draftId);
   const { ask, dialog } = useConfirm();
@@ -30,6 +31,7 @@ export function DraftPage({ draftId, actions }: { draftId: string; actions?: (dr
   const [title, setTitle] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pickAgent, setPickAgent] = useState(false);
+  const [saving, setSaving] = useState(false);
   const draft = query.data;
   usePageTitle(draft ? draftTitle(draft.title) : null, "Knowledge Base");
   useUnsavedGuard(editing !== null && editing !== draft?.body_md, ask);
@@ -154,7 +156,12 @@ export function DraftPage({ draftId, actions }: { draftId: string; actions?: (dr
             </Button>
           </span>
         )}
-        {actions?.(draft)}
+        <span className="flex flex-wrap gap-2">
+          <Button disabled={busy || editing !== null} onClick={() => setSaving(true)}>
+            Save to KB…
+          </Button>
+          <DiscardDraftButton draft={draft} />
+        </span>
       </header>
       {error && (
         <p role="alert" className="text-sm text-pink">
@@ -173,6 +180,7 @@ export function DraftPage({ draftId, actions }: { draftId: string; actions?: (dr
         <div className={pane === "draft" ? "min-w-0" : "hidden min-w-0 lg:block"}>{draftPane}</div>
         <div className={pane === "conversation" ? "min-w-0" : "hidden min-w-0 lg:block"}>{conversationPane}</div>
       </div>
+      {saving && <SaveDraftDialog draft={draft} open onClose={() => setSaving(false)} />}
       {dialog}
     </div>
   );
