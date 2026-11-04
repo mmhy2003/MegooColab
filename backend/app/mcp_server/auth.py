@@ -5,6 +5,7 @@ A run token (`mgr_`, AGT-33) authenticates as the agent's owner, but only for it
 role (not_allowed_in_role); tools that act across tasks refuse it outright."""
 
 import contextlib
+import json
 import contextvars
 import uuid
 from collections.abc import AsyncIterator
@@ -15,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.agent_runs.models import AgentRun, RunStatus
 from app.agent_runs.tokens import RUN_TOKEN_PREFIX, resolve_run_token
@@ -94,6 +95,54 @@ async def live_run(db: AsyncSession, task: Task) -> AgentRun:
     return run
 
 
+async def _blanked_receive(run: AgentRun, receive: Receive) -> Receive:
+    """The request read whole, with the run's secret values blanked out of every tools/call's arguments, replayed to
+    the app. A body larger than the MCP server takes is passed on as it is: the server refuses it anyway."""
+    from app.mcp_server.server import MAX_REQUEST_BYTES  # local: the server imports this module
+    from app.secrets.blanking import blank_json
+    from app.secrets.delivery import values_for_run
+
+    chunks: list[bytes] = []
+    size, more = 0, True
+    while more:
+        message = await receive()
+        if message["type"] != "http.request":  # the client went away: hand that on
+            return _replay([message])
+        chunks.append(message.get("body", b""))
+        size += len(chunks[-1])
+        more = message.get("more_body", False)
+        if size > MAX_REQUEST_BYTES:
+            return _replay([{"type": "http.request", "body": b"".join(chunks), "more_body": more}], receive)
+    body = b"".join(chunks)
+    async with SessionLocal() as db:
+        secrets = await values_for_run(db, run)
+    if secrets:
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            payload = None
+        calls = payload if isinstance(payload, list) else [payload]
+        changed = False
+        for call in calls:
+            if isinstance(call, dict) and call.get("method") == "tools/call" and isinstance(call.get("params"), dict):
+                call["params"]["arguments"] = blank_json(call["params"].get("arguments") or {}, secrets)
+                changed = True
+        if changed:
+            body = json.dumps(payload).encode()
+    return _replay([{"type": "http.request", "body": body, "more_body": False}])
+
+
+def _replay(messages: list[Message], then: Receive | None = None) -> Receive:
+    async def receive() -> Message:
+        if messages:
+            return messages.pop(0)
+        if then is not None:
+            return await then()
+        return {"type": "http.disconnect"}
+
+    return receive
+
+
 class McpBearerAuth:
     """Resolves `Authorization: Bearer <mcp-scope token or run token>`; anything else is 401 invalid_token."""
 
@@ -126,6 +175,8 @@ class McpBearerAuth:
             )
             await response(scope, receive, send)
             return
+        if run is not None:  # a run's secret values never reach what its tool calls store
+            receive = await _blanked_receive(run, receive)
         reset = current_mcp_user_id.set(user_id)
         reset_run = current_run.set(run)
         try:
