@@ -53,7 +53,7 @@ describe("project layout", () => {
   it("Questions is last with sprints off too", async () => {
     show(false);
     const nav = await screen.findByRole("navigation", { name: "Project" });
-    expect(within(nav).getAllByRole("link").map((l) => l.textContent?.replace(/\d+$/, ""))).toEqual(["Board", "Chats", "Settings", "Questions"]);
+    expect(within(nav).getAllByRole("link").map((l) => l.textContent?.replace(/\d+$/, ""))).toEqual(["Board", "Chats", "Crons", "Settings", "Questions"]);
   });
 
   it("from md up the Incoming questions link stays where it is", async () => {
