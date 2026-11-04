@@ -2,11 +2,12 @@ package jobs
 
 import (
 	"io"
-	"strings"
 	"sync"
+
+	"github.com/mmhy2003/megoocolab/runner/internal/mask"
 )
 
-const redacted = "[redacted]"
+const redacted = mask.Redacted
 
 // redactor is the run log's writer: it replaces the run's MCP token with
 // [redacted], even when the adapter's output splits the token across writes.
@@ -15,17 +16,17 @@ const redacted = "[redacted]"
 type redactor struct {
 	mu      sync.Mutex
 	w       io.Writer
-	secret  string
+	masks   mask.Set
 	pending string
 }
 
-func newRedactor(w io.Writer, secret string) *redactor { return &redactor{w: w, secret: secret} }
+func newRedactor(w io.Writer, masks mask.Set) *redactor { return &redactor{w: w, masks: masks} }
 
 func (r *redactor) Write(p []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := strings.ReplaceAll(r.pending+string(p), r.secret, redacted)
-	keep := heldBack(s, r.secret)
+	s := r.masks.Replace(r.pending + string(p))
+	keep := r.masks.HeldBack(s)
 	r.pending = s[len(s)-keep:]
 	if _, err := io.WriteString(r.w, s[:len(s)-keep]); err != nil {
 		return 0, err
@@ -43,48 +44,38 @@ func (r *redactor) Close() error {
 	return err
 }
 
-// heldBack is the length of the longest suffix of s that is a proper prefix of secret.
-func heldBack(s, secret string) int {
-	for n := min(len(s), len(secret)-1); n > 0; n-- {
-		if strings.HasSuffix(s, secret[:n]) {
-			return n
-		}
-	}
-	return 0
-}
-
 // redactMap returns a copy of data with the secret replaced in every string,
 // however deep (plan entries are lists of maps).
-func redactMap(data map[string]any, secret string) map[string]any {
+func redactMap(data map[string]any, masks mask.Set) map[string]any {
 	out := make(map[string]any, len(data))
 	for k, v := range data {
-		out[k] = redactValue(v, secret)
+		out[k] = redactValue(v, masks)
 	}
 	return out
 }
 
-func redactValue(v any, secret string) any {
+func redactValue(v any, masks mask.Set) any {
 	switch x := v.(type) {
 	case string:
-		return strings.ReplaceAll(x, secret, redacted)
+		return masks.Replace(x)
 	case map[string]any:
-		return redactMap(x, secret)
+		return redactMap(x, masks)
 	case []map[string]any:
 		out := make([]map[string]any, len(x))
 		for i, m := range x {
-			out[i] = redactMap(m, secret)
+			out[i] = redactMap(m, masks)
 		}
 		return out
 	case []any:
 		out := make([]any, len(x))
 		for i, e := range x {
-			out[i] = redactValue(e, secret)
+			out[i] = redactValue(e, masks)
 		}
 		return out
 	case []string:
 		out := make([]string, len(x))
 		for i, e := range x {
-			out[i] = strings.ReplaceAll(e, secret, redacted)
+			out[i] = masks.Replace(e)
 		}
 		return out
 	}
@@ -104,11 +95,11 @@ func releaseTail(held string) string {
 // through the redactor only: they always reach the file. The adapter's stderr
 // is redacted first and capped after, so the cap can never cut a token open.
 // closeAll releases what the redactors hold; call it before closing the file.
-func logWriters(file io.Writer, limit int, secret string) (runner, stderr io.Writer, closeAll func()) {
+func logWriters(file io.Writer, limit int, masks mask.Set) (runner, stderr io.Writer, closeAll func()) {
 	capped := &cappedWriter{w: file, left: limit}
-	if secret == "" {
+	if masks.Empty() {
 		return file, capped, func() {}
 	}
-	rl, re := newRedactor(file, secret), newRedactor(capped, secret)
+	rl, re := newRedactor(file, masks), newRedactor(capped, masks)
 	return rl, re, func() { _ = re.Close(); _ = rl.Close() }
 }

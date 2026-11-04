@@ -34,14 +34,26 @@ type meta struct {
 	Repo string `json:"repo"`
 }
 
-func root(cacheRoot string) string { return filepath.Join(cacheRoot, "drafts") }
+// Kinds of kept folders: a Knowledge Base draft's, and a cron's (a cron keeps its worktree between runs).
+const (
+	Drafts = "drafts"
+	Crons  = "crons"
+)
+
+func folderAt(kind, cacheRoot, agentID, id string) string {
+	return filepath.Join(cacheRoot, kind, agentID, id)
+}
 
 func folder(cacheRoot, agentID, draftID string) string {
-	return filepath.Join(root(cacheRoot), agentID, draftID)
+	return folderAt(Drafts, cacheRoot, agentID, draftID)
+}
+
+func metaPathAt(kind, cacheRoot, agentID, id string) string {
+	return folderAt(kind, cacheRoot, agentID, id) + ".meta"
 }
 
 func metaPath(cacheRoot, agentID, draftID string) string {
-	return folder(cacheRoot, agentID, draftID) + ".meta"
+	return metaPathAt(Drafts, cacheRoot, agentID, draftID)
 }
 
 func check(agentID, draftID string) error {
@@ -54,10 +66,15 @@ func check(agentID, draftID string) error {
 // Ensure returns the draft's folder, making it on the first run: a detached worktree of repo at its HEAD, or an
 // empty folder when repo is "". Every call marks the draft as used now.
 func Ensure(ctx context.Context, cacheRoot, agentID, draftID, repo string) (string, error) {
+	return EnsureAt(ctx, Drafts, cacheRoot, agentID, draftID, repo)
+}
+
+// EnsureAt is Ensure for a kind of kept folder (Drafts or Crons).
+func EnsureAt(ctx context.Context, kind, cacheRoot, agentID, draftID, repo string) (string, error) {
 	if err := check(agentID, draftID); err != nil {
 		return "", err
 	}
-	dir := folder(cacheRoot, agentID, draftID)
+	dir := folderAt(kind, cacheRoot, agentID, draftID)
 	unlock, err := lockPath(ctx, dir)
 	if err != nil {
 		return "", err
@@ -67,7 +84,7 @@ func Ensure(ctx context.Context, cacheRoot, agentID, draftID, repo string) (stri
 		return "", err
 	}
 	b, _ := json.Marshal(meta{Repo: repo})
-	if err := os.WriteFile(metaPath(cacheRoot, agentID, draftID), b, 0o600); err != nil {
+	if err := os.WriteFile(metaPathAt(kind, cacheRoot, agentID, draftID), b, 0o600); err != nil {
 		return "", err
 	}
 	if repo == "" {
@@ -87,17 +104,22 @@ func Ensure(ctx context.Context, cacheRoot, agentID, draftID, repo string) (stri
 
 // Remove deletes the draft's folder and its worktree registration. Removing a draft that has none is not an error.
 func Remove(cacheRoot, agentID, draftID string) error {
+	return RemoveAt(Drafts, cacheRoot, agentID, draftID)
+}
+
+// RemoveAt is Remove for a kind of kept folder.
+func RemoveAt(kind, cacheRoot, agentID, draftID string) error {
 	if err := check(agentID, draftID); err != nil {
 		return err
 	}
-	dir := folder(cacheRoot, agentID, draftID)
+	dir := folderAt(kind, cacheRoot, agentID, draftID)
 	unlock, err := lockPath(context.Background(), dir)
 	if err != nil {
 		return err
 	}
 	defer unlock()
 	var m meta
-	if b, err := os.ReadFile(metaPath(cacheRoot, agentID, draftID)); err == nil {
+	if b, err := os.ReadFile(metaPathAt(kind, cacheRoot, agentID, draftID)); err == nil {
 		_ = json.Unmarshal(b, &m)
 	}
 	if m.Repo != "" {
@@ -106,7 +128,7 @@ func Remove(cacheRoot, agentID, draftID string) error {
 	if err := os.RemoveAll(dir); err != nil {
 		return err
 	}
-	if err := os.Remove(metaPath(cacheRoot, agentID, draftID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(metaPathAt(kind, cacheRoot, agentID, draftID)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return nil
@@ -123,8 +145,14 @@ func removeWorktree(repo, dir string) {
 // Sweep removes the folders of drafts not used for maxAge: their draft_done was missed (the runner was away when the
 // draft was saved or discarded). It returns what it could not remove.
 func Sweep(cacheRoot string, maxAge time.Duration, now time.Time) []error {
+	return SweepAt(Drafts, cacheRoot, maxAge, now)
+}
+
+// SweepAt is Sweep for a kind of kept folder.
+func SweepAt(kind, cacheRoot string, maxAge time.Duration, now time.Time) []error {
+	root := filepath.Join(cacheRoot, kind)
 	var errs []error
-	agents, err := os.ReadDir(root(cacheRoot))
+	agents, err := os.ReadDir(root)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -135,16 +163,16 @@ func Sweep(cacheRoot string, maxAge time.Duration, now time.Time) []error {
 		if !a.IsDir() {
 			continue
 		}
-		entries, err := os.ReadDir(filepath.Join(root(cacheRoot), a.Name()))
+		entries, err := os.ReadDir(filepath.Join(root, a.Name()))
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
 		for _, e := range entries {
 			draftID := e.Name()
-			last := filepath.Join(root(cacheRoot), a.Name(), draftID)
+			last := filepath.Join(root, a.Name(), draftID)
 			if !e.IsDir() {
-				if draftID, ok := strings.CutSuffix(e.Name(), ".meta"); !ok || dirExists(folder(cacheRoot, a.Name(), draftID)) {
+				if draftID, ok := strings.CutSuffix(e.Name(), ".meta"); !ok || dirExists(folderAt(kind, cacheRoot, a.Name(), draftID)) {
 					continue // a meta beside its folder is judged with the folder
 				}
 			} else if dirExists(last + ".meta") {
@@ -154,7 +182,7 @@ func Sweep(cacheRoot string, maxAge time.Duration, now time.Time) []error {
 			if err != nil || now.Sub(info.ModTime()) < maxAge {
 				continue
 			}
-			if err := Remove(cacheRoot, a.Name(), strings.TrimSuffix(draftID, ".meta")); err != nil {
+			if err := RemoveAt(kind, cacheRoot, a.Name(), strings.TrimSuffix(draftID, ".meta")); err != nil {
 				errs = append(errs, err)
 			}
 		}

@@ -4,6 +4,7 @@ from typing import Any
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
@@ -25,6 +26,11 @@ async def _project_id(db: AsyncSession, user: User, project_key: str | None):
         from app.a2a.models import Question  # local: a2a imports the MCP auth module
 
         return (await db.get(Question, run.question_id)).target_project_id
+    if run is not None and run.cron_run_id is not None:  # a cron's run: its own project's memory only
+        from app.crons.models import Cron, CronRun  # local: crons imports the MCP auth module
+
+        return await db.scalar(select(Cron.project_id).join(CronRun, CronRun.cron_id == Cron.id)
+                               .where(CronRun.id == run.cron_run_id))
     return (await get_project_for(db, user, project_key)).id if project_key else None
 
 

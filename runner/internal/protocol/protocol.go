@@ -77,6 +77,14 @@ const CapabilityImages = "images/1"
 // it on draft_done.
 const CapabilityDrafts = "drafts/1"
 
+// CapabilitySecrets is advertised in every hello: the runner takes run_start.secrets, sets them on the agent's
+// process, and blanks their values out of everything it reports.
+const CapabilitySecrets = "secrets/1"
+
+// CapabilityCrons is advertised in every hello: the runner takes run_start.cron, a project's scheduled job, and runs it
+// in the cron's own worktree, reset to the project's default branch before and after the run.
+const CapabilityCrons = "crons/1"
+
 // Outcomes of a run_steer.
 const (
 	SteerInjected    = "injected"    // the agent has it, in its running turn
@@ -228,6 +236,24 @@ type RunStart struct {
 
 	// Only a Knowledge Base draft's run (capability drafts/1).
 	Draft *RunDraft `json:"draft,omitempty"`
+
+	// The agent owner's and the project's secrets (capability secrets/1): never logged or written to disk.
+	Secrets []RunSecret `json:"secrets,omitempty"`
+
+	// Only a cron's run (capability crons/1).
+	Cron *RunCron `json:"cron,omitempty"`
+}
+
+// RunCron names the cron a run belongs to and the branch its worktree is reset to.
+type RunCron struct {
+	ID     string `json:"id"`
+	Branch string `json:"branch"`
+}
+
+// RunSecret is one environment variable for the agent.
+type RunSecret struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // RunDraft names the Knowledge Base draft a run writes.
@@ -285,7 +311,7 @@ func NewHello(version, os, arch string, agents []AgentAvailability) Hello {
 		}
 		out[i] = a
 	}
-	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages, CapabilityDrafts}}
+	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages, CapabilityDrafts, CapabilitySecrets, CapabilityCrons}}
 }
 
 // NewHeartbeat builds a heartbeat.

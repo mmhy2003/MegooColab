@@ -72,7 +72,7 @@ func (r *run) answerSteer(s protocol.RunSteer, outcome, errMsg string) {
 	if r.stale() {
 		return
 	}
-	_ = r.m.send(protocol.NewRunSteerResult(r.id, s.MessageID, outcome, truncate(errMsg, 200)))
+	_ = r.m.send(protocol.NewRunSteerResult(r.id, s.MessageID, outcome, truncate(r.blankText(errMsg), 200)))
 }
 
 func (r *run) queueSteer(s protocol.RunSteer) {

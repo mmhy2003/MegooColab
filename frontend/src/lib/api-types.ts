@@ -2830,6 +2830,275 @@ export interface paths {
         patch: operations["change_agent_api_kb_drafts__draft_id__agent_patch"];
         trace?: never;
     };
+    "/api/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Secrets */
+        get: operations["my_secrets_api_secrets_get"];
+        put?: never;
+        /** Add My Secret */
+        post: operations["add_my_secret_api_secrets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/secrets/outdated-agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Outdated Agents
+         * @description The caller's own agents (or, with `project`, the project's agents) whose runner can't take secrets: an offline
+         *     machine counts by its last hello.
+         */
+        get: operations["outdated_agents_api_secrets_outdated_agents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/secrets/{secret_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete My Secret */
+        delete: operations["delete_my_secret_api_secrets__secret_id__delete"];
+        options?: never;
+        head?: never;
+        /** Edit My Secret */
+        patch: operations["edit_my_secret_api_secrets__secret_id__patch"];
+        trace?: never;
+    };
+    "/api/secrets/{secret_id}/value": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace My Value */
+        put: operations["replace_my_value_api_secrets__secret_id__value_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Secrets */
+        get: operations["project_secrets_api_projects__ref__secrets_get"];
+        put?: never;
+        /** Add Project Secret */
+        post: operations["add_project_secret_api_projects__ref__secrets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/secrets/{secret_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Project Secret */
+        delete: operations["delete_project_secret_api_projects__ref__secrets__secret_id__delete"];
+        options?: never;
+        head?: never;
+        /** Edit Project Secret */
+        patch: operations["edit_project_secret_api_projects__ref__secrets__secret_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{ref}/secrets/{secret_id}/value": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace Project Value */
+        put: operations["replace_project_value_api_projects__ref__secrets__secret_id__value_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/crons/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview
+         * @description What a schedule means, for the editor as it is typed: never a 422, the error is in the answer.
+         */
+        post: operations["preview_api_crons_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/crons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Crons */
+        get: operations["list_crons_api_projects__ref__crons_get"];
+        put?: never;
+        /** Create Cron */
+        post: operations["create_cron_api_projects__ref__crons_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/crons/{cron_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Cron */
+        get: operations["get_cron_api_projects__ref__crons__cron_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Cron */
+        delete: operations["delete_cron_api_projects__ref__crons__cron_id__delete"];
+        options?: never;
+        head?: never;
+        /** Edit Cron */
+        patch: operations["edit_cron_api_projects__ref__crons__cron_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{ref}/crons/{cron_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Cron */
+        post: operations["pause_cron_api_projects__ref__crons__cron_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/crons/{cron_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Cron */
+        post: operations["resume_cron_api_projects__ref__crons__cron_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/crons/{cron_id}/run-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Now */
+        post: operations["run_now_api_projects__ref__crons__cron_id__run_now_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/crons/{cron_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cron Runs */
+        get: operations["cron_runs_api_projects__ref__crons__cron_id__runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/crons/{cron_id}/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cron Run */
+        get: operations["cron_run_api_projects__ref__crons__cron_id__runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/entities": {
         parameters: {
             query?: never;
@@ -4526,6 +4795,147 @@ export interface components {
             /** Secret */
             secret: string;
         };
+        /** CronIn */
+        CronIn: {
+            /** Name */
+            name: string;
+            /** Prompt */
+            prompt: string;
+            /** Schedule */
+            schedule: string;
+            /** Timezone */
+            timezone: string;
+            /** Agent Id */
+            agent_id?: string | null;
+            /**
+             * Mode
+             * @default report
+             * @enum {string}
+             */
+            mode: "report" | "tasks" | "kb";
+            /** Kb Title */
+            kb_title?: string | null;
+            /**
+             * Notify Findings
+             * @default true
+             */
+            notify_findings: boolean;
+            /**
+             * Notify Every
+             * @default false
+             */
+            notify_every: boolean;
+            /**
+             * Notify Failures
+             * @default true
+             */
+            notify_failures: boolean;
+        };
+        /** CronOut */
+        CronOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Project Key */
+            project_key: string;
+            /** Name */
+            name: string;
+            /** Prompt */
+            prompt: string;
+            /** Schedule */
+            schedule: string;
+            /** Timezone */
+            timezone: string;
+            /** Description */
+            description: string;
+            /** Any Agent */
+            any_agent: boolean;
+            agent: components["schemas"]["Named"] | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "report" | "tasks" | "kb";
+            /** Kb Title */
+            kb_title: string | null;
+            /** Kb Document Id */
+            kb_document_id: string | null;
+            /** Notify Findings */
+            notify_findings: boolean;
+            /** Notify Every */
+            notify_every: boolean;
+            /** Notify Failures */
+            notify_failures: boolean;
+            /** Paused */
+            paused: boolean;
+            /** Next Run At */
+            next_run_at: string | null;
+            last_run: components["schemas"]["CronRunOut"] | null;
+            created_by: components["schemas"]["Named"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** CronPatch */
+        CronPatch: {
+            /** Name */
+            name?: string | null;
+            /** Prompt */
+            prompt?: string | null;
+            /** Schedule */
+            schedule?: string | null;
+            /** Timezone */
+            timezone?: string | null;
+            /** Agent Id */
+            agent_id?: string | null;
+            /** Mode */
+            mode?: ("report" | "tasks" | "kb") | null;
+            /** Kb Title */
+            kb_title?: string | null;
+            /** Notify Findings */
+            notify_findings?: boolean | null;
+            /** Notify Every */
+            notify_every?: boolean | null;
+            /** Notify Failures */
+            notify_failures?: boolean | null;
+        };
+        /** CronRunOut */
+        CronRunOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Scheduled At
+             * Format: date-time
+             */
+            scheduled_at: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "done" | "failed" | "skipped";
+            /** Skip Reason */
+            skip_reason: string | null;
+            agent: components["schemas"]["Named"] | null;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Report */
+            report: {
+                [key: string]: unknown;
+            } | null;
+            /** Commit */
+            commit: string | null;
+            /** Tasks Created */
+            tasks_created: number;
+        };
         /** DashboardOut */
         DashboardOut: {
             /**
@@ -6003,6 +6413,16 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** OutdatedAgent */
+        OutdatedAgent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
         /** PasskeyCreateIn */
         PasskeyCreateIn: {
             /** Name */
@@ -6076,6 +6496,24 @@ export interface components {
         PrefsOut: {
             /** Auto Default */
             auto_default: boolean;
+        };
+        /** Preview */
+        Preview: {
+            /** Ok */
+            ok: boolean;
+            /** Error */
+            error: string | null;
+            /** Description */
+            description: string | null;
+            /** Next */
+            next: string[];
+        };
+        /** PreviewIn */
+        PreviewIn: {
+            /** Schedule */
+            schedule: string;
+            /** Timezone */
+            timezone: string;
         };
         /**
          * Priority
@@ -6844,12 +7282,59 @@ export interface components {
             /** Results */
             results: components["schemas"]["SearchHit"][];
         };
+        /** SecretIn */
+        SecretIn: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Value */
+            value: string;
+        };
+        /**
+         * SecretOut
+         * @description A secret as anyone sees it: never its value.
+         */
+        SecretOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Value Updated At
+             * Format: date-time
+             */
+            value_updated_at: string;
+            updated_by: components["schemas"]["Named"] | null;
+        };
+        /** SecretPatch */
+        SecretPatch: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+        };
         /** SecretSlot */
         SecretSlot: {
             /** Name */
             name: string;
             /** Set */
             set: boolean;
+        };
+        /** SecretValueIn */
+        SecretValueIn: {
+            /** Value */
+            value: string;
         };
         /** SecretsIn */
         SecretsIn: {
@@ -14389,6 +14874,717 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_secrets_api_secrets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOut"][];
+                };
+            };
+        };
+    };
+    add_my_secret_api_secrets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    outdated_agents_api_secrets_outdated_agents_get: {
+        parameters: {
+            query?: {
+                project?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutdatedAgent"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_my_secret_api_secrets__secret_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_my_secret_api_secrets__secret_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_my_value_api_secrets__secret_id__value_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretValueIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_secrets_api_projects__ref__secrets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_project_secret_api_projects__ref__secrets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_secret_api_projects__ref__secrets__secret_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_project_secret_api_projects__ref__secrets__secret_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_project_value_api_projects__ref__secrets__secret_id__value_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                secret_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretValueIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_api_crons_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_crons_api_projects__ref__crons_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_cron_api_projects__ref__crons_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CronIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_cron_api_projects__ref__crons__cron_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                cron_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_cron_api_projects__ref__crons__cron_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                cron_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_cron_api_projects__ref__crons__cron_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                cron_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CronPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_cron_api_projects__ref__crons__cron_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                cron_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_cron_api_projects__ref__crons__cron_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                cron_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_now_api_projects__ref__crons__cron_id__run_now_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                cron_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cron_runs_api_projects__ref__crons__cron_id__runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                ref: string;
+                cron_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronRunOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cron_run_api_projects__ref__crons__cron_id__runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                cron_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronRunOut"];
                 };
             };
             /** @description Validation Error */

@@ -37,6 +37,8 @@ func TestWireFieldNames(t *testing.T) {
 		{"run_start draft", RunStart{Type: TypeRunStart, Draft: &RunDraft{ID: "d"}},
 			[]string{"agent_id", "draft", "local_path", "policy", "prompt", "run_id", "task", "type"}},
 		{"run draft", RunDraft{}, []string{"id"}},
+		{"run secret", RunSecret{}, []string{"name", "value"}},
+		{"run cron", RunCron{}, []string{"branch", "id"}},
 		{"config_changed", ConfigChanged{Type: TypeConfigChanged}, []string{"type"}},
 		{"run_steer", RunSteer{Type: TypeRunSteer}, []string{"message_id", "run_id", "text", "type"}},
 		{"run_steer_result", NewRunSteerResult("r", "m", SteerInjected, ""), []string{"message_id", "outcome", "run_id", "type"}},
@@ -90,7 +92,7 @@ func TestWireFieldNames(t *testing.T) {
 
 func TestListsNeverNull(t *testing.T) {
 	data, _ := json.Marshal(NewHello("1", "linux", "amd64", nil))
-	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1","omp/1","images/1","drafts/1"]}` {
+	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1","omp/1","images/1","drafts/1","secrets/1","crons/1"]}` {
 		t.Fatalf("hello = %s", data)
 	}
 	data, _ = json.Marshal(NewHello("1", "l", "a", []AgentAvailability{{AgentID: "x"}}))
@@ -135,6 +137,26 @@ func TestHelloAdvertisesSteer(t *testing.T) {
 		}
 	}
 	t.Fatalf("capabilities = %v, want steer/1", h.Capabilities)
+}
+
+func TestHelloAdvertisesCrons(t *testing.T) {
+	h := NewHello("1", "linux", "amd64", nil)
+	for _, c := range h.Capabilities {
+		if c == CapabilityCrons {
+			return
+		}
+	}
+	t.Fatalf("capabilities = %v, want crons/1", h.Capabilities)
+}
+
+func TestHelloAdvertisesSecrets(t *testing.T) {
+	h := NewHello("1", "linux", "amd64", nil)
+	for _, c := range h.Capabilities {
+		if c == CapabilitySecrets {
+			return
+		}
+	}
+	t.Fatalf("capabilities = %v, want secrets/1", h.Capabilities)
 }
 
 func TestHelloAdvertisesDrafts(t *testing.T) {

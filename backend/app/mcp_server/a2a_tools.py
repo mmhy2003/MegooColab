@@ -23,7 +23,7 @@ from app.workflow import engine
 def _refuse_answer_runs() -> None:
     """Answering runs never ask (questions never loop), and a draft's writer has no task to ask for."""
     run = current_run.get()
-    if run is not None and (run.question_id is not None or run.draft_id is not None):
+    if run is not None and (run.question_id is not None or run.draft_id is not None or run.cron_run_id is not None):
         raise ToolError("not_allowed_in_role")
 
 
