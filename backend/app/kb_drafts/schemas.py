@@ -42,9 +42,14 @@ class AgentChoice(BaseModel):
     agent_id: uuid.UUID
 
 
-class Target(BaseModel):
+class DraftTarget(BaseModel):
     section: NoNulStr = Field(max_length=TITLE_MAX)
     text: NoNulStr = Field(min_length=1, max_length=TARGET_TEXT_MAX)
+
+
+class DraftRequest(BaseModel):
+    text: NoNulStr = Field(min_length=1, max_length=REQUEST_MAX)
+    target: DraftTarget | None = None
 
 
 class DraftAgentOut(BaseModel):
@@ -69,7 +74,7 @@ class DraftMessageOut(BaseModel):
     id: uuid.UUID
     author: Literal["person", "agent", "system"]
     text: str
-    target: Target | None
+    target: DraftTarget | None
     created_at: datetime
 
 

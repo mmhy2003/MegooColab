@@ -60,6 +60,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_kb_draft_messages_draft_id'), 'kb_draft_messages', ['draft_id'], unique=False)
     op.add_column('agent_runs', sa.Column('draft_id', sa.Uuid(), nullable=True))
+    op.add_column('agent_runs', sa.Column('draft_request', postgresql.JSONB(astext_type=sa.Text()), nullable=True))
     op.create_index(op.f('ix_agent_runs_draft_id'), 'agent_runs', ['draft_id'], unique=False)
     op.create_foreign_key('agent_runs_draft_id_fkey', 'agent_runs', 'kb_drafts', ['draft_id'], ['id'], ondelete='CASCADE')
     # a run works on exactly one of a task, a question or a draft
@@ -79,6 +80,7 @@ def downgrade() -> None:
     op.create_check_constraint('agent_runs_target_check', 'agent_runs', '(task_id IS NULL) <> (question_id IS NULL)')
     op.drop_constraint('agent_runs_draft_id_fkey', 'agent_runs', type_='foreignkey')
     op.drop_index(op.f('ix_agent_runs_draft_id'), table_name='agent_runs')
+    op.drop_column('agent_runs', 'draft_request')
     op.drop_column('agent_runs', 'draft_id')
     op.drop_index(op.f('ix_kb_draft_messages_draft_id'), table_name='kb_draft_messages')
     op.drop_table('kb_draft_messages')

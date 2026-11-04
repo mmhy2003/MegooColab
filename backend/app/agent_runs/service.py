@@ -14,6 +14,7 @@ from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agent_runs.schemas import RunAgentOut, RunOut
 from app.agent_runs.tokens import issue_run_token
 from app.agents.models import Agent, AgentBinding, AgentProgram
+from app.kb_drafts.models import KbDraft
 from app.agents.service import (
     can_use_agent,
     owner_can_access,
@@ -43,6 +44,7 @@ from app.runner.protocol import (
 )
 from app.runner.registry import (
     BRANCH_CAPABILITY,
+    DRAFTS_CAPABILITY,
     IMAGES_CAPABILITY,
     MODEL_CAPABILITY,
     OMP_CAPABILITY,
@@ -119,6 +121,13 @@ async def _transition(
                        data={"status": str(to), "reason": reason})
     if summary is not None:
         run.summary = summary
+    if run.draft_id is not None:
+        # a Knowledge Base draft turn: no task thread; the draft's conversation says what came of it
+        from app.kb_drafts import turns  # local: kb_drafts imports this module
+
+        await publish_agents_updated(db, owner_id, set())
+        await turns.on_run_finished(db, run)
+        return
     if run.question_id is not None:
         # an answering run (§6.6): no task thread to record on; the question moves on instead
         from app.a2a import routing  # local: a2a imports this module
@@ -156,6 +165,13 @@ async def _lock_question_of(db: AsyncSession, question_id: uuid.UUID | None) -> 
         from app.a2a.models import Question  # local: a2a imports this module
 
         await db.execute(select(Question.id).where(Question.id == question_id).with_for_update())
+
+
+async def _lock_draft_of(db: AsyncSession, draft_id: uuid.UUID | None) -> None:
+    """For a Knowledge Base draft run, take its draft's lock before the run's own: the order of the draft's routes
+    (app/kb_drafts), since ending the run writes to the draft."""
+    if draft_id is not None:
+        await db.execute(select(KbDraft.id).where(KbDraft.id == draft_id).with_for_update())
 
 
 async def _claim_next(
@@ -199,11 +215,14 @@ async def _claim_next(
         branch = registry.agent_supports(agent.id, BRANCH_CAPABILITY)
         # one without images/1 leaves runs whose task has images the agent never had: it could not show them
         images = registry.agent_supports(agent.id, IMAGES_CAPABILITY)
-        task_run = AgentRun.question_id.is_(None)
+        # one without drafts/1 leaves Knowledge Base draft runs queued (it has no folder of the draft to work in)
+        drafts = registry.agent_supports(agent.id, DRAFTS_CAPABILITY)
+        task_run = AgentRun.task_id.is_not(None)
         runnable = and_(
             true() if workflow else and_(AgentRun.workflow_role.is_(None), task_run),
             true() if branch else ~task_run,
             true() if images else ~image_delivery.undelivered_for_run(),
+            true() if drafts else AgentRun.draft_id.is_(None),
         )
         sibling = aliased(AgentRun)
         task_running = (
@@ -216,11 +235,16 @@ async def _claim_next(
             .where(sibling.question_id == AgentRun.question_id, sibling.status == RunStatus.running)
             .exists()
         )
+        draft_running = (
+            select(sibling.id)
+            .where(sibling.draft_id == AgentRun.draft_id, sibling.status == RunStatus.running)
+            .exists()
+        )
         run = (
             await db.execute(
                 select(AgentRun)
                 .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued, ~task_running,
-                       ~question_running, runnable)
+                       ~question_running, ~draft_running, runnable)
                 .order_by(AgentRun.created_at, AgentRun.id)
                 .limit(1)
                 .with_for_update(skip_locked=True)
@@ -286,12 +310,15 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     lands after the claim either committed first (the run is no longer running: nothing is sent) or
     waits, then finds the run in conn.run_ids and sends run_cancel after run_start."""
     await _lock_workflow_of(db, run)
+    await _lock_draft_of(db, run.draft_id)
     run = await _lock_run(db, run.id)
     if run is None or run.status != RunStatus.running:  # cancelled between the claim and now
         await db.commit()
         return True
     if run.question_id is not None:
         return await _send_answer_start(db, conn, agent_id, run)
+    if run.draft_id is not None:
+        return await _send_draft_start(db, conn, agent_id, run)
     row = (
         await db.execute(
             select(Task, Project.key, AgentBinding.local_path, Agent.owner_id)
@@ -399,17 +426,34 @@ async def _audit_started(db: AsyncSession, run: AgentRun, owner_id: uuid.UUID | 
                        data={"agent_id": str(run.agent_id), "owner_id": str(owner_id) if owner_id else None,
                              "task_id": str(run.task_id) if run.task_id else None,
                              "question_id": str(run.question_id) if run.question_id else None,
-                             "role": "answer" if run.question_id else run.workflow_role})
+                             "draft_id": str(run.draft_id) if run.draft_id else None,
+                             "role": "answer" if run.question_id else "kb_draft" if run.draft_id else run.workflow_role})
 
 
 async def _send_answer_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, run: AgentRun) -> bool:
     """run_start for an answering run (§6.6): read-only, a synthetic task key, the run's MCP token."""
     from app.a2a import routing  # local: a2a imports this module
 
+    return await _send_targeted_start(db, conn, agent_id, run, routing.start_fields, routing.NotSupported,
+                                      await _answering_projects(db, run))
+
+
+async def _send_draft_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, run: AgentRun) -> bool:
+    """run_start for a Knowledge Base draft run: read-only, a synthetic task key, the run's MCP token, the draft."""
+    from app.kb_drafts import turns  # local: kb_drafts imports this module
+
+    return await _send_targeted_start(db, conn, agent_id, run, turns.start_fields, turns.NotSupported, set())
+
+
+async def _send_targeted_start(
+    db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, run: AgentRun, start_fields, not_supported,
+    project_ids: set[uuid.UUID],
+) -> bool:
+    """run_start for a run without a task (a question or a draft), from its own start_fields."""
     owner_id = await db.scalar(select(Agent.owner_id).where(Agent.id == agent_id))
     try:
-        task, local_path, v2 = await routing.start_fields(db, run)
-    except routing.NotSupported as exc:
+        task, local_path, v2 = await start_fields(db, run)
+    except not_supported as exc:
         await _transition(db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id,
                           reason=str(exc) or "not_supported")
         await db.commit()
@@ -427,7 +471,7 @@ async def _send_answer_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.
         await db.commit()
         return False
     await _audit_started(db, run, owner_id)
-    await publish_agents_updated(db, owner_id, await _answering_projects(db, run))
+    await publish_agents_updated(db, owner_id, project_ids)
     await db.commit()
     return True
 
@@ -470,7 +514,12 @@ async def cancel_run(db: AsyncSession, user: User, run: AgentRun) -> None:
     """Queued: cancelled now. Running with a live runner: run_cancel is sent and the run is closed when its
     run_finished arrives. Running with the runner gone: cancelled now."""
     agent = await db.get(Agent, run.agent_id)
-    if run.question_id is not None:
+    if run.draft_id is not None:
+        # a draft turn: the draft's person, the agent's owner or an admin may stop it
+        if user.role != Role.admin and user.id != run.requested_by and (agent is None or agent.owner_id != user.id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
+        await _lock_draft_of(db, run.draft_id)
+    elif run.question_id is not None:
         # an answering run (§6.6) has no task: its agent's owner or an admin may stop it
         if user.role != Role.admin and (agent is None or agent.owner_id != user.id):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
@@ -505,18 +554,20 @@ async def _lock_runs_one_by_one(
     order (its workflow, then the run) and in task id order. A run whose status changed meanwhile is skipped."""
     candidates = (
         await db.execute(
-            select(AgentRun.id, AgentRun.task_id, AgentRun.question_id, AgentRun.workflow_role, Agent.owner_id)
+            select(AgentRun.id, AgentRun.task_id, AgentRun.question_id, AgentRun.draft_id, AgentRun.workflow_role,
+                   Agent.owner_id)
             .join(Agent, Agent.id == AgentRun.agent_id)
             .where(AgentRun.status.in_(statuses), *where)
             .order_by(AgentRun.task_id, AgentRun.created_at, AgentRun.id)
         )
     ).all()
-    for run_id, task_id, question_id, role, owner_id in candidates:
+    for run_id, task_id, question_id, draft_id, role, owner_id in candidates:
         if role is not None:
             from app.workflow import engine
 
             await engine.lock_workflow(db, task_id)
         await _lock_question_of(db, question_id)
+        await _lock_draft_of(db, draft_id)
         run = await _lock_run(db, run_id)
         if run is not None and run.status in statuses:
             yield run, owner_id
@@ -909,7 +960,8 @@ async def finish_run(
     Commits, then dispatches the owner's pending runs."""
     peek = (
         await db.execute(
-            select(AgentRun.task_id, AgentRun.question_id, AgentRun.workflow_role).where(AgentRun.id == run_id)
+            select(AgentRun.task_id, AgentRun.question_id, AgentRun.draft_id, AgentRun.workflow_role)
+            .where(AgentRun.id == run_id)
         )
     ).first()
     if peek is not None and peek.workflow_role is not None:
@@ -920,6 +972,7 @@ async def finish_run(
         await engine.lock_workflow(db, peek.task_id)
     if peek is not None:
         await _lock_question_of(db, peek.question_id)
+        await _lock_draft_of(db, peek.draft_id)
     run = await _lock_run(db, run_id)
     if run is None:  # deleted with its task: the slot it held is free, so the owner's queue moves on
         await db.rollback()

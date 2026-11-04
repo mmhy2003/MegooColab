@@ -4,8 +4,17 @@ from fastapi import APIRouter, Response, status
 
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
-from app.kb_drafts import service
-from app.kb_drafts.schemas import AgentChoice, DraftAgentOut, DraftEdit, DraftIn, DraftOut, DraftSummary
+from app.kb_drafts import service, turns
+from app.kb_drafts.schemas import (
+    AgentChoice,
+    DraftAgentOut,
+    DraftEdit,
+    DraftIn,
+    DraftOut,
+    DraftRequest,
+    DraftSummary,
+)
+from app.workflow import engine
 
 router = APIRouter(prefix="/api/kb/drafts", tags=["kb-drafts"])
 
@@ -23,7 +32,10 @@ async def my_drafts(user: AuthedUser, db: DbSession) -> list[DraftSummary]:
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def start_draft(body: DraftIn, user: AuthedUser, db: DbSession, response: Response) -> DraftOut:
     draft, created = await service.start_draft(db, user, body)
+    if created:  # the brief is the first turn's request
+        await turns.enqueue_turn(db, draft, request=draft.brief, target=None)
     await db.commit()
+    await engine.dispatch_queued(db)
     if not created:
         response.status_code = status.HTTP_200_OK
     return await service.draft_out(db, draft)
@@ -38,6 +50,23 @@ async def get_draft(draft_id: uuid.UUID, user: AuthedUser, db: DbSession) -> Dra
 async def edit_draft(draft_id: uuid.UUID, body: DraftEdit, user: AuthedUser, db: DbSession) -> DraftOut:
     draft = await service.get_draft_for(db, user, draft_id, lock=True)
     await service.edit(db, draft, title=body.title, body=body.body_md)
+    await db.commit()
+    return await service.draft_out(db, draft)
+
+
+@router.post("/{draft_id}/requests")
+async def request(draft_id: uuid.UUID, body: DraftRequest, user: AuthedUser, db: DbSession) -> DraftOut:
+    draft = await service.get_draft_for(db, user, draft_id, lock=True)
+    await turns.request_turn(db, user, draft, body.text, body.target.model_dump() if body.target else None)
+    await db.commit()
+    await engine.dispatch_queued(db)
+    return await service.draft_out(db, draft)
+
+
+@router.post("/{draft_id}/stop")
+async def stop(draft_id: uuid.UUID, user: AuthedUser, db: DbSession) -> DraftOut:
+    draft = await service.get_draft_for(db, user, draft_id, lock=True)
+    await turns.stop(db, user, draft)
     await db.commit()
     return await service.draft_out(db, draft)
 

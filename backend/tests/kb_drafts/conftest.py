@@ -9,6 +9,7 @@ from app.agents.models import Agent, AgentBinding
 from app.auth.models import User
 from app.kb import access
 from app.kb.models import KbSpace
+from app.workflow import methodology
 from tests.factories import login, make_project, make_team, make_user
 
 
@@ -37,6 +38,8 @@ async def _agent(db, owner: User, name: str, project_id: str | None) -> Agent:
 
 @pytest.fixture
 async def world(client, db) -> World:
+    await methodology.seed_defaults(db)  # startup does this in the app
+    await db.commit()
     me = await make_user(db, name="Mia Member")
     other = await make_user(db, name="Otto Other")
     project, manager, _ = await make_project(client, db, "PAY", me, other)

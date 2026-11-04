@@ -55,7 +55,8 @@ router = APIRouter(tags=["workflow"])
 
 class MethodologyOut(BaseModel):
     key: str
-    stage: Stage
+    # a workflow stage, or the group of a text outside the workflow ("kb")
+    stage: str
     version: int
     body_md: str
     updated_at: datetime
@@ -81,13 +82,13 @@ class MethodologyIn(BaseModel):
 
 def _out(row: MethodologyVersion) -> MethodologyOut:
     return MethodologyOut(
-        key=row.key, stage=methodology.STAGE_OF[row.key], version=row.version,
+        key=row.key, stage=methodology.GROUP_OF[row.key], version=row.version,
         body_md=row.body_md, updated_at=row.created_at, updated_by=row.created_by,
     )
 
 
 def _known(key: str) -> None:
-    if key not in methodology.STAGE_OF:
+    if key not in methodology.GROUP_OF:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "methodology_not_found")
 
 

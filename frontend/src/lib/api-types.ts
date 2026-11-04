@@ -2660,6 +2660,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/kb/drafts/{draft_id}/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request */
+        post: operations["request_api_kb_drafts__draft_id__requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/drafts/{draft_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop */
+        post: operations["stop_api_kb_drafts__draft_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/kb/drafts/{draft_id}/settle": {
         parameters: {
             query?: never;
@@ -4767,7 +4801,7 @@ export interface components {
             author: "person" | "agent" | "system";
             /** Text */
             text: string;
-            target: components["schemas"]["app__kb_drafts__schemas__Target"] | null;
+            target: components["schemas"]["DraftTarget"] | null;
             /**
              * Created At
              * Format: date-time
@@ -4811,6 +4845,12 @@ export interface components {
              */
             last_activity_at: string;
         };
+        /** DraftRequest */
+        DraftRequest: {
+            /** Text */
+            text: string;
+            target?: components["schemas"]["DraftTarget"] | null;
+        };
         /** DraftSummary */
         DraftSummary: {
             /**
@@ -4829,6 +4869,13 @@ export interface components {
              * Format: date-time
              */
             last_activity_at: string;
+        };
+        /** DraftTarget */
+        DraftTarget: {
+            /** Section */
+            section: string;
+            /** Text */
+            text: string;
         };
         /** DreamRunOut */
         DreamRunOut: {
@@ -5603,7 +5650,8 @@ export interface components {
         MethodologyOut: {
             /** Key */
             key: string;
-            stage: components["schemas"]["Stage"];
+            /** Stage */
+            stage: string;
             /** Version */
             version: number;
             /** Body Md */
@@ -6288,7 +6336,7 @@ export interface components {
             id: string;
             /** Ref */
             ref: string;
-            target: components["schemas"]["app__a2a__schemas__Target"];
+            target: components["schemas"]["Target"];
             /** Title */
             title: string;
             /** Body */
@@ -7054,6 +7102,13 @@ export interface components {
             memory_last_failed: boolean;
             /** Rate Limits 24H */
             rate_limits_24h: number;
+        };
+        /** Target */
+        Target: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
         };
         /**
          * TargetAgent
@@ -7974,20 +8029,6 @@ export interface components {
              * @enum {string}
              */
             if_busy: "wait" | "another";
-        };
-        /** Target */
-        app__a2a__schemas__Target: {
-            /** Key */
-            key: string;
-            /** Name */
-            name: string;
-        };
-        /** Target */
-        app__kb_drafts__schemas__Target: {
-            /** Section */
-            section: string;
-            /** Text */
-            text: string;
         };
         /** AskIn */
         app__memory__schemas__AskIn: {
@@ -13985,6 +14026,72 @@ export interface operations {
             };
         };
     };
+    request_api_kb_drafts__draft_id__requests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_kb_drafts__draft_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     settle_api_kb_drafts__draft_id__settle_post: {
         parameters: {
             query?: never;
@@ -14590,7 +14697,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["app__a2a__schemas__Target"][];
+                    "application/json": components["schemas"]["Target"][];
                 };
             };
         };
