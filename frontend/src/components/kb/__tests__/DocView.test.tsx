@@ -180,7 +180,7 @@ describe("DocView", () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({})));
     wrap(<DocView doc={DOC} onEdit={vi.fn()} />);
     expect(screen.getByText("guides/Webhooks")).toBeInTheDocument();
-    expect(screen.getByText(/Ann \(via Builder\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Ann with Builder/)).toBeInTheDocument();
     expect(screen.getByText("rev 2")).toBeInTheDocument();
   });
 

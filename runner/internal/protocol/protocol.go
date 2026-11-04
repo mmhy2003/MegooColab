@@ -26,6 +26,7 @@ const (
 	TypeWelcome        = "welcome"
 	TypeRunStart       = "run_start"
 	TypeRunCancel      = "run_cancel"
+	TypeDraftDone      = "draft_done"
 	TypeConfigChanged  = "config_changed"
 	TypeRunSteer       = "run_steer"
 	TypeRunSteerResult = "run_steer_result"
@@ -70,6 +71,11 @@ const CapabilitySteer = "steer/1"
 // CapabilityImages is advertised in every hello: the runner takes run_start.images and run_steer.images,
 // downloads each with its token, and shows them to the agent (image blocks in the prompt, or files it may read).
 const CapabilityImages = "images/1"
+
+// CapabilityDrafts is advertised in every hello: the runner takes run_start.draft, a Knowledge Base draft's run, works
+// in a folder kept for the draft (a detached worktree of the project's repository, or an empty folder), and removes
+// it on draft_done.
+const CapabilityDrafts = "drafts/1"
 
 // Outcomes of a run_steer.
 const (
@@ -219,6 +225,21 @@ type RunStart struct {
 
 	// Every task run (capability branch/1); nil for answering runs.
 	Branch *RunBranch `json:"branch,omitempty"`
+
+	// Only a Knowledge Base draft's run (capability drafts/1).
+	Draft *RunDraft `json:"draft,omitempty"`
+}
+
+// RunDraft names the Knowledge Base draft a run writes.
+type RunDraft struct {
+	ID string `json:"id"`
+}
+
+// DraftDone tells the runner a draft was saved or discarded: its folder goes.
+type DraftDone struct {
+	Type    string `json:"type"`
+	AgentID string `json:"agent_id"`
+	DraftID string `json:"draft_id"`
 }
 
 // RunCancel asks the runner to stop a run.
@@ -264,7 +285,7 @@ func NewHello(version, os, arch string, agents []AgentAvailability) Hello {
 		}
 		out[i] = a
 	}
-	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages}}
+	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages, CapabilityDrafts}}
 }
 
 // NewHeartbeat builds a heartbeat.

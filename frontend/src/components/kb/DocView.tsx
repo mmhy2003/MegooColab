@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Backlinks } from "@/components/kb/Backlinks";
+import { DraftBanner } from "@/components/kb/drafts/DraftBanner";
+import { StartDraftDialog } from "@/components/kb/drafts/StartDraftDialog";
 import { KbMarkdown } from "@/components/kb/KbMarkdown";
 import { revisionAuthor } from "@/components/kb/RevisionHistory";
 import { Button } from "@/components/ui/Button";
@@ -20,6 +22,7 @@ export function DocView({ doc, onEdit }: { doc: KbDocument; onEdit: () => void }
   const router = useRouter();
   const client = useQueryClient();
   const [moving, setMoving] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function remove() {
@@ -49,6 +52,9 @@ export function DocView({ doc, onEdit }: { doc: KbDocument; onEdit: () => void }
             {doc.can_write && (
               <>
                 <Button onClick={onEdit}>Edit</Button>
+                <Button variant="ghost" onClick={() => setDrafting(true)}>
+                  Write with an agent
+                </Button>
                 <Button variant="ghost" onClick={() => setMoving((m) => !m)}>
                   Move
                 </Button>
@@ -66,6 +72,7 @@ export function DocView({ doc, onEdit }: { doc: KbDocument; onEdit: () => void }
             </p>
           )}
         </header>
+        {doc.can_write && <DraftBanner documentId={doc.id} />}
         {moving && <MoveForm doc={doc} onDone={() => setMoving(false)} />}
         <div className="card kb-prose p-4">
           {doc.body_md.trim() ? <KbMarkdown>{doc.body_md}</KbMarkdown> : <p className="text-sm text-muted-foreground">This document is empty.</p>}
@@ -74,6 +81,10 @@ export function DocView({ doc, onEdit }: { doc: KbDocument; onEdit: () => void }
           <Backlinks docId={doc.id} />
         </div>
       </article>
+      {drafting && (
+        <StartDraftDialog open onClose={() => setDrafting(false)} space={doc.space} folderId={doc.folder_id}
+          document={{ id: doc.id, title: doc.title }} />
+      )}
       {dialog}
     </>
   );

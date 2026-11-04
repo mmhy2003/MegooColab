@@ -68,7 +68,7 @@ async def require_run_task(db: AsyncSession, key: str) -> None:
     run = current_run.get()
     if run is None:
         return
-    if run.question_id is not None:  # an answering run works on a question, never on a task
+    if run.task_id is None:  # an answering run works on a question, a draft run on its draft: never on a task
         raise ToolError("not_allowed_in_role")
     task = await db.get(Task, run.task_id)
     project = await db.get(Project, task.project_id) if task is not None else None

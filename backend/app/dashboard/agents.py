@@ -27,7 +27,8 @@ def _runs(scope: Scope, *columns):
     stmt = (
         select(*columns).select_from(AgentRun)
         .outerjoin(Task, Task.id == AgentRun.task_id).outerjoin(Question, Question.id == AgentRun.question_id)
-        .where(scope.in_projects(func.coalesce(Task.project_id, Question.target_project_id)))
+        # a Knowledge Base draft's turns are its person's own: not on anyone's dashboard
+        .where(AgentRun.draft_id.is_(None), scope.in_projects(func.coalesce(Task.project_id, Question.target_project_id)))
     )
     if scope.name == "mine":
         stmt = stmt.where(AgentRun.agent_id.in_(scope.agent_ids))

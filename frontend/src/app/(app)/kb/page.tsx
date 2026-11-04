@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { MyDrafts } from "@/components/kb/drafts/MyDrafts";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SPACE_GROUPS, useKbSpaces } from "@/lib/kb";
@@ -40,6 +41,7 @@ export default function KnowledgeBasePage() {
           <Search size={14} aria-hidden /> Search
         </Button>
       </form>
+      <MyDrafts />
       {SPACE_GROUPS.map(({ kind, label }) => {
         const group = (spaces.data ?? []).filter((s) => s.kind === kind);
         if (group.length === 0) return null;

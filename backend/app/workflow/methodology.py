@@ -17,8 +17,14 @@ KEYS: dict[Stage, list[str]] = {
     Stage.review: ["review_final", "review_fix"],
     Stage.done: ["finish", "pr_fix", "pr_review"],
 }
-ALL_KEYS: list[str] = [k for keys in KEYS.values() for k in keys]
+# texts for runs outside a task's workflow, by the group the methodology editor shows them under
+OTHER_KEYS: dict[str, list[str]] = {
+    "kb": ["kb_draft"],  # writing a Knowledge Base draft with a person
+}
+ALL_KEYS: list[str] = [k for keys in (*KEYS.values(), *OTHER_KEYS.values()) for k in keys]
 STAGE_OF: dict[str, Stage] = {k: stage for stage, keys in KEYS.items() for k in keys}
+GROUP_OF: dict[str, str] = {**{k: str(stage) for k, stage in STAGE_OF.items()},
+                            **{k: group for group, keys in OTHER_KEYS.items() for k in keys}}
 
 DEFAULTS_DIR = Path(__file__).resolve().parent / "methodology_texts" / "defaults"
 

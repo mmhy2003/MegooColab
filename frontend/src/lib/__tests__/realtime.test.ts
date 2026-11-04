@@ -26,6 +26,7 @@ describe("invalidationsFor", () => {
 
   it("refreshes the bell and the list on a notification event", () => {
     expect(invalidationsFor({ type: "notification.created", user_id: "u1" }, keys)).toEqual([["notifications"]]);
+    expect(invalidationsFor({ type: "kb_draft.updated", user_id: "u1" }, keys)).toEqual([["kb-drafts"]]);
   });
 
   it("maps task events to the project's task lists and task details", () => {

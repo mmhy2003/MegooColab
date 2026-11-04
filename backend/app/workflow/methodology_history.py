@@ -7,6 +7,9 @@ fails until you do.
 """
 
 DEFAULT_HISTORY: dict[str, list[str]] = {
+    "kb_draft": [
+        "1b5d39673fc327354892589a11c95b7d8deac6e1121982b83bd60ba1716a8492",
+    ],
     "pr_review": [
         "f117ba33749e48e554e25366550ca3ae550579a0541b7ed7425fa0d7e7026ed7",
     ],

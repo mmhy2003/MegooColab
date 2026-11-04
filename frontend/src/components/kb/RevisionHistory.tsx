@@ -9,7 +9,7 @@ import { kbKeys, useKbRevisions, type DiffOp } from "@/lib/kb";
 
 function who(author: { user?: { name: string } | null; agent?: { name: string } | null }): string {
   const user = author.user?.name ?? "Someone";
-  return author.agent ? `${user} (via ${author.agent.name})` : user;
+  return author.agent ? `${user} with ${author.agent.name}` : user;
 }
 
 /** Every revision with its author; pick two to compare. */

@@ -37,8 +37,8 @@ KB_TOOL_ROLES: dict[str, frozenset[RunRole]] = {
 
 def _check_role(tool: str) -> AgentRun | None:
     run = current_run.get()
-    if run is not None and run.question_id is not None:
-        # an answering run (§6.6) may read the Knowledge Base, never write it
+    if run is not None and (run.question_id is not None or run.draft_id is not None):
+        # an answering run (§6.6) or a draft's writer may read the Knowledge Base, never write it
         if tool == "kb_write":
             raise ToolError("not_allowed_in_role")
         return run

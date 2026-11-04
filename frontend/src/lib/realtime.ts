@@ -46,6 +46,8 @@ export function invalidationsFor(event: LiveEvent, keyById: Map<string, string>)
       return [["questions"], ["task"]];
     case "kb":
       return [["kb"]];
+    case "kb_draft":
+      return [["kb-drafts"]];
     case "notification":
       return [["notifications"]];
     case "membership":
