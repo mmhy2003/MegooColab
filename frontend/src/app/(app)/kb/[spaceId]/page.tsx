@@ -1,11 +1,12 @@
 "use client";
 
-import { FilePlus } from "lucide-react";
+import { FilePlus, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { DocList } from "@/components/kb/DocList";
+import { StartDraftDialog } from "@/components/kb/drafts/StartDraftDialog";
 import { KbReader } from "@/components/kb/KbReader";
 import { NotFoundView } from "@/components/shell/NotFound";
 import { Button } from "@/components/ui/Button";
@@ -26,6 +27,7 @@ export default function KbSpacePage() {
   const space = spaces.data?.find((s) => s.id === spaceId);
   usePageTitle(space?.name, "Knowledge Base");
   const [creating, setCreating] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -47,9 +49,14 @@ export default function KbSpacePage() {
         subtitle={space ? `${space.kind === "org" ? "Organization" : space.kind === "team" ? "Team" : "Project"} space` : undefined}
         actions={
           space?.can_write && (
-            <Button onClick={() => setCreating(true)}>
-              <FilePlus size={14} aria-hidden /> New document
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setCreating(true)}>
+                <FilePlus size={14} aria-hidden /> New document
+              </Button>
+              <Button variant="ghost" onClick={() => setDrafting(true)}>
+                <Sparkles size={14} aria-hidden /> Write with an agent
+              </Button>
+            </div>
           )
         }
       />
@@ -88,6 +95,9 @@ export default function KbSpacePage() {
           )}
           {tree.data && <DocList documents={tree.data.documents} folderId={folder} />}
       </section>
+      {space && drafting && (
+        <StartDraftDialog open onClose={() => setDrafting(false)} space={space} folderId={folder} />
+      )}
     </KbReader>
   );
 }

@@ -3,7 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { KbMarkdown } from "@/components/kb/KbMarkdown";
+import { BODY_MAX, MarkdownField } from "@/components/kb/MarkdownField";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Input } from "@/components/ui/Input";
@@ -11,8 +11,6 @@ import { ApiError, api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { kbKeys, type KbDocument } from "@/lib/kb";
 import { DISCARD, useUnsavedGuard } from "@/lib/unsaved";
-
-const BODY_MAX = 500_000;
 
 /** Edits a document. Saves carry the revision the edit started from, so a newer save is never overwritten. */
 export function DocEditor({
@@ -92,30 +90,7 @@ export function DocEditor({
         }}
       >
         <Input label="Title" required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} />
-        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label htmlFor="kb-body" className="text-xs tracking-wider text-muted-foreground uppercase">
-              Body
-            </label>
-            <textarea
-              id="kb-body"
-              className="min-h-[24rem] w-full rounded border border-line bg-surface-2 px-3 py-2 font-mono text-sm text-fg focus:border-cyan focus:outline-none"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              aria-invalid={tooLong || undefined}
-            />
-            <p className={`text-xs ${tooLong ? "text-pink" : "text-muted-foreground"}`}>
-              {body.length.toLocaleString("en-US")} / {BODY_MAX.toLocaleString("en-US")} characters. Link with [[PAY-12]] or
-              [[doc:&lt;id&gt;|Title]].
-            </p>
-          </div>
-          <section aria-label="Preview" className="min-w-0 rounded border border-line p-3">
-            <p className="mb-2 text-xs tracking-wider text-muted-foreground uppercase">Preview</p>
-            <div className="kb-prose">
-              <KbMarkdown>{body}</KbMarkdown>
-            </div>
-          </section>
-        </div>
+        <MarkdownField id="kb-body" value={body} onChange={setBody} />
         <Input
           label="Summary of change (optional)"
           maxLength={200}

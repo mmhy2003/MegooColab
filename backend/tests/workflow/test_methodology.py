@@ -12,12 +12,12 @@ async def _count(db) -> int:
     return (await db.execute(select(func.count()).select_from(MethodologyVersion))).scalar_one()
 
 
-async def test_seed_creates_v1_for_all_eleven_keys_once(db):
+async def test_seed_creates_v1_for_all_twelve_keys_once(db):
     await methodology.seed_defaults(db)
     await db.commit()
     await methodology.seed_defaults(db)
     await db.commit()
-    assert await _count(db) == 11
+    assert await _count(db) == 12
     versions = set((await db.execute(select(MethodologyVersion.version))).scalars())
     assert versions == {1}
     assert sorted(methodology.ALL_KEYS) == sorted(
@@ -36,6 +36,7 @@ async def test_every_default_mentions_its_tools(db):
     assert "report_finish" in body["finish"]
     assert "report_pr_fix" in body["pr_fix"] and "git push" in body["pr_fix"]
     assert "submit_pr_review" in body["pr_review"] and "<!-- megoo:agent-review -->" in body["pr_review"]
+    assert "kb_draft_read" in body["kb_draft"] and "kb_draft_submit" in body["kb_draft"]
     for key, text in body.items():
         assert "<untrusted" in text, key
         if key != "finish":
@@ -52,7 +53,7 @@ async def test_admin_edit_creates_new_version_and_audits(client, db):
     assert r.json()["version"] == 2 and r.json()["body_md"] == "new plan text"
     assert (await methodology.current(db, "plan")).version == 2
     listed = {i["key"]: i for i in (await client.get("/api/methodology")).json()}
-    assert len(listed) == 11 and listed["plan"]["version"] == 2 and listed["plan"]["stage"] == "plan"
+    assert len(listed) == 12 and listed["plan"]["version"] == 2 and listed["plan"]["stage"] == "plan"
     versions = (await client.get("/api/methodology/plan/versions")).json()
     assert [v["version"] for v in versions] == [2, 1]
     old = await client.get("/api/methodology/plan/versions/1")
@@ -65,7 +66,7 @@ async def test_admin_edit_creates_new_version_and_audits(client, db):
 async def test_reviewers_cannot_ask_human_everyone_else_can(db):
     await methodology.seed_defaults(db)
     reviewers = {"build_step_review", "review_final", "pr_review"}  # a reviewer judges what is there
-    for key in methodology.ALL_KEYS:
+    for key in methodology.STAGE_OF:  # a workflow's texts (a draft's writer asks the person in its reply)
         text = (await methodology.current(db, key)).body_md
         assert ("ask_human" in text) is (key not in reviewers), key
     for key in reviewers:
@@ -104,7 +105,7 @@ async def test_lifespan_seeds_defaults(app, db, monkeypatch):
     monkeypatch.setattr("app.main.hub.ready.wait", _noop)
     async with app.router.lifespan_context(app):
         pass
-    assert await _count(db) == 11
+    assert await _count(db) == 12
 
 
 async def _noop(*a, **k):
@@ -118,7 +119,7 @@ async def test_member_cannot_edit_403(client, db):
     await login(client, member)
     assert (await client.get("/api/methodology")).status_code == 200
     assert (await client.put("/api/methodology/plan", json={"body_md": "x"})).status_code == 403
-    assert await _count(db) == 11
+    assert await _count(db) == 12
 
 
 async def test_unknown_key_404(client, db):

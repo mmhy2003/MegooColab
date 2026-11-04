@@ -24,6 +24,7 @@ import (
 	"github.com/mmhy2003/megoocolab/runner/internal/acpclient"
 	"github.com/mmhy2003/megoocolab/runner/internal/adapters"
 	"github.com/mmhy2003/megoocolab/runner/internal/conn"
+	"github.com/mmhy2003/megoocolab/runner/internal/drafts"
 	"github.com/mmhy2003/megoocolab/runner/internal/gitstate"
 	"github.com/mmhy2003/megoocolab/runner/internal/policy"
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
@@ -265,6 +266,7 @@ func (m *Manager) Serve(ctx context.Context, c *conn.Client) error {
 	c.OnDisconnect = func(error) { m.StopAllUpTo(c.Session()) }
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
+	go m.sweepDrafts(ctx)
 	for env := range c.Messages() {
 		m.Dispatch(ctx, env)
 	}
@@ -293,6 +295,11 @@ func (m *Manager) Dispatch(ctx context.Context, env protocol.Envelope) {
 		var sc protocol.ToolsScan
 		if env.Into(&sc) == nil {
 			m.toolsJob(func() { m.scanTools(sc.ScanID) })
+		}
+	case protocol.TypeDraftDone:
+		var d protocol.DraftDone
+		if env.Into(&d) == nil {
+			m.handleDraftDone(d)
 		}
 	case protocol.TypeRunStart:
 		var rs protocol.RunStart
@@ -687,45 +694,58 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if err != nil {
 		return fail("unsupported_program", err)
 	}
-	repo := m.bindingPath(agent, rs)
-	if repo == "" {
-		return fail("not_bound", nil)
+	// A draft outside a project has no repository: its agent works in an empty folder.
+	repo := ""
+	if rs.Draft == nil || rs.Task.ProjectKey != "" {
+		if repo = m.bindingPath(agent, rs); repo == "" {
+			return fail("not_bound", nil)
+		}
 	}
 	// The task's worktree is shared: a run stopped with a lost connection must be gone first.
 	if err := m.awaitPrevious(r, logf); err != nil {
 		return fail("worktree_failed", err)
 	}
-	// A new task branch starts from the start branch (Branch from), fetched first; a reused one is left alone.
-	var start startbranch.Result
-	wt, taskBranch, created, err := worktree.EnsureFrom(r.ctx, logf, repo, m.cacheRoot, rs.AgentID, rs.Task.Key, rs.Task.Title,
-		func() (string, error) {
-			res, err := startbranch.Resolve(r.ctx, logf, repo, rs.Branch)
-			start = res
-			return res.StartPoint, err
-		})
-	switch {
-	case errors.Is(err, startbranch.ErrStartBranchMissing):
-		return fail("start_branch_missing", err)
-	case errors.Is(err, startbranch.ErrRepositoryNotMatched):
-		return fail("repository_not_matched", err)
-	case errors.Is(err, startbranch.ErrStartBranchFetchFailed):
-		return fail("start_branch_fetch_failed", err)
-	case err != nil:
-		return fail("worktree_failed", err)
-	}
-	// Reported until the server has it: a report lost with a dropped connection is sent again by the next run.
-	report := created && start.Report
-	if created && start.Report {
-		if err := startbranch.Remember(repo, taskBranch, start); err != nil {
-			fmt.Fprintf(logf, "runner: remembering the start branch: %v\n", err)
+	var wt string
+	if rs.Draft != nil {
+		// a draft's folder: no branch, no git state, nothing the agent may change
+		if wt, err = drafts.Ensure(r.ctx, m.cacheRoot, rs.AgentID, rs.Draft.ID, repo); err != nil {
+			return fail("draft_folder_failed", err)
 		}
-	} else if !created && rs.Branch != nil && rs.Branch.StartBranch == "" {
-		start, report = startbranch.Recall(repo, taskBranch)
-	}
-	if report {
-		r.emit("branch", map[string]any{
-			"start_branch": start.StartBranch, "default_branch": start.DefaultBranch, "repository_url": start.RepositoryURL,
-		})
+	} else {
+		// A new task branch starts from the start branch (Branch from), fetched first; a reused one is left alone.
+		var start startbranch.Result
+		var taskBranch string
+		var created bool
+		wt, taskBranch, created, err = worktree.EnsureFrom(r.ctx, logf, repo, m.cacheRoot, rs.AgentID, rs.Task.Key,
+			rs.Task.Title, func() (string, error) {
+				res, err := startbranch.Resolve(r.ctx, logf, repo, rs.Branch)
+				start = res
+				return res.StartPoint, err
+			})
+		switch {
+		case errors.Is(err, startbranch.ErrStartBranchMissing):
+			return fail("start_branch_missing", err)
+		case errors.Is(err, startbranch.ErrRepositoryNotMatched):
+			return fail("repository_not_matched", err)
+		case errors.Is(err, startbranch.ErrStartBranchFetchFailed):
+			return fail("start_branch_fetch_failed", err)
+		case err != nil:
+			return fail("worktree_failed", err)
+		}
+		// Reported until the server has it: a report lost with a dropped connection is sent again by the next run.
+		report := created && start.Report
+		if created && start.Report {
+			if err := startbranch.Remember(repo, taskBranch, start); err != nil {
+				fmt.Fprintf(logf, "runner: remembering the start branch: %v\n", err)
+			}
+		} else if !created && rs.Branch != nil && rs.Branch.StartBranch == "" {
+			start, report = startbranch.Recall(repo, taskBranch)
+		}
+		if report {
+			r.emit("branch", map[string]any{
+				"start_branch": start.StartBranch, "default_branch": start.DefaultBranch, "repository_url": start.RepositoryURL,
+			})
+		}
 	}
 	taskBranchPrefix := "megoo/" + rs.Task.Key + "-"
 	pol, err := policy.New(kind, wt)
@@ -742,81 +762,84 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	r.mu.Unlock()
 	defer r.removeImages()
 
-	// Pinned before any agent runs: the git dir the runner reads is the one the
-	// worktree had now, whatever the agent later does to its .git file.
-	if err := gitstate.Pin(wt, repo); err != nil {
-		return fail("git_state_unreadable", err)
-	}
-
-	// The states are read even when the run fails or is cancelled. A before
-	// state that cannot be read is left out, and then so is the after state
-	// unless the capture fails: the server never gets a guessed state. (An
-	// after capture that fails with a before state present is sent as dirty,
-	// see gitstate.CaptureAfter.)
-	readBefore := func() {
-		snap, err := gitstate.CapturePrefixed(wt, taskBranchPrefix)
-		if err != nil {
-			fmt.Fprintf(logf, "runner: git_before: %v\n", err)
-			return
+	// A task's worktree: its git state is read before and after the run (R1). A draft's folder has none.
+	if rs.Draft == nil {
+		// Pinned before any agent runs: the git dir the runner reads is the one the
+		// worktree had now, whatever the agent later does to its .git file.
+		if err := gitstate.Pin(wt, repo); err != nil {
+			return fail("git_state_unreadable", err)
 		}
-		r.mu.Lock()
-		r.gitBefore, r.snapBefore = &snap.State, &snap
-		r.mu.Unlock()
-	}
-	// Registered before the adapter's reap, so it runs once the adapter is gone.
-	defer func() {
-		r.mu.Lock()
-		before := r.snapBefore
-		r.mu.Unlock()
-		// Fails closed (see gitstate.CaptureAfter): with a baseline, a failed
-		// capture still yields a dirty git_after.
-		st, err := gitstate.CaptureAfter(wt, before)
-		if err != nil {
-			fmt.Fprintf(logf, "runner: git_after: %v\n", err)
-			if before == nil {
+
+		// The states are read even when the run fails or is cancelled. A before
+		// state that cannot be read is left out, and then so is the after state
+		// unless the capture fails: the server never gets a guessed state. (An
+		// after capture that fails with a before state present is sent as dirty,
+		// see gitstate.CaptureAfter.)
+		readBefore := func() {
+			snap, err := gitstate.CapturePrefixed(wt, taskBranchPrefix)
+			if err != nil {
+				fmt.Fprintf(logf, "runner: git_before: %v\n", err)
 				return
 			}
+			r.mu.Lock()
+			r.gitBefore, r.snapBefore = &snap.State, &snap
+			r.mu.Unlock()
 		}
-		r.mu.Lock()
-		r.gitAfter = &st
-		r.mu.Unlock()
-	}()
-	// Also with no files: it removes what an earlier run left in .megoocolab/.
-	if err := gitstate.Materialize(wt, rs.Files); err != nil {
-		readBefore()
-		return fail("files_failed", err)
-	}
-	// git_before is read after the documents' commit, so that commit is the
-	// run's starting point and not mistaken for the agent's change (R1).
-	if len(rs.RepoFiles) > 0 {
-		if err := gitstate.CommitRepoFiles(wt, rs.RepoFiles, rs.CommitMessage); err != nil {
+		// Registered before the adapter's reap, so it runs once the adapter is gone.
+		defer func() {
+			r.mu.Lock()
+			before := r.snapBefore
+			r.mu.Unlock()
+			// Fails closed (see gitstate.CaptureAfter): with a baseline, a failed
+			// capture still yields a dirty git_after.
+			st, err := gitstate.CaptureAfter(wt, before)
+			if err != nil {
+				fmt.Fprintf(logf, "runner: git_after: %v\n", err)
+				if before == nil {
+					return
+				}
+			}
+			r.mu.Lock()
+			r.gitAfter = &st
+			r.mu.Unlock()
+		}()
+		// Also with no files: it removes what an earlier run left in .megoocolab/.
+		if err := gitstate.Materialize(wt, rs.Files); err != nil {
 			readBefore()
-			return fail("commit_failed", err)
+			return fail("files_failed", err)
 		}
-	}
-	readBefore()
-	// R1 compares the before and after states. A read-only run without a before
-	// state could not be checked at all, and an agent could cause that itself,
-	// so it does not start.
-	r.mu.Lock()
-	// It must also start on the task's branch: with HEAD detached (or on another
-	// branch) a commit on the task branch followed by a detach would go unseen.
-	// The prefix, not Ensure's exact name: a worktree is reused when the task's
-	// title, and so the slug, changed.
-	unchecked := kind == policy.ReadOnly && (r.snapBefore == nil || !r.snapBefore.OnBranchPrefix(taskBranchPrefix))
-	var cause error
-	if unchecked && r.snapBefore == nil {
-		cause = errors.New("the repository's state could not be read before the run")
-	} else if unchecked {
-		on := strings.TrimPrefix(r.snapBefore.Branch(), "refs/heads/")
-		if on == "" {
-			on = "detached"
+		// git_before is read after the documents' commit, so that commit is the
+		// run's starting point and not mistaken for the agent's change (R1).
+		if len(rs.RepoFiles) > 0 {
+			if err := gitstate.CommitRepoFiles(wt, rs.RepoFiles, rs.CommitMessage); err != nil {
+				readBefore()
+				return fail("commit_failed", err)
+			}
 		}
-		cause = fmt.Errorf("HEAD is on %s, not on a %s* branch, so a read-only run cannot be checked", on, taskBranchPrefix)
-	}
-	r.mu.Unlock()
-	if unchecked {
-		return fail("git_state_unreadable", cause)
+		readBefore()
+		// R1 compares the before and after states. A read-only run without a before
+		// state could not be checked at all, and an agent could cause that itself,
+		// so it does not start.
+		r.mu.Lock()
+		// It must also start on the task's branch: with HEAD detached (or on another
+		// branch) a commit on the task branch followed by a detach would go unseen.
+		// The prefix, not Ensure's exact name: a worktree is reused when the task's
+		// title, and so the slug, changed.
+		unchecked := kind == policy.ReadOnly && (r.snapBefore == nil || !r.snapBefore.OnBranchPrefix(taskBranchPrefix))
+		var cause error
+		if unchecked && r.snapBefore == nil {
+			cause = errors.New("the repository's state could not be read before the run")
+		} else if unchecked {
+			on := strings.TrimPrefix(r.snapBefore.Branch(), "refs/heads/")
+			if on == "" {
+				on = "detached"
+			}
+			cause = fmt.Errorf("HEAD is on %s, not on a %s* branch, so a read-only run cannot be checked", on, taskBranchPrefix)
+		}
+		r.mu.Unlock()
+		if unchecked {
+			return fail("git_state_unreadable", cause)
+		}
 	}
 
 	proc, err := startAdapter(spec, wt, stderrLog)

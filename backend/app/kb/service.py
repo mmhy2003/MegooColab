@@ -363,7 +363,7 @@ def _op(op: str, a_start: int, b_start: int, a_lines: list[str], b_lines: list[s
     return {"op": op, "a_start": a_start + 1, "b_start": b_start + 1, "a_lines": a_lines, "b_lines": b_lines}
 
 
-def _opcodes(a: list[str], b: list[str]) -> list[tuple[str, int, int, int, int]]:
+def opcodes(a: list[str], b: list[str]) -> list[tuple[str, int, int, int, int]]:
     """difflib opcodes for the part between the common head and tail. difflib is quadratic in the worst case
     (many repeated lines), so a changed part larger than MAX_DIFF_CELLS is reported as one replacement."""
     head = 0
@@ -390,7 +390,7 @@ def diff(a: str, b: str) -> list[dict]:
     """Line diff of two texts. Unchanged runs longer than 2×CONTEXT_LINES keep CONTEXT_LINES of context next
     to each change and report the rest as {"op": "collapsed", "count": n}."""
     a_lines, b_lines = a.split("\n"), b.split("\n")
-    codes = _opcodes(a_lines, b_lines)
+    codes = opcodes(a_lines, b_lines)
     out: list[dict] = []
     for i, (tag, a1, a2, b1, b2) in enumerate(codes):
         if tag != "equal":

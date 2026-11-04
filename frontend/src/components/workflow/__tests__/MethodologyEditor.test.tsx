@@ -18,6 +18,7 @@ const KEYS: [string, string][] = [
   ["finish", "done"],
   ["pr_fix", "done"],
   ["pr_review", "done"],
+  ["kb_draft", "kb"],
 ];
 
 /** The page keeps the open stage in the address; here it is plain state, starting on Plan. */
@@ -91,7 +92,7 @@ describe("MethodologyEditor", () => {
   it("shows one tab per stage, each with its keys and versions", async () => {
     setup();
     await screen.findByRole("region", { name: "plan" });
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Brainstorm", "Design", "Plan", "Build", "Review", "Done"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Brainstorm", "Design", "Plan", "Build", "Review", "Done", "Knowledge base"]);
     expect(screen.getByRole("tab", { name: "Plan" })).toHaveAttribute("aria-selected", "true");
     expect(within(planCard()).getByText("v3")).toBeInTheDocument();
     expect(screen.getAllByRole("region")).toHaveLength(1);
@@ -101,6 +102,8 @@ describe("MethodologyEditor", () => {
     ]);
     fireEvent.click(screen.getByRole("tab", { name: "Done" }));
     expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual(["finish", "pr_fix", "pr_review"]);
+    fireEvent.click(screen.getByRole("tab", { name: "Knowledge base" }));
+    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual(["kb_draft"]);
   });
 
   it("marks a stage with unsaved edits and keeps them when switching tabs", async () => {

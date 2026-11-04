@@ -298,6 +298,12 @@ class RunImage(BaseModel):
     size: int
 
 
+class RunDraft(BaseModel):
+    """A Knowledge Base draft run (capability drafts/1): the agent works in a folder the runner keeps for the draft."""
+
+    id: uuid.UUID
+
+
 class RunStart(BaseModel):
     type: Literal["run_start"] = "run_start"
     run_id: uuid.UUID
@@ -319,6 +325,8 @@ class RunStart(BaseModel):
     images: list[RunImage] = []  # only to a runner with images/1, in the order the prompt names them
     # every task run, workflow or not (a branch/1 runner); None for answering runs
     branch: RunBranch | None = None
+    # only for a Knowledge Base draft run, to a runner with drafts/1
+    draft: RunDraft | None = None
 
     @field_validator("files")
     @classmethod
@@ -349,6 +357,14 @@ class RunCancel(BaseModel):
     run_id: uuid.UUID
 
 
+class DraftDone(BaseModel):
+    """The Knowledge Base draft was saved or discarded (capability drafts/1): the runner removes its folder."""
+
+    type: Literal["draft_done"] = "draft_done"
+    agent_id: uuid.UUID
+    draft_id: uuid.UUID
+
+
 class ConfigChanged(BaseModel):
     type: Literal["config_changed"] = "config_changed"
 
@@ -363,4 +379,4 @@ class RunSteer(BaseModel):
     images: list[RunImage] = []  # only to a runner with images/1
 
 
-ServerMessage = Welcome | RunStart | RunCancel | ConfigChanged | RunSteer | ToolsPush | ToolsScan
+ServerMessage = Welcome | RunStart | RunCancel | DraftDone | ConfigChanged | RunSteer | ToolsPush | ToolsScan
