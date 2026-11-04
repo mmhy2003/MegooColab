@@ -2694,6 +2694,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/kb/drafts/{draft_id}/bring-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bring In */
+        post: operations["bring_in_api_kb_drafts__draft_id__bring_in_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/drafts/{draft_id}/save": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save */
+        post: operations["save_api_kb_drafts__draft_id__save_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/kb/drafts/{draft_id}/settle": {
         parameters: {
             query?: never;
@@ -4850,6 +4884,24 @@ export interface components {
             /** Text */
             text: string;
             target?: components["schemas"]["DraftTarget"] | null;
+        };
+        /** DraftSave */
+        DraftSave: {
+            /** Summary */
+            summary?: string | null;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+        };
+        /** DraftSaved */
+        DraftSaved: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
         };
         /** DraftSummary */
         DraftSummary: {
@@ -14079,6 +14131,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bring_in_api_kb_drafts__draft_id__bring_in_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_api_kb_drafts__draft_id__save_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftSave"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftSaved"];
                 };
             };
             /** @description Validation Error */

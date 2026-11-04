@@ -14,7 +14,7 @@ from app.agents.models import Agent, AgentBinding
 from app.agents.service import owner_can_access
 from app.auth.models import User
 from app.core.config import get_settings
-from app.kb.models import KbSpace, SpaceKind
+from app.kb.models import KbDocument, KbSpace, SpaceKind
 from app.kb import service as kb
 from app.kb_drafts import blocks, prompts
 from app.kb_drafts.models import KbDraft, KbDraftMessage
@@ -29,7 +29,8 @@ from app.kb_drafts.service import (
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.models import Project
-from app.runner.protocol import McpAccess, RunDraft, RunTask
+from app.runner.protocol import DraftDone, McpAccess, RunCancel, RunDraft, RunTask
+from app.runner.registry import DRAFTS_CAPABILITY, RunnerClosed, registry
 
 
 class NotSupported(Exception):
@@ -113,6 +114,62 @@ async def apply_submission(db: AsyncSession, run: AgentRun, body_md: str, reply:
     add_message(db, draft, "agent", reply, run_id=run.id)
     await touch(db, draft)
     return blocks.open_count(turn)
+
+
+async def bring_in(db: AsyncSession, user: User, draft: KbDraft) -> AgentRun:
+    """Someone saved the document meanwhile: the agent brings their version into the draft, which is then based on
+    it (a save no longer conflicts with it)."""
+    if draft.document_id is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "not_a_document")
+    await check_agent(db, user, await db.get(KbSpace, draft.space_id), draft.agent_id)
+    await refuse_while_writing(db, draft)
+    doc = await db.get(KbDocument, draft.document_id)
+    newer = {"revision": doc.latest_revision, "body_md": doc.body_md}
+    draft.base_revision = doc.latest_revision
+    settle(draft)
+    text = (f"Someone saved a newer version (rev {doc.latest_revision}). Bring their changes into the draft and keep "
+            "ours where they don't conflict.")
+    add_message(db, draft, "person", text)
+    run = await enqueue_turn(db, draft, request=text, target=None, newer=newer)
+    await touch(db, draft)
+    return run
+
+
+async def stop_runs_of(db: AsyncSession, draft_ids: list[uuid.UUID]) -> None:
+    """These drafts are about to be deleted, and their runs with them: a running agent is stopped (its later
+    run_finished, for a run that no longer exists, is ignored); a queued run simply goes."""
+    runs = (
+        await db.execute(
+            select(AgentRun).where(AgentRun.draft_id.in_(draft_ids), AgentRun.status == RunStatus.running)
+            .with_for_update()
+        )
+    ).scalars().all()
+    for run in runs:
+        conn = registry.conn_for_run(run.id)
+        if conn is not None:
+            try:
+                await conn.send(RunCancel(run_id=run.id))
+            except RunnerClosed:
+                pass
+
+
+async def send_draft_done(agent_id: uuid.UUID | None, draft_id: uuid.UUID) -> None:
+    """Best effort: the agent's runner removes the draft's folder. A runner that is away removes it within 30 days."""
+    conn = registry.conn_for_agent(agent_id) if agent_id else None
+    if conn is None or DRAFTS_CAPABILITY not in conn.capabilities:
+        return
+    try:
+        await conn.send(DraftDone(agent_id=agent_id, draft_id=draft_id))
+    except RunnerClosed:
+        pass
+
+
+async def drafts_of_document(db: AsyncSession, doc_id: uuid.UUID) -> list[tuple[uuid.UUID | None, uuid.UUID]]:
+    """Before a document is deleted (its drafts go with it): their agents are stopped. Returns (agent_id, draft_id) of
+    each draft, for send_draft_done once the delete is committed."""
+    rows = (await db.execute(select(KbDraft.agent_id, KbDraft.id).where(KbDraft.document_id == doc_id))).all()
+    await stop_runs_of(db, [d for _, d in rows])
+    return [(a, d) for a, d in rows]
 
 
 async def start_fields(db: AsyncSession, run: AgentRun) -> tuple[RunTask, str, dict]:

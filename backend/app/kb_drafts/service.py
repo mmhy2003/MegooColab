@@ -285,6 +285,33 @@ async def change_agent(db: AsyncSession, user: User, draft: KbDraft, agent_id: u
 
 
 async def discard(db: AsyncSession, draft: KbDraft) -> None:
+    from app.kb_drafts.turns import stop_runs_of  # local: turns imports this module
+
+    await stop_runs_of(db, [draft.id])
     await publish(db, Event(type="kb_draft.updated", user_id=draft.user_id))
     await db.delete(draft)
     await db.flush()
+
+
+async def save(db: AsyncSession, user: User, draft: KbDraft, *, summary: str | None, force: bool) -> KbDocument:
+    """The draft becomes a revision of its document (a new one for a new document), credited to the person with the
+    agent; then the draft is gone. A newer revision saved meanwhile refuses (409 kb_conflict) unless `force`."""
+    await refuse_while_writing(db, draft)
+    title = draft.title.strip()
+    if not title:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "title_required")
+    agent = await db.get(Agent, draft.agent_id) if draft.agent_id else None
+    summary = (summary or "").strip() or (f"Written with {agent.name}" if agent else None)
+    if draft.document_id is None:
+        doc = await kb.create_document(db, user, await db.get(KbSpace, draft.space_id), draft.folder_id, title,
+                                       draft.body_md, agent_id=draft.agent_id, summary=summary)
+    else:
+        doc = await kb.lock_document(db, draft.document_id)
+        base = doc.latest_revision if force else draft.base_revision
+        doc = await kb.update_document(db, user, doc, base_revision=base, title=title, body=draft.body_md,
+                                       summary=summary, agent_id=draft.agent_id)
+    from app.notifications.service import read_by_acting  # local: notifications import the KB
+
+    await read_by_acting(db, user.id, link=f"/kb/drafts/{draft.id}")
+    await discard(db, draft)
+    return doc

@@ -7,6 +7,8 @@ from app.core.db import DbSession
 from app.kb_drafts import service, turns
 from app.kb_drafts.schemas import (
     AgentChoice,
+    DraftSave,
+    DraftSaved,
     DraftAgentOut,
     DraftEdit,
     DraftIn,
@@ -71,6 +73,25 @@ async def stop(draft_id: uuid.UUID, user: AuthedUser, db: DbSession) -> DraftOut
     return await service.draft_out(db, draft)
 
 
+@router.post("/{draft_id}/bring-in")
+async def bring_in(draft_id: uuid.UUID, user: AuthedUser, db: DbSession) -> DraftOut:
+    draft = await service.get_draft_for(db, user, draft_id, lock=True)
+    await turns.bring_in(db, user, draft)
+    await db.commit()
+    await engine.dispatch_queued(db)
+    return await service.draft_out(db, draft)
+
+
+@router.post("/{draft_id}/save")
+async def save(draft_id: uuid.UUID, body: DraftSave, user: AuthedUser, db: DbSession) -> DraftSaved:
+    draft = await service.get_draft_for(db, user, draft_id, lock=True)
+    agent_id = draft.agent_id
+    doc = await service.save(db, user, draft, summary=body.summary, force=body.force)
+    await db.commit()
+    await turns.send_draft_done(agent_id, draft_id)
+    return DraftSaved(document_id=doc.id)
+
+
 @router.post("/{draft_id}/settle")
 async def settle(draft_id: uuid.UUID, user: AuthedUser, db: DbSession) -> DraftOut:
     draft = await service.get_draft_for(db, user, draft_id, lock=True)
@@ -123,6 +144,8 @@ async def change_agent(draft_id: uuid.UUID, body: AgentChoice, user: AuthedUser,
 @router.delete("/{draft_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def discard(draft_id: uuid.UUID, user: AuthedUser, db: DbSession) -> Response:
     draft = await service.get_draft_for(db, user, draft_id, lock=True)
+    agent_id = draft.agent_id
     await service.discard(db, draft)
     await db.commit()
+    await turns.send_draft_done(agent_id, draft_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

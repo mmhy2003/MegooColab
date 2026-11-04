@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.core.text import NoNulStr
-from app.kb.schemas import TITLE_MAX, Named, SpaceRef
+from app.kb.schemas import SUMMARY_MAX, TITLE_MAX, Named, SpaceRef
 
 BRIEF_MAX = 20_000
 REQUEST_MAX = 20_000
@@ -50,6 +50,16 @@ class DraftTarget(BaseModel):
 class DraftRequest(BaseModel):
     text: NoNulStr = Field(min_length=1, max_length=REQUEST_MAX)
     target: DraftTarget | None = None
+
+
+class DraftSave(BaseModel):
+    summary: NoNulStr | None = Field(default=None, max_length=SUMMARY_MAX)
+    # save over a newer revision someone saved meanwhile
+    force: bool = False
+
+
+class DraftSaved(BaseModel):
+    document_id: uuid.UUID
 
 
 class DraftAgentOut(BaseModel):

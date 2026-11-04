@@ -168,7 +168,13 @@ async def delete_document(doc_id: uuid.UUID, user: AuthedUser, db: DbSession) ->
     doc, space = await access.get_document_for(db, user, doc_id, write=True)
     if not await access.can_delete_document(db, user, doc, space):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
+    from app.kb_drafts import turns  # local: kb_drafts imports this module
+
+    drafts = await turns.drafts_of_document(db, doc.id)  # people's unsaved drafts of it go with it
     await service.delete_document(db, user, doc)
+    await db.commit()
+    for agent_id, draft_id in drafts:
+        await turns.send_draft_done(agent_id, draft_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

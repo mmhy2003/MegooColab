@@ -357,6 +357,14 @@ class RunCancel(BaseModel):
     run_id: uuid.UUID
 
 
+class DraftDone(BaseModel):
+    """The Knowledge Base draft was saved or discarded (capability drafts/1): the runner removes its folder."""
+
+    type: Literal["draft_done"] = "draft_done"
+    agent_id: uuid.UUID
+    draft_id: uuid.UUID
+
+
 class ConfigChanged(BaseModel):
     type: Literal["config_changed"] = "config_changed"
 
@@ -371,4 +379,4 @@ class RunSteer(BaseModel):
     images: list[RunImage] = []  # only to a runner with images/1
 
 
-ServerMessage = Welcome | RunStart | RunCancel | ConfigChanged | RunSteer | ToolsPush | ToolsScan
+ServerMessage = Welcome | RunStart | RunCancel | DraftDone | ConfigChanged | RunSteer | ToolsPush | ToolsScan
