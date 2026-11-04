@@ -50,6 +50,14 @@ def _check_role(tool: str) -> AgentRun | None:
 async def _answer_spaces(db, run: AgentRun | None) -> set[uuid.UUID] | None:
     """An answering run reads only the asked project's space and the organization's: its answer goes to
     another project, so nothing from the owner's other projects or teams may reach it (A2A-7)."""
+    if run is not None and run.cron_run_id is not None:
+        # a cron's run reads its own project's space and the organization's: its report is read by the project's
+        # members, so nothing from the agent owner's other projects or teams may reach it
+        from app.crons.models import Cron, CronRun  # local: crons imports the MCP auth module
+
+        project_id = await db.scalar(select(Cron.project_id).join(CronRun, CronRun.cron_id == Cron.id)
+                                     .where(CronRun.id == run.cron_run_id))
+        return {(await access.space_for_project(db, project_id)).id, (await access.org_space(db)).id}
     if run is None or run.question_id is None:
         return None
     from app.a2a.models import Question  # local: a2a imports the MCP auth module

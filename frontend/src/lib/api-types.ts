@@ -4850,6 +4850,8 @@ export interface components {
             timezone: string;
             /** Description */
             description: string;
+            /** Any Agent */
+            any_agent: boolean;
             agent: components["schemas"]["Named"] | null;
             /**
              * Mode

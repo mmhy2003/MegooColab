@@ -50,8 +50,10 @@ export function CronEditor({ projectKey, cron, onClose }: { projectKey: string; 
     setBusy(true);
     setError(null);
     try {
-      const body = { name: name.trim(), prompt: prompt.trim(), schedule: schedule.trim(), timezone,
-        agent_id: agentId || null, mode, kb_title: mode === "kb" ? kbTitle.trim() || null : null, ...notify };
+      const body: Record<string, unknown> = { name: name.trim(), prompt: prompt.trim(), schedule: schedule.trim(), timezone,
+        mode, kb_title: mode === "kb" ? kbTitle.trim() || null : null, ...notify };
+      // the agent is sent only when chosen here: another manager may edit a cron whose agent they can't use
+      if (!cron || agentId !== (cron.agent?.id ?? "")) body.agent_id = agentId || null;
       await api<Cron>(cron ? `${cronsPath(projectKey)}/${cron.id}` : cronsPath(projectKey),
         { method: cron ? "PATCH" : "POST", json: body });
       await client.invalidateQueries({ queryKey: cronKeys.all });

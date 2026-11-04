@@ -71,6 +71,8 @@ class CronOut(BaseModel):
     schedule: str
     timezone: str
     description: str
+    # any free agent of the project; false with no agent: the chosen agent was deleted
+    any_agent: bool
     agent: Named | None
     mode: CronModeName
     kb_title: str | None

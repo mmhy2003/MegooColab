@@ -49,6 +49,7 @@ async def cron_out(db: AsyncSession, cron: Cron) -> CronOut:
     )
     return CronOut(
         id=cron.id, project_key=project.key, name=cron.name, prompt=cron.prompt, schedule=cron.schedule,
+        any_agent=cron.any_agent,
         timezone=cron.timezone, description=schedule.describe(cron.schedule), agent=await _named(db, Agent, cron.agent_id),
         mode=cron.mode, kb_title=cron.kb_title, kb_document_id=cron.kb_document_id,
         notify_findings=cron.notify_findings, notify_every=cron.notify_every, notify_failures=cron.notify_failures,
@@ -86,7 +87,8 @@ def _audit_data(cron: Cron) -> dict:
 async def create(db: AsyncSession, user: User, project: Project, data: CronIn) -> Cron:
     schedule.check(data.schedule, data.timezone)
     await _check_agent(db, user, project, data.agent_id)
-    cron = Cron(id=uuid.uuid4(), project_id=project.id, created_by=user.id, **data.model_dump())
+    cron = Cron(id=uuid.uuid4(), project_id=project.id, created_by=user.id, any_agent=data.agent_id is None,
+                **data.model_dump())
     cron.next_run_at = next_after(cron)
     db.add(cron)
     await db.flush()
@@ -101,6 +103,7 @@ async def update(db: AsyncSession, user: User, project: Project, cron: Cron, dat
         schedule.check(changes.get("schedule", cron.schedule), changes.get("timezone", cron.timezone))
     if "agent_id" in changes:
         await _check_agent(db, user, project, changes["agent_id"])
+        cron.any_agent = changes["agent_id"] is None
     for key, value in changes.items():
         setattr(cron, key, value)
     if not cron.paused and ("schedule" in changes or "timezone" in changes):
@@ -123,6 +126,18 @@ async def set_paused(db: AsyncSession, user: User, cron: Cron, paused: bool) -> 
 
 
 async def delete(db: AsyncSession, user: User, cron: Cron) -> None:
+    from app.agent_runs.models import ACTIVE_STATUSES, AgentRun
+    from app.agent_runs.service import stop_run  # local: agent_runs calls into the crons package
+
+    # its runs go with it: an agent still working is stopped first, never left working unobserved
+    working = (
+        await db.execute(
+            select(AgentRun).join(CronRun, CronRun.agent_run_id == AgentRun.id)
+            .where(CronRun.cron_id == cron.id, AgentRun.status.in_(ACTIVE_STATUSES))
+        )
+    ).scalars().all()
+    for run in working:
+        await stop_run(db, run, "cron_deleted")
     await audit.record(db, "cron.deleted", actor_id=user.id, target_type="cron", target_id=cron.id,
                        data=_audit_data(cron))
     await db.delete(cron)

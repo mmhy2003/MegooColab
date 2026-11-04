@@ -75,9 +75,16 @@ async def delete_cron(ref: str, cron_id: uuid.UUID, user: AuthedUser, db: DbSess
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+async def _managed_any_status(db, user, ref: str):
+    """A project's managers may pause, resume and delete its crons even once it is finished or archived."""
+    project = await get_project_for(db, user, ref)
+    await require_manage(db, user, project)
+    return project
+
+
 @router.post("/api/projects/{ref}/crons/{cron_id}/pause")
 async def pause_cron(ref: str, cron_id: uuid.UUID, user: AuthedUser, db: DbSession) -> CronOut:
-    project = await _managed(db, user, ref)
+    project = await _managed_any_status(db, user, ref)
     cron = await service.set_paused(db, user, await service.get_cron(db, project, cron_id, lock=True), True)
     await db.commit()
     return await service.cron_out(db, cron)
@@ -85,7 +92,7 @@ async def pause_cron(ref: str, cron_id: uuid.UUID, user: AuthedUser, db: DbSessi
 
 @router.post("/api/projects/{ref}/crons/{cron_id}/resume")
 async def resume_cron(ref: str, cron_id: uuid.UUID, user: AuthedUser, db: DbSession) -> CronOut:
-    project = await _managed(db, user, ref)
+    project = await _managed_any_status(db, user, ref)
     cron = await service.set_paused(db, user, await service.get_cron(db, project, cron_id, lock=True), False)
     await db.commit()
     return await service.cron_out(db, cron)

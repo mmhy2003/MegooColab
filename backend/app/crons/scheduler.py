@@ -7,7 +7,7 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,7 @@ from app.core.db import SessionLocal
 from app.crons import service, turns
 from app.crons.models import Cron, CronRun, CronRunStatus
 from app.images.support import runner_has
+from app.projects.models import Project, ProjectStatus
 from app.runner.registry import CRONS_CAPABILITY, registry
 
 log = logging.getLogger(__name__)
@@ -31,8 +32,8 @@ TIME_LIMIT = timedelta(minutes=30)
 async def _pick_agent(db: AsyncSession, cron: Cron) -> Agent | None:
     """The cron's chosen agent while it can still work on the project; else any agent of the project whose owner can
     still access it: one whose runner can run crons first, online first, then the least busy."""
-    if cron.agent_id is not None:
-        agent = await db.get(Agent, cron.agent_id)
+    if not cron.any_agent:  # its chosen agent, or none at all (deleted): never another one
+        agent = await db.get(Agent, cron.agent_id) if cron.agent_id else None
         ok = agent is not None and await is_usable_binding(db, agent.id, cron.project_id)
         return agent if ok else None
     agents = (
@@ -73,8 +74,8 @@ async def start_run(db: AsyncSession, cron: Cron, run: CronRun) -> None:
         return
     agent = await _pick_agent(db, cron)
     if agent is None:
-        _skip(run, "no_agent")
-        await turns.tell_outcome(db, cron, run)
+        _skip(run, "no_agent")  # the managers are told whatever the cron's settings: it can't run until they act
+        await turns.tell(db, cron, run, f"Cron {cron.name} skipped", turns.SKIP_TEXT["no_agent"])
         return
     prompt, version = await turns.cron_prompt(db, cron, run)
     agent_run = AgentRun(id=uuid.uuid4(), cron_run_id=run.id, agent_id=agent.id, requested_by=cron.created_by,
@@ -111,12 +112,15 @@ async def _start_due(db: AsyncSession, now: datetime) -> None:
     crons = (
         await db.execute(
             select(Cron).where(Cron.paused.is_(False), Cron.next_run_at <= now)
-            .with_for_update(skip_locked=True).execution_options(populate_existing=True)
+            .with_for_update(of=Cron, skip_locked=True).execution_options(populate_existing=True)
         )
     ).scalars().all()
     for cron in crons:
         due = cron.next_run_at
-        if now - due > CATCH_UP:
+        project = await db.get(Project, cron.project_id)
+        if project.status != ProjectStatus.active:
+            pass  # a finished or archived project's crons wait, unrun, until it is active again
+        elif now - due > CATCH_UP:
             await _claim(db, cron.id, due, CronRunStatus.skipped, "missed")
         else:
             run_id = await _claim(db, cron.id, due, CronRunStatus.queued)
@@ -133,14 +137,28 @@ async def _end_waiting(db: AsyncSession, now: datetime) -> None:
         await db.execute(
             select(CronRun, AgentRun)
             .join(AgentRun, AgentRun.id == CronRun.agent_run_id)
-            .where(CronRun.status == CronRunStatus.queued, CronRun.scheduled_at < now - AGENT_WAIT,
-                   AgentRun.status == RunStatus.queued)
+            .where(CronRun.status.in_((CronRunStatus.queued, CronRunStatus.running)),
+                   CronRun.claimed_at < now - AGENT_WAIT, AgentRun.status == RunStatus.queued)
             .with_for_update(of=CronRun, skip_locked=True)
         )
     ).all()
     for cron_run, agent_run in rows:
         cron_run.skip_reason = "no_agent_online"
         await cancel_waiting_run(db, agent_run, "no_agent_online")
+
+
+async def _end_lost(db: AsyncSession, now: datetime) -> None:
+    """Runs whose agent run is gone, or ended without ending them: they would block the cron for good."""
+    rows = (
+        await db.execute(
+            select(CronRun).outerjoin(AgentRun, AgentRun.id == CronRun.agent_run_id)
+            .where(CronRun.status.in_((CronRunStatus.queued, CronRunStatus.running)),
+                   or_(CronRun.agent_run_id.is_(None), AgentRun.status.not_in(ACTIVE_STATUSES)))
+            .with_for_update(of=CronRun, skip_locked=True)
+        )
+    ).scalars().all()
+    for run in rows:
+        run.status, run.skip_reason, run.finished_at = CronRunStatus.failed, "lost", now
 
 
 async def _stop_overdue(db: AsyncSession, now: datetime) -> None:
@@ -163,7 +181,7 @@ async def _stop_overdue(db: AsyncSession, now: datetime) -> None:
 
 async def tick(now: datetime | None = None) -> None:
     now = now or datetime.now(UTC)
-    for step in (_start_due, _end_waiting, _stop_overdue):
+    for step in (_start_due, _end_waiting, _end_lost, _stop_overdue):
         async with SessionLocal() as db:
             await step(db, now)
             from app.workflow import engine

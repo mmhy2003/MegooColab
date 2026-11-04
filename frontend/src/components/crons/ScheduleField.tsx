@@ -27,22 +27,21 @@ export function ScheduleField({
   onChange: (expr: string) => void;
   onValid: (ok: boolean) => void;
 }) {
-  const [answer, setPreview] = useState<SchedulePreview | null>(null);
-  const preview = value.trim() ? answer : null;
+  // the server's answer, with the expression and zone it is for: shown only while they are still what is typed
+  const [answer, setPreview] = useState<{ expr: string; tz: string; preview: SchedulePreview } | null>(null);
+  const preview = answer && answer.expr === value.trim() && answer.tz === timezone ? answer.preview : null;
   const fields = value.trim().split(/\s+/);
   const timed = /^\d{1,2} \d{1,2} /.test(value.trim());
 
   useEffect(() => {
-    if (!value.trim()) {
-      onValid(false);
-      return;
-    }
+    onValid(false); // until the server has checked what is typed now
+    if (!value.trim()) return;
     let live = true;
     const t = setTimeout(async () => {
       try {
         const p = await previewSchedule(value.trim(), timezone);
         if (!live) return;
-        setPreview(p);
+        setPreview({ expr: value.trim(), tz: timezone, preview: p });
         onValid(p.ok);
       } catch {
         if (live) onValid(false);

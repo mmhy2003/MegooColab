@@ -33,7 +33,8 @@ class Cron(IdMixin, Base):
     prompt: Mapped[str] = mapped_column(Text)
     schedule: Mapped[str] = mapped_column(String(200))
     timezone: Mapped[str] = mapped_column(String(64))
-    # None: any free agent of the project
+    # any free agent of the project, or only the chosen `agent_id` (None once that agent was deleted: no agent)
+    any_agent: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"))
     mode: Mapped[CronMode] = mapped_column(String(10), default=CronMode.report)
     # kb mode: the document it keeps, followed by id (None until the first run, or once deleted)
@@ -70,5 +71,8 @@ class CronRun(IdMixin, Base):
     # the commit the run worked on
     commit: Mapped[str | None] = mapped_column(String(64))
     tasks_created: Mapped[int] = mapped_column(Integer, default=0)
+    # when the scheduler claimed the time: the wait for an agent counts from here (a time run late after downtime
+    # still gets its full wait)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -139,3 +139,30 @@ describe("CronReport", () => {
     expect(screen.getByText("skipped: no agent online")).toBeInTheDocument();
   });
 });
+
+describe("review fixes", () => {
+  it("never shows the last expression's meaning, or allows saving, before the new one is checked", async () => {
+    const onValid = vi.fn();
+    const { rerender } = wrap(<ScheduleField value="0 9 * * 1-5" timezone="UTC" onChange={() => {}} onValid={onValid} />);
+    expect(await screen.findByText("At 09:00, Monday through Friday")).toBeInTheDocument();
+    onValid.mockClear();
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ScheduleField value="0 25 * * *" timezone="UTC" onChange={() => {}} onValid={onValid} />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText("At 09:00, Monday through Friday")).not.toBeInTheDocument();
+    expect(onValid).toHaveBeenCalledWith(false);
+  });
+
+  it("an edit that doesn't touch the agent doesn't send it", async () => {
+    wrap(<CronEditor projectKey="PAY" cron={{ ...CRON, any_agent: false, agent: { id: "a9", name: "someone-else" } } as never}
+      onClose={() => {}} />);
+    const dialog = screen.getByRole("dialog");
+    await within(dialog).findByText("At 09:00, Monday through Friday");
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Renamed" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save cron" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "PATCH")).toBeTruthy());
+    expect(calls.find((c) => c.method === "PATCH")!.body).not.toHaveProperty("agent_id");
+  });
+});
