@@ -52,6 +52,7 @@ func (m *Manager) sweepDrafts(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		drafts.Sweep(m.cacheRoot, drafts.SweepAge, time.Now())
+		drafts.SweepAt(drafts.Crons, m.cacheRoot, drafts.SweepAge, time.Now())
 		select {
 		case <-ctx.Done():
 			return

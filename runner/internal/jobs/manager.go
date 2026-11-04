@@ -707,7 +707,18 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return fail("worktree_failed", err)
 	}
 	var wt string
-	if rs.Draft != nil {
+	if rs.Cron != nil {
+		// a cron's own worktree, reset to the project's default branch (fetched first) and reset again afterwards
+		if wt, err = drafts.EnsureAt(r.ctx, drafts.Crons, m.cacheRoot, rs.AgentID, rs.Cron.ID, repo); err != nil {
+			return fail("cron_folder_failed", err)
+		}
+		point, err := refreshCron(r.ctx, logf, repo, wt, rs.Cron.Branch)
+		if err != nil {
+			return fail("cron_refresh_failed", err)
+		}
+		// registered before the git capture's own defer, so it runs after git_after was read
+		defer resetCron(logf, wt, point)
+	} else if rs.Draft != nil {
 		// a draft's folder: no branch, no git state, nothing the agent may change
 		if wt, err = drafts.Ensure(r.ctx, m.cacheRoot, rs.AgentID, rs.Draft.ID, repo); err != nil {
 			return fail("draft_folder_failed", err)
