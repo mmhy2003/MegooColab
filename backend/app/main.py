@@ -7,6 +7,8 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.routing import Route
 
@@ -152,6 +154,14 @@ def create_app() -> FastAPI:
 
     # added last, so it runs first: a refused request does no other work
     app.add_middleware(RateLimitMiddleware)
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation(request: Request, exc: RequestValidationError):
+        # a refused secret is never echoed back: FastAPI's errors repeat the input they refused
+        if "/secrets" in request.url.path:
+            errors = [{k: v for k, v in e.items() if k not in ("input", "ctx")} for e in exc.errors()]
+            return JSONResponse({"detail": errors}, status_code=422)
+        return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(RateLimited)
     async def _rate_limited(_request: Request, exc: RateLimited) -> JSONResponse:

@@ -111,7 +111,9 @@ async def replace_project_value(ref: str, secret_id: uuid.UUID, body: SecretValu
 
 @router.delete("/api/projects/{ref}/secrets/{secret_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project_secret(ref: str, secret_id: uuid.UUID, user: AuthedUser, db: DbSession) -> Response:
-    project = await _managed(db, user, ref)
+    # a finished or archived project's credentials can still be removed
+    project = await get_project_for(db, user, ref)
+    await require_manage(db, user, project)
     await service.delete(db, user, await service.get_secret(db, secret_id, project_id=project.id))
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

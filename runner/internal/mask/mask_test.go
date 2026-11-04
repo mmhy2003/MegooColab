@@ -24,3 +24,18 @@ func TestHeldBackIsTheLongestPrefixOfAnyValue(t *testing.T) {
 		}
 	}
 }
+
+func TestEncodedFormsOfAValueAreReplaced(t *testing.T) {
+	s := Build("", []protocol.RunSecret{{Name: "DB", Value: "p@ss:w/rd x+y"}, {Name: "PW", Value: `pa"ss\word`},
+		{Name: "T", Value: "tok-12345\n"}})
+	for in, want := range map[string]string{
+		"postgres://u:p%40ss%3Aw%2Frd%20x%2By@h/db": "postgres://u:[DB]@h/db",
+		"q=p%40ss%3Aw%2Frd+x%2By":                   "q=[DB]",
+		`{"v":"pa\"ss\\word"}`:                      `{"v":"[PW]"}`,
+		"token: tok-12345":                          "token: [T]",
+	} {
+		if got := s.Replace(in); got != want {
+			t.Errorf("Replace(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
