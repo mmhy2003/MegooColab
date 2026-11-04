@@ -40,6 +40,7 @@ from app.kb.access import ensure_spaces
 from app.kb.context import register as register_kb_context
 from app.kb.router import router as kb_router
 from app.kb_drafts.router import router as kb_drafts_router
+from app.secrets.router import router as secrets_router
 from app.mcp_server.server import MCP_PATH, build_mcp
 from app.memory import dream as _memory_dream  # noqa: F401 - registers the dreaming jobs
 from app.memory import extract as _memory_extract  # noqa: F401 - registers jobs and the reindex hook
@@ -191,6 +192,7 @@ def create_app() -> FastAPI:
         ai_router,
         kb_router,
         kb_drafts_router,
+        secrets_router,
         memory_router,
         a2a_router,
         git_router,
