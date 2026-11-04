@@ -26,7 +26,7 @@ const UNDER: Record<string, Record<string, string>> = {
     agents: "Agents", ai: "AI", audit: "Audit log", git: "Git", hub: "Tool Hub", methodology: "Methodology", settings: "Settings",
     users: "Users",
   },
-  settings: { agents: "My agents", notifications: "Notifications", profile: "Profile", tokens: "Access tokens" },
+  settings: { agents: "My agents", notifications: "Notifications", profile: "Profile", secrets: "Secrets", tokens: "Access tokens" },
   projects: { new: "New project" },
   kb: { search: "Search" },
   hub: { "new-mcp": "Add MCP", "new-skill": "Add skill" },

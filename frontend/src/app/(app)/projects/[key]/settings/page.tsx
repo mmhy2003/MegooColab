@@ -19,6 +19,7 @@ import { useMe } from "@/lib/me";
 import { projectRights, teamChoices } from "@/lib/rights";
 import { useColumns, useLabels, useProject, useRepos, useTeams } from "@/lib/project";
 import { qk } from "@/lib/queries";
+import { SecretsPanel } from "@/components/secrets/SecretsPanel";
 import type { Project } from "@/lib/types";
 
 const TABS = [
@@ -27,6 +28,7 @@ const TABS = [
   { id: "repositories", label: "Repositories" },
   { id: "labels", label: "Labels" },
   { id: "workflow", label: "Workflow" },
+  { id: "secrets", label: "Secrets" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -159,6 +161,11 @@ function ProjectSettings() {
       </TabPanel>
       <TabPanel id="workflow" active={tab === "workflow"}>
         <WorkflowSettings key={project.data.id} project={project.data} canEdit={rights.canManage} />
+      </TabPanel>
+      <TabPanel id="secrets" active={tab === "secrets"}>
+        {tab === "secrets" && (
+          <SecretsPanel base={`/api/projects/${key}/secrets`} canEdit={rights.canManage} project={key} />
+        )}
       </TabPanel>
     </div>
   );
