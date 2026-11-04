@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.kb_drafts.models import KbDraft
 from app.workflow import methodology
+from app.workflow.context import READ_ONLY_NOTE
 from app.workflow.models import MethodologyVersion
 
 TOOLS_LINE = "Call kb_draft_read, then kb_draft_submit once with the whole new draft and your reply."

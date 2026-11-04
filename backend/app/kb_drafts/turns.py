@@ -15,7 +15,8 @@ from app.agents.service import owner_can_access
 from app.auth.models import User
 from app.core.config import get_settings
 from app.kb.models import KbSpace, SpaceKind
-from app.kb_drafts import prompts
+from app.kb import service as kb
+from app.kb_drafts import blocks, prompts
 from app.kb_drafts.models import KbDraft, KbDraftMessage
 from app.kb_drafts.service import (
     active_run,
@@ -80,6 +81,38 @@ async def stop(db: AsyncSession, user: User, draft: KbDraft) -> None:
     if run is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "run_not_active")
     await cancel_run(db, user, run)
+
+
+async def apply_submission(db: AsyncSession, run: AgentRun, body_md: str, reply: str, title: str | None) -> int:
+    """The agent's work of this turn: its whole new text becomes the turn's marks against the draft as it is now, its
+    reply goes into the conversation. Once per run; nothing once the draft is gone. Returns the number of changes."""
+    draft = (
+        await db.execute(
+            select(KbDraft).where(KbDraft.id == run.draft_id).with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if draft is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "draft_gone")
+    run = (
+        await db.execute(
+            select(AgentRun).where(AgentRun.id == run.id).with_for_update().execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    asked = run.draft_request or {}
+    if asked.get("submitted"):
+        raise HTTPException(status.HTTP_409_CONFLICT, "already_submitted")
+    kb.check_body(body_md)
+    turn = blocks.new_turn(asked.get("request") or "", draft.body_md, body_md)
+    if turn is not None:
+        draft.turn = turn
+        draft.body_md = blocks.compose(turn)
+    if title:
+        draft.title = title
+    run.draft_request = {**asked, "submitted": True}
+    add_message(db, draft, "agent", reply, run_id=run.id)
+    await touch(db, draft)
+    return blocks.open_count(turn)
 
 
 async def start_fields(db: AsyncSession, run: AgentRun) -> tuple[RunTask, str, dict]:
