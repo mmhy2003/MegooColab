@@ -24,6 +24,10 @@ function detailOf(body: unknown, fallback: string): string {
     const d = (body as { detail: unknown }).detail;
     if (typeof d === "string") return d;
     if (Array.isArray(d)) return "validation_error";
+    // {code, message}: a refusal with its own words (a cron schedule's mistake)
+    if (d && typeof d === "object" && typeof (d as { message?: unknown }).message === "string") {
+      return (d as { message: string }).message;
+    }
   }
   return fallback;
 }

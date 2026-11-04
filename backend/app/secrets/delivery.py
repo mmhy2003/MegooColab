@@ -32,6 +32,11 @@ async def _project_id(db: AsyncSession, run: AgentRun):
         return await db.scalar(select(Task.project_id).where(Task.id == run.task_id))
     if run.question_id is not None:  # an answering run reads the asked project's code
         return await db.scalar(select(Question.target_project_id).where(Question.id == run.question_id))
+    if run.cron_run_id is not None:
+        from app.crons.models import Cron, CronRun  # local: crons imports agent_runs
+
+        return await db.scalar(select(Cron.project_id).join(CronRun, CronRun.cron_id == Cron.id)
+                               .where(CronRun.id == run.cron_run_id))
     if run.draft_id is not None:  # a team's or the organization's draft has no project
         space = await db.scalar(
             select(KbSpace).join(KbDraft, KbDraft.space_id == KbSpace.id).where(KbDraft.id == run.draft_id)

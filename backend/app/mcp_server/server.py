@@ -31,9 +31,11 @@ from app.mcp_server.auth import (
     current_run,
     live_run,
     refuse_run_token,
+    require_cron_reading,
     require_run_task,
 )
 from app.mcp_server.auth import tool_session as _tool_session
+from app.mcp_server.cron_tools import register_cron_tools
 from app.mcp_server.kb_draft_tools import register_kb_draft_tools
 from app.mcp_server.kb_tools import register_kb_tools
 from app.mcp_server.memory_tools import register_memory_tools
@@ -139,8 +141,8 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
     ) -> list[dict[str, Any]]:
         """Tasks of a project. `assignee` is a user id, or `agent:<agent id>`; `column` is a column name;
         `q` matches titles; `mine` keeps tasks assigned to me or to one of my agents."""
-        refuse_run_token()
         async with _tool_session() as (db, user):
+            await require_cron_reading(db, project_key)  # a cron's run reads its own project's tasks; others none
             project = await get_project_for(db, user, project_key)
             column_id = (await _column_by_name(db, project, column)).id if column else None
             tasks = await service.list_tasks(db, project, assignee=assignee, column=column_id, q=q)
@@ -154,7 +156,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
         """A task by key (e.g. PAY-12) with its last 20 activity items (comments, events and questions), and the
         images people sent you with their messages, after the task's JSON."""
         async with _tool_session() as (db, user):
-            await require_run_task(db, key)
+            await require_run_task(db, key, reading=True)
             task, _ = await service.get_task_for(db, user, key)
             out = _json(await service.task_out(db, task, user))
             out["activity"] = [_json(i) for i in await activity_items(db, task, ACTIVITY_LIMIT)]
@@ -249,6 +251,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
     register_memory_tools(mcp)
     register_a2a_tools(mcp)
     register_kb_draft_tools(mcp)
+    register_cron_tools(mcp)
 
     http_app = mcp.streamable_http_app(
         streamable_http_path=MCP_PATH,

@@ -16,6 +16,7 @@ from app.a2a.context import register as register_a2a_context
 from app.chats.context import register as register_chats_context
 from app.a2a.router import router as a2a_router
 from app.a2a.routing import route_loop
+from app.crons.scheduler import cron_loop
 from app.agent_runs.router import router as agent_runs_router
 from app.agent_runs.service import fail_orphaned_runs
 from app.agents.router import admin_router as admin_agents_router
@@ -42,6 +43,7 @@ from app.kb.access import ensure_spaces
 from app.kb.context import register as register_kb_context
 from app.kb.router import router as kb_router
 from app.kb_drafts.router import router as kb_drafts_router
+from app.crons.router import router as crons_router
 from app.secrets.router import router as secrets_router
 from app.mcp_server.server import MCP_PATH, build_mcp
 from app.memory import dream as _memory_dream  # noqa: F401 - registers the dreaming jobs
@@ -120,6 +122,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # agent-to-agent questions are routed here: runner connections live in this process (A2A-2)
     stop_routing = asyncio.Event()
     routing_task = asyncio.create_task(route_loop(stop_routing))
+    # crons are started here too: their runs go to this process's runner connections
+    cron_task = asyncio.create_task(cron_loop(stop_routing))
     try:
         # a mounted sub-app's own lifespan never runs, so the host enters the session manager
         async with app.state.mcp.session_manager.run():
@@ -128,6 +132,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         stop_routing.set()
         with contextlib.suppress(Exception):
             await asyncio.wait_for(routing_task, 5)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(cron_task, 5)
         await hub.stop()
 
 
@@ -203,6 +209,7 @@ def create_app() -> FastAPI:
         kb_router,
         kb_drafts_router,
         secrets_router,
+        crons_router,
         memory_router,
         a2a_router,
         git_router,

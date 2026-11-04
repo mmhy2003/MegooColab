@@ -34,6 +34,8 @@ DRAFTS_CAPABILITY = "drafts/1"
 # a run start may carry secrets (run_start.secrets): the runner sets them on the agent's process and blanks their values
 # out of everything it sends back
 SECRETS_CAPABILITY = "secrets/1"
+# a run start may name a cron (run_start.cron): the runner runs it in the cron's own worktree, reset to the default branch
+CRONS_CAPABILITY = "crons/1"
 
 
 class RunnerClosed(Exception):

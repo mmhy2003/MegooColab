@@ -20,6 +20,7 @@ KEYS: dict[Stage, list[str]] = {
 # texts for runs outside a task's workflow, by the group the methodology editor shows them under
 OTHER_KEYS: dict[str, list[str]] = {
     "kb": ["kb_draft"],  # writing a Knowledge Base draft with a person
+    "crons": ["cron"],  # a project's scheduled job
 }
 ALL_KEYS: list[str] = [k for keys in (*KEYS.values(), *OTHER_KEYS.values()) for k in keys]
 STAGE_OF: dict[str, Stage] = {k: stage for stage, keys in KEYS.items() for k in keys}

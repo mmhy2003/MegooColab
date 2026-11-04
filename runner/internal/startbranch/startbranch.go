@@ -109,7 +109,7 @@ func Resolve(ctx context.Context, logw io.Writer, repo string, spec *protocol.Ru
 		origin = ""
 	}
 	if spec.StartBranch != "" { // recorded when the branch was first created
-		point, err := startPoint(ctx, logw, repo, origin, spec.StartBranch)
+		point, err := StartPoint(ctx, logw, repo, origin, spec.StartBranch)
 		if err != nil {
 			return Result{}, err
 		}
@@ -125,7 +125,7 @@ func Resolve(ctx context.Context, logw io.Writer, repo string, spec *protocol.Ru
 			fmt.Fprintf(logw, "runner: origin %q matches none of the project's repositories: %s\n", origin, strings.Join(urls, ", "))
 			return Result{}, ErrRepositoryNotMatched
 		}
-		point, err := startPoint(ctx, logw, repo, origin, spec.BranchFrom)
+		point, err := StartPoint(ctx, logw, repo, origin, spec.BranchFrom)
 		if err != nil {
 			return Result{}, err
 		}
@@ -138,7 +138,7 @@ func Resolve(ctx context.Context, logw io.Writer, repo string, spec *protocol.Ru
 		return headResult(repo), nil
 	}
 	res := Result{StartBranch: match.DefaultBranch, DefaultBranch: match.DefaultBranch, RepositoryURL: match.URL, Report: true}
-	point, err := startPoint(ctx, logw, repo, origin, match.DefaultBranch)
+	point, err := StartPoint(ctx, logw, repo, origin, match.DefaultBranch)
 	switch {
 	case err == nil:
 		res.StartPoint = point
@@ -150,7 +150,7 @@ func Resolve(ctx context.Context, logw io.Writer, repo string, spec *protocol.Ru
 		actual := ""
 		if b, e2 := git(repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); e2 == nil && strings.HasPrefix(b, "origin/") {
 			actual = strings.TrimPrefix(b, "origin/")
-			point, e = startPoint(ctx, logw, repo, origin, actual)
+			point, e = StartPoint(ctx, logw, repo, origin, actual)
 		}
 		if e == nil {
 			fmt.Fprintf(logw, "runner: default branch %q not found; using origin's default %q\n", match.DefaultBranch, actual)
@@ -180,12 +180,12 @@ func headResult(repo string) Result {
 	return Result{StartBranch: head, DefaultBranch: head, Report: true}
 }
 
-// startPoint fetches branch from origin and returns origin/<branch>. A branch
+// StartPoint fetches branch from origin and returns origin/<branch>. A branch
 // origin does not have (or a folder without origin) falls back to the local
 // branch, else ErrStartBranchMissing. An origin that cannot be reached falls
 // back to the last fetched origin/<branch>, then the local branch, else
 // ErrStartBranchFetchFailed: never to a different branch.
-func startPoint(ctx context.Context, logw io.Writer, repo, origin, branch string) (string, error) {
+func StartPoint(ctx context.Context, logw io.Writer, repo, origin, branch string) (string, error) {
 	why := "the folder has no origin remote"
 	if origin != "" {
 		refspec := "+refs/heads/" + branch + ":refs/remotes/origin/" + branch

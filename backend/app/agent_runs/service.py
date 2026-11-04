@@ -45,6 +45,7 @@ from app.runner.protocol import (
 )
 from app.runner.registry import (
     BRANCH_CAPABILITY,
+    CRONS_CAPABILITY,
     DRAFTS_CAPABILITY,
     IMAGES_CAPABILITY,
     MODEL_CAPABILITY,
@@ -122,6 +123,13 @@ async def _transition(
                        data={"status": str(to), "reason": reason})
     if summary is not None:
         run.summary = summary
+    if run.cron_run_id is not None:
+        # a cron's run: no task thread; the cron's run history says what came of it
+        from app.crons import turns as cron_turns  # local: crons imports this module
+
+        await publish_agents_updated(db, owner_id, set())
+        await cron_turns.on_run_finished(db, run)
+        return
     if run.draft_id is not None:
         # a Knowledge Base draft turn: no task thread; the draft's conversation says what came of it
         from app.kb_drafts import turns  # local: kb_drafts imports this module
@@ -175,6 +183,15 @@ async def _lock_draft_of(db: AsyncSession, draft_id: uuid.UUID | None) -> None:
         await db.execute(select(KbDraft.id).where(KbDraft.id == draft_id).with_for_update())
 
 
+async def _lock_cron_run_of(db: AsyncSession, cron_run_id: uuid.UUID | None) -> None:
+    """For a cron's run, take its CronRun's lock before the run's own: the scheduler's order (app/crons/scheduler.py),
+    since ending the run writes to it."""
+    if cron_run_id is not None:
+        from app.crons.models import CronRun  # local: crons imports this module
+
+        await db.execute(select(CronRun.id).where(CronRun.id == cron_run_id).with_for_update())
+
+
 async def _claim_next(
     db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID, token_id: uuid.UUID, welcomed: int | None = None
 ) -> AgentRun | None:
@@ -218,12 +235,15 @@ async def _claim_next(
         images = registry.agent_supports(agent.id, IMAGES_CAPABILITY)
         # one without drafts/1 leaves Knowledge Base draft runs queued (it has no folder of the draft to work in)
         drafts = registry.agent_supports(agent.id, DRAFTS_CAPABILITY)
+        # one without crons/1 leaves cron runs queued (it has no cron worktree to run them in)
+        crons = registry.agent_supports(agent.id, CRONS_CAPABILITY)
         task_run = AgentRun.task_id.is_not(None)
         runnable = and_(
             true() if workflow else and_(AgentRun.workflow_role.is_(None), task_run),
             true() if branch else ~task_run,
             true() if images else ~image_delivery.undelivered_for_run(),
             true() if drafts else AgentRun.draft_id.is_(None),
+            true() if crons else AgentRun.cron_run_id.is_(None),
         )
         sibling = aliased(AgentRun)
         task_running = (
@@ -241,11 +261,17 @@ async def _claim_next(
             .where(sibling.draft_id == AgentRun.draft_id, sibling.status == RunStatus.running)
             .exists()
         )
+        cron_run_running = (
+            select(sibling.id)
+            .where(sibling.cron_run_id == AgentRun.cron_run_id, sibling.status == RunStatus.running)
+            .exists()
+        )
         run = (
             await db.execute(
                 select(AgentRun)
                 .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued, ~task_running,
-                       ~question_running, ~draft_running, runnable)
+                       ~question_running, ~draft_running, ~cron_run_running,
+                       runnable)
                 .order_by(AgentRun.created_at, AgentRun.id)
                 .limit(1)
                 .with_for_update(skip_locked=True)
@@ -312,6 +338,7 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     waits, then finds the run in conn.run_ids and sends run_cancel after run_start."""
     await _lock_workflow_of(db, run)
     await _lock_draft_of(db, run.draft_id)
+    await _lock_cron_run_of(db, run.cron_run_id)
     run = await _lock_run(db, run.id)
     if run is None or run.status != RunStatus.running:  # cancelled between the claim and now
         await db.commit()
@@ -320,6 +347,8 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
         return await _send_answer_start(db, conn, agent_id, run)
     if run.draft_id is not None:
         return await _send_draft_start(db, conn, agent_id, run)
+    if run.cron_run_id is not None:
+        return await _send_cron_start(db, conn, agent_id, run)
     row = (
         await db.execute(
             select(Task, Project.key, AgentBinding.local_path, Agent.owner_id)
@@ -432,7 +461,9 @@ async def _audit_started(db: AsyncSession, run: AgentRun, owner_id: uuid.UUID | 
                              "task_id": str(run.task_id) if run.task_id else None,
                              "question_id": str(run.question_id) if run.question_id else None,
                              "draft_id": str(run.draft_id) if run.draft_id else None,
-                             "role": "answer" if run.question_id else "kb_draft" if run.draft_id else run.workflow_role})
+                             "cron_run_id": str(run.cron_run_id) if run.cron_run_id else None,
+                             "role": "answer" if run.question_id else "kb_draft" if run.draft_id
+                             else "cron" if run.cron_run_id else run.workflow_role})
 
 
 async def _send_answer_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, run: AgentRun) -> bool:
@@ -448,6 +479,13 @@ async def _send_draft_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.U
     from app.kb_drafts import turns  # local: kb_drafts imports this module
 
     return await _send_targeted_start(db, conn, agent_id, run, turns.start_fields, turns.NotSupported, set())
+
+
+async def _send_cron_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, run: AgentRun) -> bool:
+    """run_start for a cron's run: workspace commands in the cron's own worktree, reset to the default branch."""
+    from app.crons import turns as cron_turns  # local: crons imports this module
+
+    return await _send_targeted_start(db, conn, agent_id, run, cron_turns.start_fields, cron_turns.NotSupported, set())
 
 
 async def _send_targeted_start(
@@ -521,7 +559,18 @@ async def cancel_run(db: AsyncSession, user: User, run: AgentRun) -> None:
     """Queued: cancelled now. Running with a live runner: run_cancel is sent and the run is closed when its
     run_finished arrives. Running with the runner gone: cancelled now."""
     agent = await db.get(Agent, run.agent_id)
-    if run.draft_id is not None:
+    if run.cron_run_id is not None:
+        # a cron's run: the project's managers, the agent's owner or an admin may stop it
+        from app.crons.models import Cron, CronRun  # local: crons imports this module
+        from app.projects.access import require_manage
+
+        project_id = await db.scalar(
+            select(Cron.project_id).join(CronRun, CronRun.cron_id == Cron.id).where(CronRun.id == run.cron_run_id)
+        )
+        if user.role != Role.admin and (agent is None or agent.owner_id != user.id):
+            await require_manage(db, user, await db.get(Project, project_id))
+        await _lock_cron_run_of(db, run.cron_run_id)
+    elif run.draft_id is not None:
         # a draft turn: the draft's person, the agent's owner or an admin may stop it
         if user.role != Role.admin and user.id != run.requested_by and (agent is None or agent.owner_id != user.id):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "cannot_use_agent")
@@ -554,6 +603,32 @@ async def cancel_run(db: AsyncSession, user: User, run: AgentRun) -> None:
     )
 
 
+async def cancel_waiting_run(db: AsyncSession, run: AgentRun, reason: str) -> None:
+    """A run no agent took in time is cancelled before it starts (the caller holds the target's lock)."""
+    run = await _lock_run(db, run.id)
+    if run is None or run.status != RunStatus.queued:
+        return
+    owner_id = await db.scalar(select(Agent.owner_id).where(Agent.id == run.agent_id))
+    await _transition(db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, reason=reason)
+
+
+async def stop_run(db: AsyncSession, run: AgentRun, reason: str) -> None:
+    """A running run is stopped without a person asking (a cron's time limit): run_cancel to its runner, and the run
+    closes when run_finished arrives; with the runner gone, it is cancelled now."""
+    run = await _lock_run(db, run.id)
+    if run is None or run.status not in ACTIVE_STATUSES:
+        return
+    conn = registry.conn_for_run(run.id)
+    if run.status == RunStatus.running and conn is not None:
+        try:
+            await conn.send(RunCancel(run_id=run.id))
+            return
+        except RunnerClosed:
+            pass
+    owner_id = await db.scalar(select(Agent.owner_id).where(Agent.id == run.agent_id))
+    await _transition(db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, reason=reason)
+
+
 async def _lock_runs_one_by_one(
     db: AsyncSession, statuses: tuple[RunStatus, ...], *where
 ) -> AsyncIterator[tuple[AgentRun, uuid.UUID]]:
@@ -561,20 +636,21 @@ async def _lock_runs_one_by_one(
     order (its workflow, then the run) and in task id order. A run whose status changed meanwhile is skipped."""
     candidates = (
         await db.execute(
-            select(AgentRun.id, AgentRun.task_id, AgentRun.question_id, AgentRun.draft_id, AgentRun.workflow_role,
-                   Agent.owner_id)
+            select(AgentRun.id, AgentRun.task_id, AgentRun.question_id, AgentRun.draft_id, AgentRun.cron_run_id,
+                   AgentRun.workflow_role, Agent.owner_id)
             .join(Agent, Agent.id == AgentRun.agent_id)
             .where(AgentRun.status.in_(statuses), *where)
             .order_by(AgentRun.task_id, AgentRun.created_at, AgentRun.id)
         )
     ).all()
-    for run_id, task_id, question_id, draft_id, role, owner_id in candidates:
+    for run_id, task_id, question_id, draft_id, cron_run_id, role, owner_id in candidates:
         if role is not None:
             from app.workflow import engine
 
             await engine.lock_workflow(db, task_id)
         await _lock_question_of(db, question_id)
         await _lock_draft_of(db, draft_id)
+        await _lock_cron_run_of(db, cron_run_id)
         run = await _lock_run(db, run_id)
         if run is not None and run.status in statuses:
             yield run, owner_id
@@ -967,7 +1043,8 @@ async def finish_run(
     Commits, then dispatches the owner's pending runs."""
     peek = (
         await db.execute(
-            select(AgentRun.task_id, AgentRun.question_id, AgentRun.draft_id, AgentRun.workflow_role)
+            select(AgentRun.task_id, AgentRun.question_id, AgentRun.draft_id, AgentRun.cron_run_id,
+                   AgentRun.workflow_role)
             .where(AgentRun.id == run_id)
         )
     ).first()
@@ -980,6 +1057,7 @@ async def finish_run(
     if peek is not None:
         await _lock_question_of(db, peek.question_id)
         await _lock_draft_of(db, peek.draft_id)
+        await _lock_cron_run_of(db, peek.cron_run_id)
     run = await _lock_run(db, run_id)
     if run is None:  # deleted with its task: the slot it held is free, so the owner's queue moves on
         await db.rollback()

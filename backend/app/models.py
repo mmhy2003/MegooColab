@@ -7,6 +7,7 @@ from app.ai import models as ai_models  # noqa: F401
 from app.audit import models as audit_models  # noqa: F401
 from app.auth import models as auth_models  # noqa: F401
 from app.chats import models as chats_models  # noqa: F401
+from app.crons import models as crons_models  # noqa: F401
 from app.git import models as git_models  # noqa: F401
 from app.hub import models as hub_models  # noqa: F401
 from app.jobs import models as jobs_models  # noqa: F401
