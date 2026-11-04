@@ -2606,6 +2606,162 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/kb/drafts/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Agents */
+        get: operations["list_agents_api_kb_drafts_agents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Drafts */
+        get: operations["my_drafts_api_kb_drafts_get"];
+        put?: never;
+        /** Start Draft */
+        post: operations["start_draft_api_kb_drafts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Draft */
+        get: operations["get_draft_api_kb_drafts__draft_id__get"];
+        /** Edit Draft */
+        put: operations["edit_draft_api_kb_drafts__draft_id__put"];
+        post?: never;
+        /** Discard */
+        delete: operations["discard_api_kb_drafts__draft_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/drafts/{draft_id}/settle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Settle */
+        post: operations["settle_api_kb_drafts__draft_id__settle_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/drafts/{draft_id}/marks/{mark_id}/keep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Keep Mark */
+        post: operations["keep_mark_api_kb_drafts__draft_id__marks__mark_id__keep_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/drafts/{draft_id}/marks/{mark_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo Mark */
+        post: operations["undo_mark_api_kb_drafts__draft_id__marks__mark_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/drafts/{draft_id}/keep-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Keep All */
+        post: operations["keep_all_api_kb_drafts__draft_id__keep_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/drafts/{draft_id}/undo-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo All */
+        post: operations["undo_all_api_kb_drafts__draft_id__undo_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/drafts/{draft_id}/agent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change Agent */
+        patch: operations["change_agent_api_kb_drafts__draft_id__agent_patch"];
+        trace?: never;
+    };
     "/api/memory/entities": {
         parameters: {
             query?: never;
@@ -3651,6 +3807,14 @@ export interface components {
             /** Last Login At */
             last_login_at: string | null;
         };
+        /** AgentChoice */
+        AgentChoice: {
+            /**
+             * Agent Id
+             * Format: uuid
+             */
+            agent_id: string;
+        };
         /** AgentIn */
         AgentIn: {
             program: components["schemas"]["AgentProgram"];
@@ -4423,6 +4587,19 @@ export interface components {
             title: string;
             space: components["schemas"]["SpaceRef"];
         };
+        /** DocSource */
+        DocSource: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "doc";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
         /**
          * DocStatus
          * @enum {string}
@@ -4523,6 +4700,135 @@ export interface components {
             /** Citations */
             citations: components["schemas"]["Citation"][];
             agent: components["schemas"]["Ref"] | null;
+        };
+        /** DraftAgentOut */
+        DraftAgentOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Online */
+            online: boolean;
+            /** Runner Ok */
+            runner_ok: boolean;
+        };
+        /** DraftDocument */
+        DraftDocument: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Latest Revision */
+            latest_revision: number;
+        };
+        /** DraftEdit */
+        DraftEdit: {
+            /** Title */
+            title?: string | null;
+            /** Body Md */
+            body_md?: string | null;
+        };
+        /** DraftIn */
+        DraftIn: {
+            /**
+             * Space Id
+             * Format: uuid
+             */
+            space_id: string;
+            /** Folder Id */
+            folder_id?: string | null;
+            /** Document Id */
+            document_id?: string | null;
+            /**
+             * Agent Id
+             * Format: uuid
+             */
+            agent_id: string;
+            /** Brief */
+            brief: string;
+            /** Sources */
+            sources?: (components["schemas"]["TaskSource"] | components["schemas"]["DocSource"])[];
+        };
+        /** DraftMessageOut */
+        DraftMessageOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Author
+             * @enum {string}
+             */
+            author: "person" | "agent" | "system";
+            /** Text */
+            text: string;
+            target: components["schemas"]["app__kb_drafts__schemas__Target"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** DraftOut */
+        DraftOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Body Md */
+            body_md: string;
+            /** Segments */
+            segments: components["schemas"]["Segment"][];
+            /** Open Marks */
+            open_marks: number;
+            /** Messages */
+            messages: components["schemas"]["DraftMessageOut"][];
+            agent: components["schemas"]["DraftAgentOut"] | null;
+            space: components["schemas"]["SpaceRef"];
+            /** Folder Id */
+            folder_id: string | null;
+            /** Folder Path */
+            folder_path: string;
+            document: components["schemas"]["DraftDocument"] | null;
+            /** Base Revision */
+            base_revision: number | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "writing" | "waiting";
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
+        };
+        /** DraftSummary */
+        DraftSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            space: components["schemas"]["SpaceRef"];
+            /** Document Id */
+            document_id: string | null;
+            agent: components["schemas"]["Named"] | null;
+            /**
+             * Last Activity At
+             * Format: date-time
+             */
+            last_activity_at: string;
         };
         /** DreamRunOut */
         DreamRunOut: {
@@ -5982,7 +6288,7 @@ export interface components {
             id: string;
             /** Ref */
             ref: string;
-            target: components["schemas"]["Target"];
+            target: components["schemas"]["app__a2a__schemas__Target"];
             /** Title */
             title: string;
             /** Body */
@@ -6452,6 +6758,26 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** Segment */
+        Segment: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "text" | "mark";
+            /** Md */
+            md?: string | null;
+            /** Id */
+            id?: number | null;
+            /** Change */
+            change?: ("added" | "removed" | "changed") | null;
+            /** Request */
+            request?: string | null;
+            /** Old Md */
+            old_md?: string | null;
+            /** New Md */
+            new_md?: string | null;
+        };
         /** SetupIn */
         SetupIn: {
             /** Org Name */
@@ -6729,13 +7055,6 @@ export interface components {
             /** Rate Limits 24H */
             rate_limits_24h: number;
         };
-        /** Target */
-        Target: {
-            /** Key */
-            key: string;
-            /** Name */
-            name: string;
-        };
         /**
          * TargetAgent
          * @description One of a project's agents as anyone asking it sees it: no owner, no machine.
@@ -6903,6 +7222,16 @@ export interface components {
             key: string;
             /** Title */
             title: string;
+        };
+        /** TaskSource */
+        TaskSource: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "task";
+            /** Key */
+            key: string;
         };
         /** TaskSprintIn */
         TaskSprintIn: {
@@ -7645,6 +7974,20 @@ export interface components {
              * @enum {string}
              */
             if_busy: "wait" | "another";
+        };
+        /** Target */
+        app__a2a__schemas__Target: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+        };
+        /** Target */
+        app__kb_drafts__schemas__Target: {
+            /** Section */
+            section: string;
+            /** Text */
+            text: string;
         };
         /** AskIn */
         app__memory__schemas__AskIn: {
@@ -13463,6 +13806,377 @@ export interface operations {
             };
         };
     };
+    list_agents_api_kb_drafts_agents_get: {
+        parameters: {
+            query: {
+                space_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftAgentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_drafts_api_kb_drafts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftSummary"][];
+                };
+            };
+        };
+    };
+    start_draft_api_kb_drafts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_draft_api_kb_drafts__draft_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_draft_api_kb_drafts__draft_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_api_kb_drafts__draft_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    settle_api_kb_drafts__draft_id__settle_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_mark_api_kb_drafts__draft_id__marks__mark_id__keep_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+                mark_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_mark_api_kb_drafts__draft_id__marks__mark_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+                mark_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    keep_all_api_kb_drafts__draft_id__keep_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_all_api_kb_drafts__draft_id__undo_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_agent_api_kb_drafts__draft_id__agent_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentChoice"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_entities_api_memory_entities_get: {
         parameters: {
             query?: {
@@ -13876,7 +14590,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Target"][];
+                    "application/json": components["schemas"]["app__a2a__schemas__Target"][];
                 };
             };
         };

@@ -14,16 +14,21 @@ from app.tasks.models import Task
 from app.workflow.models import Driver, TaskWorkflow
 
 
-async def agent_takes_images(db: AsyncSession, agent: Agent | None) -> bool:
+async def runner_has(db: AsyncSession, agent: Agent | None, capability: str) -> bool:
+    """The agent's runner says `capability` in its hello; an offline machine by its last hello."""
     if agent is None:
         return False
     conn = registry.conn_for_agent(agent.id)
     if conn is not None:
-        return IMAGES_CAPABILITY in conn.capabilities
+        return capability in conn.capabilities
     if agent.runner_token_id is None:
         return False
     caps = await db.scalar(select(PersonalAccessToken.runner_capabilities).where(PersonalAccessToken.id == agent.runner_token_id))
-    return IMAGES_CAPABILITY in (caps or [])
+    return capability in (caps or [])
+
+
+async def agent_takes_images(db: AsyncSession, agent: Agent | None) -> bool:
+    return await runner_has(db, agent, IMAGES_CAPABILITY)
 
 
 async def task_takes_images(db: AsyncSession, task: Task) -> bool:
