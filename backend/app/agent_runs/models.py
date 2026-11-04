@@ -30,9 +30,11 @@ class AgentRun(IdMixin, Base):
     __tablename__ = "agent_runs"
     __table_args__ = (
         Index("ix_agent_runs_agent_status", "agent_id", "status"),
-        # a run works on a task, answers another project's question (§6.6), or writes a Knowledge Base draft
+        # a run works on a task, answers another project's question (§6.6), writes a Knowledge Base draft, or runs a
+        # cron
         CheckConstraint(
-            "(task_id IS NOT NULL)::int + (question_id IS NOT NULL)::int + (draft_id IS NOT NULL)::int = 1",
+            "(task_id IS NOT NULL)::int + (question_id IS NOT NULL)::int + (draft_id IS NOT NULL)::int"
+            " + (cron_run_id IS NOT NULL)::int = 1",
             name="agent_runs_target_check",
         ),
     )
@@ -42,6 +44,10 @@ class AgentRun(IdMixin, Base):
         ForeignKey("a2a_questions.id", ondelete="CASCADE"), index=True
     )
     draft_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("kb_drafts.id", ondelete="CASCADE"), index=True)
+    cron_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        # use_alter: cron_runs points back at agent_runs, and the two tables must still sort for create_all
+        ForeignKey("cron_runs.id", ondelete="CASCADE", use_alter=True, name="agent_runs_cron_run_id_fkey"), index=True
+    )
     agent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"))
     # None once the person who started it was deleted: the run stays in the task's history
     requested_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
