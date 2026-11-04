@@ -6,10 +6,11 @@ from sqlalchemy import select
 
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
-from app.crons import schedule, service
+from app.crons import schedule, scheduler, service
 from app.crons.models import Cron, CronRun
 from app.crons.schemas import CronIn, CronOut, CronPatch, CronRunOut, Preview, PreviewIn
 from app.projects.access import get_project_for, require_manage
+from app.workflow import engine
 
 router = APIRouter(tags=["crons"])
 
@@ -88,6 +89,16 @@ async def resume_cron(ref: str, cron_id: uuid.UUID, user: AuthedUser, db: DbSess
     cron = await service.set_paused(db, user, await service.get_cron(db, project, cron_id, lock=True), False)
     await db.commit()
     return await service.cron_out(db, cron)
+
+
+@router.post("/api/projects/{ref}/crons/{cron_id}/run-now", status_code=status.HTTP_201_CREATED)
+async def run_now(ref: str, cron_id: uuid.UUID, user: AuthedUser, db: DbSession) -> CronRunOut:
+    project = await _managed(db, user, ref)
+    run = await scheduler.run_now(db, await service.get_cron(db, project, cron_id, lock=True))
+    await db.commit()
+    out = await service.run_out(db, run)
+    await engine.dispatch_queued(db)
+    return out
 
 
 @router.get("/api/projects/{ref}/crons/{cron_id}/runs")

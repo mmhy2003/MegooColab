@@ -3048,6 +3048,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{ref}/crons/{cron_id}/run-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Now */
+        post: operations["run_now_api_projects__ref__crons__cron_id__run_now_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{ref}/crons/{cron_id}/runs": {
         parameters: {
             query?: never;
@@ -15467,6 +15484,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CronOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_now_api_projects__ref__crons__cron_id__run_now_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                cron_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CronRunOut"];
                 };
             };
             /** @description Validation Error */
