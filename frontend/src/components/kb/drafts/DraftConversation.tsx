@@ -22,6 +22,7 @@ export function DraftConversation({
   onStop,
   onAgent,
   pickAgent,
+  editing = false,
 }: {
   draft: KbDraft;
   target: DraftTarget | null;
@@ -30,6 +31,8 @@ export function DraftConversation({
   onStop: () => void;
   onAgent: (agentId: string) => void;
   pickAgent: boolean;
+  /** the person's editor is open: a request now would not see their edits */
+  editing?: boolean;
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -108,9 +111,12 @@ export function DraftConversation({
           placeholder="Add a rollback section, shorten the intro, drop the FAQ…"
           className="block min-h-20 w-full rounded border border-line bg-surface-2 p-2 text-sm"
         />
-        <Button type="submit" disabled={busy || sending || !text.trim() || !draft.agent}>
-          Send
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" disabled={busy || editing || sending || !text.trim() || !draft.agent}>
+            Send
+          </Button>
+          {editing && <span className="text-xs text-muted-foreground">Done editing first</span>}
+        </div>
       </form>
     </div>
   );

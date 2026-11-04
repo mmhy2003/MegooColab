@@ -30,10 +30,15 @@ def split_blocks(md: str) -> list[str]:
         opener = next((f for f in FENCES if stripped.startswith(f)), None)
         if opener is not None:
             fence = opener
-        current.append(line.rstrip())
+        current.append(line)
     if current:
         blocks.append("\n".join(current).rstrip())
     return [b for b in blocks if b]
+
+
+def _key(block: str) -> str:
+    """What the diff compares: trailing spaces left out, so an agent that drops them changes nothing."""
+    return "\n".join(line.rstrip() for line in block.split("\n"))
 
 
 def join_blocks(blocks: list[str]) -> str:
@@ -43,7 +48,7 @@ def join_blocks(blocks: list[str]) -> str:
 def new_turn(request: str, before_md: str, after_md: str) -> dict | None:
     """The marks of an agent turn that changed `before_md` into `after_md`, all open; None if nothing changed."""
     before, after = split_blocks(before_md), split_blocks(after_md)
-    ops = [list(op) for op in opcodes(before, after)]
+    ops = [list(op) for op in opcodes([_key(b) for b in before], [_key(b) for b in after])]
     changes = sum(1 for op in ops if op[0] != "equal")
     if not changes:
         return None
@@ -60,8 +65,8 @@ def _walk(turn: dict):
     n = 0
     for tag, a1, a2, b1, b2 in turn["ops"]:
         before, after = turn["before"][a1:a2], turn["after"][b1:b2]
-        if tag == "equal":
-            yield None, tag, "kept", before, after
+        if tag == "equal":  # unchanged: the person's text as they wrote it
+            yield None, tag, "kept", before, before
             continue
         yield n, tag, turn["status"][str(n)], before, after
         n += 1

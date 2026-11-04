@@ -41,10 +41,11 @@ export function SaveDraftDialog({ draft, open, onClose }: { draft: KbDraft; open
         method: "POST",
         json: { summary: summary.trim() || null, force },
       });
-      await client.invalidateQueries({ queryKey: kbKeys.all });
-      await client.invalidateQueries({ queryKey: kbDraftKeys.all });
-      onClose();
+      // the draft is gone: leave its page before anything asks for it again
       router.push(`/kb/doc/${saved.document_id}`);
+      onClose();
+      await client.invalidateQueries({ queryKey: kbKeys.all });
+      await client.invalidateQueries({ queryKey: kbDraftKeys.list() });
     } catch (err) {
       if (err instanceof ApiError && err.detail === "kb_conflict") {
         setConflict(true);
@@ -151,9 +152,9 @@ export function DiscardDraftButton({ draft }: { draft: KbDraft }) {
     if (!ok) return;
     try {
       await api(`/api/kb/drafts/${draft.id}`, { method: "DELETE" });
-      client.removeQueries({ queryKey: kbDraftKeys.one(draft.id) });
-      await client.invalidateQueries({ queryKey: kbDraftKeys.all });
+      // the draft is gone: leave its page before anything asks for it again
       router.push(draft.document ? `/kb/doc/${draft.document.id}` : `/kb/${draft.space.id}`);
+      await client.invalidateQueries({ queryKey: kbDraftKeys.list() });
     } catch (err) {
       setError(errorMessage(err));
     }

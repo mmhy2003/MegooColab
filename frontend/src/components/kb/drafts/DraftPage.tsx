@@ -116,6 +116,7 @@ export function DraftPage({ draftId }: { draftId: string }) {
         draft={draft}
         target={target}
         pickAgent={pickAgent}
+        editing={editing !== null}
         onClearTarget={() => setTarget(null)}
         onSend={async (text) => {
           const ok = await act("/requests", { json: { text, target } });

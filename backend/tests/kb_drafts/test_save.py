@@ -85,7 +85,7 @@ async def test_bring_in_moves_the_base_and_queues_a_turn_with_the_newer_text(cli
     await db.commit()
     r = await client.post(f"/api/kb/drafts/{draft['id']}/bring-in")
     assert r.status_code == 200, r.text
-    assert r.json()["base_revision"] == 4 and "rev 4" in r.json()["messages"][-1]["text"]
+    assert r.json()["base_revision"] == 3 and "rev 4" in r.json()["messages"][-1]["text"]  # moved on submission
     db.expire_all()
     run = (await db.execute(
         select(AgentRun).where(AgentRun.draft_id == uuid.UUID(draft["id"]), AgentRun.status == RunStatus.queued)

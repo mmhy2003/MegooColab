@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent_runs.models import AgentRun, RunPolicy, RunStatus
+from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunPolicy, RunStatus
 from app.agent_runs.tokens import issue_run_token
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import owner_can_access
@@ -22,6 +22,7 @@ from app.kb_drafts.service import (
     active_run,
     add_message,
     check_agent,
+    document_for,
     refuse_while_writing,
     settle,
     touch,
@@ -100,6 +101,8 @@ async def apply_submission(db: AsyncSession, run: AgentRun, body_md: str, reply:
             select(AgentRun).where(AgentRun.id == run.id).with_for_update().execution_options(populate_existing=True)
         )
     ).scalar_one()
+    if run.status != RunStatus.running or run.cancelled_by is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "run_not_running")  # stopped or ended: a stopped turn changes nothing
     asked = run.draft_request or {}
     if asked.get("submitted"):
         raise HTTPException(status.HTTP_409_CONFLICT, "already_submitted")
@@ -110,6 +113,8 @@ async def apply_submission(db: AsyncSession, run: AgentRun, body_md: str, reply:
         draft.body_md = blocks.compose(turn)
     if title:
         draft.title = title
+    if asked.get("newer"):  # the agent brought the newer revision in: a save no longer conflicts with it
+        draft.base_revision = max(draft.base_revision or 0, asked["newer"]["revision"])
     run.draft_request = {**asked, "submitted": True}
     add_message(db, draft, "agent", reply, run_id=run.id)
     await touch(db, draft)
@@ -123,9 +128,8 @@ async def bring_in(db: AsyncSession, user: User, draft: KbDraft) -> AgentRun:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "not_a_document")
     await check_agent(db, user, await db.get(KbSpace, draft.space_id), draft.agent_id)
     await refuse_while_writing(db, draft)
-    doc = await db.get(KbDocument, draft.document_id)
+    doc = await document_for(db, user, draft)
     newer = {"revision": doc.latest_revision, "body_md": doc.body_md}
-    draft.base_revision = doc.latest_revision
     settle(draft)
     text = (f"Someone saved a newer version (rev {doc.latest_revision}). Bring their changes into the draft and keep "
             "ours where they don't conflict.")
@@ -137,14 +141,18 @@ async def bring_in(db: AsyncSession, user: User, draft: KbDraft) -> AgentRun:
 
 async def stop_runs_of(db: AsyncSession, draft_ids: list[uuid.UUID]) -> None:
     """These drafts are about to be deleted, and their runs with them: a running agent is stopped (its later
-    run_finished, for a run that no longer exists, is ignored); a queued run simply goes."""
+    run_finished, for a run that no longer exists, is ignored); a queued run simply goes. The drafts are locked
+    first, then their runs (the order of every draft path), so no run is claimed or finished meanwhile."""
+    await db.execute(select(KbDraft.id).where(KbDraft.id.in_(draft_ids)).order_by(KbDraft.id).with_for_update())
     runs = (
         await db.execute(
-            select(AgentRun).where(AgentRun.draft_id.in_(draft_ids), AgentRun.status == RunStatus.running)
-            .with_for_update()
+            select(AgentRun).where(AgentRun.draft_id.in_(draft_ids), AgentRun.status.in_(ACTIVE_STATUSES))
+            .order_by(AgentRun.id).with_for_update()
         )
     ).scalars().all()
     for run in runs:
+        if run.status != RunStatus.running:
+            continue
         conn = registry.conn_for_run(run.id)
         if conn is not None:
             try:

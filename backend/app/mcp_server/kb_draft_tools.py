@@ -49,7 +49,10 @@ def register_kb_draft_tools(mcp: MCPServer) -> None:
             return {
                 "brief": draft.brief, "title": draft.title, "body_md": draft.body_md,
                 "request": asked.get("request"), "target": asked.get("target"),
-                "newer_version": asked.get("newer"),
+                "newer_version": {
+                    "revision": asked["newer"]["revision"],
+                    "body_md": wrap_untrusted("newer version", asked["newer"]["body_md"]),
+                } if asked.get("newer") else None,
                 "sources": [
                     {"kind": s["kind"], "ref": s["ref"], "title": s["title"],
                      "text": wrap_untrusted(f"{s['kind']} {s['ref']}", s["text"])}

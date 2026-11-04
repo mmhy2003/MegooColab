@@ -102,6 +102,14 @@ async def get_draft_for(db: AsyncSession, user: User, draft_id: uuid.UUID, *, lo
     return draft
 
 
+async def document_for(db: AsyncSession, user: User, draft: KbDraft) -> KbDocument:
+    """The draft's document, in a space the person may write in now: it may have moved since the draft started."""
+    doc, space = await access.get_document_for(db, user, draft.document_id, write=True)
+    if not await access.can_write(db, user, space):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
+    return doc
+
+
 async def active_run(db: AsyncSession, draft_id: uuid.UUID) -> AgentRun | None:
     return (
         await db.execute(
@@ -306,6 +314,7 @@ async def save(db: AsyncSession, user: User, draft: KbDraft, *, summary: str | N
         doc = await kb.create_document(db, user, await db.get(KbSpace, draft.space_id), draft.folder_id, title,
                                        draft.body_md, agent_id=draft.agent_id, summary=summary)
     else:
+        await document_for(db, user, draft)
         doc = await kb.lock_document(db, draft.document_id)
         base = doc.latest_revision if force else draft.base_revision
         doc = await kb.update_document(db, user, doc, base_revision=base, title=title, body=draft.body_md,

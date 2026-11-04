@@ -40,6 +40,7 @@ function renderPage(first: Record<string, unknown>) {
     calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
     if (url.includes("/agents")) return new Response(JSON.stringify([AGENT]), { status: 200 });
     if (url.includes("/resolve")) return new Response(JSON.stringify({}), { status: 200 });
+    if (url.endsWith("/save")) return new Response(JSON.stringify({ document_id: "doc1" }), { status: 200 });
     if (url.endsWith("/settle")) return new Response(JSON.stringify(draft({ open_marks: 0, segments: [{ kind: "text", md: "# All" }], body_md: "# All" })), { status: 200 });
     return new Response(JSON.stringify(method === "GET" ? first : draft({ open_marks: 0 })), { status: 200 });
   }));
@@ -117,5 +118,24 @@ describe("DraftPage", () => {
     fireEvent.change(screen.getByLabelText("Body"), { target: { value: "# All\n\nmine" } });
     fireEvent.click(screen.getByRole("button", { name: "Done editing" }));
     await waitFor(() => expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ body_md: "# All\n\nmine" }));
+  });
+
+  it("sends no request while the editor is open: the agent would not see the edits", async () => {
+    renderPage(draft({ open_marks: 0 }));
+    fireEvent.click(await screen.findByRole("button", { name: "Edit text" }));
+    await screen.findByLabelText("Body");
+    fireEvent.change(screen.getByLabelText("Your request"), { target: { value: "more" } });
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    expect(screen.getByText("Done editing first")).toBeInTheDocument();
+  });
+
+  it("does not load the draft again once it is saved", async () => {
+    const calls = renderPage(draft({ open_marks: 0 }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save to KB…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/kb/doc/doc1"));
+    const saved = calls.findIndex((c) => c.url.endsWith("/save"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.slice(saved + 1).filter((c) => c.method === "GET" && c.url === "/api/kb/drafts/d1")).toEqual([]);
   });
 });
