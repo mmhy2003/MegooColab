@@ -40,7 +40,7 @@ describe("Header", () => {
     await userEvent.click(screen.getByRole("button", { name: /Ahmed/ }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
     expect(screen.getAllByRole("menuitem").map((i) => i.textContent?.trim())).toEqual([
-      "Profile", "Access tokens", "My agents", "Notifications", "Sign out",
+      "Profile", "Access tokens", "My agents", "Secrets", "Notifications", "Sign out",
     ]);
     await userEvent.click(document.querySelector("[data-backdrop]")!);
     expect(screen.queryByRole("menu")).toBeNull();

@@ -15,6 +15,7 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/mmhy2003/megoocolab/runner/internal/adapters"
+	"github.com/mmhy2003/megoocolab/runner/internal/mask"
 	"github.com/mmhy2003/megoocolab/runner/internal/policy"
 	"github.com/mmhy2003/megoocolab/runner/internal/tools"
 )
@@ -33,9 +34,9 @@ type Option func(*Client)
 // WithFlushInterval overrides the message coalescing interval (for tests).
 func WithFlushInterval(d time.Duration) Option { return func(c *Client) { c.interval = d } }
 
-// WithSecret makes the client replace secret with [redacted] in everything it
-// reports, before any cut to a length limit, so a cut can never leave part of it.
-func WithSecret(secret string) Option { return func(c *Client) { c.secret = secret } }
+// WithMasks makes the client replace the run's token and secrets in everything it
+// reports, before any cut to a length limit, so a cut can never leave part of one.
+func WithMasks(masks mask.Set) Option { return func(c *Client) { c.masks = masks } }
 
 // WithSafeMcpServers allows the tools of these Tool Hub MCP servers in every policy: their owner marked
 // them safe in read-only runs (they only read). Any other MCP tool keeps the policy's decision.
@@ -59,7 +60,7 @@ type Client struct {
 	root     string
 	emit     EmitFunc
 	interval time.Duration
-	secret   string
+	masks    mask.Set
 	safeMcp  []*regexp.Regexp // titles of Tool Hub MCP tools safe in read-only runs
 
 	mu        sync.Mutex // guards everything below and serializes emit
@@ -89,13 +90,8 @@ func (c *Client) SetReplaying(on bool) {
 	c.replaying = on
 }
 
-// scrub replaces the secret in s.
-func (c *Client) scrub(s string) string {
-	if c.secret == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, c.secret, "[redacted]")
-}
+// scrub replaces the run's token and secrets in s.
+func (c *Client) scrub(s string) string { return c.masks.Replace(s) }
 
 // display is displayTitle of a tool call with the secret removed first. The
 // policy decides on the raw text; only what is reported is scrubbed.

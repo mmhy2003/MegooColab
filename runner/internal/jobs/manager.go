@@ -26,6 +26,7 @@ import (
 	"github.com/mmhy2003/megoocolab/runner/internal/conn"
 	"github.com/mmhy2003/megoocolab/runner/internal/drafts"
 	"github.com/mmhy2003/megoocolab/runner/internal/gitstate"
+	"github.com/mmhy2003/megoocolab/runner/internal/mask"
 	"github.com/mmhy2003/megoocolab/runner/internal/policy"
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
 	"github.com/mmhy2003/megoocolab/runner/internal/startbranch"
@@ -153,10 +154,10 @@ type run struct {
 	gitAfter        *protocol.GitState
 	snapBefore      *gitstate.Snapshot
 
-	// secret is the run's MCP token; it never leaves in an update or the summary.
-	// held is the end of the message text so far that may be the start of it.
-	secret string
-	held   string // guarded by emitMu
+	// masks are the run's MCP token and secrets: none of them leaves in an update, the summary or the log.
+	// held is the end of the message text so far that may be the start of one.
+	masks mask.Set
+	held  string // guarded by emitMu
 
 	steer steering // people's messages for the running turn
 
@@ -171,14 +172,14 @@ func (r *run) emit(kind string, data map[string]any) {
 	if r.closed || r.stale() {
 		return
 	}
-	if r.secret != "" {
+	if !r.masks.Empty() {
 		if kind == "message" {
 			data = r.redactMessage(data)
 			if data == nil {
 				return
 			}
 		} else {
-			data = redactMap(data, r.secret)
+			data = redactMap(data, r.masks)
 		}
 	}
 	r.sendLocked(kind, data)
@@ -202,8 +203,8 @@ func (r *run) sendLocked(kind string, data map[string]any) {
 // held back until more text arrives. nil means there is nothing to send yet.
 func (r *run) redactMessage(data map[string]any) map[string]any {
 	text, _ := data["text"].(string)
-	s := strings.ReplaceAll(r.held+text, r.secret, redacted)
-	keep := heldBack(s, r.secret)
+	s := r.masks.Replace(r.held + text)
+	keep := r.masks.HeldBack(s)
 	r.held = s[len(s)-keep:]
 	if s = s[:len(s)-keep]; s == "" {
 		return nil
@@ -493,7 +494,7 @@ func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn
 	}
 	// The run outlives the message that started it; Shutdown is what stops it.
 	rctx, abort := context.WithCancel(context.WithoutCancel(ctx))
-	r := &run{secret: tokenOf(rs.Mcp), m: m, id: rs.RunID, agent: rs.AgentID, task: rs.Task.Key, prev: prev,
+	r := &run{masks: mask.Build(tokenOf(rs.Mcp), rs.Secrets), m: m, id: rs.RunID, agent: rs.AgentID, task: rs.Task.Key, prev: prev,
 		gen: m.gen, ctx: rctx, abort: abort, done: make(chan struct{})}
 	m.runs[rs.RunID] = r
 	m.wg.Add(1)
@@ -671,7 +672,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return "failed", "log_failed"
 	}
 	defer file.Close()
-	logf, stderrLog, closeLogs := logWriters(file, m.LogCap, tokenOf(rs.Mcp))
+	logf, stderrLog, closeLogs := logWriters(file, m.LogCap, r.masks)
 	defer closeLogs() // runs before file.Close
 	fail := func(code string, cause error) (string, string) {
 		if cause != nil {
@@ -842,6 +843,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		}
 	}
 
+	spec.Env = append(spec.Env, secretEnv(rs.Secrets)...) // after the runner's own: never a name it relies on
 	proc, err := startAdapter(spec, wt, stderrLog)
 	if err != nil {
 		return fail("adapter_start_failed", err)
@@ -857,13 +859,13 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	if m.FlushInterval > 0 {
 		opts = append(opts, acpclient.WithFlushInterval(m.FlushInterval))
 	}
-	opts = append(opts, acpclient.WithSecret(r.secret))
+	opts = append(opts, acpclient.WithMasks(r.masks))
 	servers := mcpServers(rs.Mcp)
 	if man, err := tools.LoadManifest(); err == nil {
 		opts = append(opts, acpclient.WithSafeMcpServers(tools.SafeServers(man, agent.Program)))
 		// OMP ignores its own MCP config in ACP mode: its hub servers come with the session
 		if home, err := tools.Home(); err == nil && agent.Program == adapters.Omp {
-			servers = append(servers, tools.OmpRunServers(man, home, kind == policy.ReadOnly)...)
+			servers = append(servers, withSecrets(tools.OmpRunServers(man, home, kind == policy.ReadOnly), rs.Secrets)...)
 		}
 	}
 	client := acpclient.New(pol, wt, r.emit, opts...)

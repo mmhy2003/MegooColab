@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/mmhy2003/megoocolab/runner/internal/mask"
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
 )
 
@@ -338,7 +339,7 @@ func TestTokenNotInRunLog(t *testing.T) {
 
 func TestRedactingWriterCatchesATokenSplitAcrossWrites(t *testing.T) {
 	var sb strings.Builder
-	w := newRedactor(&sb, "abcdef")
+	w := newRedactor(&sb, mask.Token("abcdef"))
 	for _, part := range []string{"x abc", "d", "ef y ab", "c z"} {
 		if _, err := w.Write([]byte(part)); err != nil {
 			t.Fatal(err)
@@ -482,7 +483,7 @@ func TestRunnerLogLinesSurviveTheCap(t *testing.T) {
 // the token is replaced first and the cap cuts the replacement.
 func TestStderrCapNeverCutsTheTokenOpen(t *testing.T) {
 	var sb strings.Builder
-	_, stderr, closeAll := logWriters(&sb, 10, "abcdef")
+	_, stderr, closeAll := logWriters(&sb, 10, mask.Token("abcdef"))
 	_, _ = stderr.Write([]byte("0123456 abcdef"))
 	closeAll()
 	got := sb.String()
@@ -493,7 +494,7 @@ func TestStderrCapNeverCutsTheTokenOpen(t *testing.T) {
 
 func TestRunnerLinesAreNotCappedButAreRedacted(t *testing.T) {
 	var sb strings.Builder
-	runner, stderr, closeAll := logWriters(&sb, 5, "abcdef")
+	runner, stderr, closeAll := logWriters(&sb, 5, mask.Token("abcdef"))
 	_, _ = stderr.Write([]byte("0123456789"))
 	_, _ = runner.Write([]byte("runner: failed abcdef\n"))
 	closeAll()
@@ -509,7 +510,7 @@ func TestRedactorCloseReleasesShortTailsAndWithholdsLongOnes(t *testing.T) {
 		"x abcde": "x [redacted]", // longer than 4: could be most of the token
 	} {
 		var sb strings.Builder
-		w := newRedactor(&sb, "abcdefghij")
+		w := newRedactor(&sb, mask.Token("abcdefghij"))
 		_, _ = w.Write([]byte(in))
 		_ = w.Close()
 		if sb.String() != want {

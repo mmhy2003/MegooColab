@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Bot, KeyRound, LogOut, Menu, UserRound } from "lucide-react";
+import { Bell, Bot, KeyRound, LockKeyhole, LogOut, Menu, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -23,6 +23,7 @@ const LINKS = [
   { href: "/settings/profile", label: "Profile", icon: UserRound },
   { href: "/settings/tokens", label: "Access tokens", icon: KeyRound },
   { href: "/settings/agents", label: "My agents", icon: Bot },
+  { href: "/settings/secrets", label: "Secrets", icon: LockKeyhole },
   { href: "/settings/notifications", label: "Notifications", icon: Bell },
 ];
 

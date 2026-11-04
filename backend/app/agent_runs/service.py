@@ -15,6 +15,7 @@ from app.agent_runs.schemas import RunAgentOut, RunOut
 from app.agent_runs.tokens import issue_run_token
 from app.agents.models import Agent, AgentBinding, AgentProgram
 from app.kb_drafts.models import KbDraft
+from app.secrets import delivery as secret_delivery
 from app.agents.service import (
     can_use_agent,
     owner_can_access,
@@ -368,6 +369,9 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
                     v2["resume_prompt"] = "\n\n".join(p for p in (v2.get("resume_prompt"), section) if p)
                 else:
                     prompt = f"{prompt}\n\n{section}"
+        secret_names: list[str] = []
+        if run.workflow_role:
+            prompt, secret_names = await secret_delivery.add_to_start(db, run, conn, prompt, v2)
         repos = await db.execute(
             select(ProjectRepository.url, ProjectRepository.default_branch)
             .where(ProjectRepository.project_id == task.project_id)
@@ -415,6 +419,7 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     image_delivery.mark_sent(images, run.id)
     await record_event(db, task, None, "agent_run_started", {"run_id": str(run.id), "agent_id": str(agent_id)})
     await _audit_started(db, run, owner_id)
+    await secret_delivery.audit_delivery(db, run, secret_names)
     await _announce(db, task, owner_id)
     await db.commit()
     return True
@@ -458,8 +463,9 @@ async def _send_targeted_start(
                           reason=str(exc) or "not_supported")
         await db.commit()
         return True
+    prompt, secret_names = await secret_delivery.add_to_start(db, run, conn, run.prompt, v2)
     message = RunStart(run_id=run.id, agent_id=agent_id, task=task, local_path=local_path, policy=run.policy,
-                       prompt=run.prompt, **v2)
+                       prompt=prompt, **v2)
     conn.run_ids.add(run.id)
     try:
         await conn.send(message.model_dump(mode="json"))
@@ -471,6 +477,7 @@ async def _send_targeted_start(
         await db.commit()
         return False
     await _audit_started(db, run, owner_id)
+    await secret_delivery.audit_delivery(db, run, secret_names)
     await publish_agents_updated(db, owner_id, project_ids)
     await db.commit()
     return True
