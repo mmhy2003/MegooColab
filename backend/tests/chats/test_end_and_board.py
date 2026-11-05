@@ -80,6 +80,34 @@ async def test_ending_a_chat_leaves_a_merge_confirmation_alone(client, db):
     assert (wf.status, wf.needs) == (WorkflowStatus.waiting_human, Needs.merge_confirmation)
 
 
+async def test_ending_a_chat_leaves_an_unconfirmed_merge_alone(client, db):
+    """An agent's merge MegooColab couldn't confirm escalated; its pull request is still read, and a merged read
+    finishes it: ending the chat doesn't pause it (that would stop it clearing itself)."""
+    await world(client, db)
+    chat = await start(client)
+    rnd = await _round(db, chat)
+    await _merge_confirmation(db, rnd)
+    await db.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == rnd.id).values(
+        needs=Needs.escalation, escalation_reason="merge_not_confirmed"))
+    await db.commit()
+    assert (await _end(client, chat)).status_code == 200
+    wf = await db.get(TaskWorkflow, rnd.id, populate_existing=True)
+    assert (wf.status, wf.needs, wf.escalation_reason) == (
+        WorkflowStatus.waiting_human, Needs.escalation, "merge_not_confirmed")
+
+
+async def test_ending_a_chat_still_pauses_another_escalation(client, db):
+    await world(client, db)
+    chat = await start(client)
+    rnd = await _round(db, chat)
+    await _merge_confirmation(db, rnd)
+    await db.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == rnd.id).values(
+        needs=Needs.escalation, escalation_reason="pr_closed"))
+    await db.commit()
+    assert (await _end(client, chat)).status_code == 200
+    assert (await db.get(TaskWorkflow, rnd.id, populate_existing=True)).status == WorkflowStatus.paused
+
+
 async def test_chat_state_is_merging(client, db):
     await world(client, db)
     chat = await start(client)

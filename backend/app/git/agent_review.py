@@ -182,8 +182,10 @@ async def _accept_unconfirmed(db: AsyncSession, wf, task: Task, user) -> None:
 
 
 async def _retry_confirmation(db: AsyncSession, wf, task: Task, user) -> None:
-    """Retry confirming the agent's merge: back to waiting on it (its failures counted afresh), and the pull request is
-    read again. No agent runs."""
+    """Retry confirming the agent's merge: the round rests again as after its review (`merge_wait`), and the pull
+    request is read again. That is back on `merge_confirmation` (its failures counted afresh) when MegooColab can
+    still see the merge by itself; else, with the main pull request now untracked or of another branch (a cause
+    `untracked` or `branch_mismatch`), on `human_code_review`, as a person has to confirm it. No agent runs."""
     from app.git import service as git
 
     wf.escalation_reason = None  # as the decision does: the wait is no longer an escalation

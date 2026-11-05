@@ -447,7 +447,8 @@ async def send_message(
 
 async def end_chat(db: AsyncSession, user: User, chat: Chat) -> Chat:
     """Ends the chat for good. A round still working stops (its branch keeps what was done); a round in code
-    review keeps waiting, so its pull request is still followed."""
+    review keeps waiting, so its pull request is still followed; so does an agent's merge that couldn't be confirmed
+    (a later read that sees the merge still finishes it)."""
     from app.workflow import engine
 
     chat = await lock_chat(db, chat)
@@ -458,7 +459,8 @@ async def end_chat(db: AsyncSession, user: User, chat: Chat) -> Chat:
         wf = await engine.lock_task(db, task)
         await engine.require_actor(db, user, task, wf)
         await notifications.read_by_acting(db, user.id, task_id=task.id)
-        if wf is not None and wf.status in engine.ACTIVE and wf.needs not in MERGE_WAITS:
+        unconfirmed = wf is not None and wf.needs == Needs.escalation and wf.escalation_reason == "merge_not_confirmed"
+        if wf is not None and wf.status in engine.ACTIVE and wf.needs not in MERGE_WAITS and not unconfirmed:
             await engine.pause(db, user, task)
     chat.status = ChatStatus.ended
     chat.ended_at = _now()
