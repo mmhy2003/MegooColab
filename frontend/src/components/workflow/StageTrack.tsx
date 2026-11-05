@@ -1,5 +1,5 @@
 import { STAGES, stageIndex, stageLabel } from "@/lib/workflow";
-import type { WorkflowStage, WorkflowStatus } from "@/lib/types";
+import type { WorkflowNeeds, WorkflowStage, WorkflowStatus } from "@/lib/types";
 
 const STATUS_TEXT: Record<WorkflowStatus, string> = {
   idle: "not started",
@@ -11,26 +11,33 @@ const STATUS_TEXT: Record<WorkflowStatus, string> = {
 
 /** Six segments: completed stages in a softer fill, the current one glowing cyan (pink with an outline while a
  *  human is needed). Colour and animation are never the only signal: the label carries "n of 6" and the status
- *  is written out ("running", "paused", "waiting for you" or "waiting on a person"). */
+ *  is written out ("running", "paused", "waiting for you" or "waiting on a person"). Confirming an agent's merge
+ *  waits on nobody: it stays cyan and reads "confirming the merge". */
 export function StageTrack({
   stage,
   status,
+  needs = null,
   canAct = false,
   compact = false,
   hideStatus = false,
 }: {
   stage: WorkflowStage;
   status: WorkflowStatus;
+  /** what the workflow waits on: `merge_confirmation` is not a person's job */
+  needs?: WorkflowNeeds | null;
   canAct?: boolean;
   compact?: boolean;
   /** the caller already prints the status (full size only) */
   hideStatus?: boolean;
 }) {
   const current = stageIndex(stage);
-  const waiting = status === "waiting_human";
+  const confirming = status === "waiting_human" && needs === "merge_confirmation";
+  const waiting = status === "waiting_human" && !confirming;
   const finished = status === "finished";
   const label = `Stage: ${stageLabel(stage)} (${current + 1} of ${STAGES.length})`;
-  const statusText = waiting ? (canAct ? "waiting for you" : "waiting on a person") : STATUS_TEXT[status];
+  const statusText = confirming
+    ? "confirming the merge"
+    : waiting ? (canAct ? "waiting for you" : "waiting on a person") : STATUS_TEXT[status];
   return (
     <div role="group" aria-label={label} className="space-y-1">
       <div className={`flex ${compact ? "gap-0.5" : "gap-1"}`}>

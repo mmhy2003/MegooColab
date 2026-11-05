@@ -29,6 +29,21 @@ describe("StageTrack", () => {
     expect(screen.getByText("Waiting for you")).toBeInTheDocument();
   });
 
+  it("an agent's merge being confirmed is not waiting on anyone: no pink, no \"for you\"", () => {
+    const { container, rerender } = render(
+      <StageTrack stage="done" status="waiting_human" needs="merge_confirmation" canAct compact />,
+    );
+    expect(screen.getByText(/Done/)).toHaveTextContent("Done · confirming the merge");
+    expect(screen.queryByText(/for you|on a person/i)).not.toBeInTheDocument();
+    expect(container.querySelector(".text-pink")).toBeNull();
+    const cur = container.querySelector('[data-state="current"]');
+    expect(cur).not.toHaveClass("border-pink");
+    expect(cur).not.toHaveClass("glow-box-pink");
+    rerender(<StageTrack stage="done" status="waiting_human" needs="merge_confirmation" canAct />);
+    expect(screen.getByText("Confirming the merge")).toBeInTheDocument();
+    expect(container.querySelector(".text-pink")).toBeNull();
+  });
+
   it("states running, paused and idle in text, not only by animation", () => {
     const { rerender } = render(<StageTrack stage="build" status="paused" compact />);
     expect(screen.getByText(/paused/)).toBeInTheDocument();

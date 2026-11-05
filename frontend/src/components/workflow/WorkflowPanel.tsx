@@ -140,7 +140,7 @@ export function WorkflowPanel({
       {agent?.status === "offline" && (
         <p className="text-xs text-muted-foreground">Agent offline — the run starts when {agent.owner.name}&apos;s runner connects.</p>
       )}
-      <StageTrack stage={wf.stage} status={status} canAct={wf.can_act && !disabled} hideStatus />
+      <StageTrack stage={wf.stage} status={status} needs={wf.needs} canAct={wf.can_act && !disabled} hideStatus />
       <p className="font-semibold">{statusLine(wf)}</p>
       {decisionCount > 0 && (
         <a href="#decisions" className="text-xs text-cyan-ink underline">

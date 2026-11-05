@@ -63,9 +63,10 @@ export function TaskCardView({
       <p className="leading-snug break-words">{task.title}</p>
       {wf && (
         <div className="space-y-1">
-          <StageTrack stage={wf.stage} status={wf.status} canAct={wf.can_act} compact />
+          <StageTrack stage={wf.stage} status={wf.status} needs={wf.needs} canAct={wf.can_act} compact />
           <div className="flex flex-wrap items-center gap-1 text-[11px]">
-            {wf.needs && wf.can_act && (
+            {/* confirming an agent's merge asks nobody (it's out of Needs you too) */}
+            {wf.needs && wf.needs !== "merge_confirmation" && wf.can_act && (
               <span
                 className="rounded-full border-2 border-pink px-1.5 font-semibold tracking-wide text-pink"
                 title={needsText(wf.needs)}
