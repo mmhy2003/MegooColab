@@ -40,6 +40,7 @@ function show(c: Chat) {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 describe("ChatView", () => {
@@ -125,5 +126,56 @@ describe("ChatView", () => {
     const c = chat();
     show({ ...c, rounds: [{ ...c.rounds[0], images: [{ id: "i1", filename: "first.png", size: 10 }] }] } as typeof c);
     expect(await screen.findByRole("button", { name: "Open first.png" })).toBeInTheDocument();
+  });
+});
+
+describe("ChatView expanded", () => {
+  const card = () => screen.getByRole("heading", { level: 2 }).closest("[data-chat]") as HTMLElement;
+
+  it("a desktop button expands the chat over the whole window, and collapses it again", async () => {
+    show(chat());
+    const expand = await screen.findByRole("button", { name: "Expand chat" });
+    expect(expand.parentElement).toHaveClass("max-md:hidden"); // desktop only
+    expect(card()).not.toHaveClass("md:fixed");
+    await userEvent.click(expand);
+    expect(card()).toHaveClass("md:fixed", "md:inset-0");
+    // the conversation and the message box keep to a readable column
+    expect(document.querySelector("[data-thread] > div")).toHaveClass("md:max-w-[56rem]", "md:mx-auto");
+    await userEvent.click(screen.getByRole("button", { name: "Collapse chat" }));
+    expect(card()).not.toHaveClass("md:fixed");
+    expect(screen.getByRole("button", { name: "Expand chat" })).toBeInTheDocument();
+  });
+
+  it("is remembered in this browser", async () => {
+    show(chat());
+    await userEvent.click(await screen.findByRole("button", { name: "Expand chat" }));
+    cleanup();
+    show(chat());
+    expect(await screen.findByRole("button", { name: "Collapse chat" })).toBeInTheDocument();
+    expect(card()).toHaveClass("md:fixed");
+  });
+
+  it("Esc collapses it", async () => {
+    show(chat());
+    await userEvent.click(await screen.findByRole("button", { name: "Expand chat" }));
+    await userEvent.keyboard("{Escape}");
+    expect(card()).not.toHaveClass("md:fixed");
+  });
+
+  it("Esc closes an open menu first, and leaves the chat expanded", async () => {
+    show(chat());
+    await userEvent.click(await screen.findByRole("button", { name: "Expand chat" }));
+    await userEvent.click(screen.getByRole("button", { name: "Chat actions" }));
+    expect(await screen.findByRole("menu")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(card()).toHaveClass("md:fixed");
+  });
+
+  it("Esc does nothing on a narrow screen, where expanding doesn't show", async () => {
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: !q.includes("min-width"), media: q, addEventListener() {}, removeEventListener() {} }));
+    show(chat());
+    await userEvent.click(await screen.findByRole("button", { name: "Expand chat" }));
+    await userEvent.keyboard("{Escape}");
+    expect(card()).toHaveClass("md:fixed");
   });
 });

@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { MoreHorizontal } from "lucide-react";
-import { useRef, useState } from "react";
+import { Maximize2, Minimize2, MoreHorizontal } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { BoardDialog } from "@/components/chats/BoardDialog";
 import { ChatBack } from "@/components/chats/ChatBack";
@@ -17,6 +17,7 @@ import { api } from "@/lib/api";
 import { latestRound, stateText, useChat, WAITING, type Chat, type ChatRound } from "@/lib/chats";
 import { errorMessage } from "@/lib/errors";
 import { qk } from "@/lib/queries";
+import { useStoredState } from "@/lib/stored";
 import { useRecordTitle } from "@/lib/title";
 import { useRecordTrail } from "@/lib/trail";
 import type { ActivityItem, AgentProgram } from "@/lib/types";
@@ -81,6 +82,25 @@ function ChatMenu({ chat, agentRunning }: { chat: Chat; agentRunning: boolean })
   );
 }
 
+/** Something on top that Esc closes first: a dialog, a menu, a list of suggestions. */
+const ESC_FIRST = "dialog[open], [role=dialog], [role=menu], [role=listbox]";
+// expanding shows only from md up; below it a chat already takes the whole screen
+const wide = () => window.matchMedia?.("(min-width: 48rem)").matches ?? true;
+
+/** Expanded or not, kept in this browser; Esc collapses (on a wide screen, once nothing else on top wants it). */
+function useExpanded(): [boolean, (on: boolean) => void] {
+  const [expanded, setExpanded] = useStoredState("chats.expanded", false, "local");
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented && wide() && !document.querySelector(ESC_FIRST)) setExpanded(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [expanded, setExpanded]);
+  return [expanded, setExpanded];
+}
+
 /**
  * A chat: its rounds one after another, each laid out as a task's page is (RoundSections: subtasks, design, plan,
  * questions, attachments, then its conversation), the progress of the latest, and the message box at the bottom. It fills
@@ -103,6 +123,7 @@ export function ChatView({ chatId }: { chatId: string }) {
   });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const jumpRef = useRef<(() => void) | null>(null);
+  const [expanded, setExpanded] = useExpanded();
   if (chat.error) return <p role="alert" className="card p-4 text-sm text-pink">{errorMessage(chat.error)}</p>;
   if (!chat.data) return <p className="card p-4 text-sm text-muted-foreground">Loading…</p>;
   const c = chat.data;
@@ -111,9 +132,12 @@ export function ChatView({ chatId }: { chatId: string }) {
   // conversation to go to
   const goesToWaiting = c.can_act && WAITING.includes(c.state) && c.state !== "escalation";
   const canEnd = c.can_act && c.status === "open";
+  const column = expanded ? "md:mx-auto md:max-w-[56rem]" : "";
   const program = c.agent ? PROGRAM_LABEL[c.agent.program as AgentProgram] ?? c.agent.program : null;
   return (
-    <div className="card flex h-full min-h-0 flex-col">
+    // expanded (desktop only): over the whole window, the menu and the top bar included; the conversation and the
+    // message box keep to a readable column
+    <div data-chat className={`card flex h-full min-h-0 flex-col ${expanded ? "md:fixed md:inset-0 md:z-40 md:h-auto md:rounded-none md:border-0" : ""}`}>
       <header className="shrink-0 space-y-2 border-b border-line px-4 py-3 max-md:space-y-1 max-md:px-3 max-md:py-2">
         <div className="flex items-start gap-2 md:gap-3">
           <ChatBack fallback="/chats" />
@@ -126,6 +150,17 @@ export function ChatView({ chatId }: { chatId: string }) {
               <EndChatButton chat={c} agentRunning={agentRunning} />
             </div>
           )}
+          <div className="max-md:hidden">
+            <button
+              type="button"
+              className="icon-btn size-8"
+              aria-label={expanded ? "Collapse chat" : "Expand chat"}
+              title={expanded ? "Collapse chat (Esc)" : "Expand chat"}
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? <Minimize2 size={16} aria-hidden /> : <Maximize2 size={16} aria-hidden />}
+            </button>
+          </div>
           {canEnd && <ChatMenu chat={c} agentRunning={agentRunning} />}
         </div>
         {/* a phone keeps the details to one small line */}
@@ -161,7 +196,7 @@ export function ChatView({ chatId }: { chatId: string }) {
         {/* relative: what is positioned inside (screen reader text in a round's parts) is held in it too; otherwise it
             would stretch the page instead of this scroller */}
         <div ref={scrollRef} data-thread className="relative h-full overflow-y-auto px-4 py-3 wrap-anywhere max-md:px-3">
-          <div className="space-y-2">
+          <div className={`space-y-2 ${column}`}>
             {c.rounds.map((r) => (
               <div key={r.key}>
                 {c.rounds.length > 1 && <RoundDivider round={r} canEdit={c.can_act && r === latest} />}
@@ -174,7 +209,9 @@ export function ChatView({ chatId }: { chatId: string }) {
         {activity.data && <JumpButtons key={chatId} scrollRef={scrollRef} activity={activity.data} startFollowing jumpRef={jumpRef} />}
       </div>
       <div className="shrink-0 border-t border-line bg-surface px-4 py-3 max-md:px-3 max-md:py-2">
-        <ChatComposer chat={c} agentRunning={agentRunning} />
+        <div className={column}>
+          <ChatComposer chat={c} agentRunning={agentRunning} />
+        </div>
       </div>
       {pending && <BoardDialog key={pending.key} chat={c} round={pending} />}
     </div>
