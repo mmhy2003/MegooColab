@@ -68,6 +68,17 @@ async def test_wait_without_an_agent_is_addressed_to_the_assignee(client, db, wo
     assert [r["kind"] for r in (await dash(client, "mine"))["needs"]] == ["human_code_review"]
 
 
+async def test_a_merge_being_confirmed_is_not_in_needs_you(client, db, world):
+    """An agent merged the pull request; MegooColab confirms it by itself, so nobody is asked."""
+    t = await add_task(db, world.pay, agent=world.agent)
+    await add_workflow(db, t, stage="done", status="waiting_human", needs="merge_confirmation", agent=world.agent)
+    await login(client, world.viewer)
+    for scope in ("mine", "teams"):
+        body = await dash(client, scope)
+        assert body["needs"] == [] and body["numbers"]["need_you"] == 0
+    assert (await client.get("/api/dashboard/count")).json() == {"needs_you": 0}
+
+
 async def test_needs_keeps_ten_and_counts_all(client, db, world):
     for i in range(12):
         t = await add_task(db, world.pay, user=world.viewer)

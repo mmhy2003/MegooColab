@@ -88,6 +88,16 @@ describe("TaskCardView", () => {
     expect(screen.getByText(/waiting on a person/)).toBeInTheDocument();
   });
 
+  it("an agent's merge being confirmed is nobody's job: no NEEDS YOU, no \"waiting for you\"", () => {
+    const merging = { ...wf, stage: "done", needs: "merge_confirmation" } as const;
+    renderCard(<TaskCardView task={{ ...task, workflow: merging }} />);
+    expect(screen.queryByText("NEEDS YOU")).not.toBeInTheDocument();
+    expect(screen.queryByText(/for you/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/confirming the merge/)).toBeInTheDocument();
+    const track = screen.getByLabelText("Stage: Done (6 of 6)");
+    expect(track.querySelector(".text-pink, .border-pink")).toBeNull();
+  });
+
   it("shows enforcement chip and build progress", () => {
     const build = { ...wf, stage: "build", status: "running", needs: null, current_step: 2, steps_total: 5 } as const;
     const { rerender } = renderCard(<TaskCardView task={{ ...task, workflow: { ...build, enforcement: "unenforced" } }} />);

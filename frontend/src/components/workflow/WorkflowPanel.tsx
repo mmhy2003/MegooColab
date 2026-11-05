@@ -12,6 +12,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api, ApiError } from "@/lib/api";
 import { runReasonText, useAgentRuns } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
+import { HOST_NAME, limitedText, pullRequestProblem } from "@/lib/git";
 import { qk } from "@/lib/queries";
 import type { AgentRun, ProjectAgent } from "@/lib/types";
 import {
@@ -105,6 +106,31 @@ export function WorkflowPanel({
   const fixTrigger = status === "running" && latest?.workflow_role === "pr_fix" ? wf.pr_fix_trigger : null;
   // an agent reviews the pull request (piece 4): its review run is what is running
   const reviewing = status === "running" && latest?.workflow_role === "pr_review" && (latest.status === "running" || latest.status === "queued");
+  const pr = wf.pull_request;
+  const hostName = pr?.host ? HOST_NAME[pr.host] : "the git host";
+  // why an unconfirmed merge is unconfirmed: nothing reads it any more, what MegooColab can't read, else what the
+  // host still shows
+  const unconfirmed = wf.escalation_reason === "merge_not_confirmed";
+  const unconfirmedWhy =
+    !unconfirmed || !pr
+      ? null
+      : !pr.tracked
+        ? "MegooColab no longer follows this pull request (its git connection was removed)."
+        : pr.error
+          ? pullRequestProblem(pr.error, pr.host ?? null)
+          : pr.state === "open"
+            ? `${pr.host ? HOST_NAME[pr.host] : "The git host"} still shows it open.`
+            : null;
+  // an untracked pull request is never read; an unconfirmed merge's escalation already says why it can't be read
+  const readProblem = !pr?.tracked
+    ? null
+    : pr.error
+      ? escalating && unconfirmed
+        ? null
+        : `MegooColab can't read this pull request: ${pullRequestProblem(pr.error, pr.host ?? null)}${
+            pr.next_check_at ? ` It tries again at ${new Date(pr.next_check_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""
+          }`
+      : limitedText(pr.limited);
   const prNumber = /\/(?:pull|pulls|merge_requests)\/(\d+)\/?$/.exec(wf.pr_url ?? "")?.[1];
   // set_finishing needs a started workflow and is closed from done on
   const showFinishing = agentDriven && status !== "idle" && status !== "finished" && wf.stage !== "done";
@@ -123,7 +149,7 @@ export function WorkflowPanel({
       {agent?.status === "offline" && (
         <p className="text-xs text-muted-foreground">Agent offline — the run starts when {agent.owner.name}&apos;s runner connects.</p>
       )}
-      <StageTrack stage={wf.stage} status={status} canAct={wf.can_act && !disabled} hideStatus />
+      <StageTrack stage={wf.stage} status={status} needs={wf.needs} canAct={wf.can_act && !disabled} hideStatus />
       <p className="font-semibold">{statusLine(wf)}</p>
       {decisionCount > 0 && (
         <a href="#decisions" className="text-xs text-cyan-ink underline">
@@ -136,11 +162,14 @@ export function WorkflowPanel({
       {escalating && (
         <div data-waiting={canDecide ? "escalation" : undefined} className="space-y-2 rounded border border-pink/60 p-2">
           <p>{escalationReasonText(wf.escalation_reason)}</p>
+          {unconfirmedWhy && <p className="text-xs text-muted-foreground">{unconfirmedWhy}</p>}
           {canDecide ? (
             <div className="flex flex-wrap gap-2">
               <Button disabled={busy} onClick={() => void post("escalation", { action: "retry" })}>Retry</Button>
               {wf.escalation_reason && ACCEPTABLE_REASONS.includes(wf.escalation_reason) && (
-                <Button variant="ghost" disabled={busy} onClick={() => void post("escalation", { action: "accept" })}>Accept</Button>
+                <Button variant="ghost" disabled={busy} onClick={() => void post("escalation", { action: "accept" })}>
+                  {wf.escalation_reason === "merge_not_confirmed" ? "Mark merged" : "Accept"}
+                </Button>
               )}
               <Button variant="danger" disabled={busy} onClick={() => void post("escalation", { action: "pause" })}>Pause</Button>
             </div>
@@ -206,6 +235,15 @@ export function WorkflowPanel({
         </div>
       )}
 
+      {status === "waiting_human" && wf.needs === "merge_confirmation" && (
+        <div className="space-y-2 rounded border border-cyan/50 p-2">
+          <p>{`The agent merged the pull request. MegooColab finishes the round when ${hostName} shows the merge.`}</p>
+          {canDecide && (
+            <Button variant="ghost" disabled={busy} onClick={() => void post("human-review", { approved: true })}>Mark merged</Button>
+          )}
+        </div>
+      )}
+
       {agentDriven && (
         <div className="space-y-1">
           {showFinishing && !wf.finishing_forced && canDecide ? (
@@ -263,6 +301,7 @@ export function WorkflowPanel({
               Open the pull request <ExternalLink size={12} aria-hidden />
             </a>
           )}
+          {readProblem && <p className="text-amber">{readProblem}</p>}
           {(wf.back_merge_branch || wf.back_merge_pull_request || wf.back_merge_pr_url) && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-muted-foreground">Into {wf.back_merge_into}:</span>

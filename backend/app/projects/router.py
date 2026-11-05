@@ -268,6 +268,9 @@ async def _repo_out(db: AsyncSession, repo: ProjectRepository) -> RepoOut:
     out.connection = RepoConnection(id=conn.id, name=conn.name) if conn is not None else None
     if conn is not None:
         out.webhook_status = "failing" if repo.webhook_failing else "working" if repo.webhook_last_at else "not_set_up"
+        from app.git import service as git_service  # local: git imports the project models
+
+        out.pr_error, out.pr_limited = await git_service.repo_read_problem(db, repo, conn)
     return out
 
 

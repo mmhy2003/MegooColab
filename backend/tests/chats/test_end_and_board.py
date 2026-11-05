@@ -58,6 +58,77 @@ async def test_ending_in_human_review_keeps_tracking(client, db):
     assert (wf.status, wf.needs) == (WorkflowStatus.waiting_human, Needs.human_code_review)
 
 
+async def _merge_confirmation(db, rnd: Task) -> None:
+    """The agent reviewed and merged the round's pull request; MegooColab waits to see the merge."""
+    from app.agent_runs.models import AgentRun, RunStatus
+
+    await db.execute(update(AgentRun).where(AgentRun.task_id == rnd.id).values(status=RunStatus.completed))
+    await db.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == rnd.id).values(
+        status=WorkflowStatus.waiting_human, needs=Needs.merge_confirmation, stage=Stage.done,
+        pr_url="https://git.example/pr/7",
+    ))
+    await db.commit()
+
+
+async def test_ending_a_chat_leaves_a_merge_confirmation_alone(client, db):
+    await world(client, db)
+    chat = await start(client)
+    rnd = await _round(db, chat)
+    await _merge_confirmation(db, rnd)
+    assert (await _end(client, chat)).status_code == 200
+    wf = await db.get(TaskWorkflow, rnd.id, populate_existing=True)
+    assert (wf.status, wf.needs) == (WorkflowStatus.waiting_human, Needs.merge_confirmation)
+
+
+async def test_ending_a_chat_leaves_an_unconfirmed_merge_alone(client, db):
+    """An agent's merge MegooColab couldn't confirm escalated; its pull request is still read, and a merged read
+    finishes it: ending the chat doesn't pause it (that would stop it clearing itself)."""
+    await world(client, db)
+    chat = await start(client)
+    rnd = await _round(db, chat)
+    await _merge_confirmation(db, rnd)
+    await db.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == rnd.id).values(
+        needs=Needs.escalation, escalation_reason="merge_not_confirmed"))
+    await db.commit()
+    assert (await _end(client, chat)).status_code == 200
+    wf = await db.get(TaskWorkflow, rnd.id, populate_existing=True)
+    assert (wf.status, wf.needs, wf.escalation_reason) == (
+        WorkflowStatus.waiting_human, Needs.escalation, "merge_not_confirmed")
+
+
+async def test_ending_a_chat_still_pauses_another_escalation(client, db):
+    await world(client, db)
+    chat = await start(client)
+    rnd = await _round(db, chat)
+    await _merge_confirmation(db, rnd)
+    await db.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == rnd.id).values(
+        needs=Needs.escalation, escalation_reason="pr_closed"))
+    await db.commit()
+    assert (await _end(client, chat)).status_code == 200
+    assert (await db.get(TaskWorkflow, rnd.id, populate_existing=True)).status == WorkflowStatus.paused
+
+
+async def test_chat_state_is_merging(client, db):
+    await world(client, db)
+    chat = await start(client)
+    await _merge_confirmation(db, await _round(db, chat))
+    r = await client.get(f"/api/chats/{chat['id']}")
+    assert r.status_code == 200 and r.json()["state"] == "merging"
+    assert (await client.get("/api/chats/count")).json() == {"waiting": 0}  # nobody waits on it
+    needs = (await client.get("/api/dashboard")).json()["needs"]
+    assert [n for n in needs if n.get("chat_id") == chat["id"]] == []
+
+
+async def test_a_round_being_merged_goes_to_the_review_column(client, db):
+    await world(client, db)
+    chat = await start(client)
+    await _merge_confirmation(db, await _round(db, chat))
+    await _end(client, chat)
+    d = (await client.get(f"/api/chats/{chat['id']}/rounds/1/board")).json()
+    assert await _category(db, d["column_id"]) == "review"
+    assert "**Outcome:** in code review (https://git.example/pr/7)" in d["description_md"]
+
+
 async def test_board_defaults_for_a_finished_round(client, db):
     await world(client, db)
     chat = await start(client)

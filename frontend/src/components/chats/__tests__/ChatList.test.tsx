@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { ChatList } from "@/components/chats/ChatList";
 import { chat } from "@/components/chats/__tests__/fixtures";
-import { intentText, stateText } from "@/lib/chats";
+import { intentText, stateText, WAITING } from "@/lib/chats";
 
 afterEach(cleanup);
 
@@ -32,10 +32,16 @@ describe("chat copy", () => {
     expect(stateText(chat({ state }))).toBe(text);
   });
 
+  it("merging is not a state that waits on a person", () => {
+    expect(WAITING).not.toContain("merging");
+  });
+
   it("names the step, the pull request and the merge", () => {
     const r = chat().rounds[0];
     expect(stateText(chat({ state: "building", rounds: [{ ...r, current_step: 2, steps_total: 3 }] }))).toBe("building step 2 of 3");
     expect(stateText(chat({ state: "human_code_review", rounds: [{ ...r, pr_url: "https://g.io/pull/42" }] }))).toBe("in code review · PR #42");
+    expect(stateText(chat({ state: "merging", rounds: [{ ...r, pr_url: "https://g.io/pull/3" }] }))).toBe("merging · PR #3");
+    expect(stateText(chat({ state: "merging" }))).toBe("merging");
     expect(stateText(chat({ state: "finished", rounds: [{ ...r, finish_outcome: "pr_opened", pr_url: "https://g.io/pull/42" }] }))).toBe("finished · PR #42");
     expect(stateText(chat({ state: "finished", rounds: [{ ...r, finish_outcome: "merged_local" }] }))).toBe("finished · merged");
   });

@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.tasks.models import Task, TaskEvent
+from app.workflow.models import Needs
 
 MAX_FINDINGS = 50
 MAX_SUMMARY = 4000
@@ -74,7 +75,7 @@ async def _handle_pr_review(db: AsyncSession, wf, task: Task, run) -> None:
     from app.git import send_back
     from app.git import service as git
     from app.workflow import engine, finish
-    from app.workflow.models import Needs, Stage
+    from app.workflow.models import Stage
 
     if await finish._asked_or_answered(db, wf, task, run):
         return
@@ -90,7 +91,7 @@ async def _handle_pr_review(db: AsyncSession, wf, task: Task, run) -> None:
         })
     await engine.set_stage(db, wf, task, Stage.done)
     # a resting state: what comes next is decided below (an escalation tells people itself)
-    await engine.wait_for(db, wf, Needs.human_code_review, notify=False)
+    await rest_after_merge(db, wf, task)
     await git.queue_refresh(db, task.id)  # a merge it made is seen soon, not at the next poll
     if await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):
         return
@@ -117,6 +118,39 @@ async def _handle_pr_review(db: AsyncSession, wf, task: Task, run) -> None:
     await send_back.send_back_now(db, wf, task, trigger)
 
 
+async def merge_wait(db: AsyncSession, wf, task: Task) -> Needs:
+    """What the round waits on once its agent review ended: `merge_confirmation` (nobody is asked) when MegooColab
+    can see the merge by itself; else `human_code_review`, as a person has to act: a back-merge pull request is
+    theirs to merge, and an untracked or other-branch main one is never settled from the host."""
+    from app.git.models import PR_MAIN, TaskPullRequest
+
+    if wf.back_merge_pr_url:
+        return Needs.human_code_review
+    row = await db.get(TaskPullRequest, (task.id, PR_MAIN))
+    if row is None or row.connection_id is None or row.error == "branch_mismatch":
+        return Needs.human_code_review
+    return Needs.merge_confirmation
+
+
+async def rest_after_merge(db: AsyncSession, wf, task: Task) -> None:
+    """The round rests after its agent review, telling nobody. Waiting on `merge_confirmation`, the main row's read
+    failures count from now and it is read again at once. The caller holds the workflow lock (lock order: task,
+    workflow, then the row)."""
+    from app.git import service as git
+    from app.git.models import PR_MAIN
+    from app.workflow import engine
+
+    need = await merge_wait(db, wf, task)
+    await engine.wait_for(db, wf, need, notify=False)
+    if need != Needs.merge_confirmation:
+        return
+    row = await git._lock_row(db, task.id, PR_MAIN)
+    if row is not None:
+        row.failures = 0
+        row.next_check_at = git._now()
+        await db.flush()
+
+
 def _pr_number(url: str | None) -> int | None:
     import re
 
@@ -140,6 +174,27 @@ async def _retry_review(db: AsyncSession, wf, task: Task, user) -> None:
     await start_review(db, wf, task)
 
 
+async def _accept_unconfirmed(db: AsyncSession, wf, task: Task, user) -> None:
+    """The agent's merge couldn't be confirmed, and a person says it merged (Mark merged): the round finishes."""
+    from app.workflow import finish
+
+    await finish.mark_merged(db, wf, task, user)
+
+
+async def _retry_confirmation(db: AsyncSession, wf, task: Task, user) -> None:
+    """Retry confirming the agent's merge: the round rests again as after its review (`merge_wait`), and the pull
+    request is read again. That is back on `merge_confirmation` (its failures counted afresh) when MegooColab can
+    still see the merge by itself; else, with the main pull request now untracked or of another branch (a cause
+    `untracked` or `branch_mismatch`), on `human_code_review`, as a person has to confirm it. No agent runs."""
+    from app.git import service as git
+
+    wf.escalation_reason = None  # as the decision does: the wait is no longer an escalation
+    await rest_after_merge(db, wf, task)
+    await git.queue_refresh(db, task.id)
+    # a merge (or close) already stored, say seen while paused, changes nothing on a later read: settle it now
+    await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))
+
+
 def _register() -> None:
     from app.workflow import engine
     from app.workflow.models import RunRole
@@ -148,6 +203,8 @@ def _register() -> None:
     for reason in ("agent_merge_failed", "agent_review_incomplete", "agent_review_unavailable"):
         engine.ACCEPT_HANDLERS[reason] = _accept_waits_for_the_merge
     engine.RETRY_HANDLERS["agent_review_unavailable"] = _retry_review
+    engine.ACCEPT_HANDLERS["merge_not_confirmed"] = _accept_unconfirmed
+    engine.RETRY_HANDLERS["merge_not_confirmed"] = _retry_confirmation
 
 
 _register()

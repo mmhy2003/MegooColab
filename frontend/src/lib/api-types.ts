@@ -4573,7 +4573,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "talking" | "question" | "design_approval" | "plan_approval" | "building" | "in_review" | "human_code_review" | "escalation" | "offline" | "finished" | "ended";
+            state: "talking" | "question" | "design_approval" | "plan_approval" | "building" | "in_review" | "human_code_review" | "merging" | "escalation" | "offline" | "finished" | "ended";
             /**
              * Intent
              * @default closed
@@ -6273,7 +6273,7 @@ export interface components {
          * Needs
          * @enum {string}
          */
-        Needs: "question" | "design_approval" | "plan_approval" | "escalation" | "human_code_review";
+        Needs: "question" | "design_approval" | "plan_approval" | "escalation" | "human_code_review" | "merge_confirmation";
         /** NeedsCount */
         NeedsCount: {
             /** Needs You */
@@ -6772,6 +6772,13 @@ export interface components {
             review: string;
             /** Tracked */
             tracked: boolean;
+            /** Error */
+            error?: string | null;
+            /** Limited */
+            limited?: string | null;
+            host?: components["schemas"]["GitKind"] | null;
+            /** Next Check At */
+            next_check_at?: string | null;
         };
         /** PushIn */
         PushIn: {
@@ -7011,6 +7018,10 @@ export interface components {
             webhook_last_at?: string | null;
             /** Warning */
             warning?: string | null;
+            /** Pr Error */
+            pr_error?: string | null;
+            /** Pr Limited */
+            pr_limited?: string | null;
         };
         /** RepoPatch */
         RepoPatch: {

@@ -317,8 +317,28 @@ test("a pull request followed through a git connection", async ({ browser }) => 
   await expect(thirdActivity("Sent back to its agent: changes requested on PR #3")).toBeVisible({ timeout: 15_000 });
   await expect(thirdActivity("Fixed and pushed to PR #3 (round 1 of 3)")).toBeVisible({ timeout: 60_000 });
   await expect(thirdActivity("approved PR #3 and merged it")).toBeVisible({ timeout: 60_000 });
-  // the agent merged it on the host; the host's webhook tells MegooColab
-  fake.prs.set(3, { state: "closed", merged: true, checks: "success", reviews: [] });
+  // the agent merged it: the round waits for MegooColab to see the merge, and says so without asking anyone
+  await expect
+    .poll(async () => (await get<Workflow>(request, `/api/tasks/${THIRD}/workflow`)).needs, { timeout: 30_000 })
+    .toBe("merge_confirmation");
+  await expect(third.getByText("Agent merged · confirming")).toBeVisible();
+  const dash = await get<{ needs: { ref: string }[] }>(request, "/api/dashboard");
+  expect(dash.needs.map((n) => n.ref)).not.toContain(THIRD);
+  // the token can't read the PR: MegooColab asks a person
+  fake.prs.set(3, { state: "open", merged: false, checks: "success", reviews: [], forbid: ["pull"] });
+  const synced3 = delivery("pull_request", {
+    action: "synchronize", number: 3, sender: { login: "admin-gh" },
+    pull_request: { number: 3, html_url: prUrl(3), merged: false, head: { ref: `megoo/${THIRD}` }, base: { ref: "main" } },
+  }, made.secret);
+  expect((await request.post(hookUrl, { data: synced3.body, headers: synced3.headers })).status()).toBe(204);
+  await expect
+    .poll(async () => (await get<Workflow>(request, `/api/tasks/${THIRD}/workflow`)).escalation_reason, { timeout: 30_000 })
+    .toBe("merge_not_confirmed");
+  await expect(third.getByText("The agent merged the pull request, but MegooColab couldn't confirm it.", { exact: true })).toBeVisible();
+  await expect(third.getByText(/GitHub refused the token \(forbidden\)/).first()).toBeVisible();
+  await expect(third.getByRole("button", { name: "Mark merged" })).toBeVisible();
+  // the token is fixed but still can't read checks: the merge is seen and the round finishes by itself
+  fake.prs.set(3, { state: "closed", merged: true, checks: "success", reviews: [], forbid: ["status", "check-runs"] });
   const merged3 = delivery("pull_request", {
     action: "closed", number: 3, sender: { login: "admin-gh" },
     pull_request: { number: 3, html_url: prUrl(3), merged: true, head: { ref: `megoo/${THIRD}` }, base: { ref: "main" } },

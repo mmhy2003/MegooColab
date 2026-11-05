@@ -1,5 +1,6 @@
 """An agent reviews the task's pull request (piece 4): its review run, what it reports, and what follows."""
 
+import pytest
 from sqlalchemy import select, update
 
 from app.agent_runs.models import AgentRun, RunStatus
@@ -123,7 +124,7 @@ async def test_approved_and_merged_finishes_once_the_merge_is_seen(client, db):
     await _end(task, owner, "finish", {"tests_passed": True})
     await _end_review(task, owner, APPROVED)
     wf = await _wf(task.id)
-    assert (wf.status, wf.needs) == ("waiting_human", "human_code_review")
+    assert (wf.status, wf.needs) == ("waiting_human", "merge_confirmation")
     (reviewed,) = await _kinds(task.id, "pr.agent_reviewed")
     assert {k: reviewed.data[k] for k in ("verdict", "merged", "agent_name", "pr_number", "findings")} == {
         "verdict": "approved", "merged": True, "agent_name": "laptop-claude", "pr_number": 1, "findings": 0}
@@ -133,6 +134,157 @@ async def test_approved_and_merged_finishes_once_the_merge_is_seen(client, db):
         merged = providers.PrStatus(state="merged", checks="success", review="none", merged_at=None, head_sha="a")
         await service.apply_status(s, task.id, "main", merged)
         await s.commit()
+    assert (await _wf(task.id)).status == "finished"
+
+
+# -- an agent's merge waits quietly for its confirmation ---------------------------------------------------------
+
+
+async def _needs_you_refs(client) -> list[str]:
+    r = await client.get("/api/dashboard")
+    assert r.status_code == 200, r.text
+    return [n["ref"] for n in r.json()["needs"]]
+
+
+async def _needs_you_notices(task_id) -> list[str]:
+    from app.notifications.models import Kind, Notification
+
+    async with SessionLocal() as s:
+        return list((await s.execute(select(Notification.title).where(
+            Notification.task_id == task_id, Notification.kind == Kind.needs_you))).scalars())
+
+
+async def test_an_agent_merge_rests_out_of_needs_you_without_a_notice(client, db):
+    from datetime import UTC, datetime
+
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    async with SessionLocal() as s:  # earlier failed reads don't count against the new wait
+        await s.execute(update(TaskPullRequest).where(TaskPullRequest.task_id == task.id).values(failures=4))
+        await s.commit()
+    before = datetime.now(UTC)
+    await _end_review(task, owner, APPROVED)
+    assert (await _wf(task.id)).needs == "merge_confirmation"
+    assert "PAY-1" not in await _needs_you_refs(client)
+    assert (await client.get("/api/dashboard/count")).json() == {"needs_you": 0}
+    board = await client.get("/api/projects/PAY/tasks", params={"needs_you": "true"})
+    assert board.status_code == 200 and board.json() == []
+    assert await _needs_you_notices(task.id) == []
+    async with SessionLocal() as s:
+        row = await s.get(TaskPullRequest, (task.id, "main"))
+    assert row.failures == 0 and before <= row.next_check_at <= datetime.now(UTC)
+
+
+async def test_a_person_taking_over_still_waits_on_code_review(client, db):
+    from app.auth.models import User
+
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    await _end_review(task, owner, {**APPROVED, "merged": False, "merge_error": "Required review missing"})
+    assert (await _wf(task.id)).escalation_reason == "agent_merge_failed"
+    async with SessionLocal() as s:
+        await engine.decide_escalation(s, await s.get(User, owner), await s.get(Task, task.id), "accept")
+        await s.commit()
+    assert (await _wf(task.id)).needs == "human_code_review"
+    assert "PAY-1" in await _needs_you_refs(client)
+
+
+async def _back_merge(task_id) -> None:
+    async with SessionLocal() as s:
+        await s.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == task_id).values(
+            back_merge_branch="megoo/PAY-1-back", back_merge_pr_url="https://github.com/acme/pay/pull/2"))
+        await s.commit()
+
+
+async def _untracked(task_id) -> None:
+    async with SessionLocal() as s:
+        await s.execute(update(TaskPullRequest).where(TaskPullRequest.task_id == task_id).values(connection_id=None))
+        await s.commit()
+
+
+async def _other_branch(task_id) -> None:
+    async with SessionLocal() as s:
+        await s.execute(update(TaskPullRequest).where(TaskPullRequest.task_id == task_id).values(
+            error="branch_mismatch"))
+        await s.commit()
+
+
+@pytest.mark.parametrize("change", [_back_merge, _untracked, _other_branch])
+async def test_a_back_merge_pr_rests_on_code_review(client, db, change):
+    """A person merges the back-merge pull request; an untracked or other-branch one is never confirmed alone."""
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    await change(task.id)
+    await _end_review(task, owner, APPROVED)
+    wf = await _wf(task.id)
+    assert (wf.status, wf.needs) == ("waiting_human", "human_code_review")
+
+
+async def test_mark_merged_finishes_a_merge_confirmation(client, db):
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    await _end_review(task, owner, APPROVED)
+    assert (await _wf(task.id)).needs == "merge_confirmation"
+    r = await client.post("/api/tasks/PAY-1/workflow/human-review", json={"approved": True})
+    assert r.status_code == 200, r.text
+    assert (await _wf(task.id)).status == "finished"
+    assert len(await _kinds(task.id, "human_review.approved")) == 1
+
+
+async def test_a_changes_requested_webhook_during_merge_confirmation_is_ignored(client, db):
+    from app.git import send_back
+
+    w, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    await _end_review(task, owner, APPROVED)
+    trigger = send_back.Trigger(kind="review", pr_url=w.pr_url, pr_number=1, by="rev", excerpt="Two things",
+                                where=None, association="COLLABORATOR", host="github")
+    async with SessionLocal() as s:
+        assert await send_back.consider(s, await s.get(Task, task.id), trigger) == "ignored:not_waiting"
+        await s.commit()
+    assert (await _wf(task.id)).needs == "merge_confirmation"
+
+
+async def _bind_task_agent(task) -> None:
+    async with SessionLocal() as s:  # as for any task's agent: bound to the project (resume checks it)
+        project = (await s.execute(select(Project).where(Project.key == "PAY"))).scalar_one()
+        s.add(AgentBinding(agent_id=task.assignee_agent_id, project_id=project.id, local_path="C:/work/pay"))
+        await s.commit()
+
+
+async def test_resume_after_a_pause_rests_on_merge_confirmation(client, db):
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    await _end_review(task, owner, APPROVED)
+    waited = (await _wf(task.id)).waiting_since
+    await _bind_task_agent(task)
+    assert (await client.post("/api/tasks/PAY-1/workflow/pause")).status_code == 200
+    async with SessionLocal() as s:  # a read failed while paused
+        await s.execute(update(TaskPullRequest).where(TaskPullRequest.task_id == task.id).values(failures=3))
+        await s.commit()
+    r = await client.post("/api/tasks/PAY-1/workflow/resume")
+    assert r.status_code == 200, r.text
+    wf = await _wf(task.id)
+    assert (wf.status, wf.needs) == ("waiting_human", "merge_confirmation")
+    assert wf.waiting_since > waited
+    assert await _needs_you_notices(task.id) == []
+    async with SessionLocal() as s:
+        assert (await s.get(TaskPullRequest, (task.id, "main"))).failures == 0
+    assert len([x for x in await _review_runs(task.id) if x.status == RunStatus.queued]) == 0
+
+
+async def test_resume_finishes_a_merge_seen_while_paused(client, db):
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    await _end_review(task, owner, APPROVED)
+    await _bind_task_agent(task)
+    assert (await client.post("/api/tasks/PAY-1/workflow/pause")).status_code == 200
+    async with SessionLocal() as s:  # seen while paused, so nothing settled then
+        merged = providers.PrStatus(state="merged", checks="success", review="none", merged_at=None, head_sha="a")
+        await service.apply_status(s, task.id, "main", merged)
+        await s.commit()
+    assert (await _wf(task.id)).status == "paused"
+    assert (await client.post("/api/tasks/PAY-1/workflow/resume")).status_code == 200
     assert (await _wf(task.id)).status == "finished"
 
 
