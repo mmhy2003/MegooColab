@@ -5,9 +5,10 @@ project repositories, and names that repository. Its state always comes from the
 connection's read-only token (webhooks only trigger a refresh). A provider error keeps the last known state and
 backs off; it never finishes or escalates anything.
 
-While a workflow waits on `human_code_review`: merged -> finished; closed -> escalation `pr_closed`. A production
-fix (Branch from) has two rows, its own pull request and the back-merge into the default branch: it finishes only
-when both are merged, and either one closed escalates (`back_merge_pr_closed` for the back-merge one).
+While a workflow waits for the merge (`human_code_review` or `merge_confirmation`): merged -> finished; closed ->
+escalation `pr_closed`. A production fix (Branch from) has two rows, its own pull request and the back-merge into the
+default branch: it finishes only when both are merged, and either one closed escalates (`back_merge_pr_closed` for
+the back-merge one).
 """
 
 import secrets
@@ -187,13 +188,14 @@ async def _record_checks(db: AsyncSession, task: Task, row: TaskPullRequest, sta
 
 
 async def settle_done(db: AsyncSession, wf, task: Task, rows: list[TaskPullRequest]) -> bool:
-    """A workflow waiting on human code review follows its tracked pull requests: one closed escalates
-    pr_closed (back_merge_pr_closed for the back-merge one); all of them merged finishes it (a production fix has two). An untracked one waits for a person.
-    True when it acted. The caller holds the workflow lock."""
+    """A workflow waiting for the merge (a person's review, or confirming an agent's merge) follows its tracked pull
+    requests: one closed escalates pr_closed (back_merge_pr_closed for the back-merge one); all of them merged
+    finishes it (a production fix has two). An untracked one waits for a person. True when it acted. The caller
+    holds the workflow lock."""
     from app.workflow import engine, finish  # local: the workflow imports this module
-    from app.workflow.models import Needs, WorkflowStatus
+    from app.workflow.models import MERGE_WAITS, WorkflowStatus
 
-    if wf.status != WorkflowStatus.waiting_human or wf.needs != Needs.human_code_review:
+    if wf.status != WorkflowStatus.waiting_human or wf.needs not in MERGE_WAITS:
         return False
     expected = {PR_MAIN} | ({PR_BACK_MERGE} if wf.back_merge_pr_url else set())
     by_kind = {r.kind: r for r in rows if r.kind in expected}

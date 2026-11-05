@@ -283,6 +283,7 @@ NEEDS_TITLES = {
     Needs.plan_approval: "{key}: the plan awaits your approval",
     Needs.escalation: "{key} needs a decision: {reason}",
     Needs.human_code_review: "{key}: the pull request awaits your review",
+    Needs.merge_confirmation: "{key}: confirming the merge",
 }
 
 
@@ -656,11 +657,18 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
         project = await db.get(Project, task.project_id)
         if (reported or {}).get("tests_passed") is True and requires_human_review(project, wf):
             last = await latest_run(db, wf.task_id)
-            if (
+            reviewed = (
                 pr_review_mode(project, wf) == PrReview.agent and last is not None
-                and last.workflow_role == RunRole.pr_review and not (last.step_result or {}).get("verdict")
-            ):
+                and last.workflow_role == RunRole.pr_review
+            )
+            if reviewed and not (last.step_result or {}).get("verdict"):
                 return None  # the agent's review never finished: it runs again
+            if reviewed and (last.step_result or {}).get("merged") is True:
+                from app.git import (
+                    agent_review,  # local: the git modules import this one
+                )
+
+                return await agent_review.merge_wait(db, wf, task)  # the agent merged: confirming it, as before
             return Needs.human_code_review
     return None
 
@@ -677,7 +685,13 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     need = await _pending_need(db, wf)
     if need == Needs.design_approval:
         await set_stage(db, wf, task, Stage.design)  # what the brainstorm handler would have done
-    if need is not None:
+    if need == Needs.merge_confirmation:  # nobody is asked; the merge is looked for again at once
+        from app.git import agent_review
+        from app.git import service as git  # local: the git modules import this one
+
+        await agent_review.rest_after_merge(db, wf, task)
+        await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))  # seen while paused
+    elif need is not None:
         await wait_for(db, wf, need, actor_id=user.id)
     else:
         from app.workflow import questions  # local: questions imports this module

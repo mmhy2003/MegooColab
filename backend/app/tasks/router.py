@@ -13,7 +13,7 @@ from app.tasks.models import Task, TaskLink, TaskType
 from app.tasks.schemas import LinkIn, MoveIn, TaskCreate, TaskOut, TaskUpdate
 from app.teams.service import user_team_ids
 from app.workflow import engine
-from app.workflow.models import WorkflowStatus
+from app.workflow.models import Needs, WorkflowStatus
 
 router = APIRouter(tags=["tasks"])
 
@@ -49,7 +49,8 @@ async def list_tasks(
     )
     out = await service.tasks_out(db, tasks, user)
     if needs_you:  # PROJ-7: waiting on a human the caller may answer for (same rule as WF-6)
-        out = [t for t in out if t.workflow and t.workflow.status == WorkflowStatus.waiting_human and t.workflow.can_act]
+        out = [t for t in out if t.workflow and t.workflow.status == WorkflowStatus.waiting_human
+               and t.workflow.needs != Needs.merge_confirmation and t.workflow.can_act]
     return out
 
 

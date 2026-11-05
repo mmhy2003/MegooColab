@@ -36,6 +36,7 @@ from app.runner.registry import registry
 from app.tasks.models import Task, TaskType
 from app.tasks.schemas import TaskCreate
 from app.workflow.models import (
+    MERGE_WAITS,
     DocKind,
     DocStatus,
     Needs,
@@ -54,6 +55,7 @@ NEEDS_STATE: dict[Needs, ChatState] = {
     Needs.plan_approval: "plan_approval",
     Needs.escalation: "escalation",
     Needs.human_code_review: "human_code_review",
+    Needs.merge_confirmation: "merging",  # an agent merged: not a wait on anyone
 }
 
 
@@ -456,7 +458,7 @@ async def end_chat(db: AsyncSession, user: User, chat: Chat) -> Chat:
         wf = await engine.lock_task(db, task)
         await engine.require_actor(db, user, task, wf)
         await notifications.read_by_acting(db, user.id, task_id=task.id)
-        if wf is not None and wf.status in engine.ACTIVE and wf.needs != Needs.human_code_review:
+        if wf is not None and wf.status in engine.ACTIVE and wf.needs not in MERGE_WAITS:
             await engine.pause(db, user, task)
     chat.status = ChatStatus.ended
     chat.ended_at = _now()
@@ -483,7 +485,7 @@ async def _first_column(db: AsyncSession, project_id: uuid.UUID, category: Colum
 def _board_outcome(wf: TaskWorkflow | None) -> str:
     from app.chats.context import outcome_line
 
-    if wf is not None and wf.needs == Needs.human_code_review:
+    if wf is not None and wf.needs in MERGE_WAITS:
         return f"in code review ({wf.pr_url})" if wf.pr_url else "in code review"
     return outcome_line(wf)
 
@@ -494,7 +496,7 @@ async def board_defaults(db: AsyncSession, chat: Chat, n: int) -> BoardDefaults:
     task, wf = await _round_n(db, chat, n)
     if wf is not None and wf.status == WorkflowStatus.finished:
         column = await _first_column(db, task.project_id, ColumnCategory.done)
-    elif wf is not None and (wf.needs == Needs.human_code_review or wf.stage == Stage.review):
+    elif wf is not None and (wf.needs in MERGE_WAITS or wf.stage == Stage.review):
         column = await _first_column(db, task.project_id, ColumnCategory.review)
     else:
         column = None
@@ -526,7 +528,7 @@ async def _step_cards(db: AsyncSession, user: User, task: Task, wf: TaskWorkflow
     # finished, or past the build (in review, or waiting for a person's code review): every step was done
     finished = wf is not None and (
         wf.status == WorkflowStatus.finished or wf.stage in (Stage.review, Stage.done)
-        or wf.needs == Needs.human_code_review
+        or wf.needs in MERGE_WAITS
     )
     current = (wf.current_step or 1) if wf is not None else 1
     steps = []
