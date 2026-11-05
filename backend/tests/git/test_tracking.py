@@ -14,6 +14,7 @@ from app.core.db import SessionLocal
 from app.git import jobs, providers, service
 from app.git.models import GitConnection, TaskPullRequest
 from app.jobs.models import Job
+from app.tasks.models import Task
 from app.workflow import finish
 from app.workflow.methodology import DEFAULTS_DIR
 from tests.workflow.test_build import _last, _review
@@ -417,6 +418,19 @@ async def test_a_full_read_clears_limited(db, tc_factory, github):
     assert (await _row(b.task_id)).limited == "checks,review"
     await _apply(b.task_id)
     assert (await _row(b.task_id)).limited is None
+
+
+async def test_a_new_report_starts_afresh_without_the_old_limited(db, tc_factory, github):
+    tc = tc_factory(lifespan=True)
+    b, _conn = await _finished_waiting(db, tc, github)
+    await _apply(b.task_id, checks="unknown", limited=("checks",))
+    assert (await _row(b.task_id)).limited == "checks"
+    other = f"{BASE}/acme/pay/pull/9"
+    async with SessionLocal() as s:
+        await service.track_pr(s, await s.get(Task, b.task_id), other)
+        await s.commit()
+    row = await _row(b.task_id)
+    assert (row.url, row.limited, row.error, row.failures) == (other, None, None, 0)
 
 
 async def test_a_merged_partial_read_finishes_the_waiting_round(db, tc_factory, github):

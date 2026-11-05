@@ -108,20 +108,29 @@ export function WorkflowPanel({
   const reviewing = status === "running" && latest?.workflow_role === "pr_review" && (latest.status === "running" || latest.status === "queued");
   const pr = wf.pull_request;
   const hostName = pr?.host ? HOST_NAME[pr.host] : "the git host";
-  // why an unconfirmed merge is unconfirmed: what MegooColab can't read, else what the host still shows
+  // why an unconfirmed merge is unconfirmed: nothing reads it any more, what MegooColab can't read, else what the
+  // host still shows
+  const unconfirmed = wf.escalation_reason === "merge_not_confirmed";
   const unconfirmedWhy =
-    wf.escalation_reason !== "merge_not_confirmed" || !pr
+    !unconfirmed || !pr
       ? null
-      : pr.error
-        ? pullRequestProblem(pr.error, pr.host ?? null)
-        : pr.state === "open"
-          ? `${pr.host ? HOST_NAME[pr.host] : "The git host"} still shows it open.`
-          : null;
-  const readProblem = pr?.error
-    ? `MegooColab can't read this pull request: ${pullRequestProblem(pr.error, pr.host ?? null)}${
-        pr.next_check_at ? ` It tries again at ${new Date(pr.next_check_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""
-      }`
-    : pr ? limitedText(pr.limited) : null;
+      : !pr.tracked
+        ? "MegooColab no longer follows this pull request (its git connection was removed)."
+        : pr.error
+          ? pullRequestProblem(pr.error, pr.host ?? null)
+          : pr.state === "open"
+            ? `${pr.host ? HOST_NAME[pr.host] : "The git host"} still shows it open.`
+            : null;
+  // an untracked pull request is never read; an unconfirmed merge's escalation already says why it can't be read
+  const readProblem = !pr?.tracked
+    ? null
+    : pr.error
+      ? escalating && unconfirmed
+        ? null
+        : `MegooColab can't read this pull request: ${pullRequestProblem(pr.error, pr.host ?? null)}${
+            pr.next_check_at ? ` It tries again at ${new Date(pr.next_check_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""
+          }`
+      : limitedText(pr.limited);
   const prNumber = /\/(?:pull|pulls|merge_requests)\/(\d+)\/?$/.exec(wf.pr_url ?? "")?.[1];
   // set_finishing needs a started workflow and is closed from done on
   const showFinishing = agentDriven && status !== "idle" && status !== "finished" && wf.stage !== "done";

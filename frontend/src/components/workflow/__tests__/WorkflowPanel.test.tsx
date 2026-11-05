@@ -407,7 +407,9 @@ describe("WorkflowPanel agent merge confirmation", () => {
       ...base, needs: "escalation", escalation_reason: "merge_not_confirmed", pull_request: pr({ error: "forbidden" }),
     } as Partial<Workflow>));
     expect(await screen.findByText("The agent merged the pull request, but MegooColab couldn't confirm it.")).toBeInTheDocument();
-    expect(screen.getAllByText(/GitHub refused the token \(forbidden\)/).length).toBeGreaterThan(0);
+    // once: in the escalation, not again under the pull request
+    expect(screen.getAllByText(/GitHub refused the token \(forbidden\)/)).toHaveLength(1);
+    expect(screen.queryByText(/MegooColab can't read this pull request/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Mark merged" }));
     await waitFor(() => {
@@ -421,6 +423,26 @@ describe("WorkflowPanel agent merge confirmation", () => {
       ...base, needs: "escalation", escalation_reason: "merge_not_confirmed", pull_request: pr({ error: null, state: "open" }),
     } as Partial<Workflow>));
     expect(await screen.findByText("GitHub still shows it open.")).toBeInTheDocument();
+  });
+
+  it("an unconfirmed merge MegooColab no longer follows says so, whatever its last read said", async () => {
+    setup(wf({
+      ...base, needs: "escalation", escalation_reason: "merge_not_confirmed",
+      pull_request: pr({ tracked: false, host: null, error: "forbidden" }),
+    } as Partial<Workflow>));
+    expect(
+      await screen.findByText("MegooColab no longer follows this pull request (its git connection was removed)."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/refused the token/)).toBeNull();
+  });
+
+  it("says nothing of reads for a pull request MegooColab doesn't follow", async () => {
+    setup(wf({
+      ...base, needs: "human_code_review", pull_request: pr({ tracked: false, host: null, error: "forbidden", limited: "checks" }),
+    } as Partial<Workflow>));
+    expect(await screen.findByRole("button", { name: "Mark merged" })).toBeInTheDocument();
+    expect(screen.queryByText(/MegooColab can't read this pull request/)).toBeNull();
+    expect(screen.queryByText(/Checks unknown/)).toBeNull();
   });
 
   it("says under the pull request when it can't be read, and when it tries again", async () => {

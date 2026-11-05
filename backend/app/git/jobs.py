@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import SessionLocal
 from app.git import service
-from app.git.models import TaskPullRequest
+from app.git.models import PR_MAIN, TaskPullRequest
 from app.jobs import queue
 
 log = logging.getLogger(__name__)
@@ -30,7 +30,8 @@ _CONNECTION_DOWN = {"unreachable", "rate_limited", "unauthorized", "bad_token"}
 @queue.register("git.pr_poll")
 async def pr_poll(db: AsyncSession, payload: dict) -> None:
     """Open, tracked pull requests whose next check is due, oldest first: each in a transaction of its own, so
-    one slow or failing provider, or one bad row, does not hold the others back."""
+    one slow or failing provider, or one bad row, does not hold the others back. Then the rounds confirming an
+    agent's merge that no read reaches any more (an untracked main pull request) escalate past the grace."""
     due = (
         await db.execute(
             select(TaskPullRequest.task_id, TaskPullRequest.kind, TaskPullRequest.connection_id)
@@ -58,6 +59,13 @@ async def pr_poll(db: AsyncSession, payload: dict) -> None:
                 await s.commit()
         if code in _CONNECTION_DOWN:
             down.add(connection_id)
+    for task_id in await service.unread_confirmations(db):
+        try:
+            async with SessionLocal() as s:  # check_confirmation takes the engine's locks: task, workflow, row
+                await service.check_confirmation(s, task_id, PR_MAIN)
+                await s.commit()
+        except Exception:
+            log.exception("confirming the merge failed for task %s", task_id)
 
 
 queue.register_periodic("git.pr_poll", service.POLL_SECONDS)

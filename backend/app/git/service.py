@@ -33,7 +33,8 @@ POLL_SECONDS = 120
 POLL_LIMIT = 50
 MAX_BACKOFF_MINUTES = 60
 # confirming an agent's merge (merge_confirmation): a read failing like this escalates at once; any other failure
-# after CONFIRM_FAILURES in a row since the wait began; a pull request still open after CONFIRM_GRACE
+# after CONFIRM_FAILURES in a row since the wait began; a pull request still open, or no longer followed, after
+# CONFIRM_GRACE
 LASTING_ERRORS = frozenset({"forbidden", "unauthorized", "not_found", "bad_token", "url_mismatch"})
 CONFIRM_FAILURES = 3
 CONFIRM_GRACE = timedelta(minutes=10)
@@ -84,7 +85,7 @@ async def track_pr(db: AsyncSession, task: Task, url: str, kind: str = PR_MAIN) 
     row.url = url
     row.connection_id = found[0].id if found else None
     row.state, row.checks, row.review = "open", "none", "none"
-    row.merged_at = row.head_sha = row.error = row.last_checked_at = None
+    row.merged_at = row.head_sha = row.error = row.limited = row.last_checked_at = None
     row.failures = 0
     row.next_check_at = _now()
     await db.flush()
@@ -201,13 +202,19 @@ async def _record_checks(db: AsyncSession, task: Task, row: TaskPullRequest, sta
         "result": result, "head_sha": status.head_sha})
 
 
-def _unconfirmed(row: TaskPullRequest, wf) -> str | None:
+def _waited_out(wf) -> bool:
+    return wf.waiting_since is not None and _now() - wf.waiting_since >= CONFIRM_GRACE
+
+
+def _unconfirmed(row: TaskPullRequest | None, wf) -> str | None:
     """Why an agent's merge can't be confirmed from this read of the main pull request, or None (wait on)."""
+    if row is None or row.connection_id is None:  # never read again (say, its git connection was removed)
+        return "untracked" if _waited_out(wf) else None
     if row.error in LASTING_ERRORS or row.error == "branch_mismatch":
         return row.error
     if row.error is not None:
         return row.error if row.failures >= CONFIRM_FAILURES else None
-    if row.state == "open" and wf.waiting_since is not None and _now() - wf.waiting_since >= CONFIRM_GRACE:
+    if row.state == "open" and _waited_out(wf):
         return "still_open"  # the agent said it merged, but the host disagrees
     return None
 
@@ -215,7 +222,8 @@ def _unconfirmed(row: TaskPullRequest, wf) -> str | None:
 async def check_confirmation(db: AsyncSession, task_id: uuid.UUID, kind: str) -> bool:
     """After a read of the main pull request while the workflow confirms an agent's merge: a lasting error, a passing
     one CONFIRM_FAILURES times in a row since the wait began, another branch, or still open after CONFIRM_GRACE
-    escalates `merge_not_confirmed`, with the cause in the event. True when it escalated."""
+    escalates `merge_not_confirmed`, with the cause in the event. So does a main pull request no longer followed
+    after CONFIRM_GRACE (`untracked`: the poll's sweep, `unread_confirmations`). True when it escalated."""
     from app.workflow import engine  # local: the workflow imports this module
     from app.workflow.models import Needs, WorkflowStatus
 
@@ -225,11 +233,28 @@ async def check_confirmation(db: AsyncSession, task_id: uuid.UUID, kind: str) ->
     if wf is None or wf.status != WorkflowStatus.waiting_human or wf.needs != Needs.merge_confirmation:
         return False
     row = await _lock_row(db, task_id, kind)
-    cause = None if row is None else _unconfirmed(row, wf)
+    cause = _unconfirmed(row, wf)
     if cause is None:
         return False
     await engine.escalate(db, wf, "merge_not_confirmed", cause=cause)
     return True
+
+
+async def unread_confirmations(db: AsyncSession) -> list[uuid.UUID]:
+    """The rounds confirming an agent's merge past CONFIRM_GRACE whose main pull request nothing reads any more (its
+    git connection was removed, or there is no main row): no read would ever escalate them, so the poll does."""
+    from app.workflow.models import Needs, TaskWorkflow, WorkflowStatus  # local: the workflow imports this module
+
+    rows = await db.execute(
+        select(TaskWorkflow.task_id)
+        .outerjoin(TaskPullRequest,
+                   (TaskPullRequest.task_id == TaskWorkflow.task_id) & (TaskPullRequest.kind == PR_MAIN))
+        .where(TaskWorkflow.status == WorkflowStatus.waiting_human, TaskWorkflow.needs == Needs.merge_confirmation,
+               TaskWorkflow.waiting_since <= _now() - CONFIRM_GRACE, TaskPullRequest.connection_id.is_(None))
+        .order_by(TaskWorkflow.waiting_since, TaskWorkflow.task_id)
+        .limit(POLL_LIMIT)
+    )
+    return list(rows.scalars())
 
 
 async def settle_done(db: AsyncSession, wf, task: Task, rows: list[TaskPullRequest]) -> bool:

@@ -9,7 +9,7 @@ from sqlalchemy import delete, func, select, update
 from app.agent_runs.models import AgentRun
 from app.core.db import SessionLocal
 from app.git import jobs, providers, service
-from app.git.models import TaskPullRequest
+from app.git.models import GitConnection, TaskPullRequest
 from app.jobs.models import Job
 from app.workflow.models import TaskWorkflow
 from tests.git.test_agent_review import APPROVED, _agent_review, _end, _end_review
@@ -216,3 +216,44 @@ async def test_retry_finishes_a_round_whose_merge_is_already_seen(client, db, mo
     assert r.status_code == 200, r.text
     wf = await _wf(task.id)
     assert (wf.status, wf.needs, wf.escalation_reason) == ("finished", None, None)
+
+
+async def _connection_removed(task_id) -> None:
+    """The main pull request's git connection is deleted: the row stays, untracked (its FK is SET NULL)."""
+    async with SessionLocal() as s:
+        conn_id = (await s.get(TaskPullRequest, (task_id, "main"))).connection_id
+        await s.execute(delete(GitConnection).where(GitConnection.id == conn_id))
+        await s.commit()
+    async with SessionLocal() as s:
+        assert (await s.get(TaskPullRequest, (task_id, "main"))).connection_id is None
+
+
+async def _poll() -> None:
+    async with SessionLocal() as s:
+        await jobs.pr_poll(s, {})
+
+
+async def test_a_round_whose_connection_was_removed_escalates_untracked_after_the_grace(client, db):
+    task = await _confirming(client, db)
+    await _connection_removed(task.id)
+    await _waited(task.id, 9)
+    await _poll()
+    await _still_waiting(task.id)
+    await _waited(task.id, 11)
+    await _poll()
+    await _escalated(task.id, "untracked")
+    (escalated,) = await _kinds(task.id, "workflow.escalated")
+    assert escalated.data == {"reason": "merge_not_confirmed", "cause": "untracked"}
+    await _poll()  # once escalated, the sweep leaves it alone
+    assert len(await _kinds(task.id, "workflow.escalated")) == 1
+
+
+async def test_the_untracked_sweep_leaves_a_tracked_round_alone(client, db):
+    task = await _confirming(client, db)
+    async with SessionLocal() as s:  # not due: the poll itself doesn't read it
+        await s.execute(update(TaskPullRequest).where(TaskPullRequest.task_id == task.id).values(
+            next_check_at=datetime.now(UTC) + timedelta(hours=1)))
+        await s.commit()
+    await _waited(task.id, 11)
+    await _poll()
+    await _still_waiting(task.id)
