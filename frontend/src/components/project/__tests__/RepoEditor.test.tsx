@@ -56,4 +56,11 @@ describe("RepoEditor", () => {
     const [, init] = fetchMock.mock.calls.find(([, i]) => i?.method === "POST")!;
     expect(JSON.parse(String(init!.body))).toMatchObject({ name: "acme/side", connection_id: "c1" });
   });
+
+  it("a repository whose pull requests can't be read says why", () => {
+    show([repo({ pr_error: "forbidden" }), repo({ id: "r2", name: "acme/web", pr_limited: "review" }), repo({ id: "r3", name: "acme/ok" })]);
+    expect(screen.getByText(/^Can't read pull requests: GitHub refused the token \(forbidden\)\. /)).toBeInTheDocument();
+    expect(screen.getByText("Review unknown: the token can't read reviews.")).toBeInTheDocument();
+    expect(screen.getAllByText(/Can't read pull requests|unknown:/)).toHaveLength(2);
+  });
 });

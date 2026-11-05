@@ -30,6 +30,7 @@ const NEEDS_TEXT: Record<WorkflowNeeds, string> = {
   plan_approval: "Approve the plan",
   escalation: "Decide how to continue",
   human_code_review: "Approve the PR",
+  merge_confirmation: "Agent merged · confirming",
 };
 
 export function needsText(needs: WorkflowNeeds): string {

@@ -82,8 +82,8 @@ export const HOSTED: Partial<Record<GitKind, { label: string; url: string }>> = 
 /** What the access token needs, per host. */
 export const TOKEN_HELP: Record<GitKind, string> = {
   github:
-    "Read access to your repositories and pull requests: a fine-grained token with Contents, Metadata and Pull " +
-    "requests (read), or a classic token with repo. Optional, for one-click webhook setup: Webhooks (read and write), " +
+    "Read access to your repositories and pull requests: a fine-grained token with Contents, Metadata, Pull " +
+    "requests, Commit statuses and Checks (read), or a classic token with repo. Optional, for one-click webhook setup: Webhooks (read and write), " +
     "or admin:repo_hook. Optional, for an agent to review and merge: Pull requests and Contents (read and write).",
   gitlab:
     "Read access to your repositories and merge requests: the read_api scope. Optional, for one-click webhook setup: " +
@@ -114,11 +114,57 @@ export function gitTestError(code: string | null | undefined): string {
   return TEST_ERRORS[code ?? ""] ?? "The connection test failed.";
 }
 
-const CHECKS: Record<string, string> = { success: "checks passed", failure: "checks failed", pending: "checks pending" };
-const REVIEW: Record<string, string> = { approved: "approved", changes_requested: "changes requested" };
+const CHECKS: Record<string, string> = {
+  success: "checks passed",
+  failure: "checks failed",
+  pending: "checks pending",
+  unknown: "checks unknown",
+};
+const REVIEW: Record<string, string> = { approved: "approved", changes_requested: "changes requested", unknown: "review unknown" };
 
-/** "PR open · checks pending · approved", "PR merged", "PR (not tracked)". */
+/** What a token needs to read pull requests, per host (the words of its token hint). */
+const NEEDS_TO_READ: Record<GitKind, string> = {
+  github: "Pull requests, Commit statuses and Checks (read)",
+  gitlab: "the read_api scope",
+  gitea: "read:repository",
+};
+
+/** Why a pull request couldn't be read, in plain words. `kind` is the host (null when unknown). */
+export function pullRequestProblem(code: string, kind: GitKind | null): string {
+  const host = kind ? HOST_NAME[kind] : "The git host";
+  switch (code) {
+    case "forbidden":
+      return `${host} refused the token (forbidden). It needs ${kind ? NEEDS_TO_READ[kind] : "read access to pull requests"}.`;
+    case "unauthorized":
+      return `${host} rejected the token. It may have expired or been revoked.`;
+    case "not_found":
+      return "The token can't see this repository or pull request.";
+    case "rate_limited":
+      return `${host} is limiting requests. MegooColab will try again.`;
+    case "unreachable":
+      return `${host} couldn't be reached.`;
+    case "bad_token":
+      return "The saved token can't be read. Save it again in Settings › Git.";
+    case "url_mismatch":
+      return "The pull request isn't on this connection's address.";
+    default:
+      return `${host} sent something MegooColab didn't understand.`;
+  }
+}
+
+/** What a partial read couldn't see ("checks", "review" or "checks,review"), or null when it saw everything. */
+export function limitedText(limited: string | null | undefined): string | null {
+  const parts = (limited ?? "").split(",");
+  const out = [
+    parts.includes("checks") && "Checks unknown: the token can't read commit statuses or checks.",
+    parts.includes("review") && "Review unknown: the token can't read reviews.",
+  ].filter(Boolean);
+  return out.length ? out.join(" ") : null;
+}
+
+/** "PR open · checks pending · approved", "PR merged", "PR (not tracked)", "PR · can't read". */
 export function pullRequestText(pr: PullRequest): string {
+  if (pr.error) return "PR · can't read";
   if (!pr.tracked) return "PR (not tracked)";
   if (pr.state !== "open") return `PR ${pr.state}`;
   return ["PR open", CHECKS[pr.checks], REVIEW[pr.review]].filter(Boolean).join(" · ");

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Hint } from "@/components/ui/Hint";
 import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-import { useConnectionNames } from "@/lib/git";
+import { limitedText, pullRequestProblem, useConnectionNames, type GitKind } from "@/lib/git";
 import type { Repo } from "@/lib/types";
 
 const PROVIDERS: Repo["provider"][] = ["github", "gitlab", "gitea", "plain"];
@@ -99,6 +99,13 @@ export function RepoEditor({
                   <Button variant={r.webhook_status === "not_set_up" ? "primary" : "ghost"} onClick={() => setWebhookFor(r)}>
                     {r.webhook_status === "not_set_up" ? "Set up webhook" : "Webhook"}
                   </Button>
+                )}
+                {(r.pr_error || r.pr_limited) && (
+                  <span className="text-xs text-pink">
+                    {r.pr_error
+                      ? `Can't read pull requests: ${pullRequestProblem(r.pr_error, r.provider === "plain" ? null : (r.provider as GitKind))}`
+                      : limitedText(r.pr_limited)}
+                  </span>
                 )}
               </div>
             )}
