@@ -148,6 +148,7 @@ async def apply_status(
     own = None if wf is None else wf.back_merge_branch if kind == PR_BACK_MERGE else wf.branch
     other_branch = bool(own and status.head_branch and status.head_branch != own)
     row.error, row.failures = ("branch_mismatch" if other_branch else None), 0
+    row.limited = ",".join(status.limited) or None
     row.last_checked_at = _now()
     row.next_check_at = _now() + timedelta(seconds=POLL_SECONDS)
     await db.flush()
