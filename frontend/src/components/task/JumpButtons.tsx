@@ -77,6 +77,15 @@ export function useLiftAbove(scrollRef: RefObject<HTMLElement | null>, avoid: HT
 }
 
 /**
+ * Blank room under the newest line of a conversation (a chat's, a task's Activity). "Following live" shows only at
+ * the bottom, in the corner over this room, so it never covers text. Always there, so the page doesn't jump as
+ * following starts and stops.
+ */
+export function FollowRoom() {
+  return <div aria-hidden data-follow-room className="!mt-0 h-10 shrink-0" />;
+}
+
+/**
  * The corner buttons of a task: back to top, go to the latest Activity and follow it live, and jump to what waits
  * on the person. Anything a person can decide marks itself with `data-waiting` (its kind); they are counted and
  * visited in page order. Following stops only when the person scrolls up, and starts again when they reach the

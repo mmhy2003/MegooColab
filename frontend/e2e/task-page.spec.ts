@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 import { setupOrSignIn } from "./helpers/auth";
+import { textUnder } from "./helpers/overlap";
 
 /**
  * A task's own page scrolls inside its card, as the drawer does, so the corner buttons (↑ top, ↓ latest and follow)
@@ -56,13 +57,18 @@ async function geometry(page: import("@playwright/test").Page) {
   });
 }
 
-for (const [label, viewport] of [["desktop", { width: 1280, height: 600 }], ["phone", { width: 390, height: 760 }]] as const) {
+const SIZES = [
+  ["desktop", { width: 1280, height: 600 }, "TPD"],
+  ["phone", { width: 390, height: 760 }, "TPP"],
+  ["narrow phone", { width: 280, height: 640 }, "TPN"],
+] as const;
+
+for (const [label, viewport, key] of SIZES) {
   test(`composer floats and jump buttons stay clear (${label})`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await setupOrSignIn(page);
     const request = page.request;
     const me = (await (await request.get("/api/auth/me")).json()).user.id as string;
-    const key = label === "desktop" ? "TPD" : "TPP";
     const team = await post<{ id: string }>(request, "/api/teams", { name: `Composer ${label}`, description: "" });
     expect((await request.put(`/api/teams/${team.id}/members`, { data: { user_ids: [me] }, headers: WEB })).ok()).toBeTruthy();
     await post(request, "/api/projects", { key, name: `Composer ${label}`, description: "", team_ids: [team.id] });
@@ -81,7 +87,7 @@ for (const [label, viewport] of [["desktop", { width: 1280, height: 600 }], ["ph
 
     // tapping into it makes it grow (on a phone it waits as a one-line bar, which opens the form): the buttons still
     // keep clear
-    if (label === "phone") await page.getByRole("button", { name: "Add a comment…" }).click();
+    if (label !== "desktop") await page.getByRole("button", { name: "Add a comment…" }).click();
     else await page.getByRole("textbox", { name: "Add a comment" }).click();
     await page.waitForTimeout(300);
     expect((await geometry(page)).overlap).toBe(false);
@@ -94,5 +100,11 @@ for (const [label, viewport] of [["desktop", { width: 1280, height: 600 }], ["ph
     const end = await geometry(page);
     expect(last!.y + last!.height).toBeLessThanOrEqual(end.composerTop + 1);
     expect(end.overlap).toBe(false);
+    // following, the "Following live" note sits in the room left under the newest comment, covering no text
+    const note = page.getByRole("status").filter({ hasText: "Following live" });
+    await expect(note).toBeVisible();
+    expect(await textUnder(note, page.locator("main"))).toEqual([]);
+    const activity = (await page.getByRole("region", { name: "Activity" }).boundingBox())!;
+    expect((await note.boundingBox())!.y).toBeGreaterThanOrEqual(activity.y + activity.height);
   });
 }

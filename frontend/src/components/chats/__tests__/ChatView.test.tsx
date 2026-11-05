@@ -95,6 +95,16 @@ describe("ChatView", () => {
     expect(thread).not.toContainElement(screen.getByRole("textbox", { name: "Message laptop-claude" }));
   });
 
+  it("leaves room under the newest line, where the \"Following live\" note sits", async () => {
+    const { container } = show(chat());
+    const thread = await vi.waitFor(() => {
+      const el = container.querySelector<HTMLElement>("[data-thread]");
+      if (!el) throw new Error("no thread yet");
+      return el;
+    });
+    expect(thread.lastElementChild).toHaveAttribute("data-follow-room");
+  });
+
   it("opens at the latest, following, once the conversation loads", async () => {
     show(chat());
     expect(await screen.findByText("Following live")).toBeInTheDocument();

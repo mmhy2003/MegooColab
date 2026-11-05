@@ -74,3 +74,18 @@ describe("Task page rights", () => {
     expect(await screen.findByRole("button", { name: "Delete task" })).toBeInTheDocument();
   });
 });
+
+describe("Task page layout", () => {
+  it("leaves room at the end of Activity, above the comment box, where the \"Following live\" note sits", async () => {
+    setup("member", "active");
+    await screen.findByRole("textbox", { name: "Add a comment" });
+    expect(document.querySelector("[data-composer]")!.previousElementSibling).toHaveAttribute("data-follow-room");
+  });
+
+  it("keeps the room on a read-only task, which has no comment box", async () => {
+    setup("member", "archived");
+    await screen.findByText("Fix login");
+    expect(document.querySelector("[data-composer]")).toBeNull();
+    expect(document.querySelector("[data-follow-room]")).not.toBeNull();
+  });
+});

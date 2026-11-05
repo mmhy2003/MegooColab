@@ -11,7 +11,7 @@ import { EndChatButton, useEndChat } from "@/components/chats/EndChatButton";
 import { RoundDivider } from "@/components/chats/RoundDivider";
 import { RoundSections } from "@/components/chats/RoundSections";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/shadcn/dropdown-menu";
-import { JumpButtons } from "@/components/task/JumpButtons";
+import { FollowRoom, JumpButtons } from "@/components/task/JumpButtons";
 import { PROGRAM_LABEL, useAgentRuns } from "@/lib/agents";
 import { api } from "@/lib/api";
 import { latestRound, stateText, useChat, WAITING, type Chat, type ChatRound } from "@/lib/chats";
@@ -169,6 +169,7 @@ export function ChatView({ chatId }: { chatId: string }) {
               </div>
             ))}
           </div>
+          <FollowRoom />
         </div>
         {activity.data && <JumpButtons key={chatId} scrollRef={scrollRef} activity={activity.data} startFollowing jumpRef={jumpRef} />}
       </div>
