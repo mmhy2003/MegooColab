@@ -32,7 +32,7 @@ import { ActivityThread } from "./ActivityThread";
 import { Attachments } from "./Attachments";
 import { CommentBox } from "./CommentBox";
 import { Description } from "./Description";
-import { JumpButtons, useLiftAbove } from "./JumpButtons";
+import { FollowRoom, JumpButtons, useLiftAbove } from "./JumpButtons";
 import { Links } from "./Links";
 import { PhoneComposer } from "./PhoneComposer";
 import { Section } from "./Section";
@@ -274,6 +274,7 @@ export function TaskView({
                   onLoadEarlier={() => void loadEarlier()}
                 />
               </Section>
+              <FollowRoom />
               {!disabled && (
                 // a child of the whole column, not of Activity, so it floats at the bottom edge while the person
                 // reads anywhere in the task, and settles at the end of Activity

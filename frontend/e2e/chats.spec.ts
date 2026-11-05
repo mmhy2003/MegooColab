@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
+import { textUnder } from "./helpers/overlap";
 import { buildBinaries, mcp, mintLinkedRunnerToken, onPrompt, say, startRunner, type RunnerHandle } from "./helpers/runner";
 
 /**
@@ -192,6 +193,11 @@ test("a chat with an agent, from first message to the board and a second round",
   await view.getByRole("button", { name: /^Go to the latest and follow/ }).click();
   await expect(view.getByText("Following live")).toBeVisible();
   await expect(view.getByText("Looking at the retries")).toBeInViewport();
+  // the note sits in the room left under the newest line: it covers no text
+  const note = view.getByRole("status").filter({ hasText: "Following live" });
+  expect(await textUnder(note, thread)).toEqual([]);
+  const messages = (await thread.locator(":scope > div").first().boundingBox())!;
+  expect((await note.boundingBox())!.y).toBeGreaterThanOrEqual(messages.y + messages.height);
 
   // 7. end it, and leave round 2 off the board
   await view.getByRole("button", { name: "End chat" }).click();
