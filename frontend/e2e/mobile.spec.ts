@@ -7,6 +7,7 @@ import { expect, test, type APIRequestContext, type Browser, type BrowserContext
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
 import { tool } from "./helpers/mcp";
+import { textUnder } from "./helpers/overlap";
 import { buildBinaries, mcp, mintLinkedRunnerToken, onPrompt, say, startRunner, type RunnerHandle } from "./helpers/runner";
 
 /**
@@ -269,6 +270,12 @@ test("chats on a phone", async ({ browser, page }) => {
     // the conversation gets most of the screen
     const thread = (await p.locator("[data-thread]").boundingBox())!;
     expect(thread.height).toBeGreaterThanOrEqual(653 * 0.45);
+    // it opens at the latest, following: the "Following live" note covers no text
+    const note = p.getByRole("status").filter({ hasText: "Following live" });
+    await expect(note).toBeVisible();
+    expect(await textUnder(note, p.locator("[data-thread]"))).toEqual([]);
+    const messages = (await p.locator("[data-thread] > div").first().boundingBox())!;
+    expect((await note.boundingBox())!.y).toBeGreaterThanOrEqual(messages.y + messages.height);
     // its popups open on the screen
     await p.getByRole("button", { name: "Open screenshot.png" }).first().click();
     await onScreen(p.getByRole("dialog", { name: "screenshot.png" }), width);
