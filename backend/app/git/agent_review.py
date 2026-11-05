@@ -174,6 +174,23 @@ async def _retry_review(db: AsyncSession, wf, task: Task, user) -> None:
     await start_review(db, wf, task)
 
 
+async def _accept_unconfirmed(db: AsyncSession, wf, task: Task, user) -> None:
+    """The agent's merge couldn't be confirmed, and a person says it merged (Mark merged): the round finishes."""
+    from app.workflow import finish
+
+    await finish.mark_merged(db, wf, task, user)
+
+
+async def _retry_confirmation(db: AsyncSession, wf, task: Task, user) -> None:
+    """Retry confirming the agent's merge: back to waiting on it (its failures counted afresh), and the pull request is
+    read again. No agent runs."""
+    from app.git import service as git
+
+    wf.escalation_reason = None  # as the decision does: the wait is no longer an escalation
+    await rest_after_merge(db, wf, task)
+    await git.queue_refresh(db, task.id)
+
+
 def _register() -> None:
     from app.workflow import engine
     from app.workflow.models import RunRole
@@ -182,6 +199,8 @@ def _register() -> None:
     for reason in ("agent_merge_failed", "agent_review_incomplete", "agent_review_unavailable"):
         engine.ACCEPT_HANDLERS[reason] = _accept_waits_for_the_merge
     engine.RETRY_HANDLERS["agent_review_unavailable"] = _retry_review
+    engine.ACCEPT_HANDLERS["merge_not_confirmed"] = _accept_unconfirmed
+    engine.RETRY_HANDLERS["merge_not_confirmed"] = _retry_confirmation
 
 
 _register()

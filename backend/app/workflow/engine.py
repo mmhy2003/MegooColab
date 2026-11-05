@@ -316,11 +316,14 @@ async def wait_for(
     )
 
 
-async def escalate(db: AsyncSession, wf: TaskWorkflow, reason: str) -> None:
+async def escalate(db: AsyncSession, wf: TaskWorkflow, reason: str, *, cause: str | None = None) -> None:
+    """A person decides. `reason` is the lookup key for the handlers and texts; `cause`, when set, is recorded with
+    it in the event (what went wrong, say the error code of a failed read)."""
     task = await db.get(Task, wf.task_id)
     wf.escalation_reason = reason
     await wait_for(db, wf, Needs.escalation)
-    await record_workflow_event(db, task, None, "workflow.escalated", {"reason": reason})
+    data = {"reason": reason} | ({"cause": cause} if cause is not None else {})
+    await record_workflow_event(db, task, None, "workflow.escalated", data)
 
 
 async def _latest_findings(db: AsyncSession, task_id: uuid.UUID, role: RunRole, step: int | None) -> list[dict]:

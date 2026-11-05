@@ -3,7 +3,8 @@
 A pull request is tracked only when its URL is on the base URL of a connection linked to one of the task's
 project repositories, and names that repository. Its state always comes from the provider API with the
 connection's read-only token (webhooks only trigger a refresh). A provider error keeps the last known state and
-backs off; it never finishes or escalates anything.
+backs off; it never finishes anything, and escalates only while an agent's merge is being confirmed
+(`check_confirmation`: `merge_not_confirmed`).
 
 While a workflow waits for the merge (`human_code_review` or `merge_confirmation`): merged -> finished; closed ->
 escalation `pr_closed`. A production fix (Branch from) has two rows, its own pull request and the back-merge into the
@@ -31,6 +32,11 @@ from app.tasks.models import Task, TaskEvent
 POLL_SECONDS = 120
 POLL_LIMIT = 50
 MAX_BACKOFF_MINUTES = 60
+# confirming an agent's merge (merge_confirmation): a read failing like this escalates at once; any other failure
+# after CONFIRM_FAILURES in a row since the wait began; a pull request still open after CONFIRM_GRACE
+LASTING_ERRORS = frozenset({"forbidden", "unauthorized", "not_found", "bad_token", "url_mismatch"})
+CONFIRM_FAILURES = 3
+CONFIRM_GRACE = timedelta(minutes=10)
 
 
 def _now() -> datetime:
@@ -97,18 +103,26 @@ async def refresh_pr(db: AsyncSession, row: TaskPullRequest) -> str | None:
     ref = providers.parse_pr_url(row.url, conn)
     if ref is None:  # the connection's base URL changed since the pull request was reported
         await back_off(db, task_id, kind, "url_mismatch")
+        await check_confirmation(db, task_id, kind)
         return "url_mismatch"
     try:
         status = await providers.fetch_pr(conn, ref)
     except providers.GitProviderError as e:
         await back_off(db, task_id, kind, e.code)
+        await check_confirmation(db, task_id, kind)
         return e.code
     await apply_status(db, task_id, kind, status, url=row.url)
+    await check_confirmation(db, task_id, kind)  # whether or not the state changed
     return None
 
 
 async def back_off(db: AsyncSession, task_id: uuid.UUID, kind: str, code: str) -> None:
     """A failed check: remember why, and wait 2, 4, 8 ... up to 60 minutes before the next one."""
+    from app.workflow import engine  # local: the workflow imports this module
+
+    # the engine's lock order, task, workflow, then our row: check_confirmation takes them all next
+    await engine.lock_task_row(db, task_id)
+    await engine.lock_workflow(db, task_id)
     locked = await _lock_row(db, task_id, kind)
     if locked is not None:
         locked.failures += 1
@@ -187,15 +201,47 @@ async def _record_checks(db: AsyncSession, task: Task, row: TaskPullRequest, sta
         "result": result, "head_sha": status.head_sha})
 
 
-async def settle_done(db: AsyncSession, wf, task: Task, rows: list[TaskPullRequest]) -> bool:
-    """A workflow waiting for the merge (a person's review, or confirming an agent's merge) follows its tracked pull
-    requests: one closed escalates pr_closed (back_merge_pr_closed for the back-merge one); all of them merged
-    finishes it (a production fix has two). An untracked one waits for a person. True when it acted. The caller
-    holds the workflow lock."""
-    from app.workflow import engine, finish  # local: the workflow imports this module
-    from app.workflow.models import MERGE_WAITS, WorkflowStatus
+def _unconfirmed(row: TaskPullRequest, wf) -> str | None:
+    """Why an agent's merge can't be confirmed from this read of the main pull request, or None (wait on)."""
+    if row.error in LASTING_ERRORS or row.error == "branch_mismatch":
+        return row.error
+    if row.error is not None:
+        return row.error if row.failures >= CONFIRM_FAILURES else None
+    if row.state == "open" and wf.waiting_since is not None and _now() - wf.waiting_since >= CONFIRM_GRACE:
+        return "still_open"  # the agent said it merged, but the host disagrees
+    return None
 
-    if wf.status != WorkflowStatus.waiting_human or wf.needs not in MERGE_WAITS:
+
+async def check_confirmation(db: AsyncSession, task_id: uuid.UUID, kind: str) -> bool:
+    """After a read of the main pull request while the workflow confirms an agent's merge: a lasting error, a passing
+    one CONFIRM_FAILURES times in a row since the wait began, another branch, or still open after CONFIRM_GRACE
+    escalates `merge_not_confirmed`, with the cause in the event. True when it escalated."""
+    from app.workflow import engine  # local: the workflow imports this module
+    from app.workflow.models import Needs, WorkflowStatus
+
+    if kind != PR_MAIN or not await engine.lock_task_row(db, task_id):  # the engine's lock order: task, workflow, row
+        return False
+    wf = await engine.lock_workflow(db, task_id)
+    if wf is None or wf.status != WorkflowStatus.waiting_human or wf.needs != Needs.merge_confirmation:
+        return False
+    row = await _lock_row(db, task_id, kind)
+    cause = None if row is None else _unconfirmed(row, wf)
+    if cause is None:
+        return False
+    await engine.escalate(db, wf, "merge_not_confirmed", cause=cause)
+    return True
+
+
+async def settle_done(db: AsyncSession, wf, task: Task, rows: list[TaskPullRequest]) -> bool:
+    """A workflow waiting for the merge (a person's review, or confirming an agent's merge, also once that escalated
+    merge_not_confirmed) follows its tracked pull requests: one closed escalates pr_closed (back_merge_pr_closed for
+    the back-merge one); all of them merged finishes it (a production fix has two). An untracked one waits for a
+    person. True when it acted. The caller holds the workflow lock."""
+    from app.workflow import engine, finish  # local: the workflow imports this module
+    from app.workflow.models import MERGE_WAITS, Needs, WorkflowStatus
+
+    unconfirmed = wf.needs == Needs.escalation and wf.escalation_reason == "merge_not_confirmed"
+    if wf.status != WorkflowStatus.waiting_human or not (wf.needs in MERGE_WAITS or unconfirmed):
         return False
     expected = {PR_MAIN} | ({PR_BACK_MERGE} if wf.back_merge_pr_url else set())
     by_kind = {r.kind: r for r in rows if r.kind in expected}

@@ -158,6 +158,7 @@ async def enter_done(db: AsyncSession, wf: TaskWorkflow, task: Task, *, requeste
 async def finish_workflow(db: AsyncSession, wf: TaskWorkflow, task: Task, actor_id: uuid.UUID | None) -> None:
     wf.status = WorkflowStatus.finished
     wf.needs = None
+    wf.escalation_reason = None  # finished from an escalation (a merge seen after merge_not_confirmed) clears it
     wf.finished_at = datetime.now(UTC)
     await engine.move_to_category(db, task, ColumnCategory.done)
     await engine.record_workflow_event(db, task, actor_id, "workflow.finished", {

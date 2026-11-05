@@ -54,6 +54,7 @@ async def pr_poll(db: AsyncSession, payload: dict) -> None:
             code = "error"
             async with SessionLocal() as s:
                 await service.back_off(s, task_id, kind, code)
+                await service.check_confirmation(s, task_id, kind)  # it counts against confirming an agent's merge
                 await s.commit()
         if code in _CONNECTION_DOWN:
             down.add(connection_id)
