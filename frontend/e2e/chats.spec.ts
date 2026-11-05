@@ -199,6 +199,20 @@ test("a chat with an agent, from first message to the board and a second round",
   const messages = (await thread.locator(":scope > div").first().boundingBox())!;
   expect((await note.boundingBox())!.y).toBeGreaterThanOrEqual(messages.y + messages.height);
 
+  // expanded, the chat covers the whole window, the menu and the top bar included; Esc puts it back
+  const card = view.locator("[data-chat]");
+  const inChat = (x: number, y: number) => ui.evaluate(([px, py]) => !!document.elementFromPoint(px, py)?.closest("[data-chat]"), [x, y]);
+  await view.getByRole("button", { name: "Expand chat" }).click();
+  await expect.poll(async () => (await card.boundingBox())!.x).toBe(0);
+  expect(await card.boundingBox()).toEqual({ x: 0, y: 0, width: 1280, height: 600 });
+  expect(await inChat(40, 300)).toBe(true); // where the menu was
+  expect(await inChat(900, 20)).toBe(true); // where the top bar was
+  await expect(view.getByText("Looking at the retries")).toBeInViewport();
+  await ui.keyboard.press("Escape");
+  await expect(view.getByRole("button", { name: "Expand chat" })).toBeVisible();
+  expect((await card.boundingBox())!.x).toBeGreaterThan(0);
+  expect(await inChat(40, 300)).toBe(false);
+
   // 7. end it, and leave round 2 off the board
   await view.getByRole("button", { name: "End chat" }).click();
   const confirm = ui.getByRole("alertdialog");
