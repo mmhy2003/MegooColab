@@ -186,3 +186,33 @@ async def test_human_review_mode_never_escalates_merge_not_confirmed(client, db,
     wf = await _wf(task.id)
     assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "human_code_review", None)
     assert await _kinds(task.id, "workflow.escalated") == []
+
+
+async def test_a_merge_seen_while_the_escalated_round_was_paused_finishes_it_on_resume(client, db, monkeypatch):
+    from tests.git.test_agent_review import _bind_task_agent, _needs_you_notices
+
+    task = await _confirming(client, db)
+    await _read(task, monkeypatch, "forbidden")
+    await _bind_task_agent(task)
+    assert (await client.post("/api/tasks/PAY-1/workflow/pause")).status_code == 200
+    await _read(task, monkeypatch, "merged")  # seen while paused, so nothing settled then
+    assert (await _wf(task.id)).status == "paused"
+    notices = len(await _needs_you_notices(task.id))
+    r = await client.post("/api/tasks/PAY-1/workflow/resume")
+    assert r.status_code == 200, r.text
+    wf = await _wf(task.id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("finished", None, None)
+    assert len(await _needs_you_notices(task.id)) == notices  # nobody is asked to decide a finished round
+
+
+async def test_retry_finishes_a_round_whose_merge_is_already_seen(client, db, monkeypatch):
+    task = await _confirming(client, db)
+    await _read(task, monkeypatch, "forbidden")
+    async with SessionLocal() as s:  # the merge was stored while nothing settled it (say, while paused)
+        await s.execute(update(TaskPullRequest).where(TaskPullRequest.task_id == task.id).values(
+            state="merged", error=None, failures=0))
+        await s.commit()
+    r = await client.post("/api/tasks/PAY-1/workflow/escalation", json={"action": "retry"})
+    assert r.status_code == 200, r.text
+    wf = await _wf(task.id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("finished", None, None)

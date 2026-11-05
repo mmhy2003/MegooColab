@@ -694,6 +694,14 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
 
         await agent_review.rest_after_merge(db, wf, task)
         await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))  # seen while paused
+    elif need == Needs.escalation and wf.escalation_reason == "merge_not_confirmed":
+        from app.git import service as git  # local: the git modules import this one
+
+        # the merge it couldn't confirm may have been seen while paused (nothing settled it then): finished
+        # without asking anyone; else (a close escalates pr_closed itself) the decision is asked for again
+        wf.status, wf.needs = WorkflowStatus.waiting_human, Needs.escalation
+        if not await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):
+            await wait_for(db, wf, need, actor_id=user.id)
     elif need is not None:
         await wait_for(db, wf, need, actor_id=user.id)
     else:

@@ -189,6 +189,8 @@ async def _retry_confirmation(db: AsyncSession, wf, task: Task, user) -> None:
     wf.escalation_reason = None  # as the decision does: the wait is no longer an escalation
     await rest_after_merge(db, wf, task)
     await git.queue_refresh(db, task.id)
+    # a merge (or close) already stored, say seen while paused, changes nothing on a later read: settle it now
+    await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id))
 
 
 def _register() -> None:
