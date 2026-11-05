@@ -49,11 +49,12 @@ class PrRef:
 @dataclass(frozen=True)
 class PrStatus:
     state: str  # open | merged | closed
-    checks: str  # success | failure | pending | none
-    review: str  # approved | changes_requested | none
+    checks: str  # success | failure | pending | none | unknown (the token may not read them)
+    review: str  # approved | changes_requested | none | unknown (the token may not read them)
     merged_at: datetime | None
     head_sha: str | None
     head_branch: str | None = None  # the pull request's source branch, to check it is the task's
+    limited: tuple[str, ...] = ()  # what the token could not read: "checks" and/or "review", in that order
 
 
 # ---- URLs ------------------------------------------------------------------------------------
@@ -182,6 +183,16 @@ async def _optional(client: httpx.AsyncClient, conn: GitConnection, path: str) -
         raise
 
 
+async def _extra(client: httpx.AsyncClient, conn: GitConnection, path: str) -> Any | None:
+    """Checks or reviews the token may not be allowed to read: refused or missing is None, other errors stand."""
+    try:
+        return await _get(client, conn, path)
+    except GitProviderError as e:
+        if e.code in ("forbidden", "not_found"):
+            return None
+        raise
+
+
 def _time(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
@@ -256,20 +267,44 @@ def _pr_fields(pr: Any) -> tuple[str, datetime | None, str | None, str | None]:
 async def _github(client, conn: GitConnection, ref: PrRef) -> PrStatus:
     base = f"/repos/{ref.path}"
     state, merged_at, sha, branch = _pr_fields(await _get(client, conn, f"{base}/pulls/{ref.number}"))
+    limited: list[str] = []
     checks = "none"
     if sha:
-        checks = _combine(_combined_status(await _get(client, conn, f"{base}/commits/{sha}/status")),
-                          _check_runs(await _get(client, conn, f"{base}/commits/{sha}/check-runs")))
-    review = _reviews(await _get(client, conn, f"{base}/pulls/{ref.number}/reviews"))
-    return PrStatus(state, checks, review, merged_at, sha, branch)
+        status = await _extra(client, conn, f"{base}/commits/{sha}/status")
+        runs = await _extra(client, conn, f"{base}/commits/{sha}/check-runs")
+        if status is None or runs is None:
+            checks = "unknown"
+            limited.append("checks")
+        else:
+            checks = _combine(_combined_status(status), _check_runs(runs))
+    reviews = await _extra(client, conn, f"{base}/pulls/{ref.number}/reviews")
+    if reviews is None:
+        review = "unknown"
+        limited.append("review")
+    else:
+        review = _reviews(reviews)
+    return PrStatus(state, checks, review, merged_at, sha, branch, tuple(limited))
 
 
 async def _gitea(client, conn: GitConnection, ref: PrRef) -> PrStatus:
     base = f"/repos/{ref.path}"
     state, merged_at, sha, branch = _pr_fields(await _get(client, conn, f"{base}/pulls/{ref.number}"))
-    checks = _combined_status(await _get(client, conn, f"{base}/commits/{sha}/status")) if sha else "none"
-    review = _reviews(await _get(client, conn, f"{base}/pulls/{ref.number}/reviews"))
-    return PrStatus(state, checks, review, merged_at, sha, branch)
+    limited: list[str] = []
+    checks = "none"
+    if sha:
+        status = await _extra(client, conn, f"{base}/commits/{sha}/status")
+        if status is None:
+            checks = "unknown"
+            limited.append("checks")
+        else:
+            checks = _combined_status(status)
+    reviews = await _extra(client, conn, f"{base}/pulls/{ref.number}/reviews")
+    if reviews is None:
+        review = "unknown"
+        limited.append("review")
+    else:
+        review = _reviews(reviews)
+    return PrStatus(state, checks, review, merged_at, sha, branch, tuple(limited))
 
 
 _GITLAB_STATES = {"opened": "open", "merged": "merged", "closed": "closed", "locked": "closed"}

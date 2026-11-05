@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.core.text import NoNulStr
+from app.git.models import GitKind
 from app.workflow.models import (
     DocKind,
     DocStatus,
@@ -25,6 +26,10 @@ class PullRequestOut(BaseModel):
     checks: str
     review: str
     tracked: bool
+    error: str | None = None  # why the last read failed; never "branch_mismatch"
+    limited: str | None = None  # what the token could not read: "checks", "review" or "checks,review"
+    host: GitKind | None = None  # the connection's kind; None when untracked
+    next_check_at: datetime | None = None
 
 
 class TaskWorkflowOut(BaseModel):

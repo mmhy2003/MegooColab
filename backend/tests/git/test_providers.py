@@ -16,7 +16,7 @@ def _conn(kind: str, base_url: str) -> GitConnection:
 
 
 def _client(routes: dict[str, object], seen: list[httpx.Request] | None = None) -> httpx.AsyncClient:
-    """routes: request path -> JSON body, an int status, or an Exception to raise."""
+    """routes: request path -> JSON body, an int status, an httpx.Response (returned as is) or an Exception to raise."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if seen is not None:
@@ -24,6 +24,8 @@ def _client(routes: dict[str, object], seen: list[httpx.Request] | None = None) 
         out = routes.get(request.url.raw_path.decode().split("?")[0])  # raw: GitLab project paths stay %2F-encoded
         if isinstance(out, Exception):
             raise out
+        if isinstance(out, httpx.Response):
+            return out
         if isinstance(out, int):
             return httpx.Response(out, json={"message": "x"})
         if out is None:
@@ -143,6 +145,76 @@ async def test_gitea_status_mapping():
     routes[f"{base}/pulls/5/reviews"] = [{"user": {"login": "ann"}, "state": "APPROVED"}]
     st = await providers.fetch_pr(conn, ref, client=_client(routes))
     assert (st.state, st.checks, st.review) == ("merged", "success", "approved")
+
+
+def _github_routes(base: str) -> dict[str, object]:
+    return {
+        f"{base}/pulls/12": {"state": "closed", "merged": True, "merged_at": "2026-10-27T10:00:00Z", "head": {"sha": "abc"}},
+        f"{base}/commits/abc/status": 403,
+        f"{base}/commits/abc/check-runs": 403,
+        f"{base}/pulls/12/reviews": [{"user": {"login": "ann"}, "state": "APPROVED"}],
+    }
+
+
+async def test_github_refused_extras_are_unknown_and_the_state_still_reads():
+    conn = _conn("github", "https://github.com")
+    ref = PrRef("github", "https://github.com", "acme/pay", 12)
+    base = "/repos/acme/pay"
+    routes = _github_routes(base)
+    st = await providers.fetch_pr(conn, ref, client=_client(routes))
+    assert (st.state, st.checks, st.review, st.limited) == ("merged", "unknown", "approved", ("checks",))
+    routes[f"{base}/pulls/12/reviews"] = 403
+    st = await providers.fetch_pr(conn, ref, client=_client(routes))
+    assert (st.checks, st.review, st.limited) == ("unknown", "unknown", ("checks", "review"))
+
+
+async def test_github_one_refused_checks_call_makes_checks_unknown():
+    conn = _conn("github", "https://github.com")
+    ref = PrRef("github", "https://github.com", "acme/pay", 12)
+    base = "/repos/acme/pay"
+    routes = _github_routes(base)
+    routes[f"{base}/commits/abc/status"] = {"state": "success", "total_count": 1}
+    routes[f"{base}/commits/abc/check-runs"] = 404
+    assert (await providers.fetch_pr(conn, ref, client=_client(routes))).checks == "unknown"
+
+
+async def test_github_a_refused_pull_request_still_fails_the_read():
+    conn = _conn("github", "https://github.com")
+    ref = PrRef("github", "https://github.com", "acme/pay", 12)
+    routes = _github_routes("/repos/acme/pay")
+    routes["/repos/acme/pay/pulls/12"] = 403
+    with pytest.raises(GitProviderError) as e:
+        await providers.fetch_pr(conn, ref, client=_client(routes))
+    assert e.value.code == "forbidden"
+
+
+async def test_github_other_errors_on_extras_still_fail_the_read():
+    conn = _conn("github", "https://github.com")
+    ref = PrRef("github", "https://github.com", "acme/pay", 12)
+    base = "/repos/acme/pay"
+    routes = _github_routes(base)
+    routes[f"{base}/commits/abc/status"] = {"state": "success", "total_count": 1}
+    routes[f"{base}/commits/abc/check-runs"] = 401
+    with pytest.raises(GitProviderError) as e:
+        await providers.fetch_pr(conn, ref, client=_client(routes))
+    assert e.value.code == "unauthorized"
+    routes[f"{base}/commits/abc/check-runs"] = httpx.Response(403, headers={"X-RateLimit-Remaining": "0"}, json={})
+    with pytest.raises(GitProviderError) as e:
+        await providers.fetch_pr(conn, ref, client=_client(routes))
+    assert e.value.code == "rate_limited"
+
+
+async def test_gitea_refused_extras_are_unknown():
+    conn = _conn("gitea", "http://gitea.local:3000")
+    ref = PrRef("gitea", "http://gitea.local:3000", "o/r", 5)
+    base = "/api/v1/repos/o/r"
+    routes = {
+        f"{base}/pulls/5": {"state": "open", "merged": False, "merged_at": None, "head": {"sha": "f00"}},
+        f"{base}/commits/f00/status": 403,
+        f"{base}/pulls/5/reviews": 404,
+    }
+    st = await providers.fetch_pr(conn, ref, client=_client(routes))
+    assert (st.checks, st.review, st.limited) == ("unknown", "unknown", ("checks", "review"))
 
 
 @pytest.mark.parametrize(("reply", "code"), [

@@ -107,15 +107,19 @@ async def pull_requests_of(
     db: AsyncSession, task_ids: list[uuid.UUID], kind: str = "main"
 ) -> dict[uuid.UUID, PullRequestOut]:
     """The tasks' pull requests of one kind: "main" (their own) or "back_merge" (a production fix's second)."""
-    from app.git.models import TaskPullRequest  # local: git imports the task models
+    from app.git.models import GitConnection, TaskPullRequest  # local: git imports the task models
 
     rows = await db.execute(
-        select(TaskPullRequest).where(TaskPullRequest.task_id.in_(task_ids), TaskPullRequest.kind == kind)
+        select(TaskPullRequest, GitConnection.kind)
+        .outerjoin(GitConnection, GitConnection.id == TaskPullRequest.connection_id)
+        .where(TaskPullRequest.task_id.in_(task_ids), TaskPullRequest.kind == kind)
     )
     return {
-        r.task_id: PullRequestOut(url=r.url, state=r.state, checks=r.checks, review=r.review,
-                                  tracked=r.connection_id is not None)
-        for r in rows.scalars()
+        r.task_id: PullRequestOut(
+            url=r.url, state=r.state, checks=r.checks, review=r.review, tracked=r.connection_id is not None,
+            error=None if r.error == "branch_mismatch" else r.error, limited=r.limited, host=host,
+            next_check_at=r.next_check_at)
+        for r, host in rows.all()
     }
 
 

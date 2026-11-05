@@ -14,6 +14,8 @@ export type FakePr = {
   /** the combined commit status: pending, success or failure */
   checks: "pending" | "success" | "failure";
   reviews: { state: string; login: string }[];
+  /** calls answered 403 "Resource not accessible by personal access token", as a token without the permission gets */
+  forbid?: ("pull" | "status" | "check-runs" | "reviews")[];
 };
 
 export type FakeGit = {
@@ -77,6 +79,8 @@ export async function startFakeGit(token: string): Promise<FakeGit> {
       const n = Number(m[1]);
       const pr = prs.get(n);
       if (!pr) return send(404, { message: "Not Found" });
+      const forbidden = () => send(403, { message: "Resource not accessible by personal access token" });
+      if (pr.forbid?.includes(m[2] ? "reviews" : "pull")) return forbidden();
       if (m[2]) return send(200, pr.reviews.map((r) => ({ state: r.state, user: { login: r.login } })));
       return send(200, {
         number: n,
@@ -90,6 +94,9 @@ export async function startFakeGit(token: string): Promise<FakeGit> {
     if (m) {
       const pr = [...prs.entries()].find(([n]) => SHA(n) === m![1])?.[1];
       if (!pr) return send(404, { message: "Not Found" });
+      if (pr.forbid?.includes(m[2] as "status" | "check-runs")) {
+        return send(403, { message: "Resource not accessible by personal access token" });
+      }
       if (m[2] === "check-runs") return send(200, { total_count: 0, check_runs: [] });
       return send(200, { state: pr.checks, total_count: 1, statuses: [{ state: pr.checks, context: "ci" }] });
     }

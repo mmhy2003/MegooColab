@@ -43,6 +43,7 @@ from app.projects.models import (
 from app.tasks.models import Task
 from app.workflow import build, engine, questions
 from app.workflow.models import (
+    MERGE_WAITS,
     Driver,
     FinishingOption,
     Needs,
@@ -157,6 +158,7 @@ async def enter_done(db: AsyncSession, wf: TaskWorkflow, task: Task, *, requeste
 async def finish_workflow(db: AsyncSession, wf: TaskWorkflow, task: Task, actor_id: uuid.UUID | None) -> None:
     wf.status = WorkflowStatus.finished
     wf.needs = None
+    wf.escalation_reason = None  # finished from an escalation (a merge seen after merge_not_confirmed) clears it
     wf.finished_at = datetime.now(UTC)
     await engine.move_to_category(db, task, ColumnCategory.done)
     await engine.record_workflow_event(db, task, actor_id, "workflow.finished", {
@@ -306,21 +308,28 @@ async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Ag
 
 
 async def approve_human_review(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
-    """A human clicked "PR approved": the workflow finishes. The first approval wins."""
+    """A human clicked "PR approved" (or Mark merged, while an agent's merge is being confirmed): the workflow
+    finishes. The first approval wins."""
     wf = await engine.lock_task(db, task)
     await engine.require_actor(db, user, task, wf)
     needed_review = wf is not None and wf.finish_requires_human_review is True
     if needed_review and wf.status == WorkflowStatus.finished:
         raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")
-    if wf is None or wf.status != WorkflowStatus.waiting_human or wf.needs != Needs.human_code_review:
+    if wf is None or wf.status != WorkflowStatus.waiting_human or wf.needs not in MERGE_WAITS:
         raise HTTPException(status.HTTP_409_CONFLICT, "not_waiting_for_decision")
+    await mark_merged(db, wf, task, user)
+    return wf
+
+
+async def mark_merged(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
+    """A person says the pull request merged: recorded, and the workflow finishes. The caller holds the workflow
+    lock and has checked that it waits for the merge."""
     await engine.record_workflow_event(db, task, user.id, "human_review.approved", {"pr_url": wf.pr_url})
     await audit.record(
         db, "workflow.human_review_approved", actor_id=user.id, target_type="task", target_id=task.id,
         data={"pr_url": wf.pr_url},
     )
     await finish_workflow(db, wf, task, user.id)
-    return wf
 
 
 async def set_finishing(db: AsyncSession, user: User, task: Task, option: FinishingOption | None) -> TaskWorkflow:

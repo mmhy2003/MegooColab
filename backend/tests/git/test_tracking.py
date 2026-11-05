@@ -14,6 +14,7 @@ from app.core.db import SessionLocal
 from app.git import jobs, providers, service
 from app.git.models import GitConnection, TaskPullRequest
 from app.jobs.models import Job
+from app.tasks.models import Task
 from app.workflow import finish
 from app.workflow.methodology import DEFAULTS_DIR
 from tests.workflow.test_build import _last, _review
@@ -161,7 +162,11 @@ async def test_report_finish_tracks_pr_and_refresh_reaches_status(db, tc_factory
     [ev] = await _events(b.task_id, "pr.status")
     assert ev.data == {"state": "open", "checks": "pending", "review": "none"}
     task = tc.get(f"/api/tasks/{b.key}").json()
-    assert task["pull_request"] == {"url": PR, "state": "open", "checks": "pending", "review": "none", "tracked": True}
+    pr = task["pull_request"]
+    next_check_at = pr.pop("next_check_at")
+    assert next_check_at is not None
+    assert pr == {"url": PR, "state": "open", "checks": "pending", "review": "none", "tracked": True,
+                  "error": None, "limited": None, "host": "github"}
     assert tc.get(f"/api/tasks/{b.key}/workflow").json()["pull_request"]["tracked"] is True
     await _refresh(b.task_id)
     assert len(await _events(b.task_id, "pr.status")) == 1  # nothing changed, nothing recorded
@@ -385,3 +390,68 @@ async def test_poll_survives_bad_rows_and_backs_them_off(db, tc_factory, github,
         await jobs.pr_poll(s, {})  # a crash in one row neither stops the poll nor loops on it
     rows = [await _row(t) for t in (bad_id, moved_id)]
     assert all(r.next_check_at > datetime.now(UTC) for r in rows)
+
+
+async def _apply(task_id, **kw):
+    status = providers.PrStatus(**{"state": "open", "checks": "success", "review": "none", "merged_at": None,
+                                   "head_sha": "abc123", "head_branch": "megoo/PAY-1", **kw})
+    async with SessionLocal() as s:
+        await service.apply_status(s, task_id, "main", status)
+        await s.commit()
+
+
+async def test_a_partial_read_stores_limited_and_counts_as_a_success(db, tc_factory, github):
+    tc = tc_factory(lifespan=True)
+    b, _conn = await _finished_waiting(db, tc, github)
+    async with SessionLocal() as s:
+        await s.execute(update(TaskPullRequest).values(failures=4, error="forbidden"))
+        await s.commit()
+    await _apply(b.task_id, checks="unknown", limited=("checks",))
+    row = await _row(b.task_id)
+    assert (row.limited, row.failures, row.error, row.checks) == ("checks", 0, None, "unknown")
+
+
+async def test_a_full_read_clears_limited(db, tc_factory, github):
+    tc = tc_factory(lifespan=True)
+    b, _conn = await _finished_waiting(db, tc, github)
+    await _apply(b.task_id, checks="unknown", review="unknown", limited=("checks", "review"))
+    assert (await _row(b.task_id)).limited == "checks,review"
+    await _apply(b.task_id)
+    assert (await _row(b.task_id)).limited is None
+
+
+async def test_a_new_report_starts_afresh_without_the_old_limited(db, tc_factory, github):
+    tc = tc_factory(lifespan=True)
+    b, _conn = await _finished_waiting(db, tc, github)
+    await _apply(b.task_id, checks="unknown", limited=("checks",))
+    assert (await _row(b.task_id)).limited == "checks"
+    other = f"{BASE}/acme/pay/pull/9"
+    async with SessionLocal() as s:
+        await service.track_pr(s, await s.get(Task, b.task_id), other)
+        await s.commit()
+    row = await _row(b.task_id)
+    assert (row.url, row.limited, row.error, row.failures) == (other, None, None, 0)
+
+
+async def test_a_merged_partial_read_finishes_the_waiting_round(db, tc_factory, github):
+    tc = tc_factory(lifespan=True)
+    b, _conn = await _finished_waiting(db, tc, github)
+    assert (await _wf(b.task_id)).needs == "human_code_review"
+    await _apply(b.task_id, state="merged", checks="unknown", limited=("checks",),
+                 merged_at=datetime.now(UTC))
+    assert (await _wf(b.task_id)).status == "finished"
+
+
+async def test_the_workflow_api_shows_the_read_problem(db, tc_factory, github):
+    tc = tc_factory(lifespan=True)
+    b, _conn = await _finished_waiting(db, tc, github)
+    async with SessionLocal() as s:
+        await s.execute(update(TaskPullRequest).values(error="forbidden", failures=2))
+        await s.commit()
+    pr = tc.get(f"/api/tasks/{b.key}/workflow").json()["pull_request"]
+    assert (pr["error"], pr["host"]) == ("forbidden", "github")
+    assert pr["next_check_at"] is not None
+    async with SessionLocal() as s:
+        await s.execute(update(TaskPullRequest).values(error="branch_mismatch"))
+        await s.commit()
+    assert tc.get(f"/api/tasks/{b.key}/workflow").json()["pull_request"]["error"] is None

@@ -13,7 +13,7 @@ MAX_MESSAGE = 8_000
 
 ChatState = Literal[
     "talking", "question", "design_approval", "plan_approval", "building", "in_review", "human_code_review",
-    "escalation", "offline", "finished", "ended",
+    "merging", "escalation", "offline", "finished", "ended",
 ]
 # what a message typed in the chat does now (for the viewer); "closed": it can't be sent
 Intent = Literal["answer", "changes", "tell", "restart", "new_round", "closed"]

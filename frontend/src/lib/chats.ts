@@ -81,6 +81,8 @@ export function chatStateText(r: StateBits): string {
       return "in review";
     case "human_code_review":
       return pr ? `in code review · PR #${pr}` : "in code review";
+    case "merging":
+      return pr ? `merging · PR #${pr}` : "merging";
     case "escalation":
       return "waiting: decide the escalation";
     case "offline":

@@ -47,3 +47,12 @@ describe("escalations of an agent's review", () => {
     expect(ACCEPTABLE_REASONS).toEqual(expect.arrayContaining(["agent_merge_failed", "agent_review_incomplete", "agent_review_unavailable"]));
   });
 });
+
+describe("an agent's merge that can't be confirmed", () => {
+  it("is worded, can be accepted, and the quiet wait has a name", async () => {
+    const { escalationReasonText, ACCEPTABLE_REASONS, needsText } = await import("@/lib/workflow");
+    expect(escalationReasonText("merge_not_confirmed")).toBe("The agent merged the pull request, but MegooColab couldn't confirm it.");
+    expect(ACCEPTABLE_REASONS).toContain("merge_not_confirmed");
+    expect(needsText("merge_confirmation")).toBe("Agent merged · confirming");
+  });
+});
