@@ -376,3 +376,64 @@ describe("WorkflowPanel: an agent reviewing the pull request", () => {
     expect(await screen.findByText("review-bot is reviewing PR #42")).toBeInTheDocument();
   });
 });
+
+describe("WorkflowPanel agent merge confirmation", () => {
+  const pr = (extra: Record<string, unknown> = {}) => ({
+    url: "https://github.com/o/r/pull/7", state: "open", checks: "none", review: "none", tracked: true, host: "github", ...extra,
+  });
+  const base = { stage: "done", status: "waiting_human", branch: "megoo/PAY-1-fix", pr_url: "https://github.com/o/r/pull/7" } as const;
+
+  it("says the agent merged and offers a quiet Mark merged", async () => {
+    const fetchMock = setup(wf({ ...base, needs: "merge_confirmation", pull_request: pr() } as Partial<Workflow>));
+    expect(
+      await screen.findByText("The agent merged the pull request. MegooColab finishes the round when GitHub shows the merge."),
+    ).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Mark merged" });
+    expect(button.className).not.toContain("bg-cyan");
+    fireEvent.click(button);
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u, i]) => String(u).endsWith("/workflow/human-review") && i?.method === "POST");
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({ approved: true });
+    });
+  });
+
+  it("falls back to the git host when the host is unknown", async () => {
+    setup(wf({ ...base, needs: "merge_confirmation", pull_request: pr({ host: null }) } as Partial<Workflow>));
+    expect(await screen.findByText(/finishes the round when the git host shows the merge\./)).toBeInTheDocument();
+  });
+
+  it("an unconfirmed merge shows the reason and a Mark merged way out", async () => {
+    const fetchMock = setup(wf({
+      ...base, needs: "escalation", escalation_reason: "merge_not_confirmed", pull_request: pr({ error: "forbidden" }),
+    } as Partial<Workflow>));
+    expect(await screen.findByText("The agent merged the pull request, but MegooColab couldn't confirm it.")).toBeInTheDocument();
+    expect(screen.getAllByText(/GitHub refused the token \(forbidden\)/).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Mark merged" }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u, i]) => String(u).endsWith("/workflow/escalation") && i?.method === "POST");
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({ action: "accept" });
+    });
+  });
+
+  it("an unconfirmed merge that GitHub still shows open says so", async () => {
+    setup(wf({
+      ...base, needs: "escalation", escalation_reason: "merge_not_confirmed", pull_request: pr({ error: null, state: "open" }),
+    } as Partial<Workflow>));
+    expect(await screen.findByText("GitHub still shows it open.")).toBeInTheDocument();
+  });
+
+  it("says under the pull request when it can't be read, and when it tries again", async () => {
+    const at = "2026-11-05T14:30:00Z";
+    setup(wf({ ...base, needs: "human_code_review", pull_request: pr({ error: "unreachable", next_check_at: at }) } as Partial<Workflow>));
+    const time = new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    expect(
+      await screen.findByText(`MegooColab can't read this pull request: GitHub couldn't be reached. It tries again at ${time}.`),
+    ).toBeInTheDocument();
+  });
+
+  it("says what a partial read couldn't see", async () => {
+    setup(wf({ ...base, needs: "human_code_review", pull_request: pr({ limited: "checks" }) } as Partial<Workflow>));
+    expect(await screen.findByText("Checks unknown: the token can't read commit statuses or checks.")).toBeInTheDocument();
+  });
+});
