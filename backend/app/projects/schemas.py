@@ -152,6 +152,9 @@ class RepoOut(BaseModel):
     webhook_last_at: datetime | None = None
     # after a change: the old host would not delete the webhook MegooColab made there (its error code)
     warning: str | None = None
+    # the most recent problem reading this repository's pull requests (an error code), and what the token could not see
+    pr_error: str | None = None
+    pr_limited: str | None = None
 
 
 class LabelIn(BaseModel):

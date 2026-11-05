@@ -288,6 +288,29 @@ async def rows_for_delivery(
     return out
 
 
+async def repo_read_problem(
+    db: AsyncSession, repo: ProjectRepository, conn: GitConnection
+) -> tuple[str | None, str | None]:
+    """The latest read problem of this repository's tracked pull requests: (error, limited) of the most recently
+    read one, or (None, None). A branch mismatch is not a read failure."""
+    path = providers.repo_path(repo.url)
+    if path is None:
+        return None, None
+    rows = (
+        await db.execute(
+            select(TaskPullRequest)
+            .join(Task, Task.id == TaskPullRequest.task_id)
+            .where(Task.project_id == repo.project_id, TaskPullRequest.connection_id == conn.id)
+            .order_by(TaskPullRequest.last_checked_at.desc().nulls_last())
+        )
+    ).scalars()
+    for row in rows:
+        ref = providers.parse_pr_url(row.url, conn)
+        if ref is not None and ref.path == path:
+            return (None if row.error == "branch_mismatch" else row.error), row.limited
+    return None, None
+
+
 def webhook_url(repo_id: uuid.UUID) -> str:
     """A repository's own webhook address, as its host must reach it."""
     return f"{get_settings().public_url.rstrip('/')}/api/git/webhooks/repos/{repo_id}"
