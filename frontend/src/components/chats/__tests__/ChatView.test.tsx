@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -15,26 +15,44 @@ vi.mock("next/navigation", () => ({
 
 const LONG = "are there any remaining plans unimplemented? I want a full list grouped by project, with what each one is missing";
 
-function show(c: Chat) {
+function show(c: Chat, workflow: Record<string, unknown> = {}) {
+  const calls: { url: string; method: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: string) => {
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      if (method !== "GET") return new Response(JSON.stringify({}), { status: 200 });
       // the round's own parts (RoundSections) as a task's: empty lists, no documents, no decisions
       const lists = ["/activity", "/agent-runs", "/questions", "/attachments", "/mockups", "/api/projects/", "/api/users"];
       const body = lists.some((l) => url.includes(l))
         ? []
-        : url.includes("/workflow") ? {} : url.includes("/records") ? { decisions: [] }
+        : url.includes("/workflow") ? workflow : url.includes("/records") ? { decisions: [] }
         : url.startsWith("/api/tasks/") ? { id: "t7", key: "PAY-7", subtask_count: 0, subtask_done_count: 0 }
         : c;
       return new Response(JSON.stringify(body), { status: 200 });
     }),
   );
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={client}>
-      <ChatView chatId="c1" />
-    </QueryClientProvider>,
+  return Object.assign(
+    render(
+      <QueryClientProvider client={client}>
+        <ChatView chatId="c1" />
+      </QueryClientProvider>,
+    ),
+    { calls },
   );
+}
+
+/** A chat whose round stopped on an escalation, and its workflow. */
+function escalated(reason: string, canAct = true): [Chat, Record<string, unknown>] {
+  const c = chat({ state: "escalation", intent: "retry", can_act: canAct });
+  const r = { ...c.rounds[0], stage: "build" as const, status: "waiting_human" as const, needs: "escalation" as const };
+  return [
+    { ...c, rounds: [r] } as Chat,
+    { driver: "runner", stage: "build", status: "waiting_human", needs: "escalation", escalation_reason: reason,
+      can_act: canAct, documents: [], steps: [], pull_request: null },
+  ];
 }
 
 afterEach(() => {
@@ -127,6 +145,41 @@ describe("ChatView", () => {
     show(chat({ state: "question", can_act: false }));
     expect(await screen.findByText("waiting: answer the agent's question")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "waiting: answer the agent's question" })).toBeNull();
+  });
+
+  it("shows an escalation with its reason and actions, and Retry decides it", async () => {
+    const { calls } = show(...escalated("retries_exhausted"));
+    const box = await screen.findByRole("region", { name: "Escalation" });
+    expect(within(box).getByText("The agent's runs failed 3 times in a row.")).toBeInTheDocument();
+    expect(within(box).getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    expect(within(box).queryByRole("button", { name: "Accept" })).toBeNull(); // not allowed for failed runs
+    await userEvent.click(within(box).getByRole("button", { name: "Retry" }));
+    await vi.waitFor(() =>
+      expect(calls.find((x) => x.method === "POST")).toEqual({
+        url: "/api/tasks/PAY-7/workflow/escalation", method: "POST", body: { action: "retry" },
+      }),
+    );
+  });
+
+  it("an unconfirmed merge's escalation offers Mark merged", async () => {
+    show(...escalated("merge_not_confirmed"));
+    const box = await screen.findByRole("region", { name: "Escalation" });
+    expect(within(box).getByRole("button", { name: "Mark merged" })).toBeInTheDocument();
+  });
+
+  it("the header's waiting note goes to the escalation", async () => {
+    show(...escalated("retries_exhausted"));
+    expect(await screen.findByRole("button", { name: "waiting: decide the escalation" })).toBeInTheDocument();
+    expect(document.body.querySelector('[data-waiting="escalation"]')).toContainElement(
+      await screen.findByRole("button", { name: "Retry" }),
+    );
+  });
+
+  it("someone who can't act sees the escalation without its actions", async () => {
+    show(...escalated("retries_exhausted", false));
+    const box = await screen.findByRole("region", { name: "Escalation" });
+    expect(within(box).getByText("The agent's runs failed 3 times in a row.")).toBeInTheDocument();
+    expect(within(box).queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   it("shows the images sent with a round's first message", async () => {

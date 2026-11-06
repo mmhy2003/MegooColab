@@ -116,3 +116,36 @@ async def test_the_waiting_count_is_cheap_and_right(client, client_factory, db):
     oc = client_factory()
     await login(oc, w.other)
     assert (await oc.get("/api/chats/count")).json() == {"waiting": 0}
+
+
+async def _escalated(db, task: Task, reason: str) -> None:
+    await db.execute(update(AgentRun).where(AgentRun.task_id == task.id).values(status=RunStatus.failed))
+    await db.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == task.id).values(
+        status=WorkflowStatus.waiting_human, needs=Needs.escalation, escalation_reason=reason, failures=3,
+    ))
+    await db.commit()
+
+
+async def test_a_message_during_an_escalation_retries_the_round_with_it(client, db):
+    await world(client, db)
+    chat = await start(client)
+    rnd = await _round(db, chat)
+    await _escalated(db, rnd, "retries_exhausted")
+    assert (await client.get(f"/api/chats/{chat['id']}")).json()["intent"] == "retry"
+    r = await client.post(f"/api/chats/{chat['id']}/messages", json={"body": "Try a different method, don't stop"})
+    assert r.status_code == 201 and r.json()["intent"] == "retry"
+    wf = await db.get(TaskWorkflow, rnd.id, populate_existing=True)
+    assert (wf.status, wf.needs, wf.escalation_reason, wf.failures) == (WorkflowStatus.running, None, None, 0)
+    runs = (await db.execute(select(AgentRun).where(AgentRun.task_id == rnd.id, AgentRun.status.in_(ACTIVE_STATUSES)))).scalars().all()
+    assert len(runs) == 1
+    c = (await db.execute(select(Comment).where(Comment.task_id == rnd.id))).scalar_one()
+    assert c.body_md == "Try a different method, don't stop" and c.delivery is not None  # goes with the retried run
+
+
+async def test_a_message_during_an_unconfirmed_merge_only_tells_the_agent(client, db):
+    """Retrying an unconfirmed merge reads the pull request again; it starts no run, so a message isn't a retry."""
+    await world(client, db)
+    chat = await start(client)
+    rnd = await _round(db, chat)
+    await _escalated(db, rnd, "merge_not_confirmed")
+    assert (await client.get(f"/api/chats/{chat['id']}")).json()["intent"] == "tell"

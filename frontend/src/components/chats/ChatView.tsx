@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { BoardDialog } from "@/components/chats/BoardDialog";
 import { ChatBack } from "@/components/chats/ChatBack";
 import { ChatComposer } from "@/components/chats/ChatComposer";
+import { ChatEscalation } from "@/components/chats/ChatEscalation";
 import { EndChatButton, useEndChat } from "@/components/chats/EndChatButton";
 import { RoundDivider } from "@/components/chats/RoundDivider";
 import { RoundSections } from "@/components/chats/RoundSections";
@@ -128,9 +129,8 @@ export function ChatView({ chatId }: { chatId: string }) {
   if (!chat.data) return <p className="card p-4 text-sm text-muted-foreground">Loading…</p>;
   const c = chat.data;
   const pending = c.can_act ? c.rounds.find((r) => r.board === "pending") : undefined;
-  // what waits on the viewer goes there, as the corner's "waiting on you" does; an escalation has nothing in the
-  // conversation to go to
-  const goesToWaiting = c.can_act && WAITING.includes(c.state) && c.state !== "escalation";
+  // what waits on the viewer goes there, as the corner's "waiting on you" does
+  const goesToWaiting = c.can_act && WAITING.includes(c.state);
   const canEnd = c.can_act && c.status === "open";
   const column = expanded ? "md:mx-auto md:max-w-[56rem]" : "";
   const program = c.agent ? PROGRAM_LABEL[c.agent.program as AgentProgram] ?? c.agent.program : null;
@@ -203,6 +203,7 @@ export function ChatView({ chatId }: { chatId: string }) {
                 <RoundSections chat={c} round={r} latest={r === latest} />
               </div>
             ))}
+            {latest && c.state === "escalation" && <ChatEscalation chat={c} round={latest} />}
           </div>
           <FollowRoom />
         </div>

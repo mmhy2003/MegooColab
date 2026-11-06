@@ -339,7 +339,7 @@ DECIDED_BY_MESSAGE = {Needs.design_approval: DocKind.design, Needs.plan_approval
 
 async def intent(db: AsyncSession, chat: Chat, task: Task | None, wf: TaskWorkflow | None) -> Intent:
     """What a message typed now does: answer the agent's question, ask for changes to the design or plan waiting,
-    tell the working agent, start it again, or start the next round."""
+    tell the working agent, start it again, retry an escalated round with it, or start the next round."""
     from app.workflow import engine
 
     if chat.status == ChatStatus.ended or task is None or wf is None:
@@ -356,7 +356,11 @@ async def intent(db: AsyncSession, chat: Chat, task: Task | None, wf: TaskWorkfl
         return "restart"
     if wf.needs is None and wf.status == WorkflowStatus.running:
         return "restart"
-    return "tell"  # an escalation or a code review waits: the agent gets it at its next run
+    # an escalation: the message is Retry, and goes with the run it starts. An unconfirmed merge's Retry reads the
+    # pull request again and starts no run, so there it only waits.
+    if wf.needs == Needs.escalation and wf.escalation_reason != "merge_not_confirmed":
+        return "retry"
+    return "tell"  # a code review or a merge being confirmed waits: the agent gets it at its next run
 
 
 async def latest_round(db: AsyncSession, chat: Chat) -> Task | None:
@@ -427,6 +431,10 @@ async def send_message(
     elif what == "restart" and wf.status == WorkflowStatus.paused:
         await engine.resume(db, user, task)
         # the resumed run takes it at its start (or a wait it returns to keeps it for the next run)
+        await create_comment(db, user, key, body, to_agent=True, image_ids=images)
+    elif what == "retry":
+        await engine.decide_escalation(db, user, task, "retry")
+        # as a resumed round's: the retried run takes it at its start
         await create_comment(db, user, key, body, to_agent=True, image_ids=images)
     elif what == "restart":
         run = await engine.hand_to_agent(
