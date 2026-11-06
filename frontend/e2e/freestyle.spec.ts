@@ -112,15 +112,16 @@ test("a freestyle chat: two turns, then End chat", async ({ browser }) => {
   await ui.getByRole("button", { name: "Start chat" }).click();
   await expect(ui).toHaveURL(/\/chats\/[0-9a-f-]{36}$/);
   const view = ui.getByRole("main");
-  await expect(view.getByText("Freestyle", { exact: true }).first()).toBeVisible();
-  await expect(view.getByText(`Created notes.txt on megoo/${KEY}`)).toBeVisible({ timeout: 60_000 });
+  await expect(view.locator("header").getByText("Freestyle", { exact: true })).toBeVisible();
+  // the reply shows as the agent's message and again in "…finished: <reply>": the message comes first
+  await expect(view.getByText(`Created notes.txt on megoo/${KEY}`).first()).toBeVisible({ timeout: 60_000 });
   await expect(view.getByText("waiting for your reply", { exact: true })).toBeVisible({ timeout: 30_000 });
 
   // 2. a second message is the next turn
   const box = view.getByRole("textbox", { name: `Message ${AGENT_NAME}` });
   await box.fill("rename it");
   await view.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(view.getByText("Renamed to NOTES.md")).toBeVisible({ timeout: 60_000 });
+  await expect(view.getByText("Renamed to NOTES.md").first()).toBeVisible({ timeout: 60_000 });
   await expect(view.getByText("waiting for your reply", { exact: true })).toBeVisible({ timeout: 30_000 });
 
   // 3. both commits are on the chat's branch
