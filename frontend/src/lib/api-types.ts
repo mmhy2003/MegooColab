@@ -4579,7 +4579,7 @@ export interface components {
              * @default closed
              * @enum {string}
              */
-            intent: "answer" | "changes" | "tell" | "restart" | "new_round" | "closed";
+            intent: "answer" | "changes" | "tell" | "restart" | "retry" | "new_round" | "closed";
             /** Can Act */
             can_act: boolean;
             /** Rounds */
@@ -6097,7 +6097,7 @@ export interface components {
              * Intent
              * @enum {string}
              */
-            intent: "answer" | "changes" | "tell" | "restart" | "new_round" | "closed";
+            intent: "answer" | "changes" | "tell" | "restart" | "retry" | "new_round" | "closed";
             /** Round Key */
             round_key: string;
         };
