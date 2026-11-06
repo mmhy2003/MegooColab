@@ -16,7 +16,7 @@ ChatState = Literal[
     "merging", "escalation", "offline", "finished", "ended",
 ]
 # what a message typed in the chat does now (for the viewer); "closed": it can't be sent
-Intent = Literal["answer", "changes", "tell", "restart", "new_round", "closed"]
+Intent = Literal["answer", "changes", "tell", "restart", "retry", "new_round", "closed"]
 
 
 class ChatIn(BaseModel):

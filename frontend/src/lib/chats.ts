@@ -111,6 +111,8 @@ export function intentText(chat: Chat, agentRunning: boolean): string {
         : `${agent} gets this when its next run starts.`;
     case "restart":
       return `Your message starts ${agent} again.`;
+    case "retry":
+      return `Retry with your message: ${agent} starts again and reads it.`;
     case "new_round":
       return "Starts a new round: the agent talks it through, then design, plan, build and finish again.";
     case "closed":

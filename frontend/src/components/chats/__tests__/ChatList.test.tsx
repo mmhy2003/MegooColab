@@ -54,6 +54,7 @@ describe("chat copy", () => {
     expect(intentText(chat({ intent: "tell" }), true)).toBe("laptop-claude reads this straight away, without stopping.");
     expect(intentText(chat({ intent: "tell" }), false)).toBe("laptop-claude gets this when its next run starts.");
     expect(intentText(chat({ intent: "restart" }), false)).toBe("Your message starts laptop-claude again.");
+    expect(intentText(chat({ intent: "retry" }), false)).toBe("Retry with your message: laptop-claude starts again and reads it.");
     expect(intentText(chat({ intent: "new_round" }), false)).toBe(
       "Starts a new round: the agent talks it through, then design, plan, build and finish again.",
     );

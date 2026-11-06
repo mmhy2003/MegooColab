@@ -9,6 +9,7 @@ import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PullRequestBadge } from "@/components/git/PullRequestBadge";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { EscalationActions } from "@/components/workflow/EscalationActions";
 import { api, ApiError } from "@/lib/api";
 import { runReasonText, useAgentRuns } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
@@ -16,12 +17,10 @@ import { HOST_NAME, limitedText, pullRequestProblem } from "@/lib/git";
 import { qk } from "@/lib/queries";
 import type { AgentRun, ProjectAgent } from "@/lib/types";
 import {
-  ACCEPTABLE_REASONS,
   FINISHING_HELP,
   FINISHING_LABEL,
   STAGES,
   branchLine,
-  escalationReasonText,
   statusLine,
   useRunRecords,
   useWorkflow,
@@ -108,19 +107,7 @@ export function WorkflowPanel({
   const reviewing = status === "running" && latest?.workflow_role === "pr_review" && (latest.status === "running" || latest.status === "queued");
   const pr = wf.pull_request;
   const hostName = pr?.host ? HOST_NAME[pr.host] : "the git host";
-  // why an unconfirmed merge is unconfirmed: nothing reads it any more, what MegooColab can't read, else what the
-  // host still shows
   const unconfirmed = wf.escalation_reason === "merge_not_confirmed";
-  const unconfirmedWhy =
-    !unconfirmed || !pr
-      ? null
-      : !pr.tracked
-        ? "MegooColab no longer follows this pull request (its git connection was removed)."
-        : pr.error
-          ? pullRequestProblem(pr.error, pr.host ?? null)
-          : pr.state === "open"
-            ? `${pr.host ? HOST_NAME[pr.host] : "The git host"} still shows it open.`
-            : null;
   // an untracked pull request is never read; an unconfirmed merge's escalation already says why it can't be read
   const readProblem = !pr?.tracked
     ? null
@@ -158,27 +145,8 @@ export function WorkflowPanel({
       )}
       {!(status === "idle" && !agent) && <p className="text-xs text-muted-foreground">{ENFORCEMENT_TEXT[wf.enforcement]}</p>}
 
-      {/* data-waiting: the task's "waiting on you" button jumps here (JumpButtons) */}
       {escalating && (
-        <div data-waiting={canDecide ? "escalation" : undefined} className="space-y-2 rounded border border-pink/60 p-2">
-          <p>{escalationReasonText(wf.escalation_reason)}</p>
-          {unconfirmedWhy && <p className="text-xs text-muted-foreground">{unconfirmedWhy}</p>}
-          {canDecide ? (
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={busy} onClick={() => void post("escalation", { action: "retry" })}>Retry</Button>
-              {wf.escalation_reason && ACCEPTABLE_REASONS.includes(wf.escalation_reason) && (
-                <Button variant="ghost" disabled={busy} onClick={() => void post("escalation", { action: "accept" })}>
-                  {wf.escalation_reason === "merge_not_confirmed" ? "Mark merged" : "Accept"}
-                </Button>
-              )}
-              <Button variant="danger" disabled={busy} onClick={() => void post("escalation", { action: "pause" })}>Pause</Button>
-            </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              {wf.can_act ? "This is a read-only view." : "Waiting on the agent’s owner or a project manager."}
-            </p>
-          )}
-        </div>
+        <EscalationActions wf={wf} canDecide={canDecide} busy={busy} onDecide={(action) => void post("escalation", { action })} />
       )}
 
       {agentDriven && canUse && (
