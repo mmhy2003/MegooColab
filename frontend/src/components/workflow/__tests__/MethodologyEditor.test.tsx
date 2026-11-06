@@ -93,7 +93,7 @@ describe("MethodologyEditor", () => {
   it("shows one tab per stage, each with its keys and versions", async () => {
     setup();
     await screen.findByRole("region", { name: "plan" });
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Brainstorm", "Design", "Plan", "Build", "Review", "Done", "Knowledge base", "Crons"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Brainstorm", "Design", "Plan", "Build", "Review", "Done", "Chats", "Knowledge base", "Crons"]);
     expect(screen.getByRole("tab", { name: "Plan" })).toHaveAttribute("aria-selected", "true");
     expect(within(planCard()).getByText("v3")).toBeInTheDocument();
     expect(screen.getAllByRole("region")).toHaveLength(1);

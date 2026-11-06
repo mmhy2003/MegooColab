@@ -32,7 +32,7 @@ export function StageTrack({
 }) {
   const current = stageIndex(stage);
   const confirming = status === "waiting_human" && needs === "merge_confirmation";
-  const waiting = status === "waiting_human" && !confirming;
+  const waiting = status === "waiting_human" && !confirming && needs !== "reply";
   const finished = status === "finished";
   const label = `Stage: ${stageLabel(stage)} (${current + 1} of ${STAGES.length})`;
   const statusText = confirming

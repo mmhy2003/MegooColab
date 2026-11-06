@@ -20,6 +20,7 @@ export const KIND_LABELS: Record<NotificationKind, string> = {
   mentioned: "Mentioned in a comment",
   agent_offline: "My agent went offline mid-task",
   question_waiting: "A question waits for an answer",
+  agent_replied: "My agent replied in a freestyle chat",
 };
 
 /** Every notifications query starts with "notifications", so one invalidation (notification.* events) refreshes

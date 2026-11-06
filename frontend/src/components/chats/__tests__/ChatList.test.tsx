@@ -18,6 +18,23 @@ describe("ChatList", () => {
   });
 });
 
+describe("freestyle chats in the list", () => {
+  it("a freestyle row has the chip and says working or waiting for your reply", () => {
+    render(<ChatList chats={[
+      chat({ id: "f1", title: "Release", mode: "freestyle", state: "working" }),
+      chat({ id: "f2", title: "Other", mode: "freestyle", state: "reply" }),
+      chat({ id: "w1", title: "Workflow one" }),
+    ]} showProject />);
+    expect(screen.getAllByText("Freestyle")).toHaveLength(2);
+    expect(screen.getByText(/· working$/)).toBeInTheDocument();
+    expect(screen.getByText(/waiting for your reply$/)).toBeInTheDocument();
+  });
+
+  it("the composer line for a turn", () => {
+    expect(intentText(chat({ mode: "freestyle", intent: "turn" }), false)).toBe("laptop-claude starts working on your message.");
+  });
+});
+
 describe("chat copy", () => {
   it.each([
     ["talking", {}, "talking"],

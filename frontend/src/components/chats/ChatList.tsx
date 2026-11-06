@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { FreestyleChip } from "@/components/chats/FreestyleChip";
 import { stateText, WAITING, type Chat } from "@/lib/chats";
 
 /** The chats down the side of the Chats page, in the order the server gives (waiting on the viewer first). */
@@ -22,6 +23,7 @@ export function ChatList({ chats, selected, showProject }: { chats: Chat[]; sele
               {/* two lines on a phone; one line, cut, on a wide screen. No `block`: it would undo the clamp's display */}
               <span className="text-sm wrap-anywhere max-md:line-clamp-2 md:block md:truncate">{c.title}</span>
               <span className={`block truncate text-xs ${tone}`}>
+                {c.mode === "freestyle" && <FreestyleChip className="mr-1.5 px-1 py-0 text-[11px]" />}
                 {showProject && `${c.project_key} · `}
                 {stateText(c)}
               </span>

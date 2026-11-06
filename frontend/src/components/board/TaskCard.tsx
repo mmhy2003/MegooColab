@@ -65,8 +65,8 @@ export function TaskCardView({
         <div className="space-y-1">
           <StageTrack stage={wf.stage} status={wf.status} needs={wf.needs} canAct={wf.can_act} compact />
           <div className="flex flex-wrap items-center gap-1 text-[11px]">
-            {/* confirming an agent's merge asks nobody (it's out of Needs you too) */}
-            {wf.needs && wf.needs !== "merge_confirmation" && wf.can_act && (
+            {/* confirming an agent's merge, and a freestyle chat's reply, ask nobody (they're out of Needs you too) */}
+            {wf.needs && wf.needs !== "merge_confirmation" && wf.needs !== "reply" && wf.can_act && (
               <span
                 className="rounded-full border-2 border-pink px-1.5 font-semibold tracking-wide text-pink"
                 title={needsText(wf.needs)}
