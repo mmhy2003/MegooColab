@@ -73,7 +73,7 @@ async def test_record_tests_from_a_finish_run_has_no_step(db, tc_factory):
 async def test_record_tools_roles(db, tc_factory):
     tc = tc_factory(lifespan=True)
     b, run, token = await _building(db, tc)
-    allowed = {"implement", "step_fix", "final_fix", "finish", "pr_fix"}
+    allowed = {"implement", "step_fix", "final_fix", "finish", "pr_fix", "freestyle"}
     assert ALLOWED["record_decision"] == allowed and ALLOWED["record_tests"] == allowed
     for role in ("step_review", "final_review", "brainstorm", "plan"):
         await _as(run, role, 2, "build")

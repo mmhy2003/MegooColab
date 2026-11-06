@@ -98,6 +98,12 @@ describe("TaskCardView", () => {
     expect(track.querySelector(".text-pink, .border-pink")).toBeNull();
   });
 
+  it("a freestyle chat waiting for a reply is not NEEDS YOU", () => {
+    const reply = { ...wf, needs: "reply" } as const;
+    renderCard(<TaskCardView task={{ ...task, workflow: reply }} />);
+    expect(screen.queryByText("NEEDS YOU")).not.toBeInTheDocument();
+  });
+
   it("shows enforcement chip and build progress", () => {
     const build = { ...wf, stage: "build", status: "running", needs: null, current_step: 2, steps_total: 5 } as const;
     const { rerender } = renderCard(<TaskCardView task={{ ...task, workflow: { ...build, enforcement: "unenforced" } }} />);

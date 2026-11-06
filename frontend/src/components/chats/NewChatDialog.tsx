@@ -15,6 +15,30 @@ import { errorMessage } from "@/lib/errors";
 import { useImageDraft } from "@/lib/images";
 import { useProjects } from "@/lib/project";
 
+const MODE_KEY = "megoo.newChatMode";
+type Mode = "workflow" | "freestyle";
+const MODES: { value: Mode; label: string; help: string }[] = [
+  {
+    value: "workflow",
+    label: "Workflow",
+    help: "Talks it through, writes a design and a plan for you to approve, builds it step by step with reviews, then finishes as the project is set up to.",
+  },
+  {
+    value: "freestyle",
+    label: "Freestyle",
+    help: "Does what you ask, one reply at a time, with no design, plan or reviews. It can change files, switch branches, commit and push when you ask.",
+  },
+];
+
+// the last choice is a per-viewer convenience: storage may be blocked, then it is Workflow
+function rememberedMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === "freestyle" ? "freestyle" : "workflow";
+  } catch {
+    return "workflow";
+  }
+}
+
 /** Start a chat: the project (fixed on a project's own tab), the agent (any free one by default), the message. */
 export function NewChatDialog({ open, onClose, projectKey }: { open: boolean; onClose: () => void; projectKey?: string }) {
   const router = useRouter();
@@ -23,6 +47,7 @@ export function NewChatDialog({ open, onClose, projectKey }: { open: boolean; on
   const [project, setProject] = useState(projectKey ?? "");
   const [agent, setAgent] = useState("");
   const [message, setMessage] = useState("");
+  const [mode, setMode] = useState<Mode>(rememberedMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const agents = useProjectAgents(project);
@@ -36,8 +61,13 @@ export function NewChatDialog({ open, onClose, projectKey }: { open: boolean; on
     try {
       const chat = await api<Chat>("/api/chats", {
         method: "POST",
-        json: { project_key: project, agent_id: agent || null, message, image_ids: images.ids },
+        json: { project_key: project, agent_id: agent || null, message, image_ids: images.ids, mode },
       });
+      try {
+        localStorage.setItem(MODE_KEY, mode);
+      } catch {
+        // not remembered; the next chat starts as Workflow
+      }
       await client.invalidateQueries({ queryKey: ["chats"] });
       onClose();
       router.push(`/chats/${chat.id}`);
@@ -74,6 +104,30 @@ export function NewChatDialog({ open, onClose, projectKey }: { open: boolean; on
             </option>
           ))}
         </Select>
+        <fieldset className="min-w-0 space-y-2">
+          <legend className="mb-1 text-xs tracking-wider text-muted-foreground uppercase">How should the agent work?</legend>
+          {MODES.map((m) => (
+            <label
+              key={m.value}
+              className={`flex cursor-pointer gap-2.5 rounded-lg border bg-surface-2 p-2.5 ${
+                mode === m.value ? "border-cyan shadow-[inset_0_0_0_1px_var(--cyan)]" : "border-line"
+              }`}
+            >
+              <input
+                type="radio"
+                name="new-chat-mode"
+                value={m.value}
+                checked={mode === m.value}
+                onChange={() => setMode(m.value)}
+                className="mt-1 shrink-0 accent-cyan"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold">{m.label}</span>
+                <span className="block text-xs text-muted-foreground">{m.help}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
         <div className="flex flex-col gap-1">
           <label htmlFor="new-chat-message" className="text-xs tracking-wider text-muted-foreground uppercase">
             Message

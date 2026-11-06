@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { BoardDialog } from "@/components/chats/BoardDialog";
 import { ChatBack } from "@/components/chats/ChatBack";
 import { ChatComposer } from "@/components/chats/ChatComposer";
+import { FreestyleChip } from "@/components/chats/FreestyleChip";
 import { ChatEscalation } from "@/components/chats/ChatEscalation";
 import { EndChatButton, useEndChat } from "@/components/chats/EndChatButton";
 import { RoundDivider } from "@/components/chats/RoundDivider";
@@ -130,6 +131,7 @@ export function ChatView({ chatId }: { chatId: string }) {
   const c = chat.data;
   const pending = c.can_act ? c.rounds.find((r) => r.board === "pending") : undefined;
   // what waits on the viewer goes there, as the corner's "waiting on you" does
+  const freestyle = c.mode === "freestyle";
   const goesToWaiting = c.can_act && WAITING.includes(c.state);
   const canEnd = c.can_act && c.status === "open";
   const column = expanded ? "md:mx-auto md:max-w-[56rem]" : "";
@@ -186,11 +188,15 @@ export function ChatView({ chatId }: { chatId: string }) {
           ) : (
             <span className="text-muted-foreground">{stateText(c)}</span>
           )}
-          <div className="ml-auto max-md:hidden">
-            <ChatProgress round={latest} />
-          </div>
+          {freestyle ? (
+            <FreestyleChip className="ml-auto" />
+          ) : (
+            <div className="ml-auto max-md:hidden">
+              <ChatProgress round={latest} />
+            </div>
+          )}
         </div>
-        <PhoneProgress round={latest} />
+        {!freestyle && <PhoneProgress round={latest} />}
       </header>
       <div className="relative min-h-0 flex-1">
         {/* relative: what is positioned inside (screen reader text in a round's parts) is held in it too; otherwise it

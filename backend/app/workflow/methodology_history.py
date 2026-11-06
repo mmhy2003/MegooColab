@@ -7,6 +7,9 @@ fails until you do.
 """
 
 DEFAULT_HISTORY: dict[str, list[str]] = {
+    "freestyle": [
+        "533e10a68647b78784c2d0ce611fadea2170fdb7bd8daeb9ac6e9f10d356cebd",
+    ],
     "cron": [
         "6242ec4f5f17b35bb2d0db59ff6f610ea64f3edffde2a1ce36918f85c5433ada",
     ],

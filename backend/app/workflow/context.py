@@ -43,6 +43,7 @@ ROLE_KEY: dict[RunRole, str] = {
     RunRole.finish: "finish",
     RunRole.pr_fix: "pr_fix",
     RunRole.pr_review: "pr_review",
+    RunRole.freestyle: "freestyle",
 }
 
 MAX_PROMPT_CHARS = 60_000
@@ -138,7 +139,8 @@ def _item_text(item: Any) -> str:
 async def _thread(db: AsyncSession, task: Task) -> list[str]:
     # events are bookkeeping, not conversation: fetch wider so they cannot crowd out the latest 50 items
     items = await activity_items(db, task, limit=MAX_THREAD_ITEMS * 4)
-    # messages for the agent are instructions, in a section of their own (instructions.kept_in_mind)
+    # messages for the agent are instructions, in a section of their own (instructions.kept_in_mind, or for a
+    # freestyle run freestyle.conversation_so_far)
     texts = [_item_text(i) for i in items if i.type in ("comment", "question") and getattr(i, "to_agent", None) is None]
     return texts[-MAX_THREAD_ITEMS:]
 
@@ -206,7 +208,14 @@ async def build_prompt(
         kept_in_mind,  # local: instructions imports this module
     )
 
-    instructions = await kept_in_mind(db, task)
+    if role == RunRole.freestyle:  # the person's messages and the agent's replies, for a session starting fresh
+        from app.workflow.freestyle import (
+            conversation_so_far,  # local: freestyle imports the engine, which imports this module
+        )
+
+        instructions = await conversation_so_far(db, task)
+    else:
+        instructions = await kept_in_mind(db, task)
 
     design = await _approved(db, task.id, DocKind.design) if role == RunRole.plan or role in BUILD_ROLES else None
     plan = await _approved(db, task.id, DocKind.plan) if role in BUILD_ROLES else None

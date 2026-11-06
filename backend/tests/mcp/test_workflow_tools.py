@@ -59,15 +59,15 @@ ALL_WORKFLOW_TOOLS = {
     "submit_pr_review": {"verdict": "approved", "summary": "Looks good", "merged": True},
 }
 ALLOWED = {
-    "ask_human": {"brainstorm", "plan", "implement", "step_fix", "final_fix", "finish", "pr_fix"},
+    "ask_human": {"brainstorm", "plan", "implement", "step_fix", "final_fix", "finish", "pr_fix", "freestyle"},
     "submit_design": {"brainstorm"},
     "submit_plan": {"plan"},
     "complete_step": {"implement", "step_fix"},
     "submit_review": {"step_review", "final_review"},
     "report_finish": {"finish"},
     "show_mockup": {"brainstorm"},
-    "record_decision": {"implement", "step_fix", "final_fix", "finish", "pr_fix"},
-    "record_tests": {"implement", "step_fix", "final_fix", "finish", "pr_fix"},
+    "record_decision": {"implement", "step_fix", "final_fix", "finish", "pr_fix", "freestyle"},
+    "record_tests": {"implement", "step_fix", "final_fix", "finish", "pr_fix", "freestyle"},
     "report_pr_fix": {"pr_fix"},
     "submit_pr_review": {"pr_review"},
 }

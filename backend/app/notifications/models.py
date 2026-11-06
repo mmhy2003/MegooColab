@@ -16,11 +16,12 @@ class Kind(StrEnum):
     mentioned = "mentioned"
     agent_offline = "agent_offline"
     question_waiting = "question_waiting"
+    agent_replied = "agent_replied"  # a freestyle chat's agent answered
 
 
 # (in_app, email, push, telegram) when a user has not chosen; push and Telegram stay off until the person ticks them
 DEFAULT_PREFS: dict[Kind, tuple[bool, bool, bool, bool]] = {
-    k: (True, k != Kind.question_waiting, False, False) for k in Kind
+    k: (True, k not in (Kind.question_waiting, Kind.agent_replied), False, False) for k in Kind
 }
 
 

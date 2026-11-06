@@ -93,6 +93,10 @@ export function chatStateText(r: StateBits): string {
       return "finished";
     case "ended":
       return "ended";
+    case "working":
+      return "working";
+    case "reply":
+      return "waiting for your reply";
   }
 }
 
@@ -115,6 +119,8 @@ export function intentText(chat: Chat, agentRunning: boolean): string {
       return `Retry with your message: ${agent} starts again and reads it.`;
     case "new_round":
       return "Starts a new round: the agent talks it through, then design, plan, build and finish again.";
+    case "turn":
+      return `${agent} starts working on your message.`;
     case "closed":
       return "This chat has ended.";
   }
