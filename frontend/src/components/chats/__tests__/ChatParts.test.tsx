@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BoardDialog } from "@/components/chats/BoardDialog";
@@ -104,17 +104,38 @@ describe("BoardDialog", () => {
 });
 
 describe("EndChatButton", () => {
-  it("asks first while the agent is working, and ends at once otherwise", async () => {
+  it("while the agent works, asks whether to stop it, and ends once confirmed", async () => {
     const calls = stubFetch();
-    const { rerender } = withClient(<EndChatButton chat={chat()} agentRunning />);
+    withClient(<EndChatButton chat={chat()} agentRunning />);
     fireEvent.click(screen.getByRole("button", { name: "End chat" }));
-    expect(await screen.findByText("Stop the agent and end this chat? Whatever it committed stays on its branch.")).toBeInTheDocument();
+    const ask = await screen.findByRole("alertdialog", { name: "End this chat?" });
+    expect(within(ask).getByText("Stop the agent and end this chat? Whatever it committed stays on its branch.")).toBeInTheDocument();
     expect(calls.filter((c) => c.method === "POST")).toEqual([]);
-    cleanup();
+    fireEvent.click(within(ask).getByRole("button", { name: "End chat" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "POST")?.url).toBe("/api/chats/c1/end"));
+  });
+
+  it("asks first even when the agent isn't working, since an ended chat can't be reopened", async () => {
+    const calls = stubFetch();
     withClient(<EndChatButton chat={chat()} agentRunning={false} />);
     fireEvent.click(screen.getByRole("button", { name: "End chat" }));
+    const ask = await screen.findByRole("alertdialog", { name: "End this chat?" });
+    expect(
+      within(ask).getByText("It becomes read-only and can't be reopened. To keep going, start a new chat."),
+    ).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "POST")).toEqual([]);
+    fireEvent.click(within(ask).getByRole("button", { name: "End chat" }));
     await waitFor(() => expect(calls.find((c) => c.method === "POST")?.url).toBe("/api/chats/c1/end"));
-    void rerender;
+  });
+
+  it("Cancel leaves the chat open", async () => {
+    const calls = stubFetch();
+    withClient(<EndChatButton chat={chat()} agentRunning={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "End chat" }));
+    const ask = await screen.findByRole("alertdialog", { name: "End this chat?" });
+    fireEvent.click(within(ask).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(calls.filter((c) => c.method === "POST")).toEqual([]);
   });
 });
 

@@ -44,6 +44,13 @@ afterEach(() => {
 });
 
 describe("ChatView", () => {
+  it("End chat in the phone's menu asks first too", async () => {
+    show(chat());
+    await userEvent.click(await screen.findByRole("button", { name: "Chat actions" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "End chat" }));
+    expect(await screen.findByRole("alertdialog", { name: "End this chat?" })).toBeInTheDocument();
+  });
+
   it("the phone header folds End chat into a menu and the steps into one line", async () => {
     const r = chat().rounds[0];
     show(chat({ rounds: [{ ...r, stage: "design" }] }));
