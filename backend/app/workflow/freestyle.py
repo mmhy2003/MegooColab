@@ -146,9 +146,9 @@ async def handle_turn_end(db: AsyncSession, wf: TaskWorkflow, task: Task, run: A
     await _notify_replied(db, task, run)
 
 
-async def _notify_replied(db: AsyncSession, task: Task, run: AgentRun) -> None:
-    """The chat's starter hears once that the agent replied. A task not in a chat (none yet starts a freestyle
-    round) falls back to the agent's owner, linked to the board."""
+async def _notify_replied(db: AsyncSession, task: Task, run: AgentRun, *, failed: bool = False) -> None:
+    """The chat's starter hears once that the turn ended: the agent replied, or couldn't finish. A task not in a
+    chat (none yet starts a freestyle round) falls back to the agent's owner, linked to the board."""
     agent = await db.get(Agent, run.agent_id)
     project = await db.get(Project, task.project_id)
     key = f"{project.key}-{task.number}"
@@ -160,20 +160,28 @@ async def _notify_replied(db: AsyncSession, task: Task, run: AgentRun) -> None:
         chat = await db.get(Chat, task.chat_id)
     if chat is not None:
         (starter, _owner), link = await chat_people(db, task)
-        recipients, title = [starter], f"{agent.name} replied in {chat.title}"
+        recipients, where = [starter], f"in {chat.title}"
     else:
         recipients, link = [agent.owner_id], f"/projects/{project.key}/board?task={key}"
-        title = f"{agent.name} replied on {key}"
+        where = f"on {key}"
+    if failed:
+        title = f"{agent.name} couldn't finish {chat.title if chat is not None else key}"
+        body = run.reason.replace("_", " ") if run.reason else "the run failed"
+    else:
+        title = f"{agent.name} replied {where}"
+        reply = (await _replies(db, task, [run])).get(str(run.id)) or run.summary or ""
+        body = reply[:SUMMARY_CHARS]
     await notifications.notify(
-        db, recipients, Kind.agent_replied, title=title, body=(run.summary or "")[:SUMMARY_CHARS], link=link,
+        db, recipients, Kind.agent_replied, title=title, body=body, link=link,
         task_id=task.id, project_id=project.id,
     )
 
 
 async def wait_after_failure(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
     """A failed turn (or one cancelled by nothing a person did) waits for the next message: no retry, no escalation,
-    nothing sent (the failure shows in the conversation), `wf.failures` untouched."""
+    `wf.failures` untouched. The starter hears once, as for a reply (a long turn must not fail unnoticed)."""
     await engine.wait_for(db, wf, Needs.reply, notify=False)
+    await _notify_replied(db, task, run, failed=True)
 
 
 engine.ROLE_HANDLERS[RunRole.freestyle] = handle_turn_end

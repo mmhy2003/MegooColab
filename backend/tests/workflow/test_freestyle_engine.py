@@ -2,7 +2,7 @@
 escalates (freestyle chats, Task 2). Until chats start freestyle rounds, these run on a fresh board task."""
 
 import uuid
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -12,18 +12,20 @@ from app.agent_runs.models import AgentRun
 from app.auth.models import User
 from app.core.db import SessionLocal
 from app.notifications.models import Notification
-from app.tasks.models import Comment, Delivery, Task
+from app.tasks.models import Comment, Delivery, Task, TaskEvent
 from app.workflow import engine, freestyle
 from app.workflow.models import RunRole, WorkflowQuestion
 from tests.chats.helpers import world
 from tests.workflow.test_engine import _events, _finish, _runs, _wf
 
 
-async def _end(run_id, status="completed", summary=None):
+async def _end(run_id, status="completed", summary=None, reason=None):
     async with SessionLocal() as s:
         run = await s.get(AgentRun, run_id)
         await engine.lock_workflow(s, run.task_id)
         run.status, run.summary = status, summary
+        if reason:
+            run.reason = reason
         await engine.on_run_finished(s, run)
         await s.commit()
 
@@ -93,19 +95,44 @@ async def test_completed_turn_waits_for_a_reply_and_notifies_once(client, db):
     assert not [n for n in notes if n.kind == "needs_you"]
 
 
+async def test_notification_body_is_the_whole_reply_not_the_last_chunk(client, db):
+    w, task_id, run = await _freestyle(client, db)
+    async with SessionLocal() as s:
+        for i, text in enumerate(["Created release/", "2026.11.06.208"]):
+            s.add(TaskEvent(task_id=task_id, kind="agent_message", data={"text": text, "run_id": str(run.id)},
+                            created_at=run.created_at + timedelta(seconds=i + 1)))
+        await s.commit()
+    await _end(run.id, "completed", "2026.11.06.208")
+    [note] = await _notifications(w.owner.id, task_id)
+    assert note.body.startswith("Created release/2026.11.06.208")
+
+
 async def test_failed_turns_never_retry_or_escalate(client, db):
     w, task_id, run = await _freestyle(client, db)
     for i in range(3):
-        await _end(run.id, "failed")
+        await _end(run.id, "failed", reason="agent_error" if i == 0 else None)
         wf = await _wf(task_id)
         assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "reply", None)
         assert wf.failures == 0
+        notes = [n for n in await _notifications(w.owner.id, task_id) if n.kind == "agent_replied"]
+        assert len(notes) == i + 1  # exactly one per failed turn (the person reads it before the next: unread repeats
+        async with SessionLocal() as s:  # for the same task are folded by notify, as for replies)
+            for n in notes:
+                (await s.get(Notification, n.id)).read_at = datetime.now(UTC)
+            await s.commit()
         runs = await _runs(task_id)
         assert len(runs) == i + 1 and runs[-1].id == run.id  # nothing queued after the failure
         if i < 2:
             run = await _queue_turn(task_id, w.owner.id)  # as the person's next message will
     assert not await _events(task_id, "workflow.escalated")
-    assert not await _notifications(w.owner.id, task_id)  # a failure sends nothing
+    notes = await _notifications(w.owner.id, task_id)
+    key = f"PAY-{(await _task(task_id)).number}"
+    assert sorted((n.kind, n.title, n.body) for n in notes) == sorted(
+        [("agent_replied", f"laptop-claude couldn't finish {key}", "agent error")]
+        + [("agent_replied", f"laptop-claude couldn't finish {key}", "the run failed")] * 2
+    )
+    assert all(n.link.startswith("/projects/PAY/board?task=PAY-") for n in notes)
+    assert not [n for n in notes if n.kind == "needs_you"]
 
 
 async def test_message_left_waiting_starts_the_next_turn(client, db):
