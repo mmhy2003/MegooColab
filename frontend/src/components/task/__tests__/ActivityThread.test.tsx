@@ -95,10 +95,48 @@ describe("ActivityThread agent events", () => {
     expect(screen.getByRole("listitem").textContent).toContain("Agent started working");
   });
 
-  it("renders agent messages as plain text", () => {
-    const { container } = render1(agentEvent("g4", "agent_message", { text: "<b>hi</b> **x**" }));
-    expect(container.querySelector("b")).toBeNull();
-    expect(screen.getByRole("listitem").textContent).toContain("<b>hi</b> **x**");
+  it("renders an agent's reply as Markdown, never as raw HTML", () => {
+    const { container } = render1(agentEvent("g4", "agent_message", { text: "<b>hi</b> **x** and `code`\n\n- one\n- two" }));
+    expect(container.querySelector("b")).toBeNull(); // raw HTML is never rendered
+    expect(screen.getByText("x").tagName).toBe("STRONG");
+    expect(screen.getByText("code").tagName).toBe("CODE");
+    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(expect.arrayContaining(["one", "two"]));
+    // one size below a design or plan, marked as the agent's reply
+    const reply = container.querySelector("[data-agent-reply]")!;
+    expect(reply).toHaveTextContent("Ann's Codex");
+    expect(reply.querySelector(".text-\\[13px\\]")).not.toBeNull();
+  });
+
+  it("joins the pieces of one reply into one message", () => {
+    const chunks = [
+      agentEvent("m1", "agent_message", { text: "two Knowledge Base pages describe a **check" }),
+      agentEvent("m2", "agent_message", { text: "_transcript** step and \"Jev\" chec" }),
+      agentEvent("m3", "agent_message", { text: "k that the code doesn't have." }),
+    ];
+    const { container } = render(
+      <ActivityThread items={chunks} columnNames={new Map()} userNames={new Map()} agentNames={new Map([["a1", "Ann's Codex"]])} />,
+    );
+    const replies = container.querySelectorAll("[data-agent-reply]");
+    expect(replies).toHaveLength(1);
+    expect(replies[0]).toHaveTextContent(`two Knowledge Base pages describe a check_transcript step and "Jev" check that the code doesn't have.`);
+    expect(screen.getByText("check_transcript").tagName).toBe("STRONG");
+  });
+
+  it("keeps replies apart across other events and other runs", () => {
+    const list = [
+      agentEvent("m1", "agent_message", { text: "Looking." }),
+      agentEvent("t1", "agent_command", { command: "pytest", exit_code: 0 }),
+      agentEvent("m2", "agent_message", { text: "Tests pass." }),
+      agentEvent("m3", "agent_message", { text: "Next run.", run_id: "r2" }),
+    ];
+    const { container } = render(
+      <ActivityThread items={list} columnNames={new Map()} userNames={new Map()} agentNames={new Map([["a1", "Ann's Codex"]])} />,
+    );
+    expect([...container.querySelectorAll("[data-agent-reply]")].map((r) => r.textContent)).toEqual([
+      expect.stringContaining("Looking."), expect.stringContaining("Tests pass."), expect.stringContaining("Next run."),
+    ]);
+    // a status line stays a plain line
+    expect(screen.getByText(/ran pytest → exit 0/).closest("[data-agent-reply]")).toBeNull();
   });
 
   it("describes the other agent kinds", () => {
