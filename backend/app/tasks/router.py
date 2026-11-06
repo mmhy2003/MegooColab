@@ -50,7 +50,7 @@ async def list_tasks(
     out = await service.tasks_out(db, tasks, user)
     if needs_you:  # PROJ-7: waiting on a human the caller may answer for (same rule as WF-6)
         out = [t for t in out if t.workflow and t.workflow.status == WorkflowStatus.waiting_human
-               and t.workflow.needs != Needs.merge_confirmation and t.workflow.can_act]
+               and t.workflow.needs not in (Needs.merge_confirmation, Needs.reply) and t.workflow.can_act]
     return out
 
 
