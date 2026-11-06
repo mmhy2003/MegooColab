@@ -1,5 +1,5 @@
 """The update check: the newest MegooColab (vX.Y.Z) and runner (runner-vX.Y.Z) releases on GitHub, kept in the
-org settings for the update notices. Every 6 hours and when the worker starts; UPDATE_CHECK=false turns it off."""
+org settings for the update notices. Every hour and when the worker starts; UPDATE_CHECK=false turns it off."""
 
 import logging
 from datetime import UTC, datetime
@@ -15,7 +15,7 @@ from app.updates.versions import parse
 log = logging.getLogger(__name__)
 
 RELEASES_URL = "https://api.github.com/repos/mmhy2003/MegooColab/releases?per_page=100"
-CHECK_SECONDS = 6 * 3600
+CHECK_SECONDS = 3600
 APP_TAG, RUNNER_TAG = "v", "runner-v"
 
 Latest = tuple[str, str] | None  # (version, release page URL)
