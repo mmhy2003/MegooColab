@@ -16,6 +16,20 @@ describe("Markdown", () => {
     expect(container.querySelector("table")).toHaveClass("wrap-break-word");
   });
 
+  it("compact: one size smaller, and links open in a new tab", () => {
+    const { container } = render(<Markdown compact>{"See [the PR](https://git.example.com/pr/7)"}</Markdown>);
+    expect(container.firstElementChild).toHaveClass("text-[13px]");
+    expect(container.firstElementChild).not.toHaveClass("text-sm");
+    const link = screen.getByRole("link", { name: "the PR" });
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("is text-sm by default", () => {
+    const { container } = render(<Markdown>{"x"}</Markdown>);
+    expect(container.firstElementChild).toHaveClass("text-sm");
+  });
+
   it("renders a remote image as a plain link, never loading it", () => {
     const { container } = render(<Markdown>{"![diagram](https://evil.example/x.png)"}</Markdown>);
     expect(container.querySelector("img")).toBeNull();
