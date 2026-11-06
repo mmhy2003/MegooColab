@@ -108,3 +108,11 @@ async def test_the_worker_checks_when_it_starts(db):
     assert "app.updates.check" in HANDLER_MODULES
     await enqueue_startup_jobs()
     assert [j.kind for j in (await db.execute(select(Job))).scalars()] == ["updates.check"]
+
+
+def test_the_worker_checks_every_hour():
+    from app.jobs.queue import PERIODIC
+
+    import app.updates.check  # noqa: F401 - registers the periodic job
+
+    assert PERIODIC["updates.check"] == 3600

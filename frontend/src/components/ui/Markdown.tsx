@@ -112,16 +112,22 @@ function CodeBlock({ node, children, ...rest }: ComponentProps<"pre"> & { node?:
 
 /** Renders user/agent Markdown. Raw HTML is never rendered (react-markdown's default). With `wiki`, Knowledge
  * Base wiki links become links (titles come from `wiki`; a document the reader cannot open shows as restricted).
- * Mentions render as `@Name`. Tables get a grid and scroll sideways; Mermaid diagrams are drawn (MermaidDiagram). */
-export function Markdown({ children, wiki }: { children: string; wiki?: WikiTitles }) {
+ * Mentions render as `@Name`. Tables get a grid and scroll sideways; Mermaid diagrams are drawn (MermaidDiagram).
+ * `compact`: one size below a design or plan (an agent's reply in a thread), its links opening in a new tab. */
+export function Markdown({ children, wiki, compact = false }: { children: string; wiki?: WikiTitles; compact?: boolean }) {
   return (
-    <div className="prose-megoo text-sm leading-relaxed wrap-anywhere [&_a]:underline [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1 [&_h1]:text-lg [&_h2]:text-base [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-surface-2 [&_pre]:p-3 [&_table]:border-collapse [&_td]:border [&_td]:border-line [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:align-top [&_th]:border [&_th]:border-line [&_th]:bg-surface-2 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:align-top [&_ul]:list-disc">
+    <div className={`prose-megoo ${compact ? "text-[13px]" : "text-sm"} leading-relaxed wrap-anywhere [&_a]:underline [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1 [&_h1]:text-lg [&_h2]:text-base [&_li]:ml-5 [&_ol]:list-decimal [&_p]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-surface-2 [&_pre]:p-3 [&_table]:border-collapse [&_td]:border [&_td]:border-line [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:align-top [&_th]:border [&_th]:border-line [&_th]:bg-surface-2 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:align-top [&_ul]:list-disc`}>
       <ReactMarkdown
         remarkPlugins={wiki ? [remarkGfm, remarkMentions(), remarkWikiLinks(wiki)] : [remarkGfm, remarkMentions()]}
         // data: images are the only ones that may render inline; the default transform would strip them
         urlTransform={(url, key) => (key === "src" && /^data:image\//i.test(url) ? url : defaultUrlTransform(url))}
         components={{
           pre: CodeBlock,
+          ...(compact && {
+            a: ({ href, children }) => (
+              <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+            ),
+          }),
           // a wide table scrolls inside its box instead of widening the page
           table: ({ children, className }) => (
             <ScrollX className="my-2">

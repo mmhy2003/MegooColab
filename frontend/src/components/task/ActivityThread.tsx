@@ -15,6 +15,7 @@ import { Markdown } from "@/components/ui/Markdown";
 import { QuestionCard } from "@/components/workflow/QuestionCard";
 import { ReviewResult } from "@/components/workflow/ReviewFindings";
 import { stateText } from "@/lib/agentMessages";
+import { joinAgentMessages } from "@/lib/agentReplies";
 import { runReasonText } from "@/lib/agents";
 import { describeGitEvent, type GitLine } from "@/lib/gitActivity";
 import type { ImageRef } from "@/lib/images";
@@ -72,7 +73,8 @@ function num(v: unknown): number {
   return typeof v === "number" ? v : 0;
 }
 
-/** Agent-produced fields are shown as plain text only, never as markup. */
+/** Agent-produced fields are shown as plain text only, never as markup (its replies render as Markdown in their own
+ * row, AgentReplyRow, never as raw HTML). */
 function describeAgentEvent(kind: string, data: Record<string, unknown>, byPerson: boolean): string | undefined {
   const reason = str(data.reason);
   switch (kind) {
@@ -262,7 +264,7 @@ export function ActivityThread({
       </button>
     )}
     <ol className="space-y-3">
-      {items.map((item) => {
+      {joinAgentMessages(items).map((item) => {
         const agentId = str(item.data?.agent_id);
         const isAgent = item.kind?.startsWith("agent_") && !item.actor;
         const actor = item.actor?.name ?? (isAgent ? (agentId && agentNames?.get(agentId)) || "Agent" : "Someone");
@@ -305,6 +307,9 @@ export function ActivityThread({
         if (kind === "status_changed" && data.by === "workflow") {
           const column = columnNames.get(str(data.to_column) ?? "") ?? "another column";
           return <EventRow key={item.id} at={item.at} text={`Moved to ${column} by the workflow`} />;
+        }
+        if (kind === "agent_message" && !item.actor) {
+          return <AgentReplyRow key={item.id} at={item.at} who={actor} text={str(data.text) ?? ""} />;
         }
         const git = describeGitEvent(kind, data);
         if (git) return <GitEventRow key={item.id} at={item.at} line={git} />;
@@ -371,6 +376,23 @@ function EventRow({
         {children}
         <ImageGallery images={images} />
       </span>
+      <span className="ml-auto whitespace-nowrap">{when(at)}</span>
+    </li>
+  );
+}
+
+/** What an agent said, as Markdown one size below a design or plan, with a cyan edge marking it as the agent's
+ * reply. Raw HTML is never rendered and remote images stay links (Markdown). */
+function AgentReplyRow({ at, who, text }: { at: string; who: string; text: string }) {
+  return (
+    <li data-agent-reply className="flex items-start gap-2 pl-1 text-xs text-muted-foreground">
+      <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan" />
+      <div className="min-w-0 flex-1">
+        <span className="text-fg">{who}</span>
+        <div className="mt-1 rounded-r border-l-2 border-cyan bg-surface-2/70 px-3 py-0.5 text-fg">
+          <Markdown compact>{text}</Markdown>
+        </div>
+      </div>
       <span className="ml-auto whitespace-nowrap">{when(at)}</span>
     </li>
   );
