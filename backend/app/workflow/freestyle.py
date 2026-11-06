@@ -2,10 +2,10 @@
 that does what it asks and replies.
 
 When a turn ends:
-  an open question it asked      -> wait for the answer (Needs.question)
+  an open question it asked       -> wait for the answer (Needs.question)
   an answer that never reached it -> deliver it (the session resumes with it)
-  a message still waiting          -> the next turn starts on its own
-  otherwise                        -> wait for the next message (Needs.reply), and tell the chat's starter once
+  a message sent since it queued  -> the next turn starts on its own
+  otherwise                       -> wait for the next message (Needs.reply), and tell the chat's starter once
 A failed turn, or one cancelled by nothing a person did, waits for the next message too: never a retry, never an
 escalation, and `wf.failures` is not counted (a turn that always fails cannot loop).
 """
@@ -43,10 +43,20 @@ async def handle_turn_end(db: AsyncSession, wf: TaskWorkflow, task: Task, run: A
     if pending is not None:  # answered while the turn still ran: the session resumes with the answer
         await questions.deliver(db, wf, task, pending, requested_by=await engine.owner_id(db, run))
         return
+    # a message sent after this turn was queued, and still unread (it came while the turn was queued, or couldn't be
+    # read while it worked), is the next turn. One the turn started with and gave back unread (an agent that never
+    # worked, release_on_run_end) waits for the turn the person's next message starts: it must not loop.
     waiting = await db.scalar(
-        select(Comment.id).where(Comment.task_id == task.id, Comment.delivery == Delivery.waiting).limit(1)
+        select(Comment.id)
+        .where(
+            Comment.task_id == task.id,
+            Comment.to_agent_id.is_not(None),
+            Comment.delivery == Delivery.waiting,
+            Comment.created_at > run.created_at,
+        )
+        .limit(1)
     )
-    if waiting is not None:  # sent while the turn was queued, or never read while it worked: it is the next turn
+    if waiting is not None:
         await queue_turn(db, wf, task, requested_by=await engine.owner_id(db, run))
         return
     await engine.wait_for(db, wf, Needs.reply, notify=False)  # not a Needs you item: the turn just replied

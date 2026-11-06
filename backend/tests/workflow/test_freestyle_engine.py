@@ -2,6 +2,7 @@
 escalates (freestyle chats, Task 2). Until chats start freestyle rounds, these run on a fresh board task."""
 
 import uuid
+from datetime import timedelta
 
 import pytest
 from fastapi import HTTPException
@@ -15,7 +16,7 @@ from app.tasks.models import Comment, Delivery, Task
 from app.workflow import engine, freestyle
 from app.workflow.models import RunRole, WorkflowQuestion
 from tests.chats.helpers import world
-from tests.workflow.test_engine import _events, _runs, _wf
+from tests.workflow.test_engine import _events, _finish, _runs, _wf
 
 
 async def _end(run_id, status="completed", summary=None):
@@ -50,10 +51,11 @@ async def _queue_turn(task_id, owner_id) -> AgentRun:
         return run
 
 
-async def _waiting_comment(task_id, w, body="also tag it"):
+async def _waiting_comment(task_id, w, body="also tag it", *, after: AgentRun, **fields):
+    """A message for the agent, sent a second after `after` was queued (while that turn was queued or working)."""
     async with SessionLocal() as s:
-        s.add(Comment(task_id=task_id, author_user_id=w.owner.id, body_md=body,
-                      to_agent_id=uuid.UUID(w.agent["id"]), delivery=Delivery.waiting))
+        s.add(Comment(task_id=task_id, author_user_id=w.owner.id, body_md=body, to_agent_id=uuid.UUID(w.agent["id"]),
+                      delivery=Delivery.waiting, created_at=after.created_at + timedelta(seconds=1), **fields))
         await s.commit()
 
 
@@ -108,13 +110,13 @@ async def test_failed_turns_never_retry_or_escalate(client, db):
 
 async def test_message_left_waiting_starts_the_next_turn(client, db):
     w, task_id, run = await _freestyle(client, db)
-    await _waiting_comment(task_id, w)
+    await _waiting_comment(task_id, w, after=run)
     await _end(run.id, "completed")
     runs = await _runs(task_id)
     assert len(runs) == 2 and (runs[1].workflow_role, runs[1].status) == ("freestyle", "queued")
     assert (await _wf(task_id)).status == "running"
     # after a failed turn a waiting message does not start another one: it goes with the next message's turn
-    await _waiting_comment(task_id, w, "and push it")
+    await _waiting_comment(task_id, w, "and push it", after=runs[1])
     await _end(runs[1].id, "failed")
     assert len(await _runs(task_id)) == 2
     wf = await _wf(task_id)
@@ -165,3 +167,21 @@ async def test_unasked_cancel_waits_but_a_person_cancel_pauses(client, db):
         await s.commit()
     await _end(run.id, "cancelled")
     assert (await _wf(task_id)).status == "paused"
+
+
+async def test_a_turn_with_no_output_does_not_restart_on_its_own_message(client, db):
+    """The message the turn started with comes back to waiting when the agent never worked (release_on_run_end):
+    it goes with the turn the person's next message starts, not a turn of its own, again and again."""
+    w, task_id, run = await _freestyle(client, db)
+    async with SessionLocal() as s:  # what the turn's start did: it took the message sent before it was queued
+        s.add(Comment(task_id=task_id, author_user_id=w.owner.id, body_md="bump the version",
+                      to_agent_id=uuid.UUID(w.agent["id"]), delivery=Delivery.given_at_start, delivery_run_id=run.id,
+                      created_at=run.created_at - timedelta(seconds=1)))
+        await s.commit()
+    await _finish(w.owner.id, run, "completed")  # the real end of a run: no agent output, so the message is released
+    async with SessionLocal() as s:
+        [c] = (await s.execute(select(Comment).where(Comment.task_id == task_id))).scalars().all()
+        assert c.delivery == "waiting"
+    assert len(await _runs(task_id)) == 1
+    wf = await _wf(task_id)
+    assert (wf.status, wf.needs) == ("waiting_human", "reply")

@@ -565,8 +565,11 @@ async def _owner_deactivated(db: AsyncSession, run: AgentRun) -> bool:
 # ---- start / pause / resume (AGT-5: can_use_agent) -----------------------------------
 
 
-async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
-    """Start the agent-driven workflow at brainstorm with a fresh brainstorm run."""
+async def _begin(
+    db: AsyncSession, user: User, task: Task, *, stage: Stage, enforcement: Enforcement
+) -> TaskWorkflow:
+    """What starting a workflow and a freestyle round share: the checks, a clean workflow at `stage`, the started
+    event. The caller queues the first run."""
     if task.type not in WORKFLOW_TYPES:  # plan subtasks cannot hang under an epic or a subtask
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
     agent = await _usable_agent(db, user, task)
@@ -579,9 +582,9 @@ async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     if wf.status == WorkflowStatus.finished:
         raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
     wf.driver = Driver.runner
-    wf.stage = Stage.brainstorm
+    wf.stage = stage
     wf.needs = None
-    wf.enforcement = Enforcement.enforced
+    wf.enforcement = enforcement
     wf.agent_id = agent.id
     wf.current_step = None
     wf.review_round = 0
@@ -592,37 +595,20 @@ async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     wf.started_at = _now()
     wf.finished_at = None
     await record_workflow_event(db, task, user.id, "workflow.started", {"agent_id": str(agent.id)})
+    return wf
+
+
+async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
+    """Start the agent-driven workflow at brainstorm with a fresh brainstorm run."""
+    wf = await _begin(db, user, task, stage=Stage.brainstorm, enforcement=Enforcement.enforced)
     await enqueue(db, wf, task, RunRole.brainstorm, requested_by=user.id)
     return wf
 
 
 async def start_freestyle(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
-    """Start a freestyle round (app.workflow.freestyle): no stages and no reviews, the first turn queued. The
-    checks are start's."""
-    if task.type not in WORKFLOW_TYPES:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
-    agent = await _usable_agent(db, user, task)
-    wf = await lock_task(db, task, create=True)
-    if await db.scalar(select(Task.type).where(Task.id == task.id)) not in WORKFLOW_TYPES:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
-    if wf.status in (*ACTIVE, WorkflowStatus.paused):
-        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_active")
-    if wf.status == WorkflowStatus.finished:
-        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
-    wf.driver = Driver.runner
-    wf.stage = Stage.build
-    wf.needs = None
-    wf.enforcement = Enforcement.unenforced  # nothing is reviewed: the agent does what the person asks
-    wf.agent_id = agent.id
-    wf.current_step = None
-    wf.review_round = 0
-    wf.failures = 0
-    wf.nudged = False
-    wf.escalation_reason = None
-    wf.sessions.clear()
-    wf.started_at = _now()
-    wf.finished_at = None
-    await record_workflow_event(db, task, user.id, "workflow.started", {"agent_id": str(agent.id)})
+    """Start a freestyle round (app.workflow.freestyle): no stages and no reviews (nothing is enforced: the agent
+    does what the person asks), the first turn queued."""
+    wf = await _begin(db, user, task, stage=Stage.build, enforcement=Enforcement.unenforced)
     await freestyle.queue_turn(db, wf, task, requested_by=user.id)
     return wf
 
