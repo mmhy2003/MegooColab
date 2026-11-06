@@ -14,9 +14,12 @@ MAX_MESSAGE = 8_000
 ChatState = Literal[
     "talking", "question", "design_approval", "plan_approval", "building", "in_review", "human_code_review",
     "merging", "escalation", "offline", "finished", "ended",
+    "working", "reply",  # a freestyle chat: a turn queued or running; waiting for the person's next message
 ]
-# what a message typed in the chat does now (for the viewer); "closed": it can't be sent
-Intent = Literal["answer", "changes", "tell", "restart", "retry", "new_round", "closed"]
+# what a message typed in the chat does now (for the viewer); "closed": it can't be sent; "turn": a freestyle chat's
+# next turn starts with it
+Intent = Literal["answer", "changes", "tell", "restart", "retry", "new_round", "turn", "closed"]
+ChatModeName = Literal["workflow", "freestyle"]
 
 
 class ChatIn(BaseModel):
@@ -24,6 +27,8 @@ class ChatIn(BaseModel):
     agent_id: uuid.UUID | None = None  # None: any free agent the person may use on the project
     message: NoNulStr = Field(min_length=1, max_length=MAX_MESSAGE)
     image_ids: list[uuid.UUID] = Field(default=[], max_length=6)  # unsent images (POST /api/images) it sends
+    # workflow: each round runs the task workflow; freestyle: one round, each message a turn
+    mode: ChatModeName = "workflow"
 
 
 class MessageIn(BaseModel):
@@ -78,6 +83,7 @@ class ChatOut(BaseModel):
     project_key: str
     title: str
     status: ChatStatus
+    mode: ChatModeName
     agent: ChatAgentOut | None
     started_by: UserOut | None
     created_at: datetime

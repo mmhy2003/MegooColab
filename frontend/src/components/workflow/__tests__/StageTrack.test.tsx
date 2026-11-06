@@ -44,6 +44,13 @@ describe("StageTrack", () => {
     expect(container.querySelector(".text-pink")).toBeNull();
   });
 
+  it("a reply being awaited is not a pink waiting stop", () => {
+    const { container } = render(<StageTrack stage="build" status="waiting_human" needs="reply" canAct compact />);
+    expect(screen.queryByText(/for you/i)).not.toBeInTheDocument();
+    expect(container.querySelector(".text-pink")).toBeNull();
+    expect(container.querySelector('[data-state="current"]')).not.toHaveClass("border-pink");
+  });
+
   it("states running, paused and idle in text, not only by animation", () => {
     const { rerender } = render(<StageTrack stage="build" status="paused" compact />);
     expect(screen.getByText(/paused/)).toBeInTheDocument();

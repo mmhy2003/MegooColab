@@ -28,6 +28,7 @@ from app.runner.registry import (
     registry,
 )
 from app.tasks.models import Attachment, Comment, Delivery, Task, TaskEvent
+from app.workflow.models import RunRole
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,15 @@ STEER_PREFIX = (
     "conflicts with the approved design or plan, follow the instruction, bring the design or plan in line with "
     "it, and say what you changed.\n\n"
 )
+# a freestyle run (app.workflow.freestyle) has no design, plan or reviewer: the person it works with just asks
+FREESTYLE_RULE = "The person you are working with sent you this. Do what it asks."
+FREESTYLE_STEER_PREFIX = (
+    "MegooColab: the person you are working with sent you this while you work. Do what it asks.\n\n"
+)
+
+
+def is_freestyle(run: AgentRun | None) -> bool:
+    return run is not None and run.workflow_role == RunRole.freestyle
 
 
 def frame_instruction(sender: str, at: datetime, body: str, images: Sequence[str] = ()) -> str:
@@ -85,17 +95,21 @@ async def framed_messages(db: AsyncSession, task: Task, states: tuple[Delivery, 
     return [(c, frame_instruction(name or "someone", c.created_at, c.body_md, names.get(c.id, ()))) for c, name in rows]
 
 
-def fit(heading: str, framed: list[str], budget: int = INSTRUCTIONS_CHARS) -> tuple[str | None, int]:
-    """`heading`, the rule, and the framed messages, and how many of the oldest were dropped (with a note) to fit
-    `budget`. The newest is always kept whole: one message (at most 8,000 characters) fits with room to spare."""
+def fit(
+    heading: str, framed: list[str], budget: int = INSTRUCTIONS_CHARS, *, freestyle: bool = False
+) -> tuple[str | None, int]:
+    """`heading`, the rule (freestyle's own for a freestyle run), and the framed messages, and how many of the oldest
+    were dropped (with a note) to fit `budget`. The newest is always kept whole: one message (at most 8,000
+    characters) fits with room to spare."""
     if not framed:
         return None, 0
     kept = list(framed)
     dropped = 0
+    rule = FREESTYLE_RULE if freestyle else RULE
 
     def render() -> str:
         note = f"\n\n({dropped} older instructions omitted to fit.)" if dropped else ""
-        return f"{heading}\n{RULE}\n\n" + "\n\n".join(kept) + note
+        return f"{heading}\n{rule}\n\n" + "\n\n".join(kept) + note
 
     while len(render()) > budget and len(kept) > 1:
         kept.pop(0)
@@ -103,14 +117,17 @@ def fit(heading: str, framed: list[str], budget: int = INSTRUCTIONS_CHARS) -> tu
     return render(), dropped
 
 
-def section(heading: str, framed: list[str], budget: int = INSTRUCTIONS_CHARS) -> str | None:
-    return fit(heading, framed, budget)[0]
+def section(
+    heading: str, framed: list[str], budget: int = INSTRUCTIONS_CHARS, *, freestyle: bool = False
+) -> str | None:
+    return fit(heading, framed, budget, freestyle=freestyle)[0]
 
 
-async def kept_in_mind(db: AsyncSession, task: Task) -> str | None:
-    """Every delivered message, for every later run on the task."""
+async def kept_in_mind(db: AsyncSession, task: Task, *, freestyle: bool = False) -> str | None:
+    """Every delivered message, for every later run on the task. Not for a freestyle run: starting fresh it gets the
+    conversation so far (app.workflow.freestyle), resuming only its new messages."""
     messages = await framed_messages(db, task, DELIVERED)
-    return section("## Instructions from people on this task", [text for _, text in messages])
+    return section("## Instructions from people on this task", [text for _, text in messages], freestyle=freestyle)
 
 
 
@@ -138,7 +155,7 @@ async def take_waiting(db: AsyncSession, run: AgentRun, task: Task) -> tuple[str
     now = datetime.now(UTC)
     names = await _image_names(db, [c.id for c, _ in rows])
     framed = [frame_instruction(name or "someone", c.created_at, c.body_md, names.get(c.id, ())) for c, name in rows]
-    text, dropped = fit("## New instructions", framed)
+    text, dropped = fit("## New instructions", framed, freestyle=is_freestyle(run))
     given = [c for c, _ in rows[dropped:]]  # the oldest cut to fit stay waiting, for the next run
     for c in given:
         c.delivery = Delivery.given_at_start
@@ -214,7 +231,8 @@ async def steer_after_commit(comment_id: uuid.UUID) -> None:
         comment.delivery_run_id = run.id
         comment.delivery_error = None
         names = [a.filename for a in images]
-        text = STEER_PREFIX + frame_instruction(await _sender(db, comment), comment.created_at, comment.body_md, names)
+        prefix = FREESTYLE_STEER_PREFIX if is_freestyle(run) else STEER_PREFIX
+        text = prefix + frame_instruction(await _sender(db, comment), comment.created_at, comment.body_md, names)
         image_delivery.mark_sent(images, run.id, delivered=False)  # delivered once the runner says injected
         await _changed(db, task.id)
         await db.commit()

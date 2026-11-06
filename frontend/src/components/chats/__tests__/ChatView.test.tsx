@@ -238,4 +238,20 @@ describe("ChatView expanded", () => {
     await userEvent.keyboard("{Escape}");
     expect(card()).toHaveClass("md:fixed");
   });
+
+  it("a freestyle chat shows a Freestyle chip instead of the progress steps", async () => {
+    const c = chat({ mode: "freestyle", state: "reply", intent: "turn" });
+    show(c);
+    expect(await screen.findByText("Freestyle")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Progress" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /step \d of 5/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText("waiting for your reply").length).toBeGreaterThan(0);
+    expect(screen.getByText("laptop-claude starts working on your message.")).toBeInTheDocument();
+  });
+
+  it("a workflow chat has no Freestyle chip and still shows the progress", async () => {
+    show(chat());
+    expect(await screen.findByRole("list", { name: "Progress" })).toBeInTheDocument();
+    expect(screen.queryByText("Freestyle")).not.toBeInTheDocument();
+  });
 });

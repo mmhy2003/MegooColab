@@ -44,6 +44,7 @@ class Needs(StrEnum):
     human_code_review = "human_code_review"
     # an agent reviewed and merged the pull request: MegooColab waits to see the merge on the host, asking nobody
     merge_confirmation = "merge_confirmation"
+    reply = "reply"  # a freestyle chat: the agent answered and waits for the person's next message
 
 
 # the waits for the pull request's merge: every logic check treats them alike; only Needs you, the waiting counts,
@@ -74,6 +75,7 @@ class RunRole(StrEnum):
     finish = "finish"
     pr_fix = "pr_fix"  # changes requested on the pull request (piece 3): fix, push to the same branch
     pr_review = "pr_review"  # an agent reviews the pull request on the host and merges it (piece 4)
+    freestyle = "freestyle"  # one turn of a freestyle chat: do what the person asks, then reply
 
 
 class FinishingOption(StrEnum):

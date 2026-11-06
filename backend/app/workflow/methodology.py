@@ -21,6 +21,7 @@ KEYS: dict[Stage, list[str]] = {
 OTHER_KEYS: dict[str, list[str]] = {
     "kb": ["kb_draft"],  # writing a Knowledge Base draft with a person
     "crons": ["cron"],  # a project's scheduled job
+    "chats": ["freestyle"],  # a freestyle chat: one turn of a direct conversation
 }
 ALL_KEYS: list[str] = [k for keys in (*KEYS.values(), *OTHER_KEYS.values()) for k in keys]
 STAGE_OF: dict[str, Stage] = {k: stage for stage, keys in KEYS.items() for k in keys}

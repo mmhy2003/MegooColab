@@ -4544,6 +4544,12 @@ export interface components {
              * @default []
              */
             image_ids: string[];
+            /**
+             * Mode
+             * @default workflow
+             * @enum {string}
+             */
+            mode: "workflow" | "freestyle";
         };
         /** ChatOut */
         ChatOut: {
@@ -4557,6 +4563,11 @@ export interface components {
             /** Title */
             title: string;
             status: components["schemas"]["ChatStatus"];
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "workflow" | "freestyle";
             agent: components["schemas"]["ChatAgentOut"] | null;
             started_by: components["schemas"]["UserOut"] | null;
             /**
@@ -4573,13 +4584,13 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "talking" | "question" | "design_approval" | "plan_approval" | "building" | "in_review" | "human_code_review" | "merging" | "escalation" | "offline" | "finished" | "ended";
+            state: "talking" | "question" | "design_approval" | "plan_approval" | "building" | "in_review" | "human_code_review" | "merging" | "escalation" | "offline" | "finished" | "ended" | "working" | "reply";
             /**
              * Intent
              * @default closed
              * @enum {string}
              */
-            intent: "answer" | "changes" | "tell" | "restart" | "retry" | "new_round" | "closed";
+            intent: "answer" | "changes" | "tell" | "restart" | "retry" | "new_round" | "turn" | "closed";
             /** Can Act */
             can_act: boolean;
             /** Rounds */
@@ -5898,7 +5909,7 @@ export interface components {
          * Kind
          * @enum {string}
          */
-        Kind: "needs_you" | "assigned" | "mentioned" | "agent_offline" | "question_waiting";
+        Kind: "needs_you" | "assigned" | "mentioned" | "agent_offline" | "question_waiting" | "agent_replied";
         /** LabelIn */
         LabelIn: {
             /** Name */
@@ -6097,7 +6108,7 @@ export interface components {
              * Intent
              * @enum {string}
              */
-            intent: "answer" | "changes" | "tell" | "restart" | "retry" | "new_round" | "closed";
+            intent: "answer" | "changes" | "tell" | "restart" | "retry" | "new_round" | "turn" | "closed";
             /** Round Key */
             round_key: string;
         };
@@ -6273,7 +6284,7 @@ export interface components {
          * Needs
          * @enum {string}
          */
-        Needs: "question" | "design_approval" | "plan_approval" | "escalation" | "human_code_review" | "merge_confirmation";
+        Needs: "question" | "design_approval" | "plan_approval" | "escalation" | "human_code_review" | "merge_confirmation" | "reply";
         /** NeedsCount */
         NeedsCount: {
             /** Needs You */

@@ -77,6 +77,7 @@ ROLE_POLICY: dict[RunRole, RunPolicy] = {
     # the reviewer runs the host's CLI (gh, glab, tea), which the read-only policy refuses; R1 still holds it to
     # changing nothing in the repository
     RunRole.pr_review: RunPolicy.workspace,
+    RunRole.freestyle: RunPolicy.workspace,  # a direct conversation: it may change the repository, nothing is reviewed
 }
 READ_ONLY_ROLES = {role for role, policy in ROLE_POLICY.items() if policy == RunPolicy.read_only}
 R1_ROLES = READ_ONLY_ROLES | {RunRole.pr_review}  # runs that must leave the repository as they found it
@@ -564,8 +565,11 @@ async def _owner_deactivated(db: AsyncSession, run: AgentRun) -> bool:
 # ---- start / pause / resume (AGT-5: can_use_agent) -----------------------------------
 
 
-async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
-    """Start the agent-driven workflow at brainstorm with a fresh brainstorm run."""
+async def _begin(
+    db: AsyncSession, user: User, task: Task, *, stage: Stage, enforcement: Enforcement
+) -> TaskWorkflow:
+    """What starting a workflow and a freestyle round share: the checks, a clean workflow at `stage`, the started
+    event. The caller queues the first run."""
     if task.type not in WORKFLOW_TYPES:  # plan subtasks cannot hang under an epic or a subtask
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
     agent = await _usable_agent(db, user, task)
@@ -578,9 +582,9 @@ async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     if wf.status == WorkflowStatus.finished:
         raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
     wf.driver = Driver.runner
-    wf.stage = Stage.brainstorm
+    wf.stage = stage
     wf.needs = None
-    wf.enforcement = Enforcement.enforced
+    wf.enforcement = enforcement
     wf.agent_id = agent.id
     wf.current_step = None
     wf.review_round = 0
@@ -591,7 +595,21 @@ async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     wf.started_at = _now()
     wf.finished_at = None
     await record_workflow_event(db, task, user.id, "workflow.started", {"agent_id": str(agent.id)})
+    return wf
+
+
+async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
+    """Start the agent-driven workflow at brainstorm with a fresh brainstorm run."""
+    wf = await _begin(db, user, task, stage=Stage.brainstorm, enforcement=Enforcement.enforced)
     await enqueue(db, wf, task, RunRole.brainstorm, requested_by=user.id)
+    return wf
+
+
+async def start_freestyle(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
+    """Start a freestyle round (app.workflow.freestyle): no stages and no reviews (nothing is enforced: the agent
+    does what the person asks), the first turn queued."""
+    wf = await _begin(db, user, task, stage=Stage.build, enforcement=Enforcement.unenforced)
+    await freestyle.queue_turn(db, wf, task, requested_by=user.id)
     return wf
 
 
@@ -942,7 +960,10 @@ async def on_run_finished(db: AsyncSession, run: AgentRun) -> None:
         log.exception("workflow: handling the end of run %s failed", run.id)
         wf = await lock_workflow(db, run.task_id)
         if wf is not None and wf.status == WorkflowStatus.running:
-            await escalate(db, wf, "engine_error")  # a human can retry
+            if run.workflow_role == RunRole.freestyle:  # a freestyle round never escalates: the next message retries
+                await wait_for(db, wf, Needs.reply, notify=False)
+            else:
+                await escalate(db, wf, "engine_error")  # a human can retry
     finally:
         _handling.reset(token)
 
@@ -977,6 +998,9 @@ async def _on_run_finished(db: AsyncSession, run: AgentRun) -> None:
         # the agent's owner is gone: nothing could ever run, so the workflow pauses instead of retrying
         wf.status = WorkflowStatus.paused
         await record_workflow_event(db, task, None, "workflow.paused", {"reason": "owner_deactivated"})
+        return
+    if run.status in (RunStatus.failed, RunStatus.cancelled) and role == RunRole.freestyle:
+        await freestyle.wait_after_failure(db, wf, task, run)  # never retried: it waits for the next message
         return
     if run.status in (RunStatus.failed, RunStatus.cancelled):  # a cancel nobody asked for counts as a failure
         wf.failures += 1
@@ -1074,6 +1098,6 @@ async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
     })
 
 
-# The build and finish stages register their role and accept handlers on import; importing them here means every
-# user of the engine (run ends, escalation decisions) has them. Last, as they import this module.
-from app.workflow import build, finish  # noqa: F401
+# The build and finish stages and freestyle turns register their role and accept handlers on import; importing them
+# here means every user of the engine (run ends, escalation decisions) has them. Last, as they import this module.
+from app.workflow import build, finish, freestyle  # noqa: F401

@@ -12,12 +12,12 @@ async def _count(db) -> int:
     return (await db.execute(select(func.count()).select_from(MethodologyVersion))).scalar_one()
 
 
-async def test_seed_creates_v1_for_all_thirteen_keys_once(db):
+async def test_seed_creates_v1_for_all_fourteen_keys_once(db):
     await methodology.seed_defaults(db)
     await db.commit()
     await methodology.seed_defaults(db)
     await db.commit()
-    assert await _count(db) == 13
+    assert await _count(db) == 14
     versions = set((await db.execute(select(MethodologyVersion.version))).scalars())
     assert versions == {1}
     assert sorted(methodology.ALL_KEYS) == sorted(
@@ -53,7 +53,7 @@ async def test_admin_edit_creates_new_version_and_audits(client, db):
     assert r.json()["version"] == 2 and r.json()["body_md"] == "new plan text"
     assert (await methodology.current(db, "plan")).version == 2
     listed = {i["key"]: i for i in (await client.get("/api/methodology")).json()}
-    assert len(listed) == 13 and listed["plan"]["version"] == 2 and listed["plan"]["stage"] == "plan"
+    assert len(listed) == 14 and listed["plan"]["version"] == 2 and listed["plan"]["stage"] == "plan"
     versions = (await client.get("/api/methodology/plan/versions")).json()
     assert [v["version"] for v in versions] == [2, 1]
     old = await client.get("/api/methodology/plan/versions/1")
@@ -105,7 +105,7 @@ async def test_lifespan_seeds_defaults(app, db, monkeypatch):
     monkeypatch.setattr("app.main.hub.ready.wait", _noop)
     async with app.router.lifespan_context(app):
         pass
-    assert await _count(db) == 13
+    assert await _count(db) == 14
 
 
 async def _noop(*a, **k):
@@ -119,7 +119,7 @@ async def test_member_cannot_edit_403(client, db):
     await login(client, member)
     assert (await client.get("/api/methodology")).status_code == 200
     assert (await client.put("/api/methodology/plan", json={"body_md": "x"})).status_code == 403
-    assert await _count(db) == 13
+    assert await _count(db) == 14
 
 
 async def test_unknown_key_404(client, db):

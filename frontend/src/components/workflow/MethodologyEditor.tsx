@@ -16,7 +16,7 @@ import { DISCARD, useUnsavedGuard } from "@/lib/unsaved";
 export const MAX_CHARS = 50_000;
 
 // the workflow's stages, then the texts of runs outside a task's workflow
-export const METHODOLOGY_STAGES = ["brainstorm", "design", "plan", "build", "review", "done", "kb", "crons"] as const;
+export const METHODOLOGY_STAGES = ["brainstorm", "design", "plan", "build", "review", "done", "chats", "kb", "crons"] as const;
 export type MethodologyStage = (typeof METHODOLOGY_STAGES)[number];
 
 const STAGE_CARDS: { id: MethodologyStage; label: string; keys: string[] }[] = [
@@ -26,6 +26,7 @@ const STAGE_CARDS: { id: MethodologyStage; label: string; keys: string[] }[] = [
   { id: "build", label: "Build", keys: ["build_implement", "build_step_review", "build_step_fix"] },
   { id: "review", label: "Review", keys: ["review_final", "review_fix"] },
   { id: "done", label: "Done", keys: ["finish", "pr_fix", "pr_review"] },
+  { id: "chats", label: "Chats", keys: ["freestyle"] },
   { id: "kb", label: "Knowledge base", keys: ["kb_draft"] },
   { id: "crons", label: "Crons", keys: ["cron"] },
 ];

@@ -14,7 +14,7 @@ from app.agents.models import Agent, AgentBinding
 from app.agents.service import can_use_agent, is_usable_binding, owner_can_access
 from app.auth.models import Role, User
 from app.auth.schemas import UserOut
-from app.chats.models import Chat, ChatStatus
+from app.chats.models import Chat, ChatMode, ChatStatus
 from app.chats.schemas import (
     BoardDefaults,
     BoardIn,
@@ -56,6 +56,7 @@ NEEDS_STATE: dict[Needs, ChatState] = {
     Needs.escalation: "escalation",
     Needs.human_code_review: "human_code_review",
     Needs.merge_confirmation: "merging",  # an agent merged: not a wait on anyone
+    Needs.reply: "reply",  # a freestyle turn replied: the person's next message is the next turn
 }
 
 
@@ -205,7 +206,8 @@ async def _chosen_agent(db: AsyncSession, user: User, project: Project, agent_id
 async def create_round(
     db: AsyncSession, user: User, chat: Chat, message: str, *, branch_from: str | None = None
 ) -> Task:
-    """The next round: a task kept off the board, assigned to the chat's agent, its workflow started."""
+    """The next round: a task kept off the board, assigned to the chat's agent, its workflow started (a freestyle
+    chat's one round: its first turn)."""
     from app.tasks.service import create_task  # local: the task modules import this one
     from app.workflow import engine
 
@@ -218,7 +220,10 @@ async def create_round(
                    branch_from=branch_from),
         chat_id=chat.id, chat_round=n + 1,
     )
-    await engine.start(db, user, task)
+    if chat.mode == ChatMode.freestyle:
+        await engine.start_freestyle(db, user, task)
+    else:
+        await engine.start(db, user, task)
     chat.last_activity_at = _now()
     return task
 
@@ -226,7 +231,8 @@ async def create_round(
 async def start_chat(db: AsyncSession, user: User, data: ChatIn) -> Chat:
     project = await get_project_for(db, user, data.project_key, write=True)
     agent = await _chosen_agent(db, user, project, data.agent_id)
-    chat = Chat(project_id=project.id, started_by=user.id, agent_id=agent.id, title=first_line(data.message))
+    chat = Chat(project_id=project.id, started_by=user.id, agent_id=agent.id, title=first_line(data.message),
+                mode=ChatMode(data.mode))
     db.add(chat)
     await db.flush()
     task = await create_round(db, user, chat, data.message)
@@ -269,6 +275,8 @@ def chat_state(chat: Chat, wf: TaskWorkflow | None, *, run_queued: bool, agent_o
         return NEEDS_STATE[Needs(wf.needs)]
     if run_queued and not agent_online:
         return "offline"
+    if chat.mode == ChatMode.freestyle:  # no stages: a turn is queued or running (or paused, until a message)
+        return "working"
     if wf.stage == Stage.review:
         return "in_review"
     if wf.stage == Stage.build:
@@ -314,7 +322,7 @@ async def chat_out(db: AsyncSession, chat: Chat, viewer: User | None) -> ChatOut
         viewer, latest, latest_wf, await engine.manages(db, viewer, project), agent.owner_id if agent else None
     )
     return ChatOut(
-        id=chat.id, project_key=project.key, title=chat.title, status=chat.status,
+        id=chat.id, project_key=project.key, title=chat.title, status=chat.status, mode=chat.mode,
         agent=ChatAgentOut(id=agent.id, name=agent.name, program=agent.program) if agent else None,
         started_by=UserOut.model_validate(starter) if starter else None,
         created_at=chat.created_at, last_activity_at=chat.last_activity_at, state=state, can_act=acting,
@@ -339,11 +347,15 @@ DECIDED_BY_MESSAGE = {Needs.design_approval: DocKind.design, Needs.plan_approval
 
 async def intent(db: AsyncSession, chat: Chat, task: Task | None, wf: TaskWorkflow | None) -> Intent:
     """What a message typed now does: answer the agent's question, ask for changes to the design or plan waiting,
-    tell the working agent, start it again, retry an escalated round with it, or start the next round."""
+    tell the working agent, start it again, retry an escalated round with it, or start the next round. In a
+    freestyle chat: answer, tell, start it again, or start the next turn (it has one round, no documents and no
+    escalations)."""
     from app.workflow import engine
 
     if chat.status == ChatStatus.ended or task is None or wf is None:
         return "closed"
+    if chat.mode == ChatMode.freestyle:
+        return await _freestyle_intent(db, task, wf)
     if wf.status == WorkflowStatus.finished:
         return "new_round"
     if wf.needs == Needs.question:
@@ -361,6 +373,22 @@ async def intent(db: AsyncSession, chat: Chat, task: Task | None, wf: TaskWorkfl
     if wf.needs == Needs.escalation and wf.escalation_reason != "merge_not_confirmed":
         return "retry"
     return "tell"  # a code review or a merge being confirmed waits: the agent gets it at its next run
+
+
+async def _freestyle_intent(db: AsyncSession, task: Task, wf: TaskWorkflow) -> Intent:
+    from app.workflow import engine
+
+    if wf.status == WorkflowStatus.finished:  # only End chat finishes it, and that ends the chat too
+        return "closed"
+    if wf.needs == Needs.question:
+        return "answer"
+    if await engine.active_run(db, task.id) is not None:
+        return "tell"
+    if wf.status == WorkflowStatus.paused:  # a person cancelled the turn: the message resumes it
+        return "restart"
+    if wf.needs == Needs.reply:
+        return "turn"
+    return "tell"  # nothing else should wait in a freestyle round: the next turn gets it
 
 
 async def latest_round(db: AsyncSession, chat: Chat) -> Task | None:
@@ -394,7 +422,7 @@ async def send_message(
     """Does what the chat waits for, decided under the round's lock. Returns the intent, the round, and the id of a
     message for the agent to hand into its running session after the commit."""
     from app.tasks.activity import create_comment
-    from app.workflow import documents, engine, questions
+    from app.workflow import documents, engine, freestyle, questions
 
     chat = await lock_chat(db, chat)  # an End chat or a new round in between is seen
     task = await latest_round(db, chat)
@@ -443,6 +471,10 @@ async def send_message(
         )
         # the images go with the run the message starts (a connect-only round has none: then with the round)
         await link_images(db, user, images, task, MessageKind.nudge, run.id if run is not None else task.id)
+    elif what == "turn":
+        # the next turn takes it at its start
+        await create_comment(db, user, key, body, to_agent=True, image_ids=images)
+        await freestyle.queue_turn(db, wf, task, requested_by=user.id)
     elif what == "new_round":
         task = await start_next_round(db, user, chat, body)
         await link_images(db, user, images, task, MessageKind.first_message, task.id)
@@ -456,7 +488,8 @@ async def send_message(
 async def end_chat(db: AsyncSession, user: User, chat: Chat) -> Chat:
     """Ends the chat for good. A round still working stops (its branch keeps what was done); a round in code
     review keeps waiting, so its pull request is still followed; so does an agent's merge that couldn't be confirmed
-    (a later read that sees the merge still finishes it)."""
+    (a later read that sees the merge still finishes it). A freestyle chat's round finishes: a turn still working
+    stops, and nothing waits in it."""
     from app.workflow import engine
 
     chat = await lock_chat(db, chat)
@@ -468,12 +501,28 @@ async def end_chat(db: AsyncSession, user: User, chat: Chat) -> Chat:
         await engine.require_actor(db, user, task, wf)
         await notifications.read_by_acting(db, user.id, task_id=task.id)
         unconfirmed = wf is not None and wf.needs == Needs.escalation and wf.escalation_reason == "merge_not_confirmed"
-        if wf is not None and wf.status in engine.ACTIVE and wf.needs not in MERGE_WAITS and not unconfirmed:
+        if chat.mode == ChatMode.freestyle:
+            if wf is not None and wf.status != WorkflowStatus.finished:
+                await _finish_freestyle(db, user, task, wf)
+        elif wf is not None and wf.status in engine.ACTIVE and wf.needs not in MERGE_WAITS and not unconfirmed:
             await engine.pause(db, user, task)
     chat.status = ChatStatus.ended
     chat.ended_at = _now()
     chat.last_activity_at = chat.ended_at
     return chat
+
+
+async def _finish_freestyle(db: AsyncSession, user: User, task: Task, wf: TaskWorkflow) -> None:
+    """Ends a freestyle round (the caller holds the chat, task and workflow locks): finished, with no finishing
+    outcome, and a turn still queued or running cancelled as this person, as a pause cancels it. Finished first, so
+    the cancelled turn's end changes nothing."""
+    from app.workflow import engine, finish
+
+    run = await engine.active_run(db, task.id)
+    wf.stage = Stage.done
+    await finish.finish_workflow(db, wf, task, user.id)
+    if run is not None:
+        await engine.cancel_run(db, user, run)
 
 
 async def _round_n(db: AsyncSession, chat: Chat, n: int) -> tuple[Task, TaskWorkflow | None]:

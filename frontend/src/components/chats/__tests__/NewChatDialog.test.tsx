@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
@@ -36,6 +36,8 @@ function renderDialog(projectKey?: string, refuse?: string) {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   push.mockReset();
 });
@@ -54,7 +56,7 @@ describe("NewChatDialog", () => {
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Fix the empty email crash" } });
     await waitFor(() => expect(screen.getByRole("option", { name: "laptop-claude" })).toBeInTheDocument());
     fireEvent.click(send);
-    await waitFor(() => expect(posted).toEqual([{ project_key: "PAY", agent_id: null, message: "Fix the empty email crash", image_ids: [] }]));
+    await waitFor(() => expect(posted).toEqual([{ project_key: "PAY", agent_id: null, message: "Fix the empty email crash", image_ids: [], mode: "workflow" }]));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/chats/c9"));
   });
 
@@ -75,7 +77,7 @@ describe("NewChatDialog", () => {
     });
     await waitFor(() => expect(screen.getByRole("button", { name: "Start chat" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Start chat" }));
-    await waitFor(() => expect(posted).toEqual([{ project_key: "PAY", agent_id: null, message: "Like this", image_ids: ["img-1"] }]));
+    await waitFor(() => expect(posted).toEqual([{ project_key: "PAY", agent_id: null, message: "Like this", image_ids: ["img-1"], mode: "workflow" }]));
   });
 
   it("says so when the agent can't be sent images", async () => {
@@ -88,5 +90,35 @@ describe("NewChatDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start chat" }));
     expect(await screen.findByText("Update the runner on that agent's machine to send images, or send it without them."))
       .toBeInTheDocument();
+  });
+
+  it("asks how the agent should work: Workflow by default, with both descriptions", () => {
+    renderDialog("PAY");
+    const group = screen.getByRole("group", { name: "How should the agent work?" });
+    expect(within(group).getByRole("radio", { name: /^Workflow/ })).toBeChecked();
+    expect(within(group).getByRole("radio", { name: /^Freestyle/ })).not.toBeChecked();
+    expect(screen.getByText("Talks it through, writes a design and a plan for you to approve, builds it step by step with reviews, then finishes as the project is set up to.")).toBeInTheDocument();
+    expect(screen.getByText("Does what you ask, one reply at a time, with no design, plan or reviews. It can change files, switch branches, commit and push when you ask.")).toBeInTheDocument();
+  });
+
+  it("sends the chosen mode, and remembers it for the next chat", async () => {
+    const posted = renderDialog("PAY");
+    fireEvent.click(screen.getByRole("radio", { name: /^Freestyle/ }));
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Release it" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start chat" }));
+    await waitFor(() => expect(posted).toEqual([{ project_key: "PAY", agent_id: null, message: "Release it", image_ids: [], mode: "freestyle" }]));
+    expect(localStorage.getItem("megoo.newChatMode")).toBe("freestyle");
+    cleanup();
+    renderDialog("PAY");
+    expect(screen.getByRole("radio", { name: /^Freestyle/ })).toBeChecked();
+  });
+
+  it("still opens with Workflow when the browser's storage throws", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    renderDialog("PAY");
+    expect(screen.getByRole("radio", { name: /^Workflow/ })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: /^Freestyle/ }));
+    expect(screen.getByRole("radio", { name: /^Freestyle/ })).toBeChecked();
   });
 });
