@@ -214,9 +214,14 @@ test("a chat with an agent, from first message to the board and a second round",
   expect(await inChat(40, 300)).toBe(false);
 
   // 7. end it, and leave round 2 off the board
+  // it always asks first; Cancel leaves the chat open
   await view.getByRole("button", { name: "End chat" }).click();
-  const confirm = ui.getByRole("alertdialog");
-  if (await confirm.isVisible().catch(() => false)) await confirm.getByRole("button", { name: "End chat" }).click();
+  const confirm = ui.getByRole("alertdialog", { name: "End this chat?" });
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toBeHidden();
+  await expect(view.getByText("This chat has ended.")).toBeHidden();
+  await view.getByRole("button", { name: "End chat" }).click();
+  await confirm.getByRole("button", { name: "End chat" }).click();
   await ui.getByRole("dialog", { name: "Add this to the board?" }).getByRole("button", { name: "No, just end it" }).click();
   await expect(ui.getByRole("dialog", { name: "Add this to the board?" })).toBeHidden(); // the decision is saved
   await expect(view.getByText("This chat has ended.")).toBeVisible();

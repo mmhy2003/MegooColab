@@ -9,22 +9,23 @@ import { api } from "@/lib/api";
 import type { Chat } from "@/lib/chats";
 import { errorMessage } from "@/lib/errors";
 
-/** Ending the chat for good, for the End chat button and the phone's ⋯ menu. While the agent works it asks first:
- * ending stops it. Render `dialog` (the question) and `error` where the control is. */
+/** Ending the chat for good, for the End chat button and the phone's ⋯ menu. It always asks first, since an ended
+ * chat can't be reopened; while the agent works, the question says ending stops it. Render `dialog` (the question)
+ * and `error` where the control is. */
 export function useEndChat(chat: Chat, agentRunning: boolean) {
   const client = useQueryClient();
   const { ask, dialog } = useConfirm();
   const [error, setError] = useState<string | null>(null);
   const end = async () => {
-    if (agentRunning) {
-      const ok = await ask({
-        title: "End this chat?",
-        text: "Stop the agent and end this chat? Whatever it committed stays on its branch.",
-        ok: "End chat",
-        tone: "warn",
-      });
-      if (!ok) return;
-    }
+    const ok = await ask({
+      title: "End this chat?",
+      text: agentRunning
+        ? "Stop the agent and end this chat? Whatever it committed stays on its branch."
+        : "It becomes read-only and can't be reopened. To keep going, start a new chat.",
+      ok: "End chat",
+      tone: "warn",
+    });
+    if (!ok) return;
     try {
       await api(`/api/chats/${chat.id}/end`, { method: "POST" });
       await client.invalidateQueries({ queryKey: ["chats"] });
