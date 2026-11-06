@@ -8,21 +8,80 @@ When a turn ends:
   otherwise                       -> wait for the next message (Needs.reply), and tell the chat's starter once
 A failed turn, or one cancelled by nothing a person did, waits for the next message too: never a retry, never an
 escalation, and `wf.failures` is not counted (a turn that always fails cannot loop).
+
+What a turn is told: the person's messages in freestyle's own words (instructions.FREESTYLE_RULE). A turn that
+resumes the conversation's session gets only the new ones; one that starts fresh gets the conversation so far.
 """
+
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent_runs.models import AgentRun
+from app.agent_runs.models import AgentRun, RunStatus
 from app.agents.models import Agent
+from app.auth.models import User
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.models import Project
 from app.tasks.models import Comment, Delivery, Task
-from app.workflow import engine, questions
+from app.workflow import engine, instructions, questions
+from app.workflow.context import _escape, wrap_untrusted
 from app.workflow.models import Needs, QuestionStatus, RunRole, TaskWorkflow, WorkflowQuestion
 
 SUMMARY_CHARS = 500
+CONVERSATION_CHARS = 12_000
+CONVERSATION_HEADING = "## Conversation so far"
+CONVERSATION_NOTE = "Earlier in this conversation, oldest first: the person's messages and your replies."
+
+
+async def conversation_so_far(db: AsyncSession, task: Task) -> str | None:
+    """For a turn starting a fresh session: every message the agent was given and, for every ended turn, its reply
+    (the run's summary, the agent's own text: wrapped as untrusted), in order. The oldest are cut to fit
+    CONVERSATION_CHARS; the newest is always kept whole. The messages still waiting come with the turn itself
+    (take_waiting's "New instructions"), and the first message is the task's description."""
+    entries: list[tuple[datetime, str]] = []
+    messages = (await db.execute(
+        select(Comment, User.name)
+        .outerjoin(User, User.id == Comment.author_user_id)
+        .where(Comment.task_id == task.id, Comment.delivery.in_(instructions.DELIVERED))
+        .order_by(Comment.created_at, Comment.id)
+    )).all()
+    images = await instructions._image_names(db, [c.id for c, _ in messages])
+    for c, name in messages:
+        entries.append((c.created_at, instructions.frame_instruction(
+            name or "someone", c.created_at, c.body_md, images.get(c.id, ()))))
+    replies = (await db.execute(
+        select(AgentRun, Agent.name)
+        .join(Agent, Agent.id == AgentRun.agent_id)
+        .where(
+            AgentRun.task_id == task.id,
+            AgentRun.workflow_role == RunRole.freestyle,
+            AgentRun.status.in_((RunStatus.completed, RunStatus.failed)),
+            AgentRun.summary.is_not(None),
+        )
+        .order_by(AgentRun.created_at, AgentRun.id)
+    )).all()
+    for run, agent in replies:
+        if not run.summary.strip():
+            continue
+        at = run.finished_at or run.started_at or run.created_at
+        entries.append((at, f"[reply by {_escape(agent)} at {at:%Y-%m-%d %H:%M}]\n"
+                        + wrap_untrusted("agent_reply", run.summary)))
+    if not entries:
+        return None
+    entries.sort(key=lambda e: e[0])  # stable: at the same instant a message stays before a reply
+    kept = [text for _, text in entries]
+    dropped = 0
+
+    def render() -> str:
+        note = f"\n({dropped} older messages omitted to fit.)" if dropped else ""
+        return f"{CONVERSATION_HEADING}\n{CONVERSATION_NOTE}{note}\n\n" + "\n\n".join(kept)
+
+    while len(render()) > CONVERSATION_CHARS and len(kept) > 1:
+        kept.pop(0)
+        dropped += 1
+    return render()
 
 
 async def queue_turn(db: AsyncSession, wf: TaskWorkflow, task: Task, *, requested_by) -> AgentRun:

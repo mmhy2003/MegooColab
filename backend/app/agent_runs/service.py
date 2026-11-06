@@ -374,9 +374,11 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     task_key = f"{project_key}-{task.number}"
     from app.workflow import instructions  # local: the workflow imports this module
 
-    # a resumed session may not have seen what other sessions were told: it gets every delivered message again
+    # a resumed session may not have seen what other sessions were told: it gets every delivered message again. Not
+    # a freestyle turn: it resumes the one conversation, which has seen them all (only the new ones go)
     resumed = bool(run.workflow_role and run.resume_session_ref)
-    earlier = await instructions.kept_in_mind(db, task) if resumed else None
+    again = resumed and not instructions.is_freestyle(run)
+    earlier = await instructions.kept_in_mind(db, task) if again else None
     # waiting messages for the agent go out with this run: the workflow lock is held, so none can slip between
     new_instructions, given = await instructions.take_waiting(db, run, task)
     prompt = run.prompt
