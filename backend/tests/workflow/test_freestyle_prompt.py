@@ -9,7 +9,7 @@ from app.agent_runs.models import AgentRun
 from app.agent_runs.service import dispatch_pending
 from app.core.db import SessionLocal
 from app.runner.registry import registry
-from app.tasks.models import Comment, Delivery, Task
+from app.tasks.models import Comment, Delivery, Task, TaskEvent
 from app.workflow import engine, freestyle, instructions
 from tests.agent_runs.test_dispatch import _fake_conn, _FakeSocket
 from tests.workflow.test_freestyle_engine import _end, _freestyle, _waiting_comment
@@ -70,6 +70,7 @@ async def test_resumed_freestyle_turn_is_not_resent_earlier_messages(client, db)
     start = await _dispatch(w.owner, w.agent)
     assert start["resume_session_id"] == "s1"
     assert "> push it" in start["resume_prompt"]
+    assert "## New instructions\n" + instructions.FREESTYLE_RULE in start["resume_prompt"]
     assert "first ask" not in start["resume_prompt"] and REPLY not in start["resume_prompt"]
 
 
@@ -130,3 +131,54 @@ async def test_no_conversation_yet_no_section(client, db):
     await _end(run.id, "completed", "  ")  # a blank reply says nothing
     async with SessionLocal() as s:
         assert await freestyle.conversation_so_far(s, await s.get(Task, task_id)) is None
+
+
+async def _events(task_id, run, *events):
+    """The run's streamed updates, a second apart: (kind, data) pairs."""
+    async with SessionLocal() as s:
+        for i, (kind, data) in enumerate(events):
+            s.add(TaskEvent(task_id=task_id, kind=kind, data={**data, "run_id": str(run.id)},
+                            created_at=run.created_at + timedelta(seconds=i + 1)))
+        await s.commit()
+
+
+async def _conversation(task_id) -> str | None:
+    async with SessionLocal() as s:
+        return await freestyle.conversation_so_far(s, await s.get(Task, task_id))
+
+
+async def test_reply_is_the_turns_last_message_not_its_summary(client, db):
+    """The runner's summary is only the last flushed chunk: the reply is the last message the agent streamed, the
+    chunks after its last tool use joined."""
+    w, task_id, run = await _freestyle(client, db)
+    await _events(
+        task_id, run,
+        ("agent_message", {"text": "Looking at the version file"}),
+        ("agent_tool", {"title": "bump"}),
+        ("agent_message", {"text": "Created release/"}),
+        ("agent_message", {"text": "2026.11.06.208 and bumped VERSION"}),
+    )
+    await _end(run.id, "completed", "bumped VERSION")
+    text = await _conversation(task_id)
+    assert '<untrusted source="agent_reply">\nCreated release/2026.11.06.208 and bumped VERSION\n</untrusted>' in text
+    assert "Looking at the version file" not in text
+
+
+async def test_long_reply_keeps_its_newest_characters(client, db):
+    w, task_id, run = await _freestyle(client, db)
+    await _events(
+        task_id, run, ("agent_message", {"text": "START " + "x" * 5_000}), ("agent_message", {"text": " END"})
+    )
+    await _end(run.id, "completed", " END")
+    text = await _conversation(task_id)
+    assert "START" not in text and "x END\n</untrusted>" in text
+    opening = '<untrusted source="agent_reply">\n'
+    reply = text[text.index(opening) + len(opening):text.index("\n</untrusted>")]
+    assert len(reply) == freestyle.REPLY_CHARS
+
+
+async def test_reply_falls_back_to_the_summary_without_messages(client, db):
+    w, task_id, run = await _freestyle(client, db)
+    await _events(task_id, run, ("agent_tool", {"title": "bump"}))
+    await _end(run.id, "completed", "Done: bumped VERSION")
+    assert '<untrusted source="agent_reply">\nDone: bumped VERSION\n</untrusted>' in await _conversation(task_id)
