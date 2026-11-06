@@ -77,6 +77,7 @@ ROLE_POLICY: dict[RunRole, RunPolicy] = {
     # the reviewer runs the host's CLI (gh, glab, tea), which the read-only policy refuses; R1 still holds it to
     # changing nothing in the repository
     RunRole.pr_review: RunPolicy.workspace,
+    RunRole.freestyle: RunPolicy.workspace,  # a direct conversation: it may change the repository, nothing is reviewed
 }
 READ_ONLY_ROLES = {role for role, policy in ROLE_POLICY.items() if policy == RunPolicy.read_only}
 R1_ROLES = READ_ONLY_ROLES | {RunRole.pr_review}  # runs that must leave the repository as they found it

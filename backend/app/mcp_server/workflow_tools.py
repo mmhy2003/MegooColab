@@ -61,7 +61,7 @@ TOOL_ROLES: dict[str, frozenset[RunRole]] = {
     # a reviewer never asks: it judges what is there
     "ask_human": frozenset({
         RunRole.brainstorm, RunRole.plan, RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish,
-        RunRole.pr_fix,
+        RunRole.pr_fix, RunRole.freestyle,
     }),
     "submit_design": frozenset({RunRole.brainstorm}),
     "submit_plan": frozenset({RunRole.plan}),
@@ -72,8 +72,10 @@ TOOL_ROLES: dict[str, frozenset[RunRole]] = {
     "submit_pr_review": frozenset({RunRole.pr_review}),
     "show_mockup": frozenset({RunRole.brainstorm}),  # also the session resumed to revise a design
     # reviewers judge records; their read-only sessions cannot run the tests
-    "record_decision": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish, RunRole.pr_fix}),
-    "record_tests": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish, RunRole.pr_fix}),
+    "record_decision": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish, RunRole.pr_fix,
+                                RunRole.freestyle}),
+    "record_tests": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish, RunRole.pr_fix,
+                              RunRole.freestyle}),
 }
 RUNNER_ONLY = frozenset({"submit_review", "report_finish", "report_pr_fix", "submit_pr_review"})  # connect-only workflows have no such runs
 
@@ -90,6 +92,7 @@ RUN_NEXT: dict[RunRole, str] = {
     "report_pr_fix.",
     RunRole.pr_review: "Review the pull request on the host, post your review (merge it when you approve), then call "
     "submit_pr_review.",
+    RunRole.freestyle: "Do what the latest message asks, then reply and end your turn.",
 }
 WAIT_NEXT: dict[Needs, str] = {
     Needs.question: "Wait for the human's answer (it appears in get_task), then call get_workflow again.",

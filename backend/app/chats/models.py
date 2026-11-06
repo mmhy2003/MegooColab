@@ -13,6 +13,11 @@ class ChatStatus(StrEnum):
     ended = "ended"  # read-only: a new idea starts a new chat
 
 
+class ChatMode(StrEnum):
+    workflow = "workflow"  # each round of work runs the task workflow
+    freestyle = "freestyle"  # a direct conversation with the agent, one turn at a time
+
+
 class Chat(IdMixin, Base):
     """A conversation with an agent about one project. Each round of work in it is a task kept off the board
     (`Task.in_chat`) and run by the task workflow; adding a round to the board turns it into an ordinary task."""
@@ -25,6 +30,7 @@ class Chat(IdMixin, Base):
     agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"))
     title: Mapped[str] = mapped_column(String(200))
     status: Mapped[ChatStatus] = mapped_column(String(10), default=ChatStatus.open)
+    mode: Mapped[ChatMode] = mapped_column(String(10), default=ChatMode.workflow, server_default="workflow")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_activity_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

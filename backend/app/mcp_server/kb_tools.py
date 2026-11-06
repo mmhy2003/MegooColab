@@ -31,7 +31,8 @@ KB_TOOL_ROLES: dict[str, frozenset[RunRole]] = {
     "kb_search": frozenset(RunRole),
     "kb_list": frozenset(RunRole),
     "kb_read": frozenset(RunRole),
-    "kb_write": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish}),
+    "kb_write": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish,
+                              RunRole.freestyle}),
 }
 
 
