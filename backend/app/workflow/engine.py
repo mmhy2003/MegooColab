@@ -596,6 +596,37 @@ async def start(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     return wf
 
 
+async def start_freestyle(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
+    """Start a freestyle round (app.workflow.freestyle): no stages and no reviews, the first turn queued. The
+    checks are start's."""
+    if task.type not in WORKFLOW_TYPES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
+    agent = await _usable_agent(db, user, task)
+    wf = await lock_task(db, task, create=True)
+    if await db.scalar(select(Task.type).where(Task.id == task.id)) not in WORKFLOW_TYPES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "workflow_not_supported_for_type")
+    if wf.status in (*ACTIVE, WorkflowStatus.paused):
+        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_active")
+    if wf.status == WorkflowStatus.finished:
+        raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
+    wf.driver = Driver.runner
+    wf.stage = Stage.build
+    wf.needs = None
+    wf.enforcement = Enforcement.unenforced  # nothing is reviewed: the agent does what the person asks
+    wf.agent_id = agent.id
+    wf.current_step = None
+    wf.review_round = 0
+    wf.failures = 0
+    wf.nudged = False
+    wf.escalation_reason = None
+    wf.sessions.clear()
+    wf.started_at = _now()
+    wf.finished_at = None
+    await record_workflow_event(db, task, user.id, "workflow.started", {"agent_id": str(agent.id)})
+    await freestyle.queue_turn(db, wf, task, requested_by=user.id)
+    return wf
+
+
 async def pause(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     """Pause an active workflow and cancel its run (as this user: cancelled_by). It is never retried.
 
@@ -943,7 +974,10 @@ async def on_run_finished(db: AsyncSession, run: AgentRun) -> None:
         log.exception("workflow: handling the end of run %s failed", run.id)
         wf = await lock_workflow(db, run.task_id)
         if wf is not None and wf.status == WorkflowStatus.running:
-            await escalate(db, wf, "engine_error")  # a human can retry
+            if run.workflow_role == RunRole.freestyle:  # a freestyle round never escalates: the next message retries
+                await wait_for(db, wf, Needs.reply, notify=False)
+            else:
+                await escalate(db, wf, "engine_error")  # a human can retry
     finally:
         _handling.reset(token)
 
@@ -978,6 +1012,9 @@ async def _on_run_finished(db: AsyncSession, run: AgentRun) -> None:
         # the agent's owner is gone: nothing could ever run, so the workflow pauses instead of retrying
         wf.status = WorkflowStatus.paused
         await record_workflow_event(db, task, None, "workflow.paused", {"reason": "owner_deactivated"})
+        return
+    if run.status in (RunStatus.failed, RunStatus.cancelled) and role == RunRole.freestyle:
+        await freestyle.wait_after_failure(db, wf, task, run)  # never retried: it waits for the next message
         return
     if run.status in (RunStatus.failed, RunStatus.cancelled):  # a cancel nobody asked for counts as a failure
         wf.failures += 1
@@ -1075,6 +1112,6 @@ async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
     })
 
 
-# The build and finish stages register their role and accept handlers on import; importing them here means every
-# user of the engine (run ends, escalation decisions) has them. Last, as they import this module.
-from app.workflow import build, finish  # noqa: F401
+# The build and finish stages and freestyle turns register their role and accept handlers on import; importing them
+# here means every user of the engine (run ends, escalation decisions) has them. Last, as they import this module.
+from app.workflow import build, finish, freestyle  # noqa: F401
