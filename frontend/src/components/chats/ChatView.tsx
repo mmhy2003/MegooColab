@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Maximize2, Minimize2, MoreHorizontal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { BoardDialog } from "@/components/chats/BoardDialog";
 import { ChatBack } from "@/components/chats/ChatBack";
@@ -18,8 +18,8 @@ import { PROGRAM_LABEL, useAgentRuns } from "@/lib/agents";
 import { api } from "@/lib/api";
 import { latestRound, stateText, useChat, WAITING, type Chat, type ChatRound } from "@/lib/chats";
 import { errorMessage } from "@/lib/errors";
+import { useExpanded } from "@/lib/expanded";
 import { qk } from "@/lib/queries";
-import { useStoredState } from "@/lib/stored";
 import { useRecordTitle } from "@/lib/title";
 import { useRecordTrail } from "@/lib/trail";
 import type { ActivityItem, AgentProgram } from "@/lib/types";
@@ -84,25 +84,6 @@ function ChatMenu({ chat, agentRunning }: { chat: Chat; agentRunning: boolean })
   );
 }
 
-/** Something on top that Esc closes first: a dialog, a menu, a list of suggestions. */
-const ESC_FIRST = "dialog[open], [role=dialog], [role=menu], [role=listbox]";
-// expanding shows only from md up; below it a chat already takes the whole screen
-const wide = () => window.matchMedia?.("(min-width: 48rem)").matches ?? true;
-
-/** Expanded or not, kept in this browser; Esc collapses (on a wide screen, once nothing else on top wants it). */
-function useExpanded(): [boolean, (on: boolean) => void] {
-  const [expanded, setExpanded] = useStoredState("chats.expanded", false, "local");
-  useEffect(() => {
-    if (!expanded) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !e.defaultPrevented && wide() && !document.querySelector(ESC_FIRST)) setExpanded(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [expanded, setExpanded]);
-  return [expanded, setExpanded];
-}
-
 /**
  * A chat: its rounds one after another, each laid out as a task's page is (RoundSections: subtasks, design, plan,
  * questions, attachments, then its conversation), the progress of the latest, and the message box at the bottom. It fills
@@ -125,7 +106,7 @@ export function ChatView({ chatId }: { chatId: string }) {
   });
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const jumpRef = useRef<(() => void) | null>(null);
-  const [expanded, setExpanded] = useExpanded();
+  const [expanded, setExpanded] = useExpanded("chats.expanded");
   if (chat.error) return <p role="alert" className="card p-4 text-sm text-pink">{errorMessage(chat.error)}</p>;
   if (!chat.data) return <p className="card p-4 text-sm text-muted-foreground">Loading…</p>;
   const c = chat.data;
