@@ -79,22 +79,121 @@ export const HOSTED: Partial<Record<GitKind, { label: string; url: string }>> = 
   gitlab: { label: "GitLab.com", url: "https://gitlab.com" },
 };
 
-/** What the access token needs, per host. */
-export const TOKEN_HELP: Record<GitKind, string> = {
-  github:
-    "Read access to your repositories and pull requests: a fine-grained token with Contents, Metadata, Pull " +
-    "requests and Commit statuses (read), or a classic token with repo. A fine-grained token can't read check runs, " +
-    "where GitHub Actions reports, so their results show as unknown; a classic token with repo shows them. " +
-    "Optional, for one-click webhook setup: Webhooks (read and write), " +
-    "or admin:repo_hook. Optional, for an agent to review and merge: Pull requests and Contents (read and write).",
-  gitlab:
-    "Read access to your repositories and merge requests: the read_api scope. Optional, for one-click webhook setup: " +
-    "the api scope, with Maintainer on the project. Optional, for an agent to review and merge: api, with Developer " +
-    "or more.",
-  gitea:
-    "Read access to your repositories (read:repository). Optional, for one-click webhook setup: write:repository. " +
-    "Optional, for an agent to review and merge: write:repository.",
+/** One permission (or scope) a token needs; `access` for a fine-grained one ("Read", "Read and write"). */
+export type TokenPermission = { name: string; access?: "Read" | "Read and write" };
+/** One reason a token needs some access: what it lets MegooColab do, and the permissions for it. */
+export type TokenNeed = {
+  why: string;
+  required: boolean;
+  permissions: TokenPermission[];
+  /** a plain line under the permissions */
+  note?: string;
+  /** a line to heed, set apart */
+  warning?: string;
 };
+/** A kind of token a host offers (GitHub: fine-grained or classic), what it needs, and its new-token page. */
+export type TokenVariant = { label: string; needs: TokenNeed[]; newTokenPath: string; newTokenLabel: string };
+
+const R = "Read" as const;
+const RW = "Read and write" as const;
+
+/** What the access token needs, per host: the first variant is the one shown first. Every list starts with the one
+ * required reason (follow pull requests), then the two optional ones (webhooks, an agent's review and merge). */
+export const TOKEN_NEEDS: Record<GitKind, TokenVariant[]> = {
+  github: [
+    {
+      label: "Fine-grained token",
+      newTokenPath: "/settings/personal-access-tokens/new",
+      newTokenLabel: "Create a token on GitHub",
+      needs: [
+        {
+          why: "Follow pull requests",
+          required: true,
+          permissions: [
+            { name: "Contents", access: R },
+            { name: "Metadata", access: R },
+            { name: "Pull requests", access: R },
+            { name: "Commit statuses", access: R },
+          ],
+          warning:
+            "A fine-grained token can't read check runs, where GitHub Actions reports, so their results show as " +
+            "unknown. A classic token shows them.",
+        },
+        {
+          why: "Set up webhooks in one click",
+          required: false,
+          permissions: [{ name: "Webhooks", access: RW }],
+          note: "Without it, you add each webhook on GitHub yourself.",
+        },
+        {
+          why: "Let an agent review and merge",
+          required: false,
+          permissions: [{ name: "Pull requests", access: RW }, { name: "Contents", access: RW }],
+        },
+      ],
+    },
+    {
+      label: "Classic token",
+      newTokenPath: "/settings/tokens/new?description=MegooColab&scopes=repo",
+      newTokenLabel: "Create a classic token on GitHub",
+      needs: [
+        {
+          why: "Follow pull requests",
+          required: true,
+          permissions: [{ name: "repo" }],
+          note: "Reads everything, check runs included, but also allows writing.",
+        },
+        {
+          why: "Set up webhooks in one click",
+          required: false,
+          permissions: [{ name: "admin:repo_hook" }],
+          note: "Without it, you add each webhook on GitHub yourself.",
+        },
+        { why: "Let an agent review and merge", required: false, permissions: [], note: "Covered by repo." },
+      ],
+    },
+  ],
+  gitlab: [
+    {
+      label: "Access token",
+      newTokenPath: "/-/user_settings/personal_access_tokens?name=MegooColab&scopes=read_api",
+      newTokenLabel: "Create a token on GitLab",
+      needs: [
+        { why: "Follow merge requests", required: true, permissions: [{ name: "read_api" }] },
+        {
+          why: "Set up webhooks in one click",
+          required: false,
+          permissions: [{ name: "api" }],
+          note: "With Maintainer on the project. Without it, you add each webhook on GitLab yourself.",
+        },
+        { why: "Let an agent review and merge", required: false, permissions: [{ name: "api" }], note: "With Developer or more on the project." },
+      ],
+    },
+  ],
+  gitea: [
+    {
+      label: "Access token",
+      newTokenPath: "/user/settings/applications",
+      newTokenLabel: "Create a token on Gitea",
+      needs: [
+        { why: "Follow pull requests", required: true, permissions: [{ name: "read:repository" }] },
+        {
+          why: "Set up webhooks in one click",
+          required: false,
+          permissions: [{ name: "write:repository" }],
+          note: "Without it, you add each webhook on Gitea yourself.",
+        },
+        { why: "Let an agent review and merge", required: false, permissions: [{ name: "write:repository" }] },
+      ],
+    },
+  ],
+};
+
+/** The host's new-token page under the server's address, or null without a real http(s) address. */
+export function newTokenUrl(base: string, path: string): string | null {
+  const root = base.trim().replace(/\/+$/, "");
+  return /^https?:\/\/[^/\s]+/.test(root) ? `${root}${path}` : null;
+}
 
 export const TOKEN_DOCS: Record<GitKind, string> = {
   github: "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
