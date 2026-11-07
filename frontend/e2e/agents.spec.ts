@@ -27,7 +27,7 @@ const SCENARIO = [
     say("Looking at the code"),
     { plan: [["Read the code", "completed"], ["Write notes", "in_progress"]] },
     { write: { path: "notes.txt", content: "tampered\n" } },
-    say("Read-only done"),
+    say("Read-only **done**"),
     mcp("ask_human", {
       key: "AGT-1",
       question: "Which sync bug should I look at first?",
@@ -193,7 +193,11 @@ test("agents end to end", async ({ browser, request }) => {
   await expect(drawer.getByText("updated the plan (2 steps)")).toBeVisible({ timeout: 15_000 });
   await expect(drawer.getByText(/was denied: /)).toBeVisible({ timeout: 15_000 });
   await expect(drawer.getByText("Which sync bug should I look at first?")).toBeVisible({ timeout: 15_000 });
-  await expect(drawer.getByText("finished: Read-only done")).toBeVisible({ timeout: 15_000 });
+  // the reply renders as Markdown, and the "finished" line under it doesn't repeat it as raw text
+  await expect(drawer.locator("[data-agent-reply] strong", { hasText: "done" })).toBeVisible({ timeout: 15_000 });
+  await expect(drawer.getByText(/ finished$/)).toBeVisible({ timeout: 15_000 });
+  await expect(drawer.locator("[data-run-summary]")).toHaveCount(0);
+  await expect(drawer.locator("ol").filter({ hasText: "Looking at the code" })).not.toContainText("**");
   await expect(panel.getByText("Waiting: Answer the agent's question")).toBeVisible();
   await expect(drawer.getByText("started working")).toHaveCount(1);
   await shot(page, "task-run");

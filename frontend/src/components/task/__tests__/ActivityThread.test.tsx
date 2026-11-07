@@ -139,6 +139,51 @@ describe("ActivityThread agent events", () => {
     expect(screen.getByText(/ran pytest → exit 0/).closest("[data-agent-reply]")).toBeNull();
   });
 
+  it("says a run finished without repeating the reply the summary copies", () => {
+    const reply = "I approved step 6 with **no findings**.\n\n- **Tests:** all nine hold\n- `201ea47` changes two files";
+    const list = [
+      agentEvent("m1", "agent_message", { text: reply.slice(0, 40) }),
+      agentEvent("m2", "agent_message", { text: reply.slice(40) }),
+      agentEvent("f1", "agent_run_completed", { summary: reply.slice(40) }),
+    ];
+    const { container } = render(
+      <ActivityThread items={list} columnNames={new Map()} userNames={new Map()} agentNames={new Map([["a1", "Ann's Codex"]])} />,
+    );
+    expect(container.querySelectorAll("[data-agent-reply]")).toHaveLength(1);
+    const rows = [...container.querySelectorAll("ol > li")].map((li) => li.textContent ?? "");
+    expect(rows[1]).toMatch(/^Ann's Codex finished/);
+    expect(rows[1]).not.toContain("Tests");
+    expect(container.textContent).not.toContain("**");
+    expect(container.textContent).not.toContain("`");
+  });
+
+  it("shows a summary that is not in the thread as Markdown under the finished line", () => {
+    const { container } = render1(agentEvent("f2", "agent_run_completed", { summary: "Fixed the **timezone** bug in `format_date()`:\n\n- one\n- two" }));
+    const row = container.querySelector("ol > li")!;
+    expect(row.textContent).toMatch(/^Ann's Codex finished/);
+    expect(within(row as HTMLElement).getByText("timezone").tagName).toBe("STRONG");
+    expect(within(row as HTMLElement).getByText("format_date()").tagName).toBe("CODE");
+    expect(row.querySelector("[data-run-summary]")).not.toBeNull();
+    expect(row.textContent).not.toContain("**");
+  });
+
+  it("never renders raw HTML from a run's summary", () => {
+    const { container } = render1(agentEvent("f3", "agent_run_completed", { summary: "<b>hi</b> <script>x()</script>" }));
+    expect(container.querySelector("b")).toBeNull();
+    expect(container.querySelector("script")).toBeNull();
+  });
+
+  it("checks a summary against the replies of its own run only", () => {
+    const list = [
+      agentEvent("m1", "agent_message", { text: "Done **here**.", run_id: "r0" }),
+      agentEvent("f4", "agent_run_completed", { summary: "Done **here**." }),
+    ];
+    const { container } = render(
+      <ActivityThread items={list} columnNames={new Map()} userNames={new Map()} agentNames={new Map([["a1", "Ann's Codex"]])} />,
+    );
+    expect(container.querySelector("[data-run-summary]")).not.toBeNull();
+  });
+
   it("describes the other agent kinds", () => {
     const cases: [string, Record<string, unknown>, string][] = [
       ["agent_run_queued", {}, "queued a run"],
@@ -151,7 +196,7 @@ describe("ActivityThread agent events", () => {
       ["agent_model", { value: "opus", name: "Opus 5.5", effort: "default", effort_name: "Default" }, "used the model Opus 5.5 with its default effort"],
       ["agent_run_failed", { reason: "effort_unavailable" }, "failed: the effort chosen for this agent isn't available for its model — pick another on My agents"],
       ["agent_run_failed", { reason: "model_unavailable" }, "failed: the model chosen for this agent isn't available — pick another on My agents"],
-      ["agent_run_completed", { summary: "Done" }, "finished: Done"],
+      ["agent_run_completed", {}, "Ann's Codex finished"],
       ["agent_run_failed", { reason: "runner_disconnected" }, "failed: the runner disconnected"],
       ["agent_run_cancelled", {}, "was cancelled"],
       ["agent_run_cancelled", { reason: "runner_unauthorized" }, "was cancelled: the runner's token was revoked"],
@@ -376,15 +421,18 @@ describe("ActivityThread: a task sent back by its pull request", () => {
       { type: "event", id: "s2", at, actor: null, kind: "pr.sent_back",
         data: { pr_number: 42, by: "mo", kind: "fix_comment", round: 3, of: 3, excerpt: "/fix the timeout" } },
       { type: "event", id: "s3", at, actor: null, kind: "pr.fix_pushed",
-        data: { pr_number: 42, round: 2, of: 3, summary: "Added a <b>back-off</b>" } },
+        data: { pr_number: 42, round: 2, of: 3, summary: "Added a **back-off** to `retry` <b>x</b>" } },
       { type: "event", id: "s4", at, actor, kind: "pr.send_back_cancelled", data: {} },
     ];
-    render(<ActivityThread items={rows} columnNames={new Map()} userNames={new Map()} />);
-    const text = screen.getAllByRole("listitem").map((li) => li.textContent);
+    const { container } = render(<ActivityThread items={rows} columnNames={new Map()} userNames={new Map()} />);
+    const text = [...container.querySelectorAll("ol > li")].map((li) => li.textContent);
     expect(text[0]).toContain("Sent back to its agent: changes requested on PR #42 by rev (round 2 of 3)");
     expect(text[1]).toContain("Sent back to its agent: /fix on PR #42 by mo (round 3 of 3)");
     expect(text[2]).toContain("Fixed and pushed to PR #42 (round 2 of 3)");
-    expect(screen.getByText("Added a <b>back-off</b>")).toBeInTheDocument();
+    expect(container.querySelector("b")).toBeNull();
+    expect(screen.getByText("back-off").tagName).toBe("STRONG");
+    expect(screen.getByText("retry").tagName).toBe("CODE");
+    expect(text[2]).not.toContain("**");
     expect(text[3]).toContain("Ahmed Ali stopped the fix: back to waiting for the merge");
     expect(text[0]).not.toContain("Someone");
   });
