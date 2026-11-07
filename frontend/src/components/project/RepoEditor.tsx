@@ -104,7 +104,7 @@ export function RepoEditor({
                   <span className="text-xs text-pink">
                     {r.pr_error
                       ? `Can't read pull requests: ${pullRequestProblem(r.pr_error, r.provider === "plain" ? null : (r.provider as GitKind))}`
-                      : limitedText(r.pr_limited)}
+                      : limitedText(r.pr_limited, r.provider === "plain" ? null : (r.provider as GitKind))}
                   </span>
                 )}
               </div>
