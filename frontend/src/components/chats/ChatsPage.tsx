@@ -2,16 +2,16 @@
 
 import { Plus } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
 
 import { ChatList } from "@/components/chats/ChatList";
 import { ChatView } from "@/components/chats/ChatView";
 import { NewChatDialog } from "@/components/chats/NewChatDialog";
+import { ProjectPicker, type ProjectCounts } from "@/components/chats/ProjectPicker";
 import { useFillWindow } from "@/components/task/fillWindow";
 import { Button } from "@/components/ui/Button";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Select } from "@/components/ui/Select";
-import { CHAT_FILTERS, inFilter, useChats, type Chat, type ChatFilter } from "@/lib/chats";
+import { CHAT_FILTERS, chatGroup, inFilter, useChats, type Chat, type ChatFilter } from "@/lib/chats";
 import { errorMessage } from "@/lib/errors";
 import { useProjects } from "@/lib/project";
 import { useStoredState } from "@/lib/stored";
@@ -30,13 +30,24 @@ export function ChatsPage(props: { projectKey?: string; chatId?: string }) {
 
 function Chats({ projectKey, chatId }: { projectKey?: string; chatId?: string }) {
   const params = useSearchParams();
-  const [filter, setFilter] = useState("");
   const [adding, setAdding] = useState(params.get("new") === "1"); // the dashboard's New chat
   const projects = useProjects();
-  const project = projectKey ?? (filter || undefined);
-  // which chats the list shows; Active (all but ended) first, kept in this browser
+  // the projects picked on the Chats page (none: all), and which chats the list shows (Active, all but ended, first),
+  // both kept in this browser
+  const [picked, setPicked] = useStoredState<string[]>("chats.projects", [], "local");
   const [show, setShow] = useStoredState<ChatFilter>("chats.filter", "active", "local");
-  const chats = useChats(project);
+  // a project's tab asks for its chats; the Chats page takes them all and picks here
+  const chats = useChats(projectKey);
+  // a picked project no longer in view (deleted, or the viewer left its team) is ignored
+  const known = useMemo(
+    () => (projects.data ? picked.filter((k) => projects.data.some((p) => p.key === k)) : picked),
+    [picked, projects.data],
+  );
+  const scoped = useMemo(
+    () => (projectKey || known.length === 0 ? chats.data : chats.data?.filter((c) => known.includes(c.project_key))),
+    [chats.data, projectKey, known],
+  );
+  const counts = useMemo(() => countByProject(chats.data ?? []), [chats.data]);
   const area = useRef<HTMLDivElement | null>(null);
   useFillWindow(area);
   const newChat = (
@@ -61,25 +72,18 @@ function Chats({ projectKey, chatId }: { projectKey?: string; chatId?: string })
                 {newChat}
               </div>
             ) : (
-              <Select label="Project" value={filter} onChange={(e) => setFilter(e.target.value)}>
-                <option value="">All projects</option>
-                {(projects.data ?? []).map((p) => (
-                  <option key={p.id} value={p.key}>
-                    {p.key} — {p.name}
-                  </option>
-                ))}
-              </Select>
+              <ProjectPicker projects={projects.data ?? []} counts={counts} value={known} onChange={setPicked} />
             )}
           </div>
-          {chats.data && <StateFilter chats={chats.data} value={show} onChange={setShow} />}
+          {scoped && <StateFilter chats={scoped} value={show} onChange={setShow} />}
           {chats.error && <p role="alert" className="text-sm text-pink">{errorMessage(chats.error)}</p>}
           <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
-            {chats.data && (
+            {scoped && (
               <ChatList
-                chats={chats.data.filter((c) => inFilter(c, show))}
+                chats={scoped.filter((c) => inFilter(c, show))}
                 selected={chatId}
-                showProject={!project}
-                empty={chats.data.length ? CHAT_FILTERS.find((f) => f.value === show)?.empty : undefined}
+                showProject={!projectKey && known.length !== 1}
+                empty={scoped.length ? CHAT_FILTERS.find((f) => f.value === show)?.empty : undefined}
               />
             )}
           </div>
@@ -125,4 +129,16 @@ function StateFilter({ chats, value, onChange }: { chats: Chat[]; value: ChatFil
       })}
     </div>
   );
+}
+
+/** Each project's chats, active (not ended) and all, for the project picker. */
+function countByProject(chats: Chat[]): ProjectCounts {
+  const out: ProjectCounts = new Map();
+  for (const c of chats) {
+    const n = out.get(c.project_key) ?? { active: 0, total: 0 };
+    n.total += 1;
+    if (chatGroup(c) !== "ended") n.active += 1;
+    out.set(c.project_key, n);
+  }
+  return out;
 }
