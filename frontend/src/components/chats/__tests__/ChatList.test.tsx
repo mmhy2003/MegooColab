@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { ChatList } from "@/components/chats/ChatList";
 import { chat } from "@/components/chats/__tests__/fixtures";
-import { intentText, stateText, WAITING } from "@/lib/chats";
+import { chatGroup, inFilter, intentText, stateText, WAITING, type Chat } from "@/lib/chats";
 
 afterEach(cleanup);
 
@@ -26,8 +26,8 @@ describe("freestyle chats in the list", () => {
       chat({ id: "w1", title: "Workflow one" }),
     ]} showProject />);
     expect(screen.getAllByText("Freestyle")).toHaveLength(2);
-    expect(screen.getByText(/· working$/)).toBeInTheDocument();
-    expect(screen.getByText(/waiting for your reply$/)).toBeInTheDocument();
+    expect(screen.getByText("working")).toBeInTheDocument();
+    expect(screen.getByText("waiting for your reply")).toBeInTheDocument();
   });
 
   it("the composer line for a turn", () => {
@@ -97,5 +97,58 @@ describe("ChatList", () => {
   it("says when there are none", () => {
     render(<ChatList chats={[]} showProject />);
     expect(screen.getByText("No chats yet.")).toBeInTheDocument();
+  });
+});
+
+describe("a chat's group", () => {
+  it.each([
+    ["question", "needs_you"], ["design_approval", "needs_you"], ["plan_approval", "needs_you"], ["escalation", "needs_you"],
+    ["human_code_review", "needs_you"],
+    ["building", "working"], ["in_review", "working"], ["merging", "working"], ["working", "working"],
+    ["talking", "open"], ["reply", "open"], ["finished", "open"],
+    ["offline", "offline"],
+    ["ended", "ended"],
+  ] as const)("%s is %s", (state, group) => {
+    expect(chatGroup(chat({ state }))).toBe(group);
+  });
+
+  it("an ended chat is ended, whatever its last state", () => {
+    expect(chatGroup(chat({ state: "building", status: "ended" }))).toBe("ended");
+  });
+
+  it("each filter keeps its groups: Active all but ended, Open with offline", () => {
+    const of = (state: Chat["state"]) => chat({ state, status: state === "ended" ? "ended" : "open" });
+    expect(inFilter(of("ended"), "active")).toBe(false);
+    expect(inFilter(of("question"), "active")).toBe(true);
+    expect(inFilter(of("offline"), "open")).toBe(true);
+    expect(inFilter(of("offline"), "working")).toBe(false);
+    expect(inFilter(of("ended"), "all")).toBe(true);
+    expect(inFilter(of("building"), "ended")).toBe(false);
+  });
+});
+
+describe("each row's mark", () => {
+  it("starts with its group's mark, the state text in the group's colour, and an ended title dimmed", () => {
+    render(<ChatList chats={[
+      chat({ id: "a", title: "Asks", state: "question" }),
+      chat({ id: "b", title: "Builds", state: "building" }),
+      chat({ id: "c", title: "Talks", state: "talking" }),
+      chat({ id: "d", title: "Away", state: "offline" }),
+      chat({ id: "e", title: "Done", state: "ended", status: "ended" }),
+    ]} showProject />);
+    const row = (title: string) => screen.getByText(title).closest("a")!;
+    expect(row("Asks")).toHaveAttribute("data-group", "needs_you");
+    expect(row("Asks").querySelector("[data-mark]")).toHaveClass("bg-amber");
+    expect(row("Builds").querySelector("[data-mark]")).toHaveClass("motion-safe:animate-spin");
+    expect(row("Talks").querySelector("[data-mark]")).toHaveClass("border-green");
+    expect(row("Away").querySelector("[data-mark]")).toHaveClass("bg-pink");
+    expect(row("Done").querySelector("[data-mark]")).toHaveClass("bg-line");
+    expect(screen.getByText("Done")).toHaveClass("text-muted-foreground");
+    expect(screen.getByText(/waiting: answer the agent's question/)).toHaveClass("text-amber");
+  });
+
+  it("says when a filter leaves nothing", () => {
+    render(<ChatList chats={[]} showProject empty="Nothing needs you." />);
+    expect(screen.getByText("Nothing needs you.")).toBeInTheDocument();
   });
 });

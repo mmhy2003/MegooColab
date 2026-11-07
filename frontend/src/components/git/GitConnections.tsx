@@ -15,10 +15,10 @@ import {
   type GitKind,
   gitTestError,
   HOSTED,
-  TOKEN_DOCS,
-  TOKEN_HELP,
   useGitConnections,
 } from "@/lib/git";
+
+import { TokenNeeds } from "./TokenNeeds";
 
 const KIND_LABEL = Object.fromEntries(GIT_KINDS.map((k) => [k.value, k.label])) as Record<GitKind, string>;
 const SET = "••••";
@@ -122,10 +122,7 @@ function ConnectionForm({ editing, onDone }: { editing: GitConnection | null; on
           value={form.token}
           onChange={(e) => set({ token: e.target.value })}
         />
-        <p className="text-xs text-muted-foreground">
-          {TOKEN_HELP[form.kind]}{" "}
-          <a href={TOKEN_DOCS[form.kind]} target="_blank" rel="noopener noreferrer">How to make one</a>
-        </p>
+        <TokenNeeds kind={form.kind} base={hosted ? hostedOption!.url : form.base_url} />
       </div>
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}
       <div className="flex gap-2">

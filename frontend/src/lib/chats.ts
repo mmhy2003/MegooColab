@@ -37,6 +37,48 @@ export function waitingOnMe(chats: Chat[] | undefined): number {
   return (chats ?? []).filter((c) => c.can_act && WAITING.includes(c.state)).length;
 }
 
+/** Where a chat stands, for its mark in the list and the filters: waiting on a person, its agent at work, the next
+ * message the person's to write, its agent's runner away, or over. */
+export type ChatGroup = "needs_you" | "working" | "open" | "offline" | "ended";
+
+const GROUP: Record<ChatState, ChatGroup> = {
+  question: "needs_you", design_approval: "needs_you", plan_approval: "needs_you", escalation: "needs_you",
+  human_code_review: "needs_you",
+  building: "working", in_review: "working", merging: "working", working: "working",
+  talking: "open", reply: "open", finished: "open",
+  offline: "offline",
+  ended: "ended",
+};
+
+export function chatGroup(chat: Pick<Chat, "state" | "status">): ChatGroup {
+  return chat.status === "ended" ? "ended" : GROUP[chat.state];
+}
+
+/** The filters over the chat list: Active is everything not ended (the default); Open takes offline chats too. */
+export type ChatFilter = "all" | "active" | "needs_you" | "working" | "open" | "ended";
+export const CHAT_FILTERS: { value: ChatFilter; label: string; empty: string }[] = [
+  { value: "all", label: "All", empty: "No chats yet." },
+  { value: "active", label: "Active", empty: "No active chats." },
+  { value: "needs_you", label: "Needs you", empty: "Nothing needs you." },
+  { value: "working", label: "Working", empty: "No agent is working." },
+  { value: "open", label: "Open", empty: "No open chats." },
+  { value: "ended", label: "Ended", empty: "No ended chats." },
+];
+
+export function inFilter(chat: Pick<Chat, "state" | "status">, filter: ChatFilter): boolean {
+  const group = chatGroup(chat);
+  switch (filter) {
+    case "all":
+      return true;
+    case "active":
+      return group !== "ended";
+    case "open":
+      return group === "open" || group === "offline";
+    default:
+      return group === filter;
+  }
+}
+
 export const latestRound = (chat: Chat): ChatRound | undefined => chat.rounds[chat.rounds.length - 1];
 
 function prNumber(url?: string | null): string | null {
