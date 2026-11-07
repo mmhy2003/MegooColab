@@ -108,3 +108,46 @@ for (const [label, viewport, key] of SIZES) {
     expect((await note.boundingBox())!.y).toBeGreaterThanOrEqual(activity.y + activity.height);
   });
 }
+
+test("a task's own page expands over the whole window, centred, and Esc puts it back", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 700 });
+  await setupOrSignIn(page);
+  const request = page.request;
+  const me = (await (await request.get("/api/auth/me")).json()).user.id as string;
+  const team = await post<{ id: string }>(request, "/api/teams", { name: "Task Expand Team", description: "" });
+  expect((await request.put(`/api/teams/${team.id}/members`, { data: { user_ids: [me] }, headers: WEB })).ok()).toBeTruthy();
+  await post(request, "/api/projects", { key: "TPX", name: "Task expand", description: "", team_ids: [team.id] });
+  const long = Array.from({ length: 60 }, (_, i) => `Paragraph ${i + 1} of a long description.`).join("\n\n");
+  const task = await post<{ number: number }>(request, "/api/projects/TPX/tasks", { title: "A wide task", type: "task", description_md: long });
+
+  await page.goto(`/projects/TPX/tasks/${task.number}`);
+  const card = page.locator("[data-task-page]");
+  const inTask = (x: number, y: number) =>
+    page.evaluate(([px, py]) => !!document.elementFromPoint(px, py)?.closest("[data-task-page]"), [x, y]);
+  await page.getByRole("button", { name: "Expand task" }).click();
+  await expect.poll(async () => (await card.boundingBox())!.x).toBe(0);
+  expect(await card.boundingBox()).toEqual({ x: 0, y: 0, width: 1600, height: 700 });
+  expect(await inTask(40, 350)).toBe(true); // where the menu was
+  expect(await inTask(1200, 20)).toBe(true); // where the top bar was
+  // the task and its details keep to a centred 80rem (1280px): 160px either side, then the usual 1rem
+  const title = (await page.getByRole("textbox", { name: "Title" }).boundingBox())!;
+  expect(title.x).toBeGreaterThanOrEqual(176);
+  expect(title.x).toBeLessThan(200);
+  const details = (await page.getByRole("combobox", { name: "Priority" }).boundingBox())!;
+  expect(details.x + details.width).toBeLessThanOrEqual(1600 - 176 + 1);
+  expect(details.x + details.width).toBeGreaterThan(1600 - 200);
+  await expect(page.getByRole("button", { name: /^Go to the latest/ })).toBeInViewport();
+
+  // Esc while writing the title keeps it expanded; remembered across a reload; Esc elsewhere puts it back
+  await page.getByRole("textbox", { name: "Title" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Collapse task" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Collapse task" })).toBeVisible();
+  expect(await inTask(40, 350)).toBe(true);
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Expand task" })).toBeVisible();
+  expect((await card.boundingBox())!.x).toBeGreaterThan(0);
+  expect(await inTask(40, 350)).toBe(false);
+});

@@ -47,11 +47,14 @@ export function TaskView({
   onOpenTask,
   onDeleted,
   headerExtra,
+  expanded = false,
 }: {
   taskKey: string;
   onOpenTask: (key: string) => void;
   onDeleted: () => void;
   headerExtra?: React.ReactNode;
+  /** Over the whole window (the task's page, expanded): the header and the task keep to a centred area. */
+  expanded?: boolean;
 }) {
   const { ask, dialog } = useConfirm();
   const projectKey = taskKey.split("-")[0].toUpperCase();
@@ -148,10 +151,12 @@ export function TaskView({
   );
   const TypeIcon = TYPE_ICON[t.type];
 
+  // the padding grows past 1rem to keep what's inside to 80rem, so the scrollbar stays at the window's edge
+  const centred = expanded ? "md:px-[max(1rem,calc((100%_-_80rem)/2_+_1rem))]" : "";
   return (
     <>
       <div className="flex h-full flex-col">
-        <header className="flex items-start gap-2 border-b border-line p-4">
+        <header className={`flex items-start gap-2 border-b border-line p-4 ${centred}`}>
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <TypeIcon size={12} aria-hidden /> {t.key}
@@ -186,13 +191,13 @@ export function TaskView({
           )}
           {headerExtra}
         </header>
-        {error && <p role="alert" className="px-4 pt-2 text-sm text-pink">{error}</p>}
+        {error && <p role="alert" className={`px-4 pt-2 text-sm text-pink ${centred}`}>{error}</p>}
         <div className="relative flex min-h-0 flex-1 flex-col">
           {/* No bottom padding: the floating comment box (sticky, the end of the left column) must reach the bottom
               edge, and the corner buttons rise above it; the aside keeps pb-16 so its end scrolls clear of them.
               relative: what is positioned inside (screen reader text) is held in it too; otherwise it would stretch
               the page under a task's own page */}
-          <div ref={scrollRef} className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto px-4 pt-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div ref={scrollRef} data-task-scroll className={`relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto px-4 pt-4 lg:grid-cols-[minmax(0,1fr)_20rem] ${centred}`}>
             <div className="min-w-0 space-y-6 pb-4 max-md:pb-16">
               <Section title="Description">
                 <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />
