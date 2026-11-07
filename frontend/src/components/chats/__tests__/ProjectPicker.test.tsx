@@ -110,6 +110,14 @@ describe("ProjectPicker open", () => {
     expect(onChange).toHaveBeenLastCalledWith(["SD", "SLW", "PAY"]);
   });
 
+  it("shows projects that arrive after it opened", async () => {
+    const { rerender } = render(<ProjectPicker projects={[]} counts={COUNTS} value={[]} onChange={() => {}} />);
+    await open();
+    expect(screen.getByText("No projects.")).toBeInTheDocument();
+    rerender(<ProjectPicker projects={PROJECTS} counts={COUNTS} value={[]} onChange={() => {}} />);
+    expect(screen.getAllByRole("option")).toHaveLength(4);
+  });
+
   it("ticks the highlighted project with Enter", async () => {
     const onChange = vi.fn();
     render(<Box onChange={onChange} />);

@@ -27,7 +27,7 @@ function Marked({ text, query }: { text: string; query: string }) {
 /**
  * Several projects picked from a searchable list (none picked: all of them). Closed, it shows the picked ones as tags,
  * each with its ✕; open, a search over keys and names, then a checkbox per project with its chats (active / all). The
- * picked ones come first, in the order they had when it opened, so a row doesn't jump away as it's ticked.
+ * ones picked when it opened come first, and stay there until it closes, so a row doesn't jump away as it's ticked.
  */
 export function ProjectPicker({ projects, counts, value, onChange }: {
   projects: Project[];
@@ -37,22 +37,25 @@ export function ProjectPicker({ projects, counts, value, onChange }: {
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [order, setOrder] = useState<string[]>([]);
+  // the projects picked when it opened: they lead the list until it closes, so a row doesn't jump as it's ticked
+  const [first, setFirst] = useState<string[]>([]);
   const picked = new Set(value);
   const byKey = new Map(projects.map((p) => [p.key, p]));
   const tags = value.filter((k) => byKey.has(k));
 
   const onOpenChange = (next: boolean) => {
     if (next) {
-      setOrder([...projects.filter((p) => picked.has(p.key)), ...projects.filter((p) => !picked.has(p.key))].map((p) => p.key));
+      setFirst(value);
       setQuery("");
     }
     setOpen(next);
   };
   const q = query.trim().toLowerCase();
-  const shown = (open ? order : projects.map((p) => p.key))
-    .map((k) => byKey.get(k))
-    .filter((p): p is Project => !!p && (!q || p.key.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)));
+  // ordered from the projects as they are now: a list that arrives after it opened still shows
+  const lead = new Set(open ? first : []);
+  const shown = [...projects.filter((p) => lead.has(p.key)), ...projects.filter((p) => !lead.has(p.key))].filter(
+    (p) => !q || p.key.toLowerCase().includes(q) || p.name.toLowerCase().includes(q),
+  );
   const toggle = (key: string) => onChange(picked.has(key) ? value.filter((k) => k !== key) : [...value, key]);
   const addAll = () => onChange([...value, ...shown.map((p) => p.key).filter((k) => !picked.has(k))]);
 
