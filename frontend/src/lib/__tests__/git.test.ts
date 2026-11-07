@@ -5,7 +5,7 @@ import { limitedText, pullRequestProblem, pullRequestText, TOKEN_HELP, type Pull
 describe("pullRequestProblem", () => {
   it("maps every code to its row", () => {
     const rows: [string, string][] = [
-      ["forbidden", "GitHub refused the token (forbidden). It needs Pull requests, Commit statuses and Checks (read)."],
+      ["forbidden", "GitHub refused the token (forbidden). It needs Pull requests and Commit statuses (read)."],
       ["unauthorized", "GitHub rejected the token. It may have expired or been revoked."],
       ["not_found", "The token can't see this repository or pull request."],
       ["rate_limited", "GitHub is limiting requests. MegooColab will try again."],
@@ -35,12 +35,23 @@ describe("limitedText", () => {
       "Checks unknown: the token can't read commit statuses or checks. Review unknown: the token can't read reviews.",
     );
   });
+
+  it("on GitHub, says a fine-grained token can't read check runs, and what can", () => {
+    expect(limitedText("checks", "github")).toBe(
+      "Checks unknown: GitHub doesn't let a fine-grained token read check runs, where GitHub Actions reports. A classic token with repo shows them.",
+    );
+    expect(limitedText("checks,review", "github")).toBe("Checks unknown: GitHub doesn't let a fine-grained token read check runs, where GitHub Actions reports. A classic token with repo shows them. Review unknown: the token can't read reviews.");
+    expect(limitedText("checks", "gitea")).toBe("Checks unknown: the token can't read commit statuses or checks.");
+    expect(limitedText("checks", null)).toBe("Checks unknown: the token can't read commit statuses or checks.");
+  });
 });
 
 describe("TOKEN_HELP", () => {
-  it("asks GitHub tokens for statuses and checks", () => {
-    expect(TOKEN_HELP.github).toContain("Commit statuses");
-    expect(TOKEN_HELP.github).toContain("Checks");
+  it("asks GitHub tokens for statuses, and says a fine-grained one can't read check runs", () => {
+    expect(TOKEN_HELP.github).toContain("Pull requests and Commit statuses (read)");
+    expect(TOKEN_HELP.github).not.toContain("Checks (read)");
+    expect(TOKEN_HELP.github).toContain("A fine-grained token can't read check runs");
+    expect(TOKEN_HELP.github).toContain("classic token with repo");
   });
 });
 

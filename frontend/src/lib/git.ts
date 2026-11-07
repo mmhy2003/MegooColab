@@ -83,7 +83,9 @@ export const HOSTED: Partial<Record<GitKind, { label: string; url: string }>> = 
 export const TOKEN_HELP: Record<GitKind, string> = {
   github:
     "Read access to your repositories and pull requests: a fine-grained token with Contents, Metadata, Pull " +
-    "requests, Commit statuses and Checks (read), or a classic token with repo. Optional, for one-click webhook setup: Webhooks (read and write), " +
+    "requests and Commit statuses (read), or a classic token with repo. A fine-grained token can't read check runs, " +
+    "where GitHub Actions reports, so their results show as unknown; a classic token with repo shows them. " +
+    "Optional, for one-click webhook setup: Webhooks (read and write), " +
     "or admin:repo_hook. Optional, for an agent to review and merge: Pull requests and Contents (read and write).",
   gitlab:
     "Read access to your repositories and merge requests: the read_api scope. Optional, for one-click webhook setup: " +
@@ -124,7 +126,7 @@ const REVIEW: Record<string, string> = { approved: "approved", changes_requested
 
 /** What a token needs to read pull requests, per host (the words of its token hint). */
 const NEEDS_TO_READ: Record<GitKind, string> = {
-  github: "Pull requests, Commit statuses and Checks (read)",
+  github: "Pull requests and Commit statuses (read)",
   gitlab: "the read_api scope",
   gitea: "read:repository",
 };
@@ -152,11 +154,15 @@ export function pullRequestProblem(code: string, kind: GitKind | null): string {
   }
 }
 
-/** What a partial read couldn't see ("checks", "review" or "checks,review"), or null when it saw everything. */
-export function limitedText(limited: string | null | undefined): string | null {
+/** What a partial read couldn't see ("checks", "review" or "checks,review"), or null when it saw everything. `kind`
+ * is the host (null when unknown): GitHub gives no fine-grained token a way to read check runs, so it says that. */
+export function limitedText(limited: string | null | undefined, kind: GitKind | null = null): string | null {
   const parts = (limited ?? "").split(",");
   const out = [
-    parts.includes("checks") && "Checks unknown: the token can't read commit statuses or checks.",
+    parts.includes("checks") &&
+      (kind === "github"
+        ? "Checks unknown: GitHub doesn't let a fine-grained token read check runs, where GitHub Actions reports. A classic token with repo shows them."
+        : "Checks unknown: the token can't read commit statuses or checks."),
     parts.includes("review") && "Review unknown: the token can't read reviews.",
   ].filter(Boolean);
   return out.length ? out.join(" ") : null;

@@ -15,7 +15,7 @@ export function PullRequestBadge({ pr }: { pr: PullRequest }) {
   const Icon = pr.state === "merged" ? GitMerge : pr.state === "closed" ? GitPullRequestClosed : GitPullRequest;
   const tone = pr.error ? "border-pink/50 text-pink" : (pr.tracked && (TONE[pr.state] ?? TONE[pr.checks])) || "border-line text-muted-foreground";
   // why it can't be read, or what a partial read couldn't see: in the title and the accessible name, not colour alone
-  const reason = pr.error ? pullRequestProblem(pr.error, pr.host ?? null) : pr.tracked && pr.state === "open" ? limitedText(pr.limited) : null;
+  const reason = pr.error ? pullRequestProblem(pr.error, pr.host ?? null) : pr.tracked && pr.state === "open" ? limitedText(pr.limited, pr.host ?? null) : null;
   const text = pullRequestText(pr);
   return (
     <a

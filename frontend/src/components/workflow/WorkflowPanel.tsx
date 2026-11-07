@@ -117,7 +117,7 @@ export function WorkflowPanel({
         : `MegooColab can't read this pull request: ${pullRequestProblem(pr.error, pr.host ?? null)}${
             pr.next_check_at ? ` It tries again at ${new Date(pr.next_check_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : ""
           }`
-      : limitedText(pr.limited);
+      : limitedText(pr.limited, pr.host ?? null);
   const prNumber = /\/(?:pull|pulls|merge_requests)\/(\d+)\/?$/.exec(wf.pr_url ?? "")?.[1];
   // set_finishing needs a started workflow and is closed from done on
   const showFinishing = agentDriven && status !== "idle" && status !== "finished" && wf.stage !== "done";
