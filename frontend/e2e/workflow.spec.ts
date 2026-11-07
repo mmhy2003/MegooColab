@@ -429,7 +429,7 @@ test("workflow end to end", async ({ browser }) => {
   // 7. Build: step 1's run reaches the thread; its review asks for a change, the fix and a fresh re-review
   // approve it
   await expect(drawer.getByText("changed step1.txt (+1 −0)")).toBeVisible({ timeout: 30_000 });
-  await expect(drawer.getByText("finished: Step 1 is done")).toBeVisible({ timeout: 30_000 });
+  await expect(drawer.getByText("Step 1 is done", { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(drawer.getByText("Review of step 1 (round 1): changes requested — 1 important")).toBeVisible({ timeout: 30_000 });
   await drawer.getByRole("button", { name: "Show findings (1)" }).click();
   const findings = drawer.getByRole("region", { name: "Important findings" });

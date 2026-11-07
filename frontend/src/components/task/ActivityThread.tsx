@@ -73,8 +73,8 @@ function num(v: unknown): number {
   return typeof v === "number" ? v : 0;
 }
 
-/** Agent-produced fields are shown as plain text only, never as markup (its replies render as Markdown in their own
- * row, AgentReplyRow, never as raw HTML). */
+/** Agent-produced fields are shown as plain text only, never as markup (its replies, run summaries and fix summaries
+ * render as Markdown in their own box, never as raw HTML). */
 function describeAgentEvent(kind: string, data: Record<string, unknown>, byPerson: boolean): string | undefined {
   const reason = str(data.reason);
   switch (kind) {
@@ -102,7 +102,8 @@ function describeAgentEvent(kind: string, data: Record<string, unknown>, byPerso
     case "agent_permission":
       return `was ${data.decision === "allowed" ? "allowed" : "denied"}: ${str(data.title) ?? "a request"}`;
     case "agent_run_completed":
-      return `finished: ${str(data.summary) ?? "done"}`;
+      // its summary is the agent's last message: the thread shows it as the reply (or under this line, as Markdown)
+      return "finished";
     case "agent_run_failed":
       return `failed: ${reason ? runReasonText(reason) : "unknown reason"}`;
     case "agent_run_cancelled":
@@ -264,7 +265,7 @@ export function ActivityThread({
       </button>
     )}
     <ol className="space-y-3">
-      {joinAgentMessages(items).map((item) => {
+      {withReplies(joinAgentMessages(items)).map(({ item, repliedRun }) => {
         const agentId = str(item.data?.agent_id);
         const isAgent = item.kind?.startsWith("agent_") && !item.actor;
         const actor = item.actor?.name ?? (isAgent ? (agentId && agentNames?.get(agentId)) || "Agent" : "Someone");
@@ -320,7 +321,8 @@ export function ActivityThread({
         const docKind = kind.startsWith("document.") && (data.kind === "design" || data.kind === "plan") ? data.kind : undefined;
         const reviewId = kind === "review.result" ? str(data.review_id) : undefined;
         const prUrl = kind === "finish.reported" ? str(data.pr_url) : undefined;
-        const fixSummary = kind === "pr.fix_pushed" ? str(data.summary) : undefined;
+        const fixSummary = kind === "pr.fix_pushed" ? str(data.summary)?.trim() : undefined;
+        const runSummary = kind === "agent_run_completed" ? str(data.summary)?.trim() : undefined;
         return (
           <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind} docVersion={num(data.version)}
             images={item.images}>
@@ -333,7 +335,12 @@ export function ActivityThread({
               </>
             )}
             {reviewId && <ReviewResult taskKey={taskKey} reviewId={reviewId} total={findingTotal(data)} />}
-            {fixSummary && <span className="mt-1 block border-l-2 border-line pl-2">{fixSummary}</span>}
+            {fixSummary && (
+              <div data-fix-summary className="mt-1 border-l-2 border-line pl-2 text-fg">
+                <Markdown compact>{fixSummary}</Markdown>
+              </div>
+            )}
+            {runSummary && !repliedRun(runSummary) && <ReplyBox data-run-summary text={runSummary} />}
           </EventRow>
         );
       })}
@@ -389,9 +396,7 @@ function AgentReplyRow({ at, who, text }: { at: string; who: string; text: strin
       <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan" />
       <div className="min-w-0 flex-1">
         <span className="text-fg">{who}</span>
-        <div className="mt-1 rounded-r border-l-2 border-cyan bg-surface-2/70 px-3 py-0.5 text-fg">
-          <Markdown compact>{text}</Markdown>
-        </div>
+        <ReplyBox text={text} />
       </div>
       <span className="ml-auto whitespace-nowrap">{when(at)}</span>
     </li>
@@ -413,6 +418,30 @@ const GIT_ICON: Record<GitLine["icon"], { Icon: typeof GitMerge; tone: string }>
 
 /** A pull request or branch event: who (an agent tagged as one), what (linked to the host), the host, and an
  * excerpt quoted as plain text. */
+/** An agent's own words, as Markdown in a box with a cyan edge. */
+function ReplyBox({ text, ...rest }: { text: string; "data-run-summary"?: boolean }) {
+  return (
+    <div {...rest} className="mt-1 rounded-r border-l-2 border-cyan bg-surface-2/70 px-3 py-0.5 text-fg">
+      <Markdown compact>{text}</Markdown>
+    </div>
+  );
+}
+
+/** Pairs each item with a check of whether a run summary repeats what its run already said in this thread: the
+ * runner's summary is a copy of the agent's last message (or its last piece), so a completed run whose reply is
+ * shown above it says only that it finished. */
+function withReplies(items: ActivityItem[]) {
+  const said = new Map<string, string[]>();
+  return items.map((item) => {
+    const runId = str(item.data?.run_id);
+    if (item.kind === "agent_message" && !item.actor && runId) {
+      said.set(runId, [...(said.get(runId) ?? []), str(item.data?.text) ?? ""]);
+    }
+    const replies = runId ? said.get(runId) ?? [] : [];
+    return { item, repliedRun: (summary: string) => replies.some((text) => text.includes(summary)) };
+  });
+}
+
 function GitEventRow({ at, line }: { at: string; line: GitLine }) {
   const { Icon, tone } = GIT_ICON[line.icon];
   return (
