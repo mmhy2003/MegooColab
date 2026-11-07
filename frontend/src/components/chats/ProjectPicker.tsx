@@ -62,9 +62,10 @@ export function ProjectPicker({ projects, counts, value, onChange }: {
   return (
     <div className="space-y-1">
       <span className="text-xs tracking-wider text-muted-foreground uppercase">Projects</span>
+      {/* the keyboard's focus ring goes round the whole field, not just the button inside it */}
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverAnchor asChild>
-          <div className="flex min-h-9 flex-wrap items-center gap-1 rounded border border-line bg-surface-2 py-1 pl-1.5 pr-1 focus-within:border-cyan">
+          <div className="flex min-h-9 flex-wrap items-center gap-1 rounded border border-line bg-surface-2 py-1 pr-1 pl-1.5 focus-within:border-cyan has-[[role=combobox]:focus-visible]:outline-2 has-[[role=combobox]:focus-visible]:outline-offset-2 has-[[role=combobox]:focus-visible]:outline-cyan">
             {tags.slice(0, TAGS).map((k) => (
               <span key={k} className="inline-flex items-center gap-0.5 rounded border border-cyan/40 bg-cyan/10 pl-1.5 text-xs text-cyan-ink">
                 {k}
@@ -85,7 +86,7 @@ export function ProjectPicker({ projects, counts, value, onChange }: {
                 role="combobox"
                 aria-label="Projects"
                 aria-expanded={open}
-                className="flex min-h-7 min-w-16 flex-1 items-center justify-between gap-2 px-1 text-left text-sm outline-none"
+                className="flex min-h-7 min-w-16 flex-1 items-center justify-between gap-2 px-1 text-left text-sm focus-visible:shadow-none! focus-visible:outline-none!"
               >
                 <span className="min-w-0 truncate text-muted-foreground">
                   {tags.length === 0 ? <span className="text-fg">All projects</span> : tags.length > TAGS ? `+${tags.length - TAGS} more` : ""}
