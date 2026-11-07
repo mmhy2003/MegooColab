@@ -27,7 +27,7 @@ const SCENARIO = [
       "Add a notes file",
       { write: { path: "notes.txt", content: "notes\n" } },
       { commit: { message: "docs: add notes.txt", all: true } },
-      say(`Created notes.txt on megoo/${KEY}`),
+      say(`Created **notes.txt** on megoo/${KEY}`),
     ),
     onPrompt(
       "rename it",
@@ -113,9 +113,13 @@ test("a freestyle chat: two turns, then End chat", async ({ browser }) => {
   await expect(ui).toHaveURL(/\/chats\/[0-9a-f-]{36}$/);
   const view = ui.getByRole("main");
   await expect(view.locator("header").getByText("Freestyle", { exact: true })).toBeVisible();
-  // the reply shows as the agent's message and again in "…finished: <reply>": the message comes first
-  await expect(view.getByText(`Created notes.txt on megoo/${KEY}`).first()).toBeVisible({ timeout: 60_000 });
+  // the reply renders as Markdown, and the "finished" line under it doesn't repeat it as raw text
+  await expect(view.getByText(`Created notes.txt on megoo/${KEY}`)).toBeVisible({ timeout: 60_000 });
   await expect(view.locator("[data-chat]").getByText("waiting for your reply", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(view.locator("[data-agent-reply] strong", { hasText: "notes.txt" })).toBeVisible();
+  await expect(view.getByText(/ finished$/)).toHaveCount(1);
+  await expect(view.locator("[data-run-summary]")).toHaveCount(0);
+  await expect(view.getByText("**")).toHaveCount(0);
 
   // 2. a second message is the next turn
   const box = view.getByRole("textbox", { name: `Message ${AGENT_NAME}` });
