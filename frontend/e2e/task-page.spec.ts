@@ -151,3 +151,48 @@ test("a task's own page expands over the whole window, centred, and Esc puts it 
   expect((await card.boundingBox())!.x).toBeGreaterThan(0);
   expect(await inTask(40, 350)).toBe(false);
 });
+
+test("on a phone the details and the workflow come first, folded, and Activity and the comment box last", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 760 });
+  await setupOrSignIn(page);
+  const request = page.request;
+  const me = (await (await request.get("/api/auth/me")).json()).user.id as string;
+  const team = await post<{ id: string }>(request, "/api/teams", { name: "Task Order Team", description: "" });
+  expect((await request.put(`/api/teams/${team.id}/members`, { data: { user_ids: [me] }, headers: WEB })).ok()).toBeTruthy();
+  await post(request, "/api/projects", { key: "TPO", name: "Task order", description: "", team_ids: [team.id] });
+  const task = await post<{ key: string; number: number }>(request, "/api/projects/TPO/tasks", {
+    title: "An ordered task", type: "task", description_md: "What it is about.",
+  });
+  await post(request, `/api/tasks/${task.key}/comments`, { body_md: "A first comment" });
+  await page.goto(`/projects/TPO/tasks/${task.number}`);
+
+  const show = page.getByRole("button", { name: "Show all details" });
+  await expect(show).toBeVisible();
+  const y = async (l: import("@playwright/test").Locator) => (await l.boundingBox())!.y;
+  const description = page.getByRole("region", { name: "Description" });
+  const activity = page.getByRole("region", { name: "Activity" });
+  const workflow = page.locator("[data-task-workflow]");
+  // folded: a line of chips, then the workflow, then the task, and the conversation last
+  await expect(page.locator("[data-details-summary] ul")).toContainText("Unassigned");
+  await expect(page.getByRole("combobox", { name: "Status" })).toBeHidden();
+  expect(await y(show)).toBeLessThan(await y(workflow));
+  expect(await y(workflow)).toBeLessThan(await y(description));
+  expect(await y(description)).toBeLessThan(await y(activity));
+
+  // Show all opens the fields in place, above the workflow; it stays open on the next visit
+  await show.click();
+  const status = page.getByRole("combobox", { name: "Status" });
+  await expect(status).toBeVisible();
+  expect(await y(status)).toBeLessThan(await y(workflow));
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Hide details" })).toBeVisible();
+  await page.getByRole("button", { name: "Hide details" }).click();
+  await expect(page.getByRole("combobox", { name: "Status" })).toBeHidden();
+
+  // beside the task (a wide screen), nothing folds and the details column is on the right as before
+  await page.setViewportSize({ width: 1280, height: 700 });
+  await expect(show).toBeHidden();
+  await expect(page.getByRole("combobox", { name: "Status" })).toBeVisible();
+  const box = (await page.getByRole("combobox", { name: "Status" }).boundingBox())!;
+  expect(box.x).toBeGreaterThan((await description.boundingBox())!.x + 300);
+});
