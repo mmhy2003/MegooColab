@@ -108,13 +108,66 @@ describe("GitConnections", () => {
     expect(sent(fetchMock, "POST")[0].body).toEqual({ name: "GitHub", kind: "github", token: "ghp_x" });
   });
 
-  it("the token says what access it needs, per kind", async () => {
-    mockFetch((url) => (url === "/api/admin/git-connections" ? json([]) : undefined));
-    wrap(<GitConnections />);
-    fireEvent.click(await screen.findByRole("button", { name: "Add connection" }));
-    fireEvent.click(kind("GitLab"));
-    expect(screen.getByText(/read_api/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "How to make one" })).toHaveAttribute("href", expect.stringContaining("gitlab"));
+  describe("what the token needs", () => {
+    const open = async () => {
+      mockFetch((url) => (url === "/api/admin/git-connections" ? json([]) : undefined));
+      wrap(<GitConnections />);
+      fireEvent.click(await screen.findByRole("button", { name: "Add connection" }));
+      return screen.getByRole("region", { name: "What the token needs" });
+    };
+    const row = (card: HTMLElement, why: string) => within(card).getByText(why).closest("li")!;
+
+    it("lays GitHub's out one reason a row, each permission its own chip, with its access", async () => {
+      const card = await open();
+      const follow = row(card, "Follow pull requests");
+      expect(follow).toHaveTextContent("Required");
+      for (const p of ["Contents", "Metadata", "Pull requests", "Commit statuses"]) {
+        expect(within(follow).getByText(p).closest("li")).toHaveTextContent(`${p}Read`);
+      }
+      expect(follow).toHaveTextContent("A fine-grained token can't read check runs");
+      expect(row(card, "Set up webhooks in one click")).toHaveTextContent("Optional");
+      expect(row(card, "Set up webhooks in one click")).toHaveTextContent("WebhooksRead and write");
+      expect(row(card, "Let an agent review and merge")).toHaveTextContent("Pull requestsRead and write");
+      expect(within(card).getByRole("link", { name: "Create a token on GitHub" })).toHaveAttribute(
+        "href", "https://github.com/settings/personal-access-tokens/new",
+      );
+      expect(within(card).getByRole("link", { name: "GitHub's guide" })).toHaveAttribute("href", expect.stringContaining("docs.github.com"));
+    });
+
+    it("switches GitHub to a classic token's scopes, without the check-runs note", async () => {
+      const card = await open();
+      const type = within(card).getByRole("group", { name: "Token type" });
+      expect(within(type).getByRole("button", { name: "Fine-grained token" })).toHaveAttribute("aria-pressed", "true");
+      fireEvent.click(within(type).getByRole("button", { name: "Classic token" }));
+      expect(row(card, "Follow pull requests")).toHaveTextContent("repo");
+      expect(card).not.toHaveTextContent("A fine-grained token can't read check runs");
+      expect(row(card, "Set up webhooks in one click")).toHaveTextContent("admin:repo_hook");
+      expect(within(card).getByRole("link", { name: "Create a classic token on GitHub" })).toHaveAttribute(
+        "href", "https://github.com/settings/tokens/new?description=MegooColab&scopes=repo",
+      );
+    });
+
+    it("uses each host's own words, with no token type to pick", async () => {
+      const card = await open();
+      fireEvent.click(kind("GitLab"));
+      expect(within(card).queryByRole("group", { name: "Token type" })).toBeNull();
+      expect(row(card, "Follow merge requests")).toHaveTextContent("read_api");
+      expect(within(card).getByRole("link", { name: "Create a token on GitLab" })).toHaveAttribute(
+        "href", "https://gitlab.com/-/user_settings/personal_access_tokens?name=MegooColab&scopes=read_api",
+      );
+      fireEvent.click(kind("Gitea / Forgejo"));
+      expect(row(card, "Follow pull requests")).toHaveTextContent("read:repository");
+    });
+
+    it("links a self-hosted server's own new-token page, once its address is in", async () => {
+      const card = await open();
+      fireEvent.click(where("Self-hosted"));
+      expect(within(card).queryByRole("link", { name: "Create a token on GitHub" })).toBeNull();
+      fireEvent.change(screen.getByLabelText("Server address"), { target: { value: "https://ghe.example.com/" } });
+      expect(within(card).getByRole("link", { name: "Create a token on GitHub" })).toHaveAttribute(
+        "href", "https://ghe.example.com/settings/personal-access-tokens/new",
+      );
+    });
   });
 
   it("a provider with the old shared secret lists the repositories still on it and asks before removing it", async () => {

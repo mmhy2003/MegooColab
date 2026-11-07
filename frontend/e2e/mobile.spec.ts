@@ -180,6 +180,11 @@ test("every page fits a phone, 280 and 344 pixels wide", async ({ browser, page 
     await p.getByRole("button", { name: /New token|Create token/ }).first().click();
     await onScreen(p.getByRole("dialog").last(), width);
     await p.keyboard.press("Escape");
+    // a git connection's form, with what its token needs, fits too
+    await p.goto("/admin/git");
+    await p.getByRole("button", { name: "Add connection" }).click();
+    await expect(p.getByRole("region", { name: "What the token needs" })).toBeVisible();
+    expect(await overflow(p), `git connection form at ${width}`).toEqual([]);
     // a repository entered by hand: its form fits too
     await p.goto("/projects/MOB/settings");
     await p.getByRole("tab", { name: "Repositories" }).click();

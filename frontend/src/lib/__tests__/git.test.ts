@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { limitedText, pullRequestProblem, pullRequestText, TOKEN_HELP, type PullRequest } from "@/lib/git";
+import { limitedText, newTokenUrl, pullRequestProblem, pullRequestText, TOKEN_NEEDS, type PullRequest } from "@/lib/git";
 
 describe("pullRequestProblem", () => {
   it("maps every code to its row", () => {
@@ -46,12 +46,28 @@ describe("limitedText", () => {
   });
 });
 
-describe("TOKEN_HELP", () => {
-  it("asks GitHub tokens for statuses, and says a fine-grained one can't read check runs", () => {
-    expect(TOKEN_HELP.github).toContain("Pull requests and Commit statuses (read)");
-    expect(TOKEN_HELP.github).not.toContain("Checks (read)");
-    expect(TOKEN_HELP.github).toContain("A fine-grained token can't read check runs");
-    expect(TOKEN_HELP.github).toContain("classic token with repo");
+describe("TOKEN_NEEDS", () => {
+  it("asks a fine-grained GitHub token for statuses, never for Checks, and says it can't read check runs", () => {
+    const [fine] = TOKEN_NEEDS.github;
+    const names = fine.needs[0].permissions.map((p) => p.name);
+    expect(names).toEqual(["Contents", "Metadata", "Pull requests", "Commit statuses"]);
+    expect(fine.needs.flatMap((n) => n.permissions.map((p) => p.name))).not.toContain("Checks");
+    expect(fine.needs[0].warning).toMatch(/can't read check runs/);
+  });
+
+  it("starts every host with the one required reason", () => {
+    for (const variants of Object.values(TOKEN_NEEDS)) {
+      for (const v of variants) expect(v.needs.map((n) => n.required)).toEqual([true, false, false]);
+    }
+  });
+});
+
+describe("newTokenUrl", () => {
+  it("joins the server's address and the page, or gives up without a real address", () => {
+    expect(newTokenUrl("https://git.example.com//", "/user/settings/applications")).toBe("https://git.example.com/user/settings/applications");
+    expect(newTokenUrl("", "/x")).toBeNull();
+    expect(newTokenUrl("git.example.com", "/x")).toBeNull();
+    expect(newTokenUrl("javascript:alert(1)", "/x")).toBeNull();
   });
 });
 
