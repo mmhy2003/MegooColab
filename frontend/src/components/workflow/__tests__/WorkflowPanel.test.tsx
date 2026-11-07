@@ -456,6 +456,6 @@ describe("WorkflowPanel agent merge confirmation", () => {
 
   it("says what a partial read couldn't see", async () => {
     setup(wf({ ...base, needs: "human_code_review", pull_request: pr({ limited: "checks" }) } as Partial<Workflow>));
-    expect(await screen.findByText("Checks unknown: the token can't read commit statuses or checks.")).toBeInTheDocument();
+    expect(await screen.findByText("Checks unknown: GitHub doesn't let a fine-grained token read check runs, where GitHub Actions reports. A classic token with repo shows them.")).toBeInTheDocument();
   });
 });

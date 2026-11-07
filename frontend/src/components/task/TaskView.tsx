@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { TYPE_ICON } from "@/components/board/TaskCard";
 import { ChatRedirect } from "@/components/chats/ChatRedirect";
@@ -14,6 +14,7 @@ import { canDeleteTask, projectRights } from "@/lib/rights";
 import { useMe } from "@/lib/me";
 import { useColumns, useLabels, useProject, useRepos, useSprints, useTask, useTasks, useUsers } from "@/lib/project";
 import { qk } from "@/lib/queries";
+import { useStoredState } from "@/lib/stored";
 import { useRecordTitle } from "@/lib/title";
 import { useRecordTrail } from "@/lib/trail";
 import type { ActivityItem, Attachment } from "@/lib/types";
@@ -32,6 +33,7 @@ import { ActivityThread } from "./ActivityThread";
 import { Attachments } from "./Attachments";
 import { CommentBox } from "./CommentBox";
 import { Description } from "./Description";
+import { DetailsSummary } from "./DetailsSummary";
 import { FollowRoom, JumpButtons, useLiftAbove } from "./JumpButtons";
 import { Links } from "./Links";
 import { PhoneComposer } from "./PhoneComposer";
@@ -87,6 +89,9 @@ export function TaskView({
   const users = useUsers();
   const agents = useProjectAgents(projectKey);
   const sprints = useSprints(projectKey, project.data?.sprints_enabled ?? false);
+  // in one column the details fold to a line, kept open or folded in this browser
+  const [detailsOpen, setDetailsOpen] = useStoredState("tasks.detailsOpen", false, "local");
+  const detailsId = useId();
   const repos = useRepos(projectKey);
   const all = useTasks(projectKey);
   const workflow = useWorkflow(taskKey);
@@ -198,7 +203,7 @@ export function TaskView({
               relative: what is positioned inside (screen reader text) is held in it too; otherwise it would stretch
               the page under a task's own page */}
           <div ref={scrollRef} data-task-scroll className={`relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-6 overflow-y-auto px-4 pt-4 lg:grid-cols-[minmax(0,1fr)_20rem] ${centred}`}>
-            <div className="min-w-0 space-y-6 pb-4 max-md:pb-16">
+            <div className="min-w-0 space-y-6 pb-4 max-lg:pb-16">
               <Section title="Description">
                 <Description value={t.description_md} disabled={disabled} onSave={(md) => run(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: { description_md: md } }))} />
               </Section>
@@ -299,32 +304,49 @@ export function TaskView({
                 </div>
               )}
             </div>
-            <aside className="space-y-4 pb-16">
-              <TaskFields
+            {/* in one column (below lg) the details and the workflow come first, so Activity and the comment box are
+                last: the folded details, then the workflow, which holds what to act on */}
+            <aside className="flex flex-col gap-4 pb-16 max-lg:order-first max-lg:pb-0">
+              <DetailsSummary
                 task={t}
                 columns={columns.data}
                 users={users.data ?? []}
                 agents={agents.data ?? []}
-                labels={labels.data ?? []}
-                parents={parents}
                 sprints={project.data?.sprints_enabled ? sprints.data : undefined}
-                meId={me?.id}
-                disabled={disabled}
-                defaultBranch={repos.data?.length === 1 ? repos.data[0].default_branch : null}
-                onPatch={(patch) => attempt(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: patch }))}
-                onMove={(column_id) => void run(() => api(`/api/tasks/${t.key}/move`, { method: "POST", json: { column_id } }))}
-                onSprint={(sprint_id) => void run(() => api(`/api/tasks/${t.key}/sprint`, { method: "PUT", json: { sprint_id } }))}
-                onWatch={(watch) => void run(() => api(`/api/tasks/${t.key}/watch`, { method: watch ? "PUT" : "DELETE" }))}
+                open={detailsOpen}
+                onToggle={() => setDetailsOpen(!detailsOpen)}
+                controls={detailsId}
               />
-              {["story", "task", "bug"].includes(t.type) && (
-                <WorkflowPanel
-                  taskKey={t.key}
-                  unassigned={t.assignee_agent_id == null}
-                  agent={t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined}
+              <div id={detailsId} data-task-details className={detailsOpen ? undefined : "max-lg:hidden"}>
+                <TaskFields
+                  task={t}
+                  columns={columns.data}
+                  users={users.data ?? []}
+                  agents={agents.data ?? []}
+                  labels={labels.data ?? []}
+                  parents={parents}
+                  sprints={project.data?.sprints_enabled ? sprints.data : undefined}
+                  meId={me?.id}
                   disabled={disabled}
+                  defaultBranch={repos.data?.length === 1 ? repos.data[0].default_branch : null}
+                  onPatch={(patch) => attempt(() => api(`/api/tasks/${t.key}`, { method: "PATCH", json: patch }))}
+                  onMove={(column_id) => void run(() => api(`/api/tasks/${t.key}/move`, { method: "POST", json: { column_id } }))}
+                  onSprint={(sprint_id) => void run(() => api(`/api/tasks/${t.key}/sprint`, { method: "PUT", json: { sprint_id } }))}
+                  onWatch={(watch) => void run(() => api(`/api/tasks/${t.key}/watch`, { method: watch ? "PUT" : "DELETE" }))}
                 />
+              </div>
+              {["story", "task", "bug"].includes(t.type) && (
+                <div data-task-workflow className="max-lg:order-last">
+                  <WorkflowPanel
+                    taskKey={t.key}
+                    unassigned={t.assignee_agent_id == null}
+                    agent={t.assignee_agent_id ? agents.data?.find((a) => a.id === t.assignee_agent_id) : undefined}
+                    disabled={disabled}
+                  />
+                </div>
               )}
-              <p className="text-[11px] text-muted-foreground">
+              {/* in one column it ends the details, so it folds with them */}
+              <p className={`text-[11px] text-muted-foreground ${detailsOpen ? "" : "max-lg:hidden"}`}>
                 Reported by {t.reporter_id ? userNames.get(t.reporter_id) ?? "someone" : "someone"} ·{" "}
                 {new Date(t.created_at).toLocaleDateString()}
               </p>

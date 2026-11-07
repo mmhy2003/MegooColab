@@ -178,7 +178,7 @@ pushes or merges.
 
 | Host | Token | Scopes |
 |---|---|---|
-| GitHub / GitHub Enterprise | A fine-grained personal access token (or a GitHub App's) for the repositories | **Pull requests: read**, **Commit statuses: read**, **Checks: read** (Metadata: read is added for you) |
+| GitHub / GitHub Enterprise | A fine-grained personal access token for the repositories, or a classic token with `repo` | Fine-grained: **Pull requests: read** and **Commit statuses: read** (Metadata: read is added for you). A fine-grained token can't read check runs, where GitHub Actions reports, so their results show as unknown; a classic token with `repo` reads them, but also allows writing |
 | GitLab | A project, group or personal access token | `read_api` |
 | Gitea / Forgejo | An access token | `read:repository` |
 

@@ -164,6 +164,8 @@ test("every page fits a phone, 280 and 344 pixels wide", async ({ browser, page 
     await onScreen(p.getByRole("navigation", { name: "Main" }), width);
     await p.keyboard.press("Escape");
     await p.goto("/projects/MOB/tasks/1");
+    // on a phone the details are folded to a line; Show all opens them
+    await p.getByRole("button", { name: "Show all details" }).click();
     await p.getByRole("combobox", { name: "Assignee" }).click();
     await onScreen(p.getByRole("listbox"), width);
     await p.keyboard.press("Escape");

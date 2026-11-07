@@ -161,7 +161,7 @@ describe("PullRequestBadge", () => {
 
   it("an unreadable pull request says so, in pink, with the reason in its title and name", () => {
     render(<PullRequestBadge pr={pr({ error: "forbidden", host: "github" })} />);
-    const reason = "GitHub refused the token (forbidden). It needs Pull requests, Commit statuses and Checks (read).";
+    const reason = "GitHub refused the token (forbidden). It needs Pull requests and Commit statuses (read).";
     const link = screen.getByRole("link", { name: new RegExp("can't read.*GitHub refused the token") });
     expect(link).toHaveTextContent("PR · can't read");
     expect(link).toHaveAttribute("title", reason);
@@ -169,10 +169,10 @@ describe("PullRequestBadge", () => {
   });
 
   it("a partial read keeps the state and explains what is unknown", () => {
-    render(<PullRequestBadge pr={pr({ checks: "unknown", limited: "checks" })} />);
+    render(<PullRequestBadge pr={pr({ checks: "unknown", limited: "checks", host: "github" })} />);
     const link = screen.getByRole("link");
     expect(link).toHaveTextContent("PR open · checks unknown");
-    expect(link).toHaveAttribute("title", "Checks unknown: the token can't read commit statuses or checks.");
+    expect(link).toHaveAttribute("title", "Checks unknown: GitHub doesn't let a fine-grained token read check runs, where GitHub Actions reports. A classic token with repo shows them.");
   });
 });
 
