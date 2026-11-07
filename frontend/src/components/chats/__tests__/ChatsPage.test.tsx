@@ -68,7 +68,7 @@ describe("ChatsPage", () => {
     );
     const list = await screen.findByRole("list");
     expect(list.closest(".overflow-y-auto")).not.toBeNull();
-    expect(screen.getByLabelText("Project").closest(".overflow-y-auto")).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Projects" }).closest(".overflow-y-auto")).toBeNull();
   });
 });
 
@@ -129,5 +129,59 @@ describe("ChatsPage filters", () => {
     } finally {
       CHATS.unshift({ id: "c1", project_key: "PAY", title: "Asks", status: "open", state: "question", can_act: true, rounds: [] });
     }
+  });
+});
+
+describe("ChatsPage projects", () => {
+  beforeEach(() => window.localStorage.clear());
+  const CHATS = [
+    { id: "c1", project_key: "PAY", title: "Pay asks", status: "open", state: "question", can_act: true, rounds: [] },
+    { id: "c2", project_key: "MOB", title: "Mob builds", status: "open", state: "building", can_act: true, rounds: [] },
+    { id: "c3", project_key: "WEB", title: "Web talks", status: "open", state: "talking", can_act: true, rounds: [] },
+    { id: "c4", project_key: "WEB", title: "Web done", status: "ended", state: "ended", can_act: true, rounds: [] },
+  ];
+  const PROJECTS = [
+    { id: "p1", key: "PAY", name: "Payments" }, { id: "p2", key: "MOB", name: "Mobile" }, { id: "p3", key: "WEB", name: "Website" },
+  ];
+  function show() {
+    const fetchMock = vi.fn(async (url: string) =>
+      new Response(JSON.stringify(url.startsWith("/api/chats") ? CHATS : url.startsWith("/api/projects") ? PROJECTS : []), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ChatsPage />
+      </QueryClientProvider>,
+    );
+    return fetchMock;
+  }
+  const chip = (name: RegExp) => within(screen.getByRole("group", { name: "Show" })).getByRole("button", { name });
+
+  it("picks several projects: the list, its project keys and the counts follow them, and it's remembered", async () => {
+    const fetchMock = show();
+    await screen.findByText("Pay asks");
+    fireEvent.click(screen.getByRole("combobox", { name: "Projects" }));
+    fireEvent.click(await screen.findByRole("option", { name: /^PAY / }));
+    fireEvent.click(screen.getByRole("option", { name: /^WEB / }));
+    expect(screen.queryByText("Mob builds")).toBeNull();
+    expect(screen.getByText("Pay asks")).toBeInTheDocument();
+    expect(screen.getByText("Web talks")).toBeInTheDocument();
+    expect(chip(/^All/)).toHaveTextContent("3");
+    expect(chip(/^Active/)).toHaveTextContent("2");
+    // each option counts its project's chats: active of all
+    expect(screen.getByRole("option", { name: /^WEB / })).toHaveAccessibleName("WEB — Website, 1 active of 2 chats");
+    expect(JSON.parse(window.localStorage.getItem("chats.projects")!)).toEqual(["PAY", "WEB"]);
+    // every chat comes in one list, whatever is picked: the picking happens here
+    expect(fetchMock.mock.calls.map(([u]) => u).filter((u) => String(u).startsWith("/api/chats"))).toEqual(["/api/chats"]);
+  });
+
+  it("with one project picked the rows drop its key, and a project gone from view is ignored", async () => {
+    window.localStorage.setItem("chats.projects", JSON.stringify(["MOB", "GONE"]));
+    show();
+    expect(await screen.findByText("Mob builds")).toBeInTheDocument();
+    await screen.findByRole("button", { name: "Remove MOB" });
+    expect(screen.queryByText("Pay asks")).toBeNull();
+    expect(screen.queryByText(/^MOB · /)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove GONE" })).toBeNull();
   });
 });
