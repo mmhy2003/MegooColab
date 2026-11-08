@@ -1,5 +1,6 @@
 """Asking a project (A2A-1), suggestions from the KB and memory before routing (A2A-6), withdrawing."""
 
+import re
 import uuid
 from datetime import UTC, datetime
 
@@ -153,6 +154,8 @@ async def ask(
     prefer_agent_id: uuid.UUID | None = None,
     prefer_program: str | None = None,
     if_busy: str = "wait",
+    wait: bool = False,
+    follow_up_to: str | None = None,
 ) -> tuple[Question, list[Suggestion]]:
     if user.role == Role.viewer:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
@@ -173,6 +176,16 @@ async def ask(
         raise HTTPException(status.HTTP_409_CONFLICT, "project_closed")
     if prefer_agent_id is not None and prefer_program is not None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_preference")
+    by_agent = agent_id is not None and task is not None  # an agent asking for its task, on its own
+    earlier = None
+    if follow_up_to is not None:
+        earlier = await _follow_up_target(db, task, project, follow_up_to)
+        answered_by = earlier.answered_by_agent_id
+        if prefer_agent_id is None and prefer_program is None and answered_by is not None and answered_by in {
+            a.id for a in await project_agents(db, project.id)
+        }:
+            # the agent that answered before already knows where things are; any other may still answer
+            prefer_agent_id, if_busy = answered_by, "any"
     if prefer_agent_id is not None and prefer_agent_id not in {a.id for a in await project_agents(db, project.id)}:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "agent_not_available")
     # before any lock: the search can be slow, and the question's number locks the project row until commit
@@ -180,7 +193,10 @@ async def ask(
     # one ask at a time per user, so concurrent asks cannot all pass the cap
     await db.execute(sql_text("SELECT pg_advisory_xact_lock(hashtext('a2a.ask'), hashtext(:uid))"),
                      {"uid": str(user.id)})
-    if await open_question_count(db, user) >= OPEN_QUESTION_CAP:
+    if by_agent:
+        if await task_question_count(db, task) >= QUESTION_LIMIT:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "question_limit")
+    elif await open_question_count(db, user) >= OPEN_QUESTION_CAP:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "too_many_open_questions")
     number = (await db.execute(
         update(Project).where(Project.id == project.id)
@@ -192,6 +208,7 @@ async def ask(
         asked_by_user_id=user.id, asked_by_agent_id=agent_id, title=title, body=body, context=context,
         prefer_agent_id=prefer_agent_id, prefer_program=prefer_program,
         prefer_only=if_busy == "wait" and (prefer_agent_id is not None or prefer_program is not None),
+        wait=wait, follow_up_of_id=earlier.id if earlier is not None else None,
     )
     db.add(q)
     await db.flush()
@@ -201,7 +218,8 @@ async def ask(
         )
 
         await record_event(db, task, user.id, "question_asked",
-                           {"question_id": str(q.id), "target_key": project.key, "number": number})
+                           {"question_id": str(q.id), "target_key": project.key, "number": number,
+                            "follow_up_of_number": earlier.number if earlier is not None else None})
     await audit.record(db, "a2a.question.asked", actor_id=user.id, target_type="question", target_id=q.id,
                        data={"target": project.key, "number": number, "agent_id": str(agent_id) if agent_id else None})
     await notify(db, q)
@@ -209,6 +227,62 @@ async def ask(
 
     await route_question(db, q.id)  # dispatched by the caller after it commits (engine.dispatch_queued)
     return q, suggestions
+
+
+QUESTION_LIMIT = 20  # questions an agent may ask for one task, or one chat (all its rounds)
+FOLLOW_UP_CHAIN = 10  # earlier questions a follow-up is answered with
+_REF = re.compile(r"^([A-Z][A-Z0-9]{1,9})-Q(\d{1,9})$")
+
+
+def parse_ref(ref: str) -> tuple[str, int]:
+    """'SLW-Q3' -> ('SLW', 3); anything else is 422 invalid_follow_up."""
+    m = _REF.match((ref or "").strip().upper())
+    if m is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_follow_up")
+    return m.group(1), int(m.group(2))
+
+
+def _asking_tasks(task: Task):
+    """The tasks whose questions belong together: the task, or every round of its chat."""
+    if task.chat_id is not None:
+        return select(Task.id).where(Task.chat_id == task.chat_id)
+    return select(Task.id).where(Task.id == task.id)
+
+
+async def task_question_count(db: AsyncSession, task: Task) -> int:
+    """Every question the task (or its chat, all rounds) asked, whatever became of it."""
+    return await db.scalar(
+        select(func.count()).select_from(Question).where(Question.from_task_id.in_(_asking_tasks(task)))
+    )
+
+
+async def _follow_up_target(db: AsyncSession, task: Task | None, project: Project, ref: str) -> Question:
+    """The earlier question a follow-up names: asked by this task (or its chat), of the same project."""
+    key, number = parse_ref(ref)
+    if task is None or key != project.key:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_follow_up")
+    q = await db.scalar(select(Question).where(
+        Question.target_project_id == project.id, Question.number == number,
+        Question.from_task_id.in_(_asking_tasks(task)),
+    ))
+    if q is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_follow_up")
+    return q
+
+
+async def follow_up_chain(db: AsyncSession, q: Question) -> list[Question]:
+    """The questions this one follows, oldest first (at most FOLLOW_UP_CHAIN)."""
+    chain: list[Question] = []
+    seen = {q.id}
+    current = q.follow_up_of_id
+    while current is not None and current not in seen and len(chain) < FOLLOW_UP_CHAIN:
+        earlier = await db.get(Question, current)
+        if earlier is None:
+            break
+        chain.append(earlier)
+        seen.add(earlier.id)
+        current = earlier.follow_up_of_id
+    return list(reversed(chain))
 
 
 async def cancel_question_runs(db: AsyncSession, q: Question, actor_id: uuid.UUID | None) -> None:

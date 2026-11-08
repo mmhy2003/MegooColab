@@ -36,6 +36,8 @@ async def can_answer_question(db: AsyncSession, user: User, q: Question) -> bool
 async def open_question_count(db: AsyncSession, user: User) -> int:
     return await db.scalar(
         select(func.count()).select_from(Question).where(
-            Question.asked_by_user_id == user.id, Question.status.in_(OPEN_STATUSES)
+            Question.asked_by_user_id == user.id, Question.status.in_(OPEN_STATUSES),
+            # what an agent asks for a task counts against that task's limit (service.QUESTION_LIMIT), not here
+            ~(Question.asked_by_agent_id.is_not(None) & Question.from_task_id.is_not(None)),
         )
     )
