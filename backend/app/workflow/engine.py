@@ -280,6 +280,7 @@ def set_step(wf: TaskWorkflow, n: int | None) -> None:
 
 NEEDS_TITLES = {
     Needs.question: "{key}: the agent has a question for you",
+    Needs.project_answer: "{key}: waiting for another project's answer",
     Needs.design_approval: "{key}: the design awaits your approval",
     Needs.plan_approval: "{key}: the plan awaits your approval",
     Needs.escalation: "{key} needs a decision: {reason}",
@@ -654,6 +655,10 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
     )
     if open_q is not None:
         return Needs.question
+    from app.a2a import waits  # local: the a2a modules import the engine
+
+    if await waits.open_waits(db, wf.task_id):
+        return Needs.project_answer
     # a design submitted by a run that ended while the workflow was paused left the stage at brainstorm
     kind = {Stage.brainstorm: DocKind.design, Stage.design: DocKind.design, Stage.plan: DocKind.plan}.get(wf.stage)
     if kind is not None:
@@ -726,6 +731,8 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
         wf.status, wf.needs = WorkflowStatus.waiting_human, Needs.escalation
         if not await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):
             await wait_for(db, wf, need, actor_id=user.id)
+    elif need == Needs.project_answer:  # asks nobody: the answer arrives by itself
+        await wait_for(db, wf, need, notify=False)
     elif need is not None:
         await wait_for(db, wf, need, actor_id=user.id)
     else:
@@ -1016,6 +1023,10 @@ async def _on_run_finished(db: AsyncSession, run: AgentRun) -> None:
             await rerun(db, wf, task, last=run, requested_by=requester_id)
         return
     wf.failures = 0
+    from app.a2a import waits  # local: the a2a modules import the engine
+
+    if await waits.hold_after_run(db, wf, task, run):
+        return  # it can't go on without another project's answer: it waits for it, quietly
     handler = ROLE_HANDLERS.get(role)
     if handler is not None:
         await handler(db, wf, task, run)
