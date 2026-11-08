@@ -358,6 +358,37 @@ NUDGE_DEFAULT = (
 )
 
 
+PROJECT_ANSWERS_HEADER = "Answers from other projects arrived.\n"
+UNANSWERED_LINE = (
+    "{ref} wasn't answered. Carry on with what you have, say plainly which assumptions you made, and ask the "
+    "person if you can't decide."
+)
+
+
+def _project_answers_text(payload: dict) -> str:
+    """The answers a waiting agent picks up again with (each wrapped as untrusted), then a line for each
+    question it goes on without; within MAX_RESUME_CHARS, the answers cut first."""
+    tail = "".join(f"\n{UNANSWERED_LINE.format(ref=ref)}" for ref in payload.get("unanswered") or [])
+    out = PROJECT_ANSWERS_HEADER
+    for a in payload.get("answers") or []:
+        lines = [str(a.get("answer_md") or "").strip()]
+        if a.get("citations"):
+            lines += ["", "Sources:"] + [
+                f"- {c['path']}:{c['start_line']}-{c['end_line']}" for c in a["citations"]
+            ]
+        header = f"\n### {a.get('ref')}: {_escape(' '.join(str(a.get('title') or '').split()))}\n"
+        room = MAX_RESUME_CHARS - len(out) - len(tail) - len(header) - len(wrap_untrusted("answer", "")) - 1
+        if room < 100:
+            break
+        text = _escape("\n".join(lines))
+        if len(text) > room:
+            text = text[: room - 15] + " …[truncated]"
+        out += header + wrap_untrusted("answer", text) + "\n"
+    if not payload.get("answers"):
+        out = out.rstrip("\n")
+    return (out.rstrip("\n") + tail)[:MAX_RESUME_CHARS]
+
+
 def resume_text(kind: str, payload: Any) -> str:
     """The short text sent when a session is resumed. Payload by kind:
     answer {choice_label?, text?}; rejection {comment, kind: "design"|"plan"};
@@ -380,6 +411,8 @@ def resume_text(kind: str, payload: Any) -> str:
     if kind == "nudge":
         text = payload if isinstance(payload, str) else (payload or {}).get("text")
         return (text or NUDGE_DEFAULT)[:MAX_RESUME_CHARS]
+    if kind == "project_answers":
+        return _project_answers_text(payload)
     if kind == "findings":
         return _bounded(
             "Review findings to address:\n", "findings", _findings_text(payload),

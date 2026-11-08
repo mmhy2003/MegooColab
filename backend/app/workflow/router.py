@@ -262,6 +262,17 @@ async def pause_workflow(key: str, user: AuthedUser, db: DbSession) -> WorkflowO
     return await workflow_out(db, task, user)
 
 
+@router.post("/api/tasks/{key}/project-waits/go-on")
+async def go_on_without_answers(key: str, user: AuthedUser, db: DbSession) -> WorkflowOut:
+    """The agent picks up again now, without the other projects' answers it waits for."""
+    from app.a2a import waits  # local: the a2a modules import the workflow
+
+    task, _ = await get_task_for(db, user, key, write=True)
+    await waits.go_on_without(db, user, task)
+    await engine.dispatch_queued(db)
+    return await workflow_out(db, task, user)
+
+
 @router.post("/api/tasks/{key}/workflow/resume")
 async def resume_workflow(key: str, user: AuthedUser, db: DbSession) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)

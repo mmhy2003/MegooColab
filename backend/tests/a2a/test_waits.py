@@ -10,6 +10,7 @@ from app.chats import service as chats
 from app.chats.models import Chat, ChatMode
 from app.core.db import SessionLocal
 from app.notifications.models import Notification
+from app.projects.models import Project
 from app.tasks.models import Task
 from tests.workflow.test_build import _building, _complete
 from tests.workflow.test_engine import _ask, _finish, _runs, _started, _wf
@@ -138,3 +139,165 @@ async def test_message_while_waiting_is_tell_and_starts_nothing():
     for mode in (ChatMode.workflow, ChatMode.freestyle):
         chat = Chat(title="c", mode=mode, status="open")
         assert await chats.intent(_Db(), chat, task, wf) == "tell", mode
+
+
+# ---- picking up again ------------------------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+from sqlalchemy import update  # noqa: E402
+
+from app.a2a import context as a2a_ctx  # noqa: E402
+from app.a2a import routing, service, waits  # noqa: E402
+from app.tasks.models import Comment, Delivery  # noqa: E402
+from app.workflow.models import RunRole  # noqa: E402
+from tests.runner.test_runner_ws import _login  # noqa: E402
+from tests.workflow.test_engine import _member  # noqa: E402
+
+
+async def _answer(qid, text="Signed with HMAC in app/sign.py") -> None:
+    async with SessionLocal() as s:
+        await s.execute(update(Question).where(Question.id == qid).values(
+            status="answered", answer_md=text, citations=[{"path": "app/sign.py", "start_line": 1, "end_line": 3}]))
+        await s.commit()
+
+
+async def _waiting_on(db, tc, n=1):
+    """A started workflow whose brainstorm run asked n questions it needs and ended: waiting on them."""
+    b, run = await _started(db, tc)
+    qids = [await _wait_q(b.task_id) for _ in range(n)]
+    await _finish(b.manager.id, run, "completed", session_id="sess-1")
+    assert (await _wf(b.task_id)).needs == "project_answer"
+    return b, qids
+
+
+async def _q(qid) -> Question:
+    async with SessionLocal() as s:
+        return await s.get(Question, qid)
+
+
+async def test_answered_before_run_end_resumes_at_once(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    qid = await _wait_q(b.task_id)
+    await _answer(qid)
+    await _finish(b.manager.id, run, "completed", session_id="sess-1")
+    runs = await _runs(b.task_id)
+    assert len(runs) == 2 and runs[-1].workflow_role == "brainstorm"
+    assert "Answers from other projects arrived." in runs[-1].resume_prompt
+    assert "Signed with HMAC" in runs[-1].resume_prompt
+    assert (await _wf(b.task_id)).nudged is False
+    assert (await _q(qid)).delivered_at is not None
+
+
+async def test_last_answer_resumes_same_session_with_answers(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    assert await waits.resume_settled() == 0
+    await _answer(qid)
+    assert await waits.resume_settled() == 1
+    new = (await _runs(b.task_id))[-1]
+    assert (new.workflow_role, new.resume_session_ref) == ("brainstorm", "sess-1")
+    assert new.resume_prompt.startswith("Answers from other projects arrived.")
+    assert "Signed with HMAC" in new.resume_prompt and "app/sign.py:1-3" in new.resume_prompt
+    assert new.resume_prompt.count("Signed with HMAC") == 1  # not again in the tail
+    assert (await _wf(b.task_id)).status == "running"
+
+
+async def test_two_questions_resume_once_after_second_answer(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [q1, q2] = await _waiting_on(db, tc, n=2)
+    await _answer(q1)
+    assert await waits.resume_settled() == 0
+    await _answer(q2, "Header X-Signature")
+    assert await waits.resume_settled() == 1
+    runs = await _runs(b.task_id)
+    assert len(runs) == 2
+    assert "Signed with HMAC" in runs[-1].resume_prompt and "X-Signature" in runs[-1].resume_prompt
+
+
+async def test_two_settled_passes_resume_once(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    await _answer(qid)
+    assert sum(await asyncio.gather(waits.resume_settled(), waits.resume_settled())) == 1
+    assert len(await _runs(b.task_id)) == 2
+
+
+async def test_go_on_without_it_resumes_with_unanswered_line_and_late_answer_never_resumes(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    r = tc.post(f"/api/tasks/{b.key}/project-waits/go-on")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "running"
+    new = (await _runs(b.task_id))[-1]
+    q = await _q(qid)
+    ref = service.ref_of(await db.get(Project, q.target_project_id), q)
+    assert f"{ref} wasn't answered. Carry on with what you have" in new.resume_prompt
+    q = await _q(qid)
+    assert (q.wait, q.status) == (False, "queued")  # still open, as an ordinary question
+    await _finish(b.manager.id, new, "completed", session_id="sess-1")  # nudged as usual: nothing holds it
+    await _answer(qid, "Late answer")
+    assert await waits.resume_settled() == 0
+    count = len(await _runs(b.task_id))
+    async with SessionLocal() as s:
+        section = await a2a_ctx.a2a_context(s, await s.get(Task, b.task_id), RunRole.brainstorm)
+    assert "Late answer" in section
+    assert len(await _runs(b.task_id)) == count
+
+
+async def test_withdraw_last_wait_resumes(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    r = tc.post(f"/api/questions/{qid}/withdraw")
+    assert r.status_code == 200, r.text
+    assert await waits.resume_settled() == 1
+    assert "wasn't answered" in (await _runs(b.task_id))[-1].resume_prompt
+
+
+async def test_task_actor_may_withdraw_agent_question(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    member = await _member(db, tc)
+    _login(tc, member)
+    assert tc.get(f"/api/questions/{qid}").json()["can_withdraw"] is False
+    assert tc.post(f"/api/questions/{qid}/withdraw").status_code == 403
+    _login(tc, b.manager)
+    assert tc.get(f"/api/questions/{qid}").json()["can_withdraw"] is True
+    assert tc.post(f"/api/questions/{qid}/withdraw").status_code == 200
+
+
+async def test_freestyle_chat_resumes_as_a_turn_with_waiting_message(client, db):
+    w, task_id, run = await _freestyle(client, db)
+    qid = await _wait_q(task_id)
+    await _waiting_comment(task_id, w, after=run)
+    await _end(run.id)
+    assert (await _wf(task_id)).needs == "project_answer"
+    await _answer(qid)
+    assert await waits.resume_settled() == 1
+    new = (await _runs(task_id))[-1]
+    assert new.workflow_role == "freestyle" and "Signed with HMAC" in (new.resume_prompt or new.prompt)
+    async with SessionLocal() as s:  # the message waits for this turn's start (take_waiting at dispatch)
+        delivery = await s.scalar(select(Comment.delivery).where(Comment.task_id == task_id))
+    assert delivery == Delivery.waiting
+
+
+async def test_go_on_refused_when_not_waiting(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run = await _started(db, tc)
+    r = tc.post(f"/api/tasks/{b.key}/project-waits/go-on")
+    assert (r.status_code, r.json()["detail"]) == (409, "not_waiting")
+
+
+async def test_on_answered_wakes_routing_after_commit(db, tc_factory, monkeypatch):
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    calls = []
+    monkeypatch.setattr(routing, "wake", lambda: calls.append(1))
+    async with SessionLocal() as s:
+        q = await s.get(Question, qid)
+        q.status, q.answer_md, q.answered_by_user_id = "answered", "x", b.manager.id
+        await service.on_answered(s, q)
+        assert calls == []  # not before the answer is committed
+        await s.commit()
+    assert calls == [1]

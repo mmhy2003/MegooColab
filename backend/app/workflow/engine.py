@@ -98,7 +98,10 @@ MAX_FAILURES = 3  # consecutive failed runs before escalating retries_exhausted 
 ACTIVE = (WorkflowStatus.running, WorkflowStatus.waiting_human)
 CONTINUE_TEXT = "Your previous run ended before it finished. Continue the same work from where you left off."
 # the heading a resume text gets when there is no session to resume and it joins the full prompt instead
-RESUME_HEADING = {"answer": "Answer", "rejection": "Rejection", "nudge": "Reminder", "findings": "Findings to address"}
+RESUME_HEADING = {
+    "answer": "Answer", "rejection": "Rejection", "nudge": "Reminder", "findings": "Findings to address",
+    "project_answers": "Answers from other projects",
+}
 NUDGE_TEXT = {
     RunRole.plan: (
         "Your last run ended without asking a question or submitting your plan. Continue: ask the human "

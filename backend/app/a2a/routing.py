@@ -222,16 +222,35 @@ async def route_and_dispatch() -> None:
         async with SessionLocal() as s:
             await dispatch_pending(s, owner_id)
             await s.commit()
+    from app.a2a import waits  # local: waits imports the engine
+
+    await waits.resume_settled()  # waiting tasks whose answers have all arrived pick up again
+
+
+_wake: asyncio.Event | None = None
+
+
+def wake() -> None:
+    """Run the loop's next pass now (an answer a waiting task needs was committed)."""
+    if _wake is not None:
+        with contextlib.suppress(RuntimeError):  # another event loop (tests): the next pass finds it anyway
+            _wake.set()
 
 
 async def route_loop(stop: asyncio.Event) -> None:
+    global _wake
+    _wake = asyncio.Event()
     while not stop.is_set():
+        _wake.clear()
         try:
             await route_and_dispatch()
         except Exception:
             log.exception("question routing failed")
+        stop_wait, wake_wait = asyncio.create_task(stop.wait()), asyncio.create_task(_wake.wait())
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), ROUTE_SECONDS)
+            await asyncio.wait({stop_wait, wake_wait}, timeout=ROUTE_SECONDS, return_when=asyncio.FIRST_COMPLETED)
+        for t in (stop_wait, wake_wait):
+            t.cancel()
 
 
 async def start_fields(db: AsyncSession, run: AgentRun) -> tuple[RunTask, str, dict]:

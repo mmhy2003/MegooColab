@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.a2a.access import (
     OPEN_QUESTION_CAP,
+    can_act_on_task,
     can_answer_question,
     can_read_question,
     open_question_count,
@@ -326,13 +327,25 @@ async def lock_question(db: AsyncSession, question_id: uuid.UUID) -> Question:
     return q
 
 
+async def _may_withdraw(db: AsyncSession, user: User, q: Question) -> bool:
+    """The asker, an admin, or anyone who may act on the asking task (an agent's question is asked by its
+    owner, but a manager of the task may stop waiting on it too)."""
+    if q.asked_by_user_id == user.id or user.role == Role.admin:
+        return True
+    return q.from_task_id is not None and await can_act_on_task(db, user, q.from_task_id)
+
+
 async def withdraw(db: AsyncSession, user: User, q: Question) -> Question:
     q = await lock_question(db, q.id)
-    if q.asked_by_user_id != user.id and user.role != Role.admin:
+    if not await _may_withdraw(db, user, q):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
     if q.status not in OPEN_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "not_open")
     q.status = QuestionStatus.withdrawn
+    if q.wait and q.from_task_id is not None:
+        from app.a2a import waits  # local: waits imports the engine
+
+        waits.wake_after_commit(db)  # the task may have waited on this one last
     await cancel_question_runs(db, q, user.id)
     await audit.record(db, "a2a.question.withdrawn", actor_id=user.id, target_type="question", target_id=q.id)
     await notify(db, q)
@@ -437,7 +450,7 @@ async def question_out(db: AsyncSession, user: User, q: Question) -> QuestionOut
         kb_document_id=q.kb_document_id,
         kb_document_readable=await _kb_document_readable(db, user, q), created_at=q.created_at, answered_at=q.answered_at,
         can_answer=is_open and await can_answer_question(db, user, q), can_approve=approver,
-        can_withdraw=is_open and (q.asked_by_user_id == user.id or user.role == Role.admin),
+        can_withdraw=is_open and await _may_withdraw(db, user, q),
     )
 
 
@@ -491,6 +504,10 @@ async def on_answered(db: AsyncSession, q: Question) -> None:
         project = await db.get(Project, q.target_project_id)
         await record_event(db, task, q.answered_by_user_id, "question_answered",
                            {"question_id": str(q.id), "target_key": project.key, "number": q.number})
+    if q.wait and q.from_task_id is not None:
+        from app.a2a import waits  # local: waits imports the engine
+
+        waits.wake_after_commit(db)  # after commit: the engine locks the task before any question
     await audit.record(db, "a2a.question.answered", actor_id=q.answered_by_user_id, target_type="question",
                        target_id=q.id, data={"source": q.answer_source})
     await notify(db, q)
