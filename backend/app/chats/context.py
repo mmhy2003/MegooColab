@@ -66,6 +66,31 @@ async def earlier_rounds(db: AsyncSession, task: Task, role: RunRole) -> str | N
     return render()
 
 
+FREESTYLE_TASKS = """## Creating tasks
+
+You can create tasks on this project's board with create_task(project_key="{key}", title, description_md), so a topic
+talked through here can be reviewed and run later. A task you create lands in the first column with nobody assigned:
+creating it never starts any work.
+
+- When the person asks for a task, create it.
+- When you think a topic deserves its own task, ask first: end your reply with the title you'd give it and a sentence
+  on what it would cover, and ask whether to create it. Create it only once they say yes.
+- Write the description from the conversation: what was decided, what's still open, and the files or links that
+  matter, so someone who wasn't here can pick it up. A link back to this chat is added for you.
+- Tell the person the new task's key in your reply."""
+
+
+async def freestyle_tasks_context(db: AsyncSession, task: Task, role: RunRole) -> str | None:
+    """A freestyle turn may create tasks on its own project: when, and how."""
+    if role != RunRole.freestyle:
+        return None
+    from app.projects.models import Project  # local: projects import the workflow
+
+    project = await db.get(Project, task.project_id)
+    return FREESTYLE_TASKS.format(key=project.key)
+
+
 def register() -> None:
-    if earlier_rounds not in context.context_providers:
-        context.context_providers.append(earlier_rounds)
+    for provider in (earlier_rounds, freestyle_tasks_context):
+        if provider not in context.context_providers:
+            context.context_providers.append(provider)

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { expect, test, type APIRequestContext, type BrowserContext } from "@playwright/test";
 
 import { ADMIN, setupOrSignIn } from "./helpers/auth";
-import { buildBinaries, mintLinkedRunnerToken, onPrompt, say, startRunner, type RunnerHandle } from "./helpers/runner";
+import { buildBinaries, mcp, mintLinkedRunnerToken, onPrompt, say, startRunner, type RunnerHandle } from "./helpers/runner";
 
 /**
  * A freestyle chat on project FRE: each message is a turn that does what it asks, in the chat's own worktree; the chat
@@ -21,6 +21,12 @@ const KEY = "FRE-1";
 const FREESTYLE = "# Freestyle: do what the person asks, one turn at a time";
 
 const SCENARIO = [
+  // asked for a task: it creates one on the chat's project (the last turn before End chat, so nothing repeats it)
+  onPrompt(
+    "Make a task for the docs cleanup",
+    mcp("create_task", { project_key: "FRE", title: "Clean up the docs", description_md: "Merge NOTES.md into the README." }),
+    say("Created FRE-2 for the docs cleanup."),
+  ),
   onPrompt(
     FREESTYLE,
     onPrompt(
@@ -128,14 +134,26 @@ test("a freestyle chat: two turns, then End chat", async ({ browser }) => {
   await expect(view.getByText("Renamed to NOTES.md").first()).toBeVisible({ timeout: 60_000 });
   await expect(view.locator("[data-chat]").getByText("waiting for your reply", { exact: true })).toBeVisible({ timeout: 30_000 });
 
-  // 3. both commits are on the chat's branch
+  // 3. asked for a task, the agent creates it on the project's board, unassigned, linked back to the chat
+  await box.fill("Make a task for the docs cleanup");
+  await view.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(view.getByText("Created FRE-2 for the docs cleanup.")).toBeVisible({ timeout: 60_000 });
+  await expect(view.getByRole("link", { name: "FRE-2" })).toHaveAttribute("href", "/projects/FRE/board?task=FRE-2");
+  const made = await get<{ title: string; description_md: string; assignee_agent_id: string | null; in_chat: boolean }>(
+    request, "/api/tasks/FRE-2",
+  );
+  expect(made).toMatchObject({ title: "Clean up the docs", assignee_agent_id: null });
+  expect(made.description_md).toContain("From chat: [");
+  await expect(view.locator("[data-chat]").getByText("waiting for your reply", { exact: true })).toBeVisible({ timeout: 30_000 });
+
+  // 4. both commits are on the chat's branch
   const branches = git(repo, "branch", "--list", "megoo/FRE-1-*", "--format=%(refname:short)").trim().split("\n").filter(Boolean);
   expect(branches).toHaveLength(1);
   const log = git(repo, "log", "--format=%s", branches[0]);
   expect(log).toContain("docs: add notes.txt");
   expect(log).toContain("docs: rename notes to NOTES.md");
 
-  // 4. End chat: it asks, then offers the round to the board with the done column
+  // 5. End chat: it asks, then offers the round to the board with the done column
   await view.getByRole("button", { name: "End chat" }).click();
   await ui.getByRole("alertdialog", { name: "End this chat?" }).getByRole("button", { name: "End chat" }).click();
   const dialog = ui.getByRole("dialog", { name: "Add this to the board?" });

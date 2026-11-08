@@ -186,6 +186,13 @@ describe("ActivityThread agent events", () => {
     expect(container.querySelector("[data-run-summary]")).not.toBeNull();
   });
 
+  it("links a task the agent created from the chat", () => {
+    render1(agentEvent("t1", "agent_task_created", { key: "PAY-42", title: "Retry webhook deliveries", task_id: "t42" }));
+    const row = screen.getByRole("listitem");
+    expect(row.textContent).toContain("Ann's Codex created PAY-42: Retry webhook deliveries");
+    expect(screen.getByRole("link", { name: "PAY-42" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-42");
+  });
+
   it("describes the other agent kinds", () => {
     const cases: [string, Record<string, unknown>, string][] = [
       ["agent_run_queued", {}, "queued a run"],
