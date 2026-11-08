@@ -90,6 +90,29 @@ async def _column_by_name(db: AsyncSession, project: Project, name: str) -> Boar
     raise ToolError("invalid_column")
 
 
+async def _freestyle_round(db: AsyncSession, run, project_key: str) -> Task:
+    """The freestyle turn's own task (its chat round), when `project_key` is that task's project; else wrong_project.
+    A freestyle turn creates tasks on its own project only."""
+    task = await db.get(Task, run.task_id) if run.task_id else None
+    if task is None:
+        raise ToolError("not_allowed_in_role")
+    project = await db.get(Project, task.project_id)
+    if project_key.strip().upper() != project.key.upper():
+        raise ToolError("wrong_project")
+    return task
+
+
+async def _from_line(db: AsyncSession, asking: Task) -> str:
+    """Where a task a freestyle turn created came from: its chat, else the task the turn worked on."""
+    from app.chats.models import Chat  # local: the chats modules import the MCP tools' services
+
+    chat = await db.get(Chat, asking.chat_id) if asking.chat_id else None
+    if chat is not None:
+        return f"From chat: [{chat.title}](/chats/{chat.id})"
+    project = await db.get(Project, asking.project_id)
+    return f"From {project.key}-{asking.number}"
+
+
 async def _task_summaries(db: AsyncSession, project: Project, tasks: list[Task]) -> list[dict[str, Any]]:
     names = dict(
         (await db.execute(select(BoardColumn.id, BoardColumn.name).where(BoardColumn.project_id == project.id))).all()
@@ -171,9 +194,16 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
         parent_key: str | None = None,
         assignee_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        """Create a task in the project's first column. `type` is epic, story, task, bug or subtask."""
-        refuse_run_token()
+        """Create a task in the project's first column. `type` is epic, story, task, bug or subtask.
+        In a freestyle chat: only on the chat's own project, unassigned, with a link back to the chat."""
+        run = current_run.get()
+        if run is None or run.workflow_role != "freestyle":
+            refuse_run_token()  # a person's token, or a freestyle turn: nothing else creates tasks
         async with _tool_session() as (db, user):
+            asking = await _freestyle_round(db, run, project_key) if run is not None else None
+            if asking is not None:
+                assignee_agent_id, parent_key = None, None  # it's reviewed before anyone takes it
+                description_md = f"{description_md.rstrip()}\n\n{await _from_line(db, asking)}".lstrip()
             project = await get_project_for(db, user, project_key, write=True)
             try:
                 data = TaskCreate(
@@ -191,7 +221,13 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
                 data.parent_id = parent.id
             task = await service.create_task(db, user, project, data)
             await service.task_changed(db, task, "task.created")
-            return _json(await service.task_out(db, task, user))
+            out = await service.task_out(db, task, user)
+            if asking is not None:
+                await service.record_event(db, asking, None, "agent_task_created", {
+                    "key": out.key, "title": task.title, "task_id": str(task.id),
+                    "agent_id": str(run.agent_id), "run_id": str(run.id),
+                })
+            return _json(out)
 
     @mcp.tool()
     async def update_task(
