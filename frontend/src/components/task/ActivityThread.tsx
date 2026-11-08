@@ -8,6 +8,7 @@ import {
   GitPullRequestClosed,
   MessageSquare,
 } from "lucide-react";
+import Link from "next/link";
 
 import { ImageGallery } from "@/components/images/ImageGallery";
 import { Avatar } from "@/components/ui/Avatar";
@@ -104,6 +105,8 @@ function describeAgentEvent(kind: string, data: Record<string, unknown>, byPerso
     }
     case "agent_permission":
       return `was ${data.decision === "allowed" ? "allowed" : "denied"}: ${str(data.title) ?? "a request"}`;
+    case "agent_task_created":
+      return `created ${str(data.key) ?? "a task"}: ${str(data.title) ?? ""}`;
     case "agent_run_completed":
       // its summary is the agent's last message: the thread shows it as the reply (or under this line, as Markdown)
       return "finished";
@@ -314,6 +317,21 @@ export function ActivityThread({
         }
         if (kind === "agent_message" && !item.actor) {
           return <AgentReplyRow key={item.id} at={item.at} who={actor} text={str(data.text) ?? ""} />;
+        }
+        if (kind === "agent_task_created") {
+          const key = str(data.key);
+          return (
+            <EventRow key={item.id} at={item.at} lead={actor} text="created ">
+              {key ? (
+                <Link href={`/projects/${key.replace(/-\d+$/, "")}/board?task=${key}`} className="text-cyan-ink underline">
+                  {key}
+                </Link>
+              ) : (
+                "a task"
+              )}
+              {`: ${str(data.title) ?? ""}`}
+            </EventRow>
+          );
         }
         const git = describeGitEvent(kind, data);
         if (git) return <GitEventRow key={item.id} at={item.at} line={git} />;
