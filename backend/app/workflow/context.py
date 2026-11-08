@@ -31,6 +31,8 @@ log = logging.getLogger(__name__)
 ContextProvider = Callable[[AsyncSession, Task, RunRole], Awaitable[str | None]]
 # Plans 4 and 5 append providers here; each returns a section (or None) to add after the built-in ones.
 context_providers: list[ContextProvider] = []
+# what a resumed session is handed after its resume text (it never sees the full prompt's sections again)
+resume_providers: list[ContextProvider] = []
 
 ROLE_KEY: dict[RunRole, str] = {
     RunRole.brainstorm: "brainstorm",
@@ -185,6 +187,12 @@ async def _provided(db: AsyncSession, task: Task, role: RunRole, provider: Conte
     except Exception:
         log.exception("context provider %s failed", getattr(provider, "__name__", provider))
         return None
+
+
+async def resume_extra(db: AsyncSession, task: Task, role: RunRole) -> str | None:
+    """The resume providers' sections, joined; None when there is nothing to add."""
+    parts = [s for p in resume_providers if (s := await _provided(db, task, role, p))]
+    return "\n\n".join(parts) or None
 
 
 async def build_prompt(

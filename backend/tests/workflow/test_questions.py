@@ -468,3 +468,18 @@ async def test_unresolvable_choice_falls_back_to_the_raw_id(db, tc_factory):
         await s.commit()
     await _finish(b.manager.id, run, "completed", session_id="sess-1")
     assert "Chosen: gone" in (await _runs(b.task_id))[-1].resume_prompt
+
+
+async def test_resumed_session_gets_resume_providers_tail(db, tc_factory, monkeypatch):
+    from app.workflow import context as wf_context
+
+    async def tail(db, task, role):
+        return "TAIL FROM PROVIDER"
+
+    monkeypatch.setattr(wf_context, "resume_providers", [tail])
+    tc = tc_factory(lifespan=True)
+    b, _run, qid = await _waiting(db, tc)
+    assert _answer(tc, b, qid, choice="pg").status_code == 200
+    new = (await _runs(b.task_id))[-1]
+    assert new.resume_session_ref == "sess-1"
+    assert new.resume_prompt.endswith("\n\nTAIL FROM PROVIDER") and "Postgres" in new.resume_prompt

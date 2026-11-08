@@ -469,6 +469,12 @@ async def enqueue(
     # a fresh-by-design role has no stored session; an answer resumes the asking run's own (resume_session_ref)
     session = resume_session_ref or (wf.sessions.get(key) if key else None)
     text = resume_text(resume_kind, payload) if resume_kind else resume_prompt
+    if session:  # a resumed session sees only this text: what it must still be told rides along
+        from app.workflow.context import resume_extra
+
+        tail = await resume_extra(db, task, role)
+        if tail:
+            text = f"{text}\n\n{tail}" if text else tail
     if text and not session and text != CONTINUE_TEXT:
         # nothing to resume: the answer, rejection, reminder or findings go at the end of the full prompt, under a
         # heading and within its size limit (a bare "continue" means nothing to a fresh session)
