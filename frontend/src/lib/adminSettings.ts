@@ -12,6 +12,7 @@ export type SettingsPatch = {
   dreaming?: { enabled: boolean; hour_utc: number | null };
   project_defaults?: AdminSettings["project_defaults"];
   hub?: AdminSettings["hub"];
+  questions?: AdminSettings["questions"];
 };
 
 export function useAdminSettings() {

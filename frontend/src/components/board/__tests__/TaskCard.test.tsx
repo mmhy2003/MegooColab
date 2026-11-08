@@ -104,6 +104,12 @@ describe("TaskCardView", () => {
     expect(screen.queryByText("NEEDS YOU")).not.toBeInTheDocument();
   });
 
+  it("waiting for another project's answer is not NEEDS YOU", () => {
+    const waiting = { ...wf, needs: "project_answer" } as const;
+    renderCard(<TaskCardView task={{ ...task, workflow: waiting }} />);
+    expect(screen.queryByText("NEEDS YOU")).not.toBeInTheDocument();
+  });
+
   it("shows enforcement chip and build progress", () => {
     const build = { ...wf, stage: "build", status: "running", needs: null, current_step: 2, steps_total: 5 } as const;
     const { rerender } = renderCard(<TaskCardView task={{ ...task, workflow: { ...build, enforcement: "unenforced" } }} />);

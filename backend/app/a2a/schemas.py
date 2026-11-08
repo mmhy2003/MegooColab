@@ -71,6 +71,11 @@ class Who(BaseModel):
     agent: Ref | None
 
 
+class FollowUpRef(BaseModel):
+    id: uuid.UUID
+    ref: str
+
+
 class TaskRef(BaseModel):
     key: str
     title: str
@@ -106,6 +111,7 @@ class QuestionOut(BaseModel):
     redacted: bool
     attempts: int
     from_task: TaskRef | None
+    follow_up_of: FollowUpRef | None = None  # the earlier question this one follows
     asked_by: Who
     preference: Preference | None  # None: any free agent
     kb_document_id: uuid.UUID | None

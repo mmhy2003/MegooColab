@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BoardDialog } from "@/components/chats/BoardDialog";
 import { ChatComposer } from "@/components/chats/ChatComposer";
+import { ChatProjectWait } from "@/components/chats/ChatProjectWait";
 import { EndChatButton } from "@/components/chats/EndChatButton";
 import { RoundDivider } from "@/components/chats/RoundDivider";
 import { chat } from "@/components/chats/__tests__/fixtures";
@@ -146,5 +147,18 @@ describe("RoundDivider", () => {
     withClient(<RoundDivider round={r} canEdit={false} />);
     expect(screen.getByText("Round 2 · Add retries")).toBeInTheDocument();
     expect(screen.getByText("from megoo/PAY-7-fix")).toBeInTheDocument();
+  });
+});
+
+describe("ChatProjectWait", () => {
+  it("shows the waiting banner when the latest round waits for another project's answer", async () => {
+    const wait = { question_id: "q3", ref: "ANS-Q3", project_key: "ANS", title: "Which header?", status: "routed",
+                   can_answer: false, can_withdraw: true };
+    stubFetch({ "/workflow": { status: "waiting_human", needs: "project_answer", project_waits: [wait] } });
+    const c = chat({ state: "waiting_answer", waiting_on: ["ANS-Q3"], can_act: true });
+    withClient(<ChatProjectWait chat={c} round={c.rounds[c.rounds.length - 1]} />);
+    expect(await screen.findByText("Waiting for ANS's answer (ANS-Q3)")).toBeInTheDocument();
+    expect(screen.getByText(/laptop-claude picks up again on its own/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Go on without it" })).toBeInTheDocument();
   });
 });

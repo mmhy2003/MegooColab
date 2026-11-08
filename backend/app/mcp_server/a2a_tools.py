@@ -75,11 +75,14 @@ def register_a2a_tools(mcp: MCPServer) -> None:
 
     @mcp.tool()
     async def ask_project(
-        project_key: str, question: str, context: str | None = None, task_key: str | None = None
+        project_key: str, question: str, context: str | None = None, task_key: str | None = None,
+        wait: bool = False, follow_up_to: str | None = None,
     ) -> dict[str, Any]:
         """Ask another project a question about its code (an online agent of that project reads the code and
         answers, citing files). Include in `context` errors and what you tried. You may move on to other work:
-        the answer arrives in your task's thread and prompt, or read it later with get_question."""
+        the answer arrives in your task's thread and prompt, or read it later with get_question.
+        wait=True: you can't go on without this answer; end your turn and you'll be started again with it.
+        follow_up_to: the ref of an earlier question this one follows (e.g. SLW-Q3)."""
         _refuse_answer_runs()
         await ai_or_tool_error()
         async with tool_session() as (db, user):
@@ -91,7 +94,7 @@ def register_a2a_tools(mcp: MCPServer) -> None:
             run = current_run.get()
             q, suggestions = await service.ask(
                 db, user, project_key=project_key, body=question, context=context or "", task_key=task_key,
-                agent_id=run.agent_id if run is not None else None,
+                agent_id=run.agent_id if run is not None else None, wait=wait, follow_up_to=follow_up_to,
             )
             project = await db.get(Project, q.target_project_id)
             out = {"question_id": str(q.id), "ref": service.ref_of(project, q), "status": str(q.status),

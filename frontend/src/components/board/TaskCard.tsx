@@ -11,7 +11,7 @@ import { LabelChip } from "@/components/project/LabelEditor";
 import { Avatar } from "@/components/ui/Avatar";
 import { StageTrack } from "@/components/workflow/StageTrack";
 import type { Priority, Task, TaskType } from "@/lib/types";
-import { needsText } from "@/lib/workflow";
+import { needsText, QUIET_NEEDS } from "@/lib/workflow";
 
 const PRIORITY_ICON: Record<Priority, { icon: typeof ChevronUp; className: string }> = {
   highest: { icon: ChevronsUp, className: "text-pink" },
@@ -66,7 +66,7 @@ export function TaskCardView({
           <StageTrack stage={wf.stage} status={wf.status} needs={wf.needs} canAct={wf.can_act} compact />
           <div className="flex flex-wrap items-center gap-1 text-[11px]">
             {/* confirming an agent's merge, and a freestyle chat's reply, ask nobody (they're out of Needs you too) */}
-            {wf.needs && wf.needs !== "merge_confirmation" && wf.needs !== "reply" && wf.can_act && (
+            {wf.needs && !QUIET_NEEDS.includes(wf.needs) && wf.can_act && (
               <span
                 className="rounded-full border-2 border-pink px-1.5 font-semibold tracking-wide text-pink"
                 title={needsText(wf.needs)}

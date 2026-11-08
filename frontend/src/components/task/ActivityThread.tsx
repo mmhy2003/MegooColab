@@ -61,6 +61,9 @@ export function describeEvent(
     case "sprint_changed":
       return data.to ? "moved this into a sprint" : "moved this to the backlog";
     case "question_asked":
+      if (typeof data.follow_up_of_number === "number") {
+        return `asked ${str(data.target_key) ?? "another project"} a follow-up to Q${data.follow_up_of_number} (Q${num(data.number)})`;
+      }
       return `asked ${str(data.target_key) ?? "another project"} a question (Q${num(data.number)})`;
     case "question_answered":
       return `${str(data.target_key) ?? "Another project"} answered Q${num(data.number)}`;

@@ -194,3 +194,35 @@ async def test_ask_project_caps_question_and_context(db, tc_factory, client_fact
     assert err and "too_large" in text
     err, text = _tool(tc, _personal(tc), "ask_project", project_key="QBB", question="ok", context="y" * 8001)
     assert err and "too_large" in text
+
+
+async def test_ask_project_tool_passes_wait_and_follow_up(db, tc_factory, client_factory):
+    tc = tc_factory(lifespan=True)
+    _b, run = await _started(db, tc)
+    await _target(db, client_factory)
+    token = await _run_token(run)
+    err, first = await _ask(tc, token)
+    assert not err, first
+    err, out = await _ask(tc, token, wait=True, follow_up_to=first["ref"])
+    assert not err, out
+    q = (await db.execute(select(Question).where(Question.number == 2))).scalar_one()
+    first_q = (await db.execute(select(Question).where(Question.number == 1))).scalar_one()
+    assert q.wait is True and q.follow_up_of_id == first_q.id
+    err, text = await _ask(tc, token, follow_up_to="QBB-Q42")
+    assert err and "invalid_follow_up" in text
+
+
+async def test_ask_project_tool_reports_question_limit(db, tc_factory, client_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    await _target(db, client_factory)
+    token = await _run_token(run)
+    err, first = await _ask(tc, token)
+    assert not err, first
+    target = (await db.execute(select(Question))).scalar_one().target_project_id
+    for n in range(2, 21):
+        db.add(Question(target_project_id=target, number=n, from_task_id=b.task_id, title="t", body="t",
+                        status="answered"))
+    await db.commit()
+    err, text = await _ask(tc, token)
+    assert err and "question_limit" in text

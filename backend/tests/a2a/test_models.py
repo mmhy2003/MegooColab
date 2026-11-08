@@ -122,3 +122,19 @@ async def test_require_run_task_refuses_question_runs(client, db):
             await require_run_task(db, "PAY-1")
     finally:
         current_run.reset(token)
+
+
+async def test_question_wait_and_follow_up_columns(client, db):
+    me, pid, _agent = await _world(client, db)
+    q1 = await _question(db, pid, me, 1)
+    q2 = Question(target_project_id=pid, number=2, asked_by_user_id=me.id, title="And?", body="And?",
+                  follow_up_of_id=q1.id, wait=True)
+    db.add(q2)
+    await db.commit()
+    assert q2.follow_up_of_id == q1.id and q2.wait is True
+    assert q1.wait is False and q1.delivered_at is None
+    assert q1.asker_human_notified_at is None and q1.asker_slow_notified_at is None
+    await db.delete(q1)
+    await db.commit()
+    await db.refresh(q2)
+    assert q2.follow_up_of_id is None  # SET NULL
