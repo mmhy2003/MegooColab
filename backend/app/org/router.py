@@ -55,12 +55,18 @@ class HubSettings(BaseModel):
     share_everyone: bool = True  # Tool Hub: people may share tools with everyone
 
 
+class QuestionSettings(BaseModel):
+    # tell the asking task's people when an answer it waits for takes longer than this
+    notify_after_minutes: int = Field(default=30, ge=5, le=1440)
+
+
 class AdminSettingsOut(BaseModel):
     name: str
     smtp: SmtpOut
     dreaming: Dreaming
     project_defaults: ProjectDefaults
     hub: HubSettings
+    questions: QuestionSettings
 
 
 class AdminSettingsIn(BaseModel):
@@ -70,6 +76,7 @@ class AdminSettingsIn(BaseModel):
     dreaming: Dreaming | None = None
     project_defaults: ProjectDefaults | None = None
     hub: HubSettings | None = None
+    questions: QuestionSettings | None = None
 
 
 class TestEmailIn(BaseModel):
@@ -102,6 +109,7 @@ def _settings_out(org: OrgSettings) -> AdminSettingsOut:
             commit_docs_to_repo=org.default_commit_docs_to_repo,
         ),
         hub=HubSettings(share_everyone=org.hub_share_everyone),
+        questions=QuestionSettings(notify_after_minutes=org.project_answer_notify_minutes),
     )
 
 
@@ -136,6 +144,8 @@ async def put_settings(body: AdminSettingsIn, admin: AdminUser, db: DbSession) -
         org.default_commit_docs_to_repo = d.commit_docs_to_repo
     if body.hub is not None:
         org.hub_share_everyone = body.hub.share_everyone
+    if body.questions is not None:
+        org.project_answer_notify_minutes = body.questions.notify_after_minutes
     await audit.record(db, "org.settings_changed", actor_id=admin.id)
     return _settings_out(org)
 

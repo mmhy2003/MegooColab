@@ -1,3 +1,4 @@
+import { Hourglass } from "lucide-react";
 import Link from "next/link";
 
 import { FreestyleChip } from "@/components/chats/FreestyleChip";
@@ -45,7 +46,12 @@ export function ChatList({ chats, selected, showProject, empty = "No chats yet."
               }`}
             >
               {/* the state text says the same in words, so the mark is for the eye only */}
-              <span data-mark aria-hidden className={`mt-1.5 shrink-0 rounded-full ${MARK[group]}`} />
+              {c.state === "waiting_answer" ? (
+                /* waiting for another project's answer: at work, but nothing turns until it comes */
+                <Hourglass data-mark data-hourglass aria-hidden size={11} className="mt-1 shrink-0 text-cyan-ink" />
+              ) : (
+                <span data-mark aria-hidden className={`mt-1.5 shrink-0 rounded-full ${MARK[group]}`} />
+              )}
               <span className="min-w-0 flex-1">
                 {/* two lines on a phone; one line, cut, on a wide screen. No `block`: it would undo the clamp's display */}
                 <span className={`text-sm wrap-anywhere max-md:line-clamp-2 md:block md:truncate ${group === "ended" ? "text-muted-foreground" : ""}`}>

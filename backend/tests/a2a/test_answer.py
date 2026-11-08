@@ -240,3 +240,19 @@ async def _draft_from(run):
     async with SessionLocal() as s:
         await service.submit(s, run, "A draft", [])
         await s.commit()
+
+
+async def test_question_out_names_follow_up(client_factory, db):
+    asker, _target_member, _outsider, a, _b, _c = await _world(client_factory, db)
+    first = (await _ask(a, task_key="QAA-1")).json()["question"]
+    agent = Agent(owner_id=asker.id, name="asker-agent", program="claude_code")
+    db.add(agent)
+    await db.commit()
+    async with SessionLocal() as s:
+        user = await s.get(type(asker), asker.id)
+        q2, _ = await service.ask(s, user, project_key="QBB", body="And the header?", task_key="QAA-1",
+                                  agent_id=agent.id, follow_up_to=first["ref"])
+        await s.commit()
+    out = (await a.get(f"/api/questions/{q2.id}")).json()
+    assert out["follow_up_of"] == {"id": first["id"], "ref": "QBB-Q1"}
+    assert (await a.get(f"/api/questions/{first['id']}")).json()["follow_up_of"] is None

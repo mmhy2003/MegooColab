@@ -57,6 +57,7 @@ NEEDS_STATE: dict[Needs, ChatState] = {
     Needs.human_code_review: "human_code_review",
     Needs.merge_confirmation: "merging",  # an agent merged: not a wait on anyone
     Needs.reply: "reply",  # a freestyle turn replied: the person's next message is the next turn
+    Needs.project_answer: "waiting_answer",  # asks nobody: another project's answer comes by itself
 }
 
 
@@ -326,9 +327,16 @@ async def chat_out(db: AsyncSession, chat: Chat, viewer: User | None) -> ChatOut
         agent=ChatAgentOut(id=agent.id, name=agent.name, program=agent.program) if agent else None,
         started_by=UserOut.model_validate(starter) if starter else None,
         created_at=chat.created_at, last_activity_at=chat.last_activity_at, state=state, can_act=acting,
+        waiting_on=await _waiting_on(db, latest) if state == "waiting_answer" else [],
         intent=await intent(db, chat, latest, latest_wf) if acting else "closed", rounds=out_rounds,
         takes_images=await task_takes_images(db, latest) if latest is not None else await agent_takes_images(db, agent),
     )
+
+
+async def _waiting_on(db: AsyncSession, task: Task) -> list[str]:
+    from app.a2a import service as a2a, waits  # local: the a2a modules import the workflow
+
+    return [a2a.ref_of(await db.get(Project, q.target_project_id), q) for q in await waits.open_waits(db, task.id)]
 
 
 WAITING: tuple[ChatState, ...] = ("question", "design_approval", "plan_approval", "escalation")

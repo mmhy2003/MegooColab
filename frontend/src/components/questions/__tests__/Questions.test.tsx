@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -336,6 +336,19 @@ describe("TaskQuestions", () => {
     cleanup();
     const { container } = wrap(<WaitingBadge projects={[]} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("puts each follow-up under the question it follows", async () => {
+    const first = { ...Q, id: "q3", ref: "ANS-Q3", title: "Which header carries the signature?" };
+    const other = { ...Q, id: "q7", ref: "PAY-Q7", title: "What does the refund webhook send?" };
+    const later = { ...Q, id: "q4", ref: "ANS-Q4", title: "Seconds or ms?", follow_up_of: { id: "q3", ref: "ANS-Q3" } };
+    vi.stubGlobal("fetch", vi.fn(async () => json([first, other, later])));
+    wrap(<TaskQuestions taskKey="WEB-4" />);
+    await screen.findByRole("link", { name: "Seconds or ms?" });
+    const rows = within(screen.getByRole("list", { name: "Questions to other projects" })).getAllByRole("listitem");
+    expect(rows.map((r) => r.textContent?.slice(0, 6))).toEqual(["ANS-Q3", "ANS-Q4", "PAY-Q7"]);
+    expect(rows[1]).toHaveAttribute("data-follow-up");
+    expect(rows[0]).not.toHaveAttribute("data-follow-up");
   });
 
   it("asks another project from the task", async () => {

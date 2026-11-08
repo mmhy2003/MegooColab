@@ -7,6 +7,7 @@ import { useState } from "react";
 import { AgentStatusDot } from "@/components/agents/AgentStatusDot";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { PullRequestBadge } from "@/components/git/PullRequestBadge";
+import { ProjectWaitBanner } from "@/components/questions/ProjectWaitBanner";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { EscalationActions } from "@/components/workflow/EscalationActions";
@@ -15,6 +16,7 @@ import { runReasonText, useAgentRuns } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import { HOST_NAME, limitedText, pullRequestProblem } from "@/lib/git";
 import { qk } from "@/lib/queries";
+import { questionKeys } from "@/lib/questions";
 import type { AgentRun, ProjectAgent } from "@/lib/types";
 import {
   FINISHING_HELP,
@@ -147,6 +149,15 @@ export function WorkflowPanel({
 
       {escalating && (
         <EscalationActions wf={wf} canDecide={canDecide} busy={busy} onDecide={(action) => void post("escalation", { action })} />
+      )}
+
+      {status === "waiting_human" && wf.needs === "project_answer" && (
+        <ProjectWaitBanner
+          taskKey={taskKey}
+          waits={wf.project_waits ?? []}
+          canAct={canDecide}
+          onChanged={() => Promise.all([refresh(), client.invalidateQueries({ queryKey: questionKeys.all })])}
+        />
       )}
 
       {agentDriven && canUse && (

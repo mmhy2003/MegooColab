@@ -45,11 +45,14 @@ class Needs(StrEnum):
     # an agent reviewed and merged the pull request: MegooColab waits to see the merge on the host, asking nobody
     merge_confirmation = "merge_confirmation"
     reply = "reply"  # a freestyle chat: the agent answered and waits for the person's next message
+    project_answer = "project_answer"  # the agent waits for another project's answer to a question it asked
 
 
 # the waits for the pull request's merge: every logic check treats them alike; only Needs you, the waiting counts,
 # notifications and the labels tell them apart
 MERGE_WAITS = frozenset({Needs.human_code_review, Needs.merge_confirmation})
+# waits that ask nobody: not a Needs you item, not in the waiting counts
+QUIET_NEEDS = frozenset({Needs.merge_confirmation, Needs.reply, Needs.project_answer})
 
 
 class Driver(StrEnum):

@@ -4,7 +4,7 @@ Two products are released, each with its own version:
 
 | Product | Version file | Tag | What gets published |
 | --- | --- | --- | --- |
-| MegooColab (backend, worker, frontend) | `VERSION` (and the same number in `backend/pyproject.toml` and `frontend/package.json`) | `vX.Y.Z` | Docker images `ghcr.io/mmhy2003/megoocolab-backend` and `-frontend`, tagged `X.Y.Z` and `latest` (amd64 and arm64) |
+| MegooColab (backend, worker, frontend) | `VERSION` (and the same number in `backend/pyproject.toml`, `backend/uv.lock`, `frontend/package.json` and `frontend/package-lock.json`) | `vX.Y.Z` | Docker images `ghcr.io/mmhy2003/megoocolab-backend` and `-frontend`, tagged `X.Y.Z` and `latest` (amd64 and arm64) |
 | The runner | `runner/VERSION` | `runner-vX.Y.Z` | `megoocolab-runner` for Windows, macOS and Linux (amd64 and arm64), and the Scoop manifest |
 
 ## Branches
@@ -34,7 +34,8 @@ Documentation-only changes need no release.
 
 1. On `develop`, list what changed per product since its last tag: `git log v0.1.0..develop -- backend frontend
    deploy` and `git log runner-v0.1.0..develop -- runner` (before the first release, everything).
-2. Propose the bump for each product that changed; the owner confirms or changes it.
+2. Pick the bump for each product that changed, by the rule above, and say which one was picked. The owner
+   decides only a major bump.
 3. Write each release note: `docs/releases/vX.Y.Z.md`, `docs/releases/runner-vX.Y.Z.md`.
    - Group the changes under **New**, **Improved** and **Fixed**, leaving out any empty group. Write each line as a
      plain sentence for the person installing it, not a commit message.
@@ -47,9 +48,11 @@ Documentation-only changes need no release.
    ```bash
    git checkout main && git pull
    git merge --no-ff develop
-   # set the new version(s): VERSION + backend/pyproject.toml + frontend/package.json, and/or runner/VERSION;
+   # set the new version(s): VERSION + backend/pyproject.toml + the megoocolab-backend entry in backend/uv.lock
+   # + frontend/package.json + the two top "version" lines of frontend/package-lock.json, and/or runner/VERSION;
    # write the release note(s) in docs/releases/
-   git add VERSION backend/pyproject.toml frontend/package.json runner/VERSION docs/releases
+   git add VERSION backend/pyproject.toml backend/uv.lock frontend/package.json frontend/package-lock.json runner/VERSION docs/releases
+   python tools/release/versions.py check     # VERSION, pyproject.toml and package.json agree (not the lock files)
    python tools/release/versions.py plan      # must list what is about to be released, without errors
    git commit -m "release: MegooColab X.Y.Z, runner X.Y.Z"
    git push origin main

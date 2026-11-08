@@ -19,7 +19,7 @@ from app.notifications.models import Kind, Notification
 from app.projects.models import Project, ProjectTeam
 from app.tasks.models import Task
 from app.teams.models import TeamMember
-from app.workflow.models import Needs, TaskWorkflow, WorkflowQuestion, WorkflowStatus
+from app.workflow.models import QUIET_NEEDS, TaskWorkflow, WorkflowQuestion, WorkflowStatus
 from app.workflow.models import QuestionStatus as WorkflowQuestionStatus
 
 NEEDS_SHOWN = 10
@@ -45,7 +45,7 @@ def _workflow_waits_query(scope: Scope, *columns) -> Select:
         # confirming an agent's merge asks nobody: MegooColab sees the merge by itself; a freestyle turn's reply
         # waits for the person's next message, which is theirs to send or not
         .where(TaskWorkflow.status == WorkflowStatus.waiting_human, TaskWorkflow.needs.is_not(None),
-               TaskWorkflow.needs.not_in((Needs.merge_confirmation, Needs.reply)), scope.in_projects(Task.project_id))
+               TaskWorkflow.needs.not_in(QUIET_NEEDS), scope.in_projects(Task.project_id))
     )
     stmt = stmt.where(or_(Task.in_chat.is_(False), Task.chat_id.in_(visible_chat_ids(scope.user))))
     if scope.name == "mine":

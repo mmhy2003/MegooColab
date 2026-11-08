@@ -81,3 +81,14 @@ class Question(IdMixin, Base):
     )
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     waiting_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # NOT-1, once
+    # asked as a follow-up to an earlier question of the same task (or chat) and target project
+    follow_up_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("a2a_questions.id", ondelete="SET NULL", name="a2a_questions_follow_up_of_id_fkey")
+    )
+    # the asking task can't go on without this answer: it waits for it, then its agent picks up again
+    wait: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    # when the answer was put in front of the asking agent (a prompt or a resume text), so it is given once
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # the asking task's people were told: the question went to a person / the answer is slow (once each)
+    asker_human_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    asker_slow_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

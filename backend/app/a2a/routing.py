@@ -109,6 +109,12 @@ async def _untried_bound(db: AsyncSession, q: Question) -> bool:
     return any(a.id not in tried and (not q.prefer_only or preferred(q, a)) for a in agents)
 
 
+async def _earlier(db: AsyncSession, q: Question) -> list[Question]:
+    from app.a2a.service import follow_up_chain  # local: the service imports this module
+
+    return await follow_up_chain(db, q)
+
+
 async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun | None:
     """Queues an answering run on the best candidate. The caller commits, then dispatches (DISPATCH_KEY)."""
     q = (
@@ -130,11 +136,14 @@ async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun |
 
             await notify(db, q)
             await notify_waiting(db, q)
+            from app.a2a import waits  # local: waits imports the engine
+
+            await waits.notify_asker(db, q, "human")  # the asking task waits on a person now
         return None  # otherwise it waits for a runner
     project = await db.get(Project, q.target_project_id)
     run = AgentRun(
         question_id=q.id, agent_id=agent.id, requested_by=q.asked_by_user_id or agent.owner_id,
-        policy="read_only", prompt=prompts.answer_prompt(q, project.key),
+        policy="read_only", prompt=prompts.answer_prompt(q, project.key, await _earlier(db, q)),
     )
     db.add(run)
     q.status = QuestionStatus.routed
@@ -216,16 +225,39 @@ async def route_and_dispatch() -> None:
         async with SessionLocal() as s:
             await dispatch_pending(s, owner_id)
             await s.commit()
+    from app.a2a import waits  # local: waits imports the engine
+
+    for step in (waits.resume_settled, waits.notify_slow):  # one failing must not stop the other
+        try:
+            await step()  # waiting tasks whose answers have all arrived pick up again; slow answers are told
+        except Exception:
+            log.exception("question routing: %s failed", step.__name__)
+
+
+_wake: asyncio.Event | None = None
+
+
+def wake() -> None:
+    """Run the loop's next pass now (an answer a waiting task needs was committed)."""
+    if _wake is not None:
+        with contextlib.suppress(RuntimeError):  # another event loop (tests): the next pass finds it anyway
+            _wake.set()
 
 
 async def route_loop(stop: asyncio.Event) -> None:
+    global _wake
+    _wake = asyncio.Event()
     while not stop.is_set():
+        _wake.clear()
         try:
             await route_and_dispatch()
         except Exception:
             log.exception("question routing failed")
+        stop_wait, wake_wait = asyncio.create_task(stop.wait()), asyncio.create_task(_wake.wait())
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(stop.wait(), ROUTE_SECONDS)
+            await asyncio.wait({stop_wait, wake_wait}, timeout=ROUTE_SECONDS, return_when=asyncio.FIRST_COMPLETED)
+        for t in (stop_wait, wake_wait):
+            t.cancel()
 
 
 async def start_fields(db: AsyncSession, run: AgentRun) -> tuple[RunTask, str, dict]:
@@ -297,6 +329,9 @@ async def on_answer_run_finished(db: AsyncSession, run: AgentRun) -> None:
     await notify(db, q)
     if q.status == QuestionStatus.needs_human:
         await notify_waiting(db, q)
+        from app.a2a import waits  # local: waits imports the engine
+
+        await waits.notify_asker(db, q, "human")  # the asking task waits on a person now
     if q.status == QuestionStatus.queued:
         await route_question(db, q.id)
 

@@ -15,6 +15,7 @@ ChatState = Literal[
     "talking", "question", "design_approval", "plan_approval", "building", "in_review", "human_code_review",
     "merging", "escalation", "offline", "finished", "ended",
     "working", "reply",  # a freestyle chat: a turn queued or running; waiting for the person's next message
+    "waiting_answer",  # the agent waits for another project's answer to a question it asked
 ]
 # what a message typed in the chat does now (for the viewer); "closed": it can't be sent; "turn": a freestyle chat's
 # next turn starts with it
@@ -89,6 +90,7 @@ class ChatOut(BaseModel):
     created_at: datetime
     last_activity_at: datetime
     state: ChatState
+    waiting_on: list[str] = []  # waiting_answer: the refs of the questions it waits for (SLW-Q3)
     intent: Intent = "closed"
     can_act: bool
     rounds: list[RoundOut]

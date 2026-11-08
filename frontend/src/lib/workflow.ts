@@ -32,7 +32,11 @@ const NEEDS_TEXT: Record<WorkflowNeeds, string> = {
   human_code_review: "Approve the PR",
   merge_confirmation: "Agent merged · confirming",
   reply: "Waiting for your reply",
+  project_answer: "Waiting for another project's answer",
 };
+
+/** Waits that ask nobody: never a Needs you item. */
+export const QUIET_NEEDS: readonly WorkflowNeeds[] = ["merge_confirmation", "reply", "project_answer"];
 
 export function needsText(needs: WorkflowNeeds): string {
   return NEEDS_TEXT[needs];
