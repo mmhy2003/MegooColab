@@ -369,7 +369,7 @@ def _project_answers_text(payload: dict) -> str:
     """The answers a waiting agent picks up again with (each wrapped as untrusted), then a line for each
     question it goes on without; within MAX_RESUME_CHARS, the answers cut first."""
     tail = "".join(f"\n{UNANSWERED_LINE.format(ref=ref)}" for ref in payload.get("unanswered") or [])
-    out = PROJECT_ANSWERS_HEADER
+    out = PROJECT_ANSWERS_HEADER if payload.get("answers") else ""
     for a in payload.get("answers") or []:
         lines = [str(a.get("answer_md") or "").strip()]
         if a.get("citations"):

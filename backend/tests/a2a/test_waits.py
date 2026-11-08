@@ -234,6 +234,7 @@ async def test_go_on_without_it_resumes_with_unanswered_line_and_late_answer_nev
     q = await _q(qid)
     ref = service.ref_of(await db.get(Project, q.target_project_id), q)
     assert f"{ref} wasn't answered. Carry on with what you have" in new.resume_prompt
+    assert not new.resume_prompt.startswith("Answers from other projects arrived.")  # none did
     q = await _q(qid)
     assert (q.wait, q.status) == (False, "queued")  # still open, as an ordinary question
     await _finish(b.manager.id, new, "completed", session_id="sess-1")  # nudged as usual: nothing holds it
