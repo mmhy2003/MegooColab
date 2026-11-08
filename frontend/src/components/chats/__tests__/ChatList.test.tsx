@@ -152,3 +152,25 @@ describe("each row's mark", () => {
     expect(screen.getByText("Nothing needs you.")).toBeInTheDocument();
   });
 });
+
+describe("waiting for another project's answer", () => {
+  it("is Working, says whose answer, and marks the row with an hourglass", () => {
+    expect(chatGroup(chat({ state: "waiting_answer" }))).toBe("working");
+    expect(stateText(chat({ state: "waiting_answer", waiting_on: ["ANS-Q3"] }))).toBe("waiting for ANS's answer");
+    expect(stateText(chat({ state: "waiting_answer", waiting_on: ["ANS-Q3", "PAY-Q7"] })))
+      .toBe("waiting for answers from ANS and PAY (2)");
+    expect(stateText(chat({ state: "waiting_answer", waiting_on: ["ANS-Q3", "ANS-Q4"] })))
+      .toBe("waiting for answers from ANS (2)");
+    expect(stateText(chat({ state: "waiting_answer" }))).toBe("waiting for another project's answer");
+    render(<ChatList chats={[chat({ id: "w", title: "Waits", state: "waiting_answer", waiting_on: ["ANS-Q3"] })]} showProject />);
+    const row = screen.getByText("Waits").closest("a")!;
+    expect(row).toHaveAttribute("data-group", "working");
+    expect(row.querySelector("[data-mark]")).toHaveAttribute("data-hourglass");
+    expect(screen.getByText("waiting for ANS's answer")).toHaveClass("text-cyan-ink");
+  });
+
+  it("a message now goes with the answers", () => {
+    expect(intentText(chat({ state: "waiting_answer", intent: "tell" }), false))
+      .toBe("laptop-claude gets this together with the answers it waits for.");
+  });
+});

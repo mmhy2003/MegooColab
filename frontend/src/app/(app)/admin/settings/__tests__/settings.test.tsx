@@ -17,6 +17,7 @@ const SETTINGS = {
   dreaming: { enabled: true, hour_utc: 3 },
   project_defaults: { finishing_option: "pull_request", pr_review: "none", sprints_enabled: true, commit_docs_to_repo: false },
   hub: { share_everyone: true },
+  questions: { notify_after_minutes: 30 },
 };
 const KEPT_SMTP = { host: "smtp.acme.io", port: 587, user: "megoo", from: "megoo@acme.io", tls: true, password: null };
 
@@ -48,10 +49,10 @@ const renderPage = () =>
   );
 
 describe("Admin settings in tabs", () => {
-  it("has seven tabs, General first, and no dreaming hour", async () => {
+  it("has eight tabs, General first, and no dreaming hour", async () => {
     renderPage();
     const tabs = await screen.findAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["General", "Email", "Telegram", "New projects", "Tool Hub", "Search", "Rate limits"]);
+    expect(tabs.map((t) => t.textContent)).toEqual(["General", "Email", "Telegram", "New projects", "Questions", "Tool Hub", "Search", "Rate limits"]);
     expect(await screen.findByLabelText("Organization name")).toBeVisible();
     expect(screen.getByLabelText("Host")).not.toBeVisible();
     expect(screen.queryByLabelText("Dreaming hour (UTC)")).toBeNull(); // moved to AI → Dreaming
@@ -120,6 +121,18 @@ describe("Admin settings in tabs", () => {
       url: "/api/admin/settings",
       body: { name: "Acme", smtp: KEPT_SMTP, hub: { share_everyone: false } },
     });
+  });
+
+  it("Questions saves how long an answer may take before the asking task's people are told", async () => {
+    search = "tab=questions";
+    renderPage();
+    const panel = within(await screen.findByRole("tabpanel", { name: "Questions" }));
+    const field = panel.getByRole("spinbutton", { name: "Tell me when an answer takes longer than (minutes)" });
+    expect(field).toHaveValue(30);
+    fireEvent.change(field, { target: { value: "45" } });
+    fireEvent.click(panel.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(puts()[0].body).toEqual({ name: "Acme", smtp: KEPT_SMTP, questions: { notify_after_minutes: 45 } });
   });
 
   it("Search and Rate limits have their own tabs", async () => {

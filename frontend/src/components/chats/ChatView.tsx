@@ -9,6 +9,7 @@ import { ChatBack } from "@/components/chats/ChatBack";
 import { ChatComposer } from "@/components/chats/ChatComposer";
 import { FreestyleChip } from "@/components/chats/FreestyleChip";
 import { ChatEscalation } from "@/components/chats/ChatEscalation";
+import { ChatProjectWait } from "@/components/chats/ChatProjectWait";
 import { EndChatButton, useEndChat } from "@/components/chats/EndChatButton";
 import { RoundDivider } from "@/components/chats/RoundDivider";
 import { RoundSections } from "@/components/chats/RoundSections";
@@ -191,6 +192,7 @@ export function ChatView({ chatId }: { chatId: string }) {
               </div>
             ))}
             {latest && c.state === "escalation" && <ChatEscalation chat={c} round={latest} />}
+            {latest && c.state === "waiting_answer" && <ChatProjectWait chat={c} round={latest} />}
           </div>
           <FollowRoom />
         </div>

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import type { components } from "@/lib/api-types";
+import { waitingFor } from "@/lib/questions";
 
 type S = components["schemas"];
 export type Chat = S["ChatOut"];
@@ -44,7 +45,7 @@ export type ChatGroup = "needs_you" | "working" | "open" | "offline" | "ended";
 const GROUP: Record<ChatState, ChatGroup> = {
   question: "needs_you", design_approval: "needs_you", plan_approval: "needs_you", escalation: "needs_you",
   human_code_review: "needs_you",
-  building: "working", in_review: "working", merging: "working", working: "working",
+  building: "working", in_review: "working", merging: "working", working: "working", waiting_answer: "working",
   talking: "open", reply: "open", finished: "open",
   offline: "offline",
   ended: "ended",
@@ -94,6 +95,8 @@ export type StateBits = {
   pr_url?: string | null;
   finish_outcome?: string | null;
   agent_name?: string | null;
+  /** waiting_answer: the refs of the questions it waits for */
+  waiting_on?: string[] | null;
 };
 
 /** What a chat is doing, in a few words (the chat list). */
@@ -101,7 +104,7 @@ export function stateText(chat: Chat): string {
   const r = latestRound(chat);
   return chatStateText({
     state: chat.state, current_step: r?.current_step, steps_total: r?.steps_total, pr_url: r?.pr_url,
-    finish_outcome: r?.finish_outcome, agent_name: chat.agent?.name,
+    finish_outcome: r?.finish_outcome, agent_name: chat.agent?.name, waiting_on: chat.waiting_on,
   });
 }
 
@@ -139,6 +142,8 @@ export function chatStateText(r: StateBits): string {
       return "working";
     case "reply":
       return "waiting for your reply";
+    case "waiting_answer":
+      return `waiting for ${waitingFor(r.waiting_on ?? [], false)}`;
   }
 }
 
@@ -152,6 +157,7 @@ export function intentText(chat: Chat, agentRunning: boolean): string {
     case "changes":
       return `Your message asks ${agent} to change the ${r?.needs === "design_approval" ? "design" : "plan"}. Approve stays on the card.`;
     case "tell":
+      if (chat.state === "waiting_answer") return `${agent} gets this together with the answers it waits for.`;
       return agentRunning
         ? `${agent} reads this straight away, without stopping.`
         : `${agent} gets this when its next run starts.`;

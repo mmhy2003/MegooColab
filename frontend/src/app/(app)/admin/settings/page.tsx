@@ -32,6 +32,7 @@ const TABS = [
   { id: "email", label: "Email" },
   { id: "telegram", label: "Telegram" },
   { id: "new-projects", label: "New projects" },
+  { id: "questions", label: "Questions" },
   { id: "tool-hub", label: "Tool Hub" },
   { id: "search", label: "Search" },
   { id: "rate-limits", label: "Rate limits" },
@@ -220,12 +221,42 @@ function HubForm({ settings }: { settings: AdminSettings }) {
   );
 }
 
+function QuestionsForm({ settings }: { settings: AdminSettings }) {
+  const [minutes, setMinutes] = useState(String(settings.questions.notify_after_minutes));
+  const { status, save } = useSave(settings);
+  return (
+    <form
+      className="card space-y-3 p-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save({ questions: { notify_after_minutes: Number(minutes) } });
+      }}
+    >
+      <Input
+        label="Tell me when an answer takes longer than (minutes)"
+        type="number"
+        min={5}
+        max={1440}
+        required
+        value={minutes}
+        onChange={(e) => setMinutes(e.target.value)}
+      />
+      <p className="text-xs text-muted-foreground">
+        When an agent waits for another project&apos;s answer, the people of its task or chat are told once when it takes
+        this long, and right away when the question has gone to a person at the other project.
+      </p>
+      <StatusLine status={status} />
+      <Button type="submit">Save</Button>
+    </form>
+  );
+}
+
 function SettingsTabs() {
   const settings = useAdminSettings();
   const [tab, setTab] = useTabParam<TabId>(TABS.map((t) => t.id));
   return (
     <div className="max-w-xl">
-      <PageHeader title="Settings" subtitle="Organization name, outgoing email, what new projects start with, Tool Hub sharing, search and rate limits." />
+      <PageHeader title="Settings" subtitle="Organization name, outgoing email, what new projects start with, questions to other projects, Tool Hub sharing, search and rate limits." />
       <Tabs label="Settings sections" tabs={TABS} value={tab} onChange={setTab} />
       {!settings.data ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -235,6 +266,7 @@ function SettingsTabs() {
           <TabPanel id="email" active={tab === "email"}><EmailForm settings={settings.data} /></TabPanel>
           <TabPanel id="telegram" active={tab === "telegram"}><TelegramForm /></TabPanel>
           <TabPanel id="new-projects" active={tab === "new-projects"}><DefaultsForm settings={settings.data} /></TabPanel>
+          <TabPanel id="questions" active={tab === "questions"}><QuestionsForm settings={settings.data} /></TabPanel>
           <TabPanel id="tool-hub" active={tab === "tool-hub"}><HubForm settings={settings.data} /></TabPanel>
           <TabPanel id="search" active={tab === "search"}><SearchAdmin /></TabPanel>
           <TabPanel id="rate-limits" active={tab === "rate-limits"}><RateLimitsAdmin /></TabPanel>

@@ -8,7 +8,7 @@ import { AskQuestion } from "@/components/questions/AskQuestion";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { qk } from "@/lib/queries";
-import { type QuestionStatus, STATUS_TONE, statusLine, useTaskQuestions } from "@/lib/questions";
+import { type QuestionStatus, STATUS_TONE, statusLine, useTaskQuestions, withFollowUps } from "@/lib/questions";
 
 /** The questions a task asked other projects, and asking a new one on the task's behalf (for those who may
  * change the task). */
@@ -21,8 +21,12 @@ export function TaskQuestions({ taskKey, canAsk = true }: { taskKey: string; can
       <h3 className="text-[11px] tracking-widest text-muted-foreground uppercase">Questions to other projects</h3>
       {!!questions.data?.length && (
         <ul aria-label="Questions to other projects" className="space-y-1">
-          {questions.data.map((q) => (
-            <li key={q.id} className="flex flex-wrap items-center gap-2 text-sm">
+          {withFollowUps(questions.data).map(({ question: q, followUp }) => (
+            <li
+              key={q.id}
+              data-follow-up={followUp ? "" : undefined}
+              className={`flex flex-wrap items-center gap-2 text-sm ${followUp ? "ml-4 border-l-2 border-line pl-2.5" : ""}`}
+            >
               <span className="font-mono text-xs text-muted-foreground">{q.ref}</span>
               <Link href={`/questions/${q.id}`} className="min-w-0 flex-1 truncate">
                 {q.title}

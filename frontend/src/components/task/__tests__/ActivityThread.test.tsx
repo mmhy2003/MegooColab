@@ -40,12 +40,14 @@ describe("ActivityThread", () => {
 
   it("describes questions to other projects", () => {
     const asked: ActivityItem = { type: "event", id: "e8", at: "2026-10-22T10:07:00Z", actor, kind: "question_asked", data: { question_id: "q1", target_key: "QBB", number: 1 } };
+    const followUp: ActivityItem = { type: "event", id: "e10", at: "2026-10-22T10:09:00Z", actor, kind: "question_asked", data: { question_id: "q2", target_key: "QBB", number: 4, follow_up_of_number: 3 } };
     const answered: ActivityItem = { type: "event", id: "e9", at: "2026-10-22T10:08:00Z", actor, kind: "question_answered", data: { question_id: "q1", target_key: "QBB", number: 1 } };
-    render(<ActivityThread items={[asked, answered]} columnNames={columnNames} userNames={userNames} />);
+    render(<ActivityThread items={[asked, answered, followUp]} columnNames={columnNames} userNames={userNames} />);
     const rows = screen.getAllByRole("listitem").map((li) => li.textContent);
     expect(rows[0]).toContain("Ahmed Ali asked QBB a question (Q1)");
     expect(rows[1]).toContain("QBB answered Q1");
     expect(rows[1]).not.toContain("Ahmed Ali");
+    expect(rows[2]).toContain("Ahmed Ali asked QBB a follow-up to Q3 (Q4)");
   });
 
   it("says an agent was assigned, not that the task was unassigned", () => {
