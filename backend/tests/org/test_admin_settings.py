@@ -87,3 +87,17 @@ async def test_dream_tick_respects_enabled_and_hour(client, db, monkeypatch):
     await client.put("/api/admin/settings", json={"name": "Acme", "smtp": SMTP,
                                                   "dreaming": {"enabled": False, "hour_utc": (setting + 2) % 24}})
     assert await _ticks(monkeypatch, (setting + 2) % 24) == 0  # disabled: never scheduled
+
+
+async def test_admin_sets_notify_minutes_bounds(client, db):
+    await _admin(client, db)
+    assert (await client.get("/api/admin/settings")).json()["questions"] == {"notify_after_minutes": 30}
+    for bad in (4, 1441):
+        r = await client.put("/api/admin/settings", json={"name": "Acme", "smtp": SMTP,
+                                                          "questions": {"notify_after_minutes": bad}})
+        assert r.status_code == 422, bad
+    r = await client.put("/api/admin/settings", json={"name": "Acme", "smtp": SMTP,
+                                                      "questions": {"notify_after_minutes": 45}})
+    assert r.status_code == 200 and r.json()["questions"] == {"notify_after_minutes": 45}
+    r = await client.put("/api/admin/settings", json={"name": "Acme", "smtp": SMTP})  # absent: kept
+    assert r.json()["questions"] == {"notify_after_minutes": 45}

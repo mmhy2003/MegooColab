@@ -7,7 +7,7 @@ ended without its role's own outcome leaves the workflow waiting (`Needs.project
 
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import event, select
@@ -15,8 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.a2a.models import OPEN_STATUSES, Question, QuestionStatus
 from app.agent_runs.models import AgentRun
+from app.agents.models import Agent
 from app.auth.models import User
 from app.core.db import SessionLocal
+from app.notifications import service as notifications
+from app.notifications.models import Kind
+from app.org.models import ORG_SETTINGS_ID, OrgSettings
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.workflow.models import (
@@ -186,3 +190,63 @@ def wake_after_commit(db: AsyncSession) -> None:
         routing.wake()
 
     event.listen(sync, "after_commit", _after_commit, once=True)
+
+
+# ---- telling the asking task's people -------------------------------------------------------------------------
+
+DEFAULT_NOTIFY_MINUTES = 30
+
+
+async def _asking_people(db: AsyncSession, task: Task) -> tuple[list, str]:
+    """Who is told the task needs them, and where to: as `engine.wait_for` picks them."""
+    project = await db.get(Project, task.project_id)
+    wf = await db.get(TaskWorkflow, task.id)
+    agent_id = (wf.agent_id if wf else None) or task.assignee_agent_id
+    owner = await db.scalar(select(Agent.owner_id).where(Agent.id == agent_id)) if agent_id else None
+    key = f"{project.key}-{task.number}"
+    if task.in_chat:
+        from app.chats.service import chat_people  # local: the chats modules import the engine
+
+        return await chat_people(db, task)
+    return [owner, task.assignee_user_id], f"/projects/{project.key}/board?task={key}"
+
+
+async def notify_asker(db: AsyncSession, q: Question, kind: str) -> None:
+    """Tell the asking task's people, once per kind and question it needs: "human" (the question went to a person
+    at the other project) or "slow" (no answer after the org's notify minutes)."""
+    if not q.wait or q.from_task_id is None:
+        return
+    column = "asker_human_notified_at" if kind == "human" else "asker_slow_notified_at"
+    if getattr(q, column) is not None:
+        return
+    setattr(q, column, datetime.now(UTC))
+    task = await db.get(Task, q.from_task_id)
+    if task is None:
+        return
+    target = await db.get(Project, q.target_project_id)
+    ref = f"{target.key}-Q{q.number}"
+    title = (f"{ref} is waiting for a person at {target.key} to answer." if kind == "human"
+             else f"{target.key} hasn't answered {ref} yet.")
+    recipients, link = await _asking_people(db, task)
+    await notifications.notify(db, recipients, Kind.question_waiting, title=title, body=q.title, link=link,
+                               task_id=task.id, project_id=task.project_id)
+
+
+async def notify_slow() -> int:
+    """The loop's pass: the questions a task waits for that are still open after the org's notify minutes."""
+    async with SessionLocal() as s:
+        org = await s.get(OrgSettings, ORG_SETTINGS_ID)
+        minutes = org.project_answer_notify_minutes if org is not None else DEFAULT_NOTIFY_MINUTES
+        rows = await s.execute(
+            select(Question)
+            .where(Question.wait.is_(True), Question.from_task_id.is_not(None), Question.status.in_(OPEN_STATUSES),
+                   Question.asker_slow_notified_at.is_(None),
+                   Question.created_at <= datetime.now(UTC) - timedelta(minutes=minutes))
+            .with_for_update(skip_locked=True)
+        )
+        told = 0
+        for q in rows.scalars():
+            await notify_asker(s, q, "slow")
+            told += 1
+        await s.commit()
+        return told

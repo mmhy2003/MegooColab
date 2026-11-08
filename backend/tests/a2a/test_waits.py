@@ -301,3 +301,92 @@ async def test_on_answered_wakes_routing_after_commit(db, tc_factory, monkeypatc
         assert calls == []  # not before the answer is committed
         await s.commit()
     assert calls == [1]
+
+
+# ---- telling the person ---------------------------------------------------------------------------------------
+
+from datetime import UTC, datetime, timedelta  # noqa: E402
+
+from app.org.models import ORG_SETTINGS_ID, OrgSettings  # noqa: E402
+
+
+async def _told(task_id) -> list[Notification]:
+    async with SessionLocal() as s:
+        rows = await s.execute(select(Notification).where(Notification.task_id == task_id,
+                                                          Notification.kind == "question_waiting"))
+        return list(rows.scalars())
+
+
+async def _org_minutes(minutes: int) -> None:
+    async with SessionLocal() as s:
+        org = await s.get(OrgSettings, ORG_SETTINGS_ID)
+        if org is None:
+            s.add(OrgSettings(id=ORG_SETTINGS_ID, name="Acme", project_answer_notify_minutes=minutes))
+        else:
+            org.project_answer_notify_minutes = minutes
+        await s.commit()
+
+
+async def test_needs_human_tells_asker_once(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    for _ in range(2):
+        async with SessionLocal() as s:
+            await waits.notify_asker(s, await s.get(Question, qid), "human")
+            await s.commit()
+    [n] = await _told(b.task_id)
+    q = await _q(qid)
+    project = await db.get(Project, q.target_project_id)
+    ref = service.ref_of(project, q)
+    assert n.title == f"{ref} is waiting for a person at {project.key} to answer."
+    assert n.user_id == b.manager.id and n.body == q.title
+
+
+async def test_slow_answer_tells_asker_after_setting_minutes_once(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    await _org_minutes(5)
+    assert await waits.notify_slow() == 0  # not yet
+    async with SessionLocal() as s:
+        await s.execute(update(Question).where(Question.id == qid)
+                        .values(created_at=datetime.now(UTC) - timedelta(minutes=6)))
+        await s.commit()
+    assert await waits.notify_slow() == 1
+    assert await waits.notify_slow() == 0
+    [n] = await _told(b.task_id)
+    q = await _q(qid)
+    project = await db.get(Project, q.target_project_id)
+    assert n.title == f"{project.key} hasn't answered {service.ref_of(project, q)} yet."
+
+
+async def test_question_without_wait_tells_asker_nothing(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run = await _started(db, tc)
+    qid = await _wait_q(b.task_id, wait=False)
+    await _org_minutes(5)
+    async with SessionLocal() as s:
+        await s.execute(update(Question).where(Question.id == qid)
+                        .values(created_at=datetime.now(UTC) - timedelta(minutes=60)))
+        await s.commit()
+        await waits.notify_asker(s, await s.get(Question, qid), "human")
+        await s.commit()
+    assert await waits.notify_slow() == 0
+    assert await _told(b.task_id) == []
+
+
+async def test_routing_giving_up_tells_asker(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    async with SessionLocal() as s:  # every agent bound to the target has tried: the question goes to a person
+        from app.agents.models import AgentBinding
+
+        target = (await s.get(Question, qid)).target_project_id
+        bound = (await s.execute(select(AgentBinding.agent_id).where(AgentBinding.project_id == target))).scalars()
+        await s.execute(update(Question).where(Question.id == qid)
+                        .values(tried_agent_ids=[str(a) for a in bound] + [str(uuid.uuid4())]))
+        await s.commit()
+    async with SessionLocal() as s:
+        await routing.route_question(s, qid)
+        await s.commit()
+    assert (await _q(qid)).status == "needs_human"
+    assert [n.title.endswith("to answer.") for n in await _told(b.task_id)] == [True]

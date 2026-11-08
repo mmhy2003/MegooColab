@@ -136,6 +136,9 @@ async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun |
 
             await notify(db, q)
             await notify_waiting(db, q)
+            from app.a2a import waits  # local: waits imports the engine
+
+            await waits.notify_asker(db, q, "human")  # the asking task waits on a person now
         return None  # otherwise it waits for a runner
     project = await db.get(Project, q.target_project_id)
     run = AgentRun(
@@ -225,6 +228,7 @@ async def route_and_dispatch() -> None:
     from app.a2a import waits  # local: waits imports the engine
 
     await waits.resume_settled()  # waiting tasks whose answers have all arrived pick up again
+    await waits.notify_slow()
 
 
 _wake: asyncio.Event | None = None
