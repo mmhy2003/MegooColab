@@ -24,4 +24,5 @@ def test_a_rerun_skips_a_release_already_created():
 def test_the_routine_adds_the_release_notes():
     """`git commit -am` leaves new (untracked) release notes out of the release commit."""
     assert "commit -am" not in ROUTINE
-    assert "git add VERSION backend/pyproject.toml frontend/package.json runner/VERSION docs/releases" in ROUTINE
+    assert ("git add VERSION backend/pyproject.toml backend/uv.lock frontend/package.json frontend/package-lock.json "
+            "runner/VERSION docs/releases") in ROUTINE
