@@ -153,3 +153,88 @@ export function ProjectPicker({ projects, counts, value, onChange }: {
     </div>
   );
 }
+
+/**
+ * One project picked from a searchable list, in the same look as ProjectPicker: closed, it shows the picked project's
+ * key and name ("Choose a project" before one is picked); open, a search over keys and names and a row per project,
+ * the picked one ticked. Picking one closes it. `disabled`: the project is fixed (a project's own Chats tab).
+ */
+export function ProjectSelect({ projects, value, onChange, disabled = false, label = "Project" }: {
+  projects: Project[];
+  value: string;
+  onChange: (key: string) => void;
+  disabled?: boolean;
+  label?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const current = projects.find((p) => p.key === value);
+  const q = query.trim().toLowerCase();
+  const shown = projects.filter((p) => !q || p.key.toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
+  const onOpenChange = (next: boolean) => {
+    if (next) setQuery("");
+    setOpen(next);
+  };
+
+  return (
+    <div data-project-select className="min-w-0 space-y-1">
+      <span className="text-xs tracking-wider text-muted-foreground uppercase">{label}</span>
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            // eslint-disable-next-line jsx-a11y/role-has-required-aria-props -- PopoverTrigger adds aria-controls
+            role="combobox"
+            aria-label={label}
+            aria-expanded={open}
+            disabled={disabled}
+            className="flex min-h-9 w-full min-w-0 items-center gap-2 rounded border border-line bg-surface-2 px-2.5 py-1 text-left text-sm focus-visible:border-cyan disabled:opacity-60"
+          >
+            {value ? (
+              <>
+                <span className="min-w-8 shrink-0 rounded border border-line px-1 text-center text-[11px]">{value}</span>
+                <span className="min-w-0 flex-1 truncate">{current?.name ?? ""}</span>
+              </>
+            ) : (
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">Choose a project</span>
+            )}
+            {!disabled && <ChevronsUpDown size={14} aria-hidden className="shrink-0 text-muted-foreground" />}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" collisionPadding={8} className="w-(--radix-popover-trigger-width) min-w-64 p-0">
+          <Command shouldFilter={false}>
+            <CommandInput placeholder="Search projects…" value={query} onValueChange={setQuery} />
+            <CommandList>
+              <CommandEmpty>{q ? `No project matches "${query.trim()}".` : "No projects."}</CommandEmpty>
+              {shown.map((p) => {
+                const on = p.key === value;
+                return (
+                  <CommandItem
+                    key={p.key}
+                    value={p.key}
+                    data-key={p.key}
+                    aria-checked={on}
+                    aria-label={`${p.key} — ${p.name}`}
+                    onSelect={() => {
+                      onChange(p.key);
+                      setOpen(false);
+                    }}
+                    className="gap-2"
+                  >
+                    <Check size={14} aria-hidden className={`shrink-0 text-cyan-ink ${on ? "" : "invisible"}`} />
+                    <span className="min-w-8 rounded border border-line px-1 text-center text-[11px]">
+                      <Marked text={p.key} query={q} />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">
+                      <Marked text={p.name} query={q} />
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}

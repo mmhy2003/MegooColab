@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { ProjectSelect } from "@/components/chats/ProjectPicker";
 import { ImageAttach, ImageDropZone } from "@/components/images/ImageAttach";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
@@ -87,15 +88,15 @@ export function NewChatDialog({ open, onClose, projectKey }: { open: boolean; on
           void submit();
         }}
       >
-        <Select label="Project" value={project} disabled={!!projectKey} onChange={(e) => { setProject(e.target.value); setAgent(""); }}>
-          {!projectKey && <option value="">Choose a project</option>}
-          {projectKey && !projects.data?.some((p) => p.key === projectKey) && <option value={projectKey}>{projectKey}</option>}
-          {(projects.data ?? []).map((p) => (
-            <option key={p.id} value={p.key}>
-              {p.key} — {p.name}
-            </option>
-          ))}
-        </Select>
+        <ProjectSelect
+          projects={projects.data ?? []}
+          value={project}
+          disabled={!!projectKey}
+          onChange={(key) => {
+            setProject(key);
+            setAgent("");
+          }}
+        />
         <Select label="Agent" value={agent} disabled={!project} onChange={(e) => setAgent(e.target.value)}>
           <option value="">Any free agent</option>
           {usable.map((a) => (

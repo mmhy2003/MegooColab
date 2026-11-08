@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ProjectPicker } from "@/components/chats/ProjectPicker";
+import { ProjectPicker, ProjectSelect } from "@/components/chats/ProjectPicker";
 
 afterEach(cleanup);
 
@@ -125,5 +125,60 @@ describe("ProjectPicker open", () => {
     await userEvent.type(screen.getByPlaceholderText("Search projects…"), "kit");
     fireEvent.keyDown(screen.getByPlaceholderText("Search projects…"), { key: "Enter" });
     expect(onChange).toHaveBeenLastCalledWith(["MK"]);
+  });
+});
+
+function One({ initial = "", disabled = false, onChange = vi.fn() }) {
+  const [value, setValue] = useState(initial);
+  return (
+    <ProjectSelect
+      projects={PROJECTS}
+      value={value}
+      disabled={disabled}
+      onChange={(v) => {
+        onChange(v);
+        setValue(v);
+      }}
+    />
+  );
+}
+const openOne = () => userEvent.click(screen.getByRole("combobox", { name: "Project" }));
+
+describe("ProjectSelect (one project)", () => {
+  it("reads Choose a project, then the picked project's key and name", () => {
+    render(<One />);
+    expect(screen.getByRole("combobox", { name: "Project" })).toHaveTextContent("Choose a project");
+    cleanup();
+    render(<One initial="SLW" />);
+    expect(screen.getByRole("combobox", { name: "Project" })).toHaveTextContent("SLWSuperLiveWeb");
+  });
+
+  it("picking one ticks it and closes the list", async () => {
+    const onChange = vi.fn();
+    render(<One initial="SLW" onChange={onChange} />);
+    await openOne();
+    expect(screen.getByRole("option", { name: "SLW — SuperLiveWeb" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("option", { name: "MK — MegooKit" })).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByRole("button", { name: /Select all/ })).toBeNull();
+    await userEvent.click(screen.getByRole("option", { name: "MK — MegooKit" }));
+    expect(onChange).toHaveBeenCalledWith("MK");
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Project" })).toHaveTextContent("MKMegooKit");
+  });
+
+  it("searches keys and names, marks the match, and says when nothing matches", async () => {
+    render(<One />);
+    await openOne();
+    const search = screen.getByPlaceholderText("Search projects…");
+    await userEvent.type(search, "pay");
+    expect(screen.getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual(["PAY — Payments"]);
+    expect(within(screen.getByRole("option")).getAllByText(/pay/i, { selector: "mark" })).toHaveLength(2);
+    fireEvent.change(search, { target: { value: "zzz" } });
+    expect(await screen.findByText('No project matches "zzz".')).toBeInTheDocument();
+  });
+
+  it("can't be changed when it's fixed", () => {
+    render(<One initial="SLW" disabled />);
+    expect(screen.getByRole("combobox", { name: "Project" })).toBeDisabled();
   });
 });

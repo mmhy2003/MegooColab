@@ -43,9 +43,9 @@ afterEach(() => {
 });
 
 describe("NewChatDialog", () => {
-  it("its selects stay inside the dialog", () => {
+  it("its fields stay inside the dialog", () => {
     renderDialog();
-    expect(screen.getByLabelText("Project")).toHaveClass("min-w-0");
+    expect(screen.getByRole("combobox", { name: "Project" }).closest("[data-project-select]")).toHaveClass("min-w-0");
     expect(screen.getByLabelText("Agent")).toHaveClass("min-w-0");
   });
 
@@ -62,11 +62,20 @@ describe("NewChatDialog", () => {
 
   it("locks the project on a project's tab, and lets you pick it on the Chats page", async () => {
     renderDialog("PAY");
-    expect(screen.getByLabelText("Project")).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Project" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Project" })).toHaveTextContent("PAY");
     cleanup();
-    renderDialog();
-    await waitFor(() => expect(screen.getByRole("option", { name: "WEB — Web" })).toBeInTheDocument());
-    expect(screen.getByLabelText("Project")).not.toBeDisabled();
+    const posted = renderDialog();
+    const field = screen.getByRole("combobox", { name: "Project" });
+    expect(field).not.toBeDisabled();
+    expect(field).toHaveTextContent("Choose a project");
+    fireEvent.click(field);
+    fireEvent.click(await screen.findByRole("option", { name: "WEB — Web" }));
+    expect(screen.getByRole("combobox", { name: "Project" })).toHaveTextContent("WEBWeb");
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Hello" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start chat" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Start chat" }));
+    await waitFor(() => expect(posted).toEqual([{ project_key: "WEB", agent_id: null, message: "Hello", image_ids: [], mode: "workflow" }]));
   });
 
   it("sends the images added to the first message", async () => {
