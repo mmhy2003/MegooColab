@@ -80,3 +80,16 @@ async def test_owner_who_is_not_a_manager_sees_it_and_other_team_manager_does_no
     _login(tc, outsider)  # manages another team, not this project
     r = tc.get("/api/projects/PAY/tasks", params={"needs_you": "true"})
     assert r.status_code != 200
+
+
+async def test_project_answer_wait_is_not_needs_you(db, tc_factory):
+    from app.workflow.models import QUIET_NEEDS, Needs, TaskWorkflow
+
+    assert QUIET_NEEDS == frozenset({Needs.merge_confirmation, Needs.reply, Needs.project_answer})
+    tc = tc_factory(lifespan=True)
+    b, _run = await _started(db, tc)
+    await db.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == b.task_id)
+                     .values(status="waiting_human", needs="project_answer"))
+    await db.commit()
+    assert _needs_you(tc) == []
+    assert tc.get("/api/dashboard/count").json() == {"needs_you": 0}

@@ -22,6 +22,8 @@ class OrgSettings(TimestampMixin, Base):
     # ADM-1: the nightly dream (hour in UTC; null: the MEMORY_DREAM_HOUR_UTC setting)
     dream_enabled: Mapped[bool] = mapped_column(default=True, server_default=true())
     dream_hour_utc: Mapped[int | None]
+    # questions to other projects: tell the asking task's people when an answer it waits for takes this long
+    project_answer_notify_minutes: Mapped[int] = mapped_column(default=30, server_default="30")
     # global search: when the index was last rebuilt from the database
     search_rebuilt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # the newest releases on GitHub, as the update check last found them (app.updates.check)
