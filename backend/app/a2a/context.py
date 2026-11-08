@@ -31,6 +31,8 @@ NOTE = "Questions this task asked other projects, and their answers (read more w
 BUDGET = 6000
 MIN_ANSWER = 100
 SKIP_ROLES = frozenset({RunRole.finish})
+# a pull request's review may run on the project's reviewer agent, whose owner may see other projects: it asks nobody
+ASK_SKIP_ROLES = frozenset({RunRole.finish, RunRole.pr_review})
 
 MAX_LISTED = 30
 DESCRIPTION_CHARS = 150
@@ -175,7 +177,7 @@ async def left_line(db: AsyncSession, task: Task) -> str:
 
 
 async def projects_context(db: AsyncSession, task: Task, role: RunRole) -> str | None:
-    if role in SKIP_ROLES:
+    if role in ASK_SKIP_ROLES:
         return None
     owner = await _owner(db, task)
     if owner is None:
@@ -212,7 +214,7 @@ async def resume_tail(db: AsyncSession, task: Task, role: RunRole) -> str | None
     answers = await _answers(db, owner, list(rows.scalars()), HEADING)
     if answers:
         parts.append(answers.rstrip())
-    if await _askable(db, owner, task):
+    if role not in ASK_SKIP_ROLES and await _askable(db, owner, task):
         parts.append(f"{REMINDER}\n{await left_line(db, task)}")
     return "\n\n".join(parts) or None
 

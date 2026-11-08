@@ -141,3 +141,9 @@ async def test_agent_questions_skip_per_user_cap(client_factory, db):
     async with SessionLocal() as s:
         assert await service.open_question_count(s, await s.get(User, asker.id)) == 0
     await _person_ask(asker)  # a person still asks: the agent's questions don't fill their cap
+
+
+async def test_wait_is_kept_only_for_an_agent_asking_for_its_task(client_factory, db):
+    asker, *_rest = await _world(client_factory, db)
+    q = await _person_ask(asker, wait=True)
+    assert q.wait is False  # nothing waits on a person's own question

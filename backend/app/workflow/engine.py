@@ -660,8 +660,8 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
         return Needs.question
     from app.a2a import waits  # local: the a2a modules import the engine
 
-    if await waits.open_waits(db, wf.task_id):
-        return Needs.project_answer
+    if wf.driver == Driver.runner and await waits.open_waits(db, wf.task_id):
+        return Needs.project_answer  # a connect-only agent asks through its own token: nothing here resumes it
     # a design submitted by a run that ended while the workflow was paused left the stage at brainstorm
     kind = {Stage.brainstorm: DocKind.design, Stage.design: DocKind.design, Stage.plan: DocKind.plan}.get(wf.stage)
     if kind is not None:

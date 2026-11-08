@@ -429,3 +429,61 @@ async def test_chat_out_state_waiting_answer_and_refs(client, db):
     project = await db.get(Project, q.target_project_id)
     assert body["state"] == "waiting_answer" and body["waiting_on"] == [service.ref_of(project, q)]
     assert body["intent"] == "tell"
+
+
+# ---- final review fixes ---------------------------------------------------------------------------------------
+
+
+async def test_ask_human_answered_during_run_is_delivered_before_any_hold(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    await _wait_q(b.task_id)
+    qid = await _ask(b.task_id, run.id)
+    r = tc.post(f"/api/tasks/{b.key}/questions/{qid}/answer", json={"text": "Use Postgres"})
+    assert r.status_code == 200, r.text  # the run still works: the answer waits for its end
+    await _finish(b.manager.id, run, "completed", session_id="sess-1")
+    new = (await _runs(b.task_id))[-1]
+    assert new.id != run.id and "Use Postgres" in new.resume_prompt
+    assert (await _wf(b.task_id)).needs is None
+
+
+async def test_resume_pass_survives_a_task_it_cannot_resume(db, tc_factory, monkeypatch):
+    from app.workflow import engine
+
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    await _answer(qid)
+
+    async def no_run(*a, **k):
+        return None
+
+    monkeypatch.setattr(engine, "latest_run", no_run)
+    assert await waits.resume_settled() == 0  # skipped, not raised
+
+
+async def test_pr_review_gets_no_ask_section_and_is_never_held(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run = await _started(db, tc)
+    async with SessionLocal() as s:
+        task = await s.get(Task, b.task_id)
+        assert await a2a_ctx.projects_context(s, task, RunRole.pr_review) is None
+    assert await waits.hold_after_run(None, None, None, SimpleNamespace(workflow_role="pr_review")) is False
+
+
+async def test_attempts_running_out_tells_asker(db, tc_factory):
+    from app.agent_runs.models import AgentRun
+
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    async with SessionLocal() as s:
+        q = await s.get(Question, qid)
+        q.status, q.attempts = "routed", routing.MAX_ATTEMPTS - 1
+        run = AgentRun(question_id=qid, agent_id=uuid.UUID(b.agent["id"]), requested_by=b.manager.id,
+                       policy="read_only", prompt="p", status="completed")
+        s.add(run)
+        await s.commit()
+    async with SessionLocal() as s:
+        await routing.on_answer_run_finished(s, await s.get(AgentRun, run.id))
+        await s.commit()
+    assert (await _q(qid)).status == "needs_human"
+    assert [n.title.endswith("to answer.") for n in await _told(b.task_id)] == [True]

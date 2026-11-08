@@ -227,8 +227,11 @@ async def route_and_dispatch() -> None:
             await s.commit()
     from app.a2a import waits  # local: waits imports the engine
 
-    await waits.resume_settled()  # waiting tasks whose answers have all arrived pick up again
-    await waits.notify_slow()
+    for step in (waits.resume_settled, waits.notify_slow):  # one failing must not stop the other
+        try:
+            await step()  # waiting tasks whose answers have all arrived pick up again; slow answers are told
+        except Exception:
+            log.exception("question routing: %s failed", step.__name__)
 
 
 _wake: asyncio.Event | None = None
@@ -326,6 +329,9 @@ async def on_answer_run_finished(db: AsyncSession, run: AgentRun) -> None:
     await notify(db, q)
     if q.status == QuestionStatus.needs_human:
         await notify_waiting(db, q)
+        from app.a2a import waits  # local: waits imports the engine
+
+        await waits.notify_asker(db, q, "human")  # the asking task waits on a person now
     if q.status == QuestionStatus.queued:
         await route_question(db, q.id)
 

@@ -210,7 +210,7 @@ async def ask(
         asked_by_user_id=user.id, asked_by_agent_id=agent_id, title=title, body=body, context=context,
         prefer_agent_id=prefer_agent_id, prefer_program=prefer_program,
         prefer_only=if_busy == "wait" and (prefer_agent_id is not None or prefer_program is not None),
-        wait=wait, follow_up_of_id=earlier.id if earlier is not None else None,
+        wait=wait and by_agent, follow_up_of_id=earlier.id if earlier is not None else None,
     )
     db.add(q)
     await db.flush()
