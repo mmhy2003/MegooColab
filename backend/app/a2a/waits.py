@@ -125,7 +125,8 @@ async def settle(
 
 async def resume_settled() -> int:
     """The loop's pass: every workflow waiting on answers that have all arrived (or been withdrawn) picks up again.
-    Each in a session of its own, under the engine's locks, the state checked again under them."""
+    Each in a session of its own, under the engine's locks (skipped, not waited for, while another holds them),
+    the state checked again under them."""
     from app.workflow import engine  # local: the engine imports this module lazily
 
     async with SessionLocal() as s:
@@ -136,13 +137,15 @@ async def resume_settled() -> int:
     resumed = 0
     for task_id in task_ids:
         async with SessionLocal() as s:
+            # the engine's locks, task then workflow, never waited for: a task busy now is taken by the next pass
+            if await s.scalar(select(Task.id).where(Task.id == task_id)
+                              .with_for_update(key_share=True, skip_locked=True)) is None:
+                continue
+            wf = (await s.execute(
+                select(TaskWorkflow).where(TaskWorkflow.task_id == task_id).with_for_update(skip_locked=True)
+                .execution_options(populate_existing=True)
+            )).scalar_one_or_none()
             task = await s.get(Task, task_id)
-            if task is None:
-                continue
-            try:
-                wf = await engine.lock_task(s, task)
-            except HTTPException:  # deleted meanwhile
-                continue
             if wf is None or wf.status != WorkflowStatus.waiting_human or wf.needs != Needs.project_answer:
                 continue
             if await open_waits(s, task_id):
