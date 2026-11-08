@@ -390,3 +390,41 @@ async def test_routing_giving_up_tells_asker(db, tc_factory):
         await s.commit()
     assert (await _q(qid)).status == "needs_human"
     assert [n.title.endswith("to answer.") for n in await _told(b.task_id)] == [True]
+
+
+# ---- what the screens are told --------------------------------------------------------------------------------
+
+
+async def test_workflow_out_lists_project_waits_with_viewer_rights(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [qid] = await _waiting_on(db, tc)
+    body = tc.get(f"/api/tasks/{b.key}/workflow").json()
+    assert body["needs"] == "project_answer"
+    [w] = body["project_waits"]
+    q = await _q(qid)
+    project = await db.get(Project, q.target_project_id)
+    assert w == {"question_id": str(qid), "ref": service.ref_of(project, q), "project_key": project.key,
+                 "title": q.title, "status": "queued", "can_answer": True, "can_withdraw": True}
+    member = await _member(db, tc)
+    _login(tc, member)
+    [w] = tc.get(f"/api/tasks/{b.key}/workflow").json()["project_waits"]
+    assert w["can_withdraw"] is False
+
+
+async def test_chat_out_state_waiting_answer_and_refs(client, db):
+    from app.workflow import engine
+    from tests.chats.helpers import start, world
+
+    await world(client, db)
+    chat = await start(client)
+    task_id = await db.scalar(select(Task.id).where(Task.chat_id == uuid.UUID(chat["id"])))
+    qid = await _wait_q(task_id)
+    async with SessionLocal() as s:
+        wf = await engine.lock_workflow(s, task_id)
+        await engine.wait_for(s, wf, "project_answer", notify=False)
+        await s.commit()
+    body = (await client.get(f"/api/chats/{chat['id']}")).json()
+    q = await _q(qid)
+    project = await db.get(Project, q.target_project_id)
+    assert body["state"] == "waiting_answer" and body["waiting_on"] == [service.ref_of(project, q)]
+    assert body["intent"] == "tell"

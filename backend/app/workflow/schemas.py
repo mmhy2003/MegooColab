@@ -61,6 +61,17 @@ class KbFiled(BaseModel):
     document_id: uuid.UUID
 
 
+class ProjectWaitOut(BaseModel):
+    """A question to another project the task waits for, and what the viewer may do about it."""
+    question_id: uuid.UUID
+    ref: str
+    project_key: str
+    title: str
+    status: str
+    can_answer: bool
+    can_withdraw: bool
+
+
 class WorkflowOut(TaskWorkflowOut):
     # changes requested on the pull request (piece 3): rounds used, and what asked last
     pr_fix_rounds: int = 0
@@ -82,6 +93,7 @@ class WorkflowOut(TaskWorkflowOut):
     back_merge_into: str | None = None
     documents: list[WorkflowDocumentBrief]
     open_question_id: uuid.UUID | None
+    project_waits: list[ProjectWaitOut] = []  # the other projects' answers it waits for
     steps: list[WorkflowStepOut]
     kb_documents: list[KbFiled] = []  # WF-9: the Knowledge Base copies of approved documents and reviews
 

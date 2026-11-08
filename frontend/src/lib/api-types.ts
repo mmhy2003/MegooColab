@@ -1903,6 +1903,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{key}/project-waits/go-on": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Go On Without Answers
+         * @description The agent picks up again now, without the other projects' answers it waits for.
+         */
+        post: operations["go_on_without_answers_api_tasks__key__project_waits_go_on_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{key}/workflow/resume": {
         parameters: {
             query?: never;
@@ -4077,6 +4097,7 @@ export interface components {
             dreaming?: components["schemas"]["Dreaming"] | null;
             project_defaults?: components["schemas"]["ProjectDefaults"] | null;
             hub?: components["schemas"]["HubSettings"] | null;
+            questions?: components["schemas"]["QuestionSettings"] | null;
         };
         /** AdminSettingsOut */
         AdminSettingsOut: {
@@ -4086,6 +4107,7 @@ export interface components {
             dreaming: components["schemas"]["Dreaming"];
             project_defaults: components["schemas"]["ProjectDefaults"];
             hub: components["schemas"]["HubSettings"];
+            questions: components["schemas"]["QuestionSettings"];
         };
         /** AdminToolOut */
         AdminToolOut: {
@@ -4584,7 +4606,12 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "talking" | "question" | "design_approval" | "plan_approval" | "building" | "in_review" | "human_code_review" | "merging" | "escalation" | "offline" | "finished" | "ended" | "working" | "reply";
+            state: "talking" | "question" | "design_approval" | "plan_approval" | "building" | "in_review" | "human_code_review" | "merging" | "escalation" | "offline" | "finished" | "ended" | "working" | "reply" | "waiting_answer";
+            /**
+             * Waiting On
+             * @default []
+             */
+            waiting_on: string[];
             /**
              * Intent
              * @default closed
@@ -5503,6 +5530,16 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** FollowUpRef */
+        FollowUpRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ref */
+            ref: string;
+        };
         /** ForgotIn */
         ForgotIn: {
             /**
@@ -6284,7 +6321,7 @@ export interface components {
          * Needs
          * @enum {string}
          */
-        Needs: "question" | "design_approval" | "plan_approval" | "escalation" | "human_code_review" | "merge_confirmation" | "reply";
+        Needs: "question" | "design_approval" | "plan_approval" | "escalation" | "human_code_review" | "merge_confirmation" | "reply" | "project_answer";
         /** NeedsCount */
         NeedsCount: {
             /** Needs You */
@@ -6730,6 +6767,29 @@ export interface components {
         ProjectStatusIn: {
             status: components["schemas"]["ProjectStatus"];
         };
+        /**
+         * ProjectWaitOut
+         * @description A question to another project the task waits for, and what the viewer may do about it.
+         */
+        ProjectWaitOut: {
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /** Ref */
+            ref: string;
+            /** Project Key */
+            project_key: string;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /** Can Answer */
+            can_answer: boolean;
+            /** Can Withdraw */
+            can_withdraw: boolean;
+        };
         /** ProviderIn */
         ProviderIn: {
             /** Name */
@@ -6869,6 +6929,7 @@ export interface components {
             /** Attempts */
             attempts: number;
             from_task: components["schemas"]["TaskRef"] | null;
+            follow_up_of?: components["schemas"]["FollowUpRef"] | null;
             asked_by: components["schemas"]["Who"];
             preference: components["schemas"]["Preference"] | null;
             /** Kb Document Id */
@@ -6888,6 +6949,14 @@ export interface components {
             can_approve: boolean;
             /** Can Withdraw */
             can_withdraw: boolean;
+        };
+        /** QuestionSettings */
+        QuestionSettings: {
+            /**
+             * Notify After Minutes
+             * @default 30
+             */
+            notify_after_minutes: number;
         };
         /**
          * QuestionStatus
@@ -8529,6 +8598,11 @@ export interface components {
             documents: components["schemas"]["WorkflowDocumentBrief"][];
             /** Open Question Id */
             open_question_id: string | null;
+            /**
+             * Project Waits
+             * @default []
+             */
+            project_waits: components["schemas"]["ProjectWaitOut"][];
             /** Steps */
             steps: components["schemas"]["WorkflowStepOut"][];
             /**
@@ -12886,6 +12960,37 @@ export interface operations {
         };
     };
     pause_workflow_api_tasks__key__workflow_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    go_on_without_answers_api_tasks__key__project_waits_go_on_post: {
         parameters: {
             query?: never;
             header?: never;

@@ -327,7 +327,7 @@ async def lock_question(db: AsyncSession, question_id: uuid.UUID) -> Question:
     return q
 
 
-async def _may_withdraw(db: AsyncSession, user: User, q: Question) -> bool:
+async def may_withdraw(db: AsyncSession, user: User, q: Question) -> bool:
     """The asker, an admin, or anyone who may act on the asking task (an agent's question is asked by its
     owner, but a manager of the task may stop waiting on it too)."""
     if q.asked_by_user_id == user.id or user.role == Role.admin:
@@ -337,7 +337,7 @@ async def _may_withdraw(db: AsyncSession, user: User, q: Question) -> bool:
 
 async def withdraw(db: AsyncSession, user: User, q: Question) -> Question:
     q = await lock_question(db, q.id)
-    if not await _may_withdraw(db, user, q):
+    if not await may_withdraw(db, user, q):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
     if q.status not in OPEN_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "not_open")
@@ -450,7 +450,7 @@ async def question_out(db: AsyncSession, user: User, q: Question) -> QuestionOut
         kb_document_id=q.kb_document_id,
         kb_document_readable=await _kb_document_readable(db, user, q), created_at=q.created_at, answered_at=q.answered_at,
         can_answer=is_open and await can_answer_question(db, user, q), can_approve=approver,
-        can_withdraw=is_open and await _may_withdraw(db, user, q),
+        can_withdraw=is_open and await may_withdraw(db, user, q),
     )
 
 

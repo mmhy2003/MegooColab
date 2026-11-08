@@ -43,6 +43,7 @@ from app.workflow.schemas import (
     FinishingIn,
     HumanReviewIn,
     ManualWorkflowIn,
+    ProjectWaitOut,
     RecordsOut,
     ReviewOut,
     WorkflowDocumentBrief,
@@ -237,8 +238,23 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
         back_merge_into=task.back_merge_into,
         documents=[WorkflowDocumentBrief(kind=d.kind, version=d.version, status=d.status) for d in docs],
         open_question_id=open_question_id,
+        project_waits=await _project_waits(db, task, viewer),
         steps=steps,
     )
+
+
+async def _project_waits(db, task: Task, viewer) -> list[ProjectWaitOut]:
+    from app.a2a import service as a2a, waits  # local: the a2a modules import the workflow
+
+    out = []
+    for q in await waits.open_waits(db, task.id):
+        project = await db.get(Project, q.target_project_id)
+        out.append(ProjectWaitOut(
+            question_id=q.id, ref=a2a.ref_of(project, q), project_key=project.key, title=q.title, status=q.status,
+            can_answer=viewer is not None and await a2a.can_answer_question(db, viewer, q),
+            can_withdraw=viewer is not None and await a2a.may_withdraw(db, viewer, q),
+        ))
+    return out
 
 
 @router.get("/api/tasks/{key}/workflow")
