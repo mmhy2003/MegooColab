@@ -109,6 +109,12 @@ async def _untried_bound(db: AsyncSession, q: Question) -> bool:
     return any(a.id not in tried and (not q.prefer_only or preferred(q, a)) for a in agents)
 
 
+async def _earlier(db: AsyncSession, q: Question) -> list[Question]:
+    from app.a2a.service import follow_up_chain  # local: the service imports this module
+
+    return await follow_up_chain(db, q)
+
+
 async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun | None:
     """Queues an answering run on the best candidate. The caller commits, then dispatches (DISPATCH_KEY)."""
     q = (
@@ -134,7 +140,7 @@ async def route_question(db: AsyncSession, question_id: uuid.UUID) -> AgentRun |
     project = await db.get(Project, q.target_project_id)
     run = AgentRun(
         question_id=q.id, agent_id=agent.id, requested_by=q.asked_by_user_id or agent.owner_id,
-        policy="read_only", prompt=prompts.answer_prompt(q, project.key),
+        policy="read_only", prompt=prompts.answer_prompt(q, project.key, await _earlier(db, q)),
     )
     db.add(run)
     q.status = QuestionStatus.routed

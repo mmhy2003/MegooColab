@@ -21,6 +21,7 @@ from app.a2a.schemas import (
     CONTEXT_MAX,
     Citation,
     Draft,
+    FollowUpRef,
     Preference,
     QuestionOut,
     Ref,
@@ -404,6 +405,13 @@ async def _preference(db: AsyncSession, q: Question) -> Preference | None:
     )
 
 
+async def _follow_up_ref(db: AsyncSession, q: Question) -> FollowUpRef | None:
+    earlier = await db.get(Question, q.follow_up_of_id) if q.follow_up_of_id else None
+    if earlier is None:
+        return None
+    return FollowUpRef(id=earlier.id, ref=ref_of(await db.get(Project, earlier.target_project_id), earlier))
+
+
 async def question_out(db: AsyncSession, user: User, q: Question) -> QuestionOut:
     project = await db.get(Project, q.target_project_id)
     task = await db.get(Task, q.from_task_id) if q.from_task_id else None
@@ -424,7 +432,7 @@ async def question_out(db: AsyncSession, user: User, q: Question) -> QuestionOut
         citations=[Citation(**c) for c in q.citations or []], answer_source=q.answer_source,
         answered_by=await _who(db, q.answered_by_user_id, q.answered_by_agent_id),
         answering=await _answering(db, q), draft=draft,
-        reject_reason=q.reject_reason, redacted=q.redacted, attempts=q.attempts, from_task=task_ref,
+        reject_reason=q.reject_reason, redacted=q.redacted, attempts=q.attempts, from_task=task_ref, follow_up_of=await _follow_up_ref(db, q),
         asked_by=await _who(db, q.asked_by_user_id, q.asked_by_agent_id), preference=await _preference(db, q),
         kb_document_id=q.kb_document_id,
         kb_document_readable=await _kb_document_readable(db, user, q), created_at=q.created_at, answered_at=q.answered_at,
