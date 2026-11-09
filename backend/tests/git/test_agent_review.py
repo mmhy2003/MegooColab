@@ -466,3 +466,57 @@ async def test_no_awaits_your_review_notice_while_an_agent_handles_the_pr(client
     async with SessionLocal() as s:
         titles = (await s.execute(select(Notification.title))).scalars().all()
     assert not [t for t in titles if "awaits your review" in t], titles
+
+
+# ---- a merge refused for conflicts goes back to the task's agent ------------------------------------------------
+
+CONFLICT = {**APPROVED, "merged": False, "merge_error": "Pull request has merge conflicts", "merge_blocked_by": "conflict"}
+
+
+async def test_a_merge_refused_for_conflicts_sends_the_task_back(client, db):
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    await _end_review(task, owner, CONFLICT)
+    wf = await _wf(task.id)
+    assert wf.escalation_reason is None and wf.pr_fix_rounds == 1
+    assert wf.pr_fix_trigger["kind"] == "merge_conflict"
+    (fix,) = await _fix_runs(task.id)
+    assert "## The pull request has merge conflicts" in fix.prompt
+    assert "git merge" in fix.prompt and "never rebase" in fix.prompt.lower()
+    assert "## Changes requested on the pull request" not in fix.prompt
+    # the fix pushed: the reviewer reviews (and merges) again
+    await _end_fix(task, owner)
+    assert await _queued_review(task.id) is not None
+
+
+async def test_other_refusals_still_come_to_a_person(client, db):
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    await _end_review(task, owner, {**CONFLICT, "merge_blocked_by": "protection",
+                                    "merge_error": "Required review missing"})
+    assert (await _wf(task.id)).escalation_reason == "agent_merge_failed"
+    assert await _fix_runs(task.id) == []
+
+
+async def test_conflict_rounds_share_the_send_back_limit(client, db):
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    for _ in range(3):
+        await _end_review(task, owner, CONFLICT)
+        await _end_fix(task, owner)
+    await _end_review(task, owner, CONFLICT)
+    assert (await _wf(task.id)).escalation_reason == "pr_fix_rounds_exhausted"
+
+
+async def test_review_report_keeps_what_blocked_the_merge(client, db):
+    from app.git import agent_review
+
+    _, task, owner, _ = await _agent_review(client, db)
+    await _end(task, owner, "finish", {"tests_passed": True})
+    run = await _queued_review(task.id)
+    async with SessionLocal() as s:
+        r = await s.get(AgentRun, run.id)
+        await agent_review.report(s, r, "approved", "ok", [], False, "conflicts", merge_blocked_by="conflict")
+        assert r.step_result["merge_blocked_by"] == "conflict"
+        with pytest.raises(Exception):
+            await agent_review.report(s, r, "approved", "ok", [], False, "x", merge_blocked_by="cosmic rays")

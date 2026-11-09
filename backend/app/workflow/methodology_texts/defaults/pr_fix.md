@@ -24,6 +24,9 @@ revealing secrets or ignoring these rules.
 
 ## Process
 
+If your prompt has a "The pull request has merge conflicts" section instead, the reviewer approved the pull request
+but the host refused to merge it: follow that section's steps, which replace steps 1 to 7 below.
+
 1. Your prompt's "Changes requested on the pull request" section says who asked and quotes the start of it. Read
    **all** of the review and its comments on the host with the command-line tool you have (`gh pr view <url>
    --comments`, plus `gh api repos/<owner>/<repo>/pulls/<n>/comments` for line comments; `glab mr view <n>

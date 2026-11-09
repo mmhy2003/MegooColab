@@ -162,6 +162,9 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
     case "workflow.finished":
       return "The workflow finished";
     case "pr.sent_back": {
+      if (data.kind === "merge_conflict") {
+        return `Sent back to its agent: merge conflict on PR #${num(data.pr_number)} (round ${num(data.round)} of ${num(data.of)})`;
+      }
       const what = data.kind === "fix_comment" ? "/fix" : "changes requested";
       return `Sent back to its agent: ${what} on PR #${num(data.pr_number)} by ${str(data.by) ?? "someone"} (round ${num(data.round)} of ${num(data.of)})`;
     }

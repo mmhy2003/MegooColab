@@ -372,16 +372,18 @@ def register_workflow_tools(mcp: MCPServer) -> None:
     @mcp.tool()
     async def submit_pr_review(
         key: str, verdict: str, summary: str, findings: list[dict[str, Any]] | None = None, merged: bool = False,
-        merge_error: str | None = None,
+        merge_error: str | None = None, merge_blocked_by: str | None = None,
     ) -> dict[str, Any]:
         """Report your review of the pull request, after posting it on the host: `verdict` approved or
         changes_requested, a short summary, up to 50 findings {severity (critical, important or minor), file, line,
-        summary}, and for an approval whether you merged it (`merged`, with `merge_error` when the host refused)."""
+        summary}, and for an approval whether you merged it (`merged`, with `merge_error` when the host refused and
+        `merge_blocked_by`: conflict, checks, protection or other)."""
         from app.git import agent_review  # local: the git modules import the workflow
 
         async with tool_session() as (db, user):
             task = await _task(db, user, key, "submit_pr_review", write=True)
-            await agent_review.report(db, await live_run(db, task), verdict, summary, findings or [], merged, merge_error)
+            await agent_review.report(db, await live_run(db, task), verdict, summary, findings or [], merged, merge_error,
+                                      merge_blocked_by=merge_blocked_by)
             return {"verdict": verdict, "merged": merged and verdict == "approved"}
 
 
