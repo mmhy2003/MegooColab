@@ -40,7 +40,9 @@ async def test_admin_turns_off_someones_two_factor(client, client_factory, db, o
     assert r.status_code == 200
     [(to, subject, body)] = outbox.sent
     assert to == "locked@x.io" and subject == "Two-factor sign-in turned off"
-    assert body.startswith("Ada Admin turned off two-factor sign-in for your MegooColab account.")
+    assert "Ada Admin turned off two-factor sign-in for your MegooColab account." in body
+    assert ">Security<" in outbox.html[0] and ">Set up two-factor again<" in outbox.html[0]
+    assert "/settings/profile?tab=two-factor" in outbox.html[0]
 
 
 async def test_listed_until_reset(client, client_factory, db):

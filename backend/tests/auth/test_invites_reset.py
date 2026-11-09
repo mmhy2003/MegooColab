@@ -25,6 +25,8 @@ async def test_invite_then_accept_activates_and_signs_in(client, client_factory,
     assert url.startswith("http://localhost:8080/invite/")
     assert r.json()["user"]["status"] == "invited"
     assert outbox.sent[0][0] == "new@x.io" and url in outbox.sent[0][2]
+    assert ">Invitation<" in outbox.html[0] and ">Accept the invitation<" in outbox.html[0]
+    assert f'href="{url}"' in outbox.html[0]
 
     invitee = client_factory()
     r = await invitee.post("/api/auth/accept-invite", json={"token": _token_from(url), "password": "brand-new-pass"})
@@ -93,6 +95,7 @@ async def test_reset_revokes_existing_sessions(client, client_factory, db, outbo
     assert (await other.post("/api/auth/forgot", json={"email": "R@x.io"})).status_code == 204
     body = outbox.sent[0][2]
     url = next(w for w in body.split() if "/reset/" in w)
+    assert ">Choose a new password<" in outbox.html[0] and f'href="{url}"' in outbox.html[0]
     assert (await other.post("/api/auth/reset", json={"token": _token_from(url), "password": "fresh-pass-12"})).status_code == 204
     assert (await client.get("/api/auth/me")).status_code == 401
     r = await other.post("/api/auth/login", json={"email": "r@x.io", "password": "fresh-pass-12"})

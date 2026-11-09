@@ -6,6 +6,7 @@ from app.auth.deps import AdminUser, AuthedUser
 from app.core.crypto import encrypt
 from app.core.db import DbSession
 from app.core.email import SmtpMailer
+from app.core.email_template import Email, render
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
 from app.projects.models import PrReview
 from app.workflow.models import FinishingOption
@@ -156,8 +157,12 @@ async def test_email(body: TestEmailIn, admin: AdminUser, db: DbSession) -> None
     if not org.smtp_host:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "smtp_not_configured")
     try:
-        await SmtpMailer(org).send(
-            body.to, "MegooColab test email", "If you can read this, MegooColab email works."
-        )
+        text, html = render(Email(
+            tag="Test", tone="green", heading="Email works",
+            paragraphs=[f"If you can read this, MegooColab can send email from {org.name}'s mail server. Invitations, "
+                        "password resets and notifications will arrive like this one."],
+            footer="Sent from Settings → Email by an admin.",
+        ), org=org.name)
+        await SmtpMailer(org).send(body.to, "MegooColab test email", text, html=html)
     except Exception as exc:  # report any SMTP/network failure to the admin
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc) or exc.__class__.__name__)

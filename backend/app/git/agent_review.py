@@ -106,8 +106,18 @@ async def _handle_pr_review(db: AsyncSession, wf, task: Task, run) -> None:
         return
     wf.nudged = False
     if verdict == "approved":
-        if not result.get("merged"):
-            await engine.escalate(db, wf, "agent_merge_failed")
+        if result.get("merged"):
+            return
+        if result.get("merge_blocked_by") == "conflict" and task.assignee_agent_id is not None:
+            # the base branch moved on under the pull request: the task's own agent brings it in and resolves it
+            trigger = send_back.Trigger(
+                kind="merge_conflict", pr_url=wf.pr_url, pr_number=number, by=agent.name if agent else "The reviewer",
+                excerpt=(result.get("merge_error") or "The pull request has conflicts with its base branch.")[:280],
+                where=None, association=None, host="agent",
+            )
+            await send_back.send_back_now(db, wf, task, trigger)
+            return
+        await engine.escalate(db, wf, "agent_merge_failed")
         return
     first = (result.get("findings") or [None])[0] or {}
     where = f"{first['file']}:{first['line']}" if first.get("file") and first.get("line") else (first.get("file") or None)
@@ -221,8 +231,11 @@ def _finding(item: object) -> dict:
             "summary": strip_nul(item["summary"])[:2000]}
 
 
+MERGE_BLOCKERS = ("conflict", "checks", "protection", "other")
+
+
 async def report(db: AsyncSession, run, verdict: str, summary: str, findings: list, merged: bool,
-                 merge_error: str | None) -> None:
+                 merge_error: str | None, *, merge_blocked_by: str | None = None) -> None:
     """A review run reports its review. A later report from the same run replaces it. The caller commits."""
     from app.core.text import strip_nul
     from app.workflow import build  # local: the workflow imports the git modules
@@ -231,11 +244,15 @@ async def report(db: AsyncSession, run, verdict: str, summary: str, findings: li
     await build.lock_run_role(db, run, (RunRole.pr_review,))
     if verdict not in ("approved", "changes_requested") or not isinstance(summary, str) or not isinstance(merged, bool):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_review")
+    if merge_blocked_by is not None and merge_blocked_by not in MERGE_BLOCKERS:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "invalid_review")
     if not isinstance(findings, list) or len(findings) > MAX_FINDINGS:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "too_many_findings")
     run.step_result = {
         "verdict": verdict, "summary": strip_nul(summary)[:MAX_SUMMARY], "findings": [_finding(f) for f in findings],
         "merged": merged and verdict == "approved",
         "merge_error": strip_nul(merge_error)[:500] if isinstance(merge_error, str) and merge_error else None,
+        # what refused the merge: a conflict sends the task back to its agent; anything else is a person's to decide
+        "merge_blocked_by": merge_blocked_by if verdict == "approved" and not merged else None,
     }
     await db.flush()

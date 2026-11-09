@@ -429,6 +429,8 @@ describe("ActivityThread: a task sent back by its pull request", () => {
         data: { pr_number: 42, by: "rev", kind: "review", round: 2, of: 3, excerpt: "Two things" } },
       { type: "event", id: "s2", at, actor: null, kind: "pr.sent_back",
         data: { pr_number: 42, by: "mo", kind: "fix_comment", round: 3, of: 3, excerpt: "/fix the timeout" } },
+      { type: "event", id: "s5", at, actor: null, kind: "pr.sent_back",
+        data: { pr_number: 42, by: "review-bot", kind: "merge_conflict", round: 1, of: 3, excerpt: "has conflicts" } },
       { type: "event", id: "s3", at, actor: null, kind: "pr.fix_pushed",
         data: { pr_number: 42, round: 2, of: 3, summary: "Added a **back-off** to `retry` <b>x</b>" } },
       { type: "event", id: "s4", at, actor, kind: "pr.send_back_cancelled", data: {} },
@@ -437,12 +439,13 @@ describe("ActivityThread: a task sent back by its pull request", () => {
     const text = [...container.querySelectorAll("ol > li")].map((li) => li.textContent);
     expect(text[0]).toContain("Sent back to its agent: changes requested on PR #42 by rev (round 2 of 3)");
     expect(text[1]).toContain("Sent back to its agent: /fix on PR #42 by mo (round 3 of 3)");
-    expect(text[2]).toContain("Fixed and pushed to PR #42 (round 2 of 3)");
+    expect(text[2]).toContain("Sent back to its agent: merge conflict on PR #42 (round 1 of 3)");
+    expect(text[3]).toContain("Fixed and pushed to PR #42 (round 2 of 3)");
     expect(container.querySelector("b")).toBeNull();
     expect(screen.getByText("back-off").tagName).toBe("STRONG");
     expect(screen.getByText("retry").tagName).toBe("CODE");
-    expect(text[2]).not.toContain("**");
-    expect(text[3]).toContain("Ahmed Ali stopped the fix: back to waiting for the merge");
+    expect(text[3]).not.toContain("**");
+    expect(text[4]).toContain("Ahmed Ali stopped the fix: back to waiting for the merge");
     expect(text[0]).not.toContain("Someone");
   });
 });
