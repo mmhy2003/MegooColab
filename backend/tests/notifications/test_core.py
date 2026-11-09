@@ -156,10 +156,14 @@ async def test_email_job_sends_via_outbox_and_survives_failure(client_factory, d
         await notify_jobs.send_email(s, job.payload)
     [(to, subject, body)] = outbox.sent
     assert to == bea.email and subject == "[MegooColab] Mentioned on PAY-1"
-    assert body == f"B\n\n{get_settings().public_url}/x"
+    public = get_settings().public_url
+    assert body.startswith(f"Mentioned on PAY-1\n\nPAY-1 · B\n\nOpen in MegooColab: {public}/x")
+    assert f"Change which emails you get: {public}/settings/notifications" in body
+    [html] = outbox.html
+    assert ">Mentioned<" in html and f'href="{public}/x"' in html and "PAY-1" in html
 
     class Broken:
-        async def send(self, *a):
+        async def send(self, *a, **kw):
             raise OSError("smtp down")
 
     async def broken(_db):

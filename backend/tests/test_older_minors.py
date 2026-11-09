@@ -49,9 +49,9 @@ async def test_forgot_password_answers_before_the_email_is_sent(app, db, outbox)
     events: list[str] = []
     real_send = outbox.send
 
-    async def send(to, subject, body):
+    async def send(to, subject, body, html=None):
         events.append("email")
-        await real_send(to, subject, body)
+        await real_send(to, subject, body, html=html)
 
     outbox.send = send
     body = b'{"email": "known@x.io"}'

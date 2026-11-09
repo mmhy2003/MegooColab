@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User, UserStatus
 from app.core.config import get_settings
-from app.core.email import get_mailer
+from app.core.email import get_mailer, org_name
+from app.core.email_template import Email, render
 from app.jobs import queue
 
 
@@ -20,8 +21,51 @@ async def send_email(db: AsyncSession, payload: dict) -> None:
     mailer = await get_mailer(db)
     if user is None or user.status != UserStatus.active or mailer is None:
         return
-    await mailer.send(user.email, f"[MegooColab] {payload['title']}",
-                      f"{payload['body']}\n\n{get_settings().public_url}{payload['link']}")
+    text, html = render(await _notification_email(db, payload), org=await org_name(db))
+    await mailer.send(user.email, f"[MegooColab] {payload['title']}", text, html=html)
+
+
+# each kind's tag, its colour, and why the person got it
+KIND_LOOK: dict[str, tuple[str, str, str]] = {
+    "needs_you": ("Needs you", "amber", "You get this because something you can act on waits for you."),
+    "assigned": ("Assigned", "violet", "You get this because something was assigned to you."),
+    "mentioned": ("Mentioned", "cyan", "You get this because someone mentioned you."),
+    "agent_offline": ("Agent offline", "pink", "You get this because one of your agents went offline with work waiting."),
+    "question_waiting": ("Question waiting", "amber", "You get this because a question waits for an answer."),
+    "agent_replied": ("Agent replied", "green", "You get this because an agent replied in a chat you started."),
+}
+
+
+def _button(link: str) -> str:
+    if "task=" in link or "/tasks/" in link:
+        return "Open the task"
+    if link.startswith("/chats/"):
+        return "Open the chat"
+    if link.startswith("/questions/"):
+        return "Open the question"
+    return "Open in MegooColab"
+
+
+async def _notification_email(db: AsyncSession, payload: dict) -> Email:
+    from app.projects.models import Project  # local: projects import the notification service
+    from app.tasks.models import Task
+
+    public = get_settings().public_url
+    tag, tone, why = KIND_LOOK.get(str(payload.get("kind") or ""), ("Notification", "cyan",
+                                                                    "You get this from MegooColab."))
+    key = None
+    if payload.get("task_id"):
+        task = await db.get(Task, uuid.UUID(str(payload["task_id"])))
+        project = await db.get(Project, task.project_id) if task else None
+        key = f"{project.key}-{task.number}" if project else None
+    body = str(payload.get("body") or "")
+    link = str(payload.get("link") or "")
+    return Email(
+        tag=tag, tone=tone, heading=str(payload["title"]),
+        box=(key, body) if body or key else None,
+        button=(_button(link), f"{public}{link}"),
+        footer=why, footer_link=("Change which emails you get", f"{public}/settings/notifications"),
+    )
 
 
 WAITING_AFTER = timedelta(minutes=15)

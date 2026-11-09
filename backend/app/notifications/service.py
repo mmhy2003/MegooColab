@@ -104,7 +104,8 @@ async def notify(db: AsyncSession, user_ids: Iterable[uuid.UUID], kind: Kind, *,
             await publish(db, Event(type="notification.created", user_id=user.id))
         if email and mail:
             await queue.enqueue(db, "notify.email", {"user_id": str(user.id), "title": title, "body": body,
-                                                     "link": link})
+                                                     "link": link, "kind": str(kind),
+                                                     "task_id": str(task_id) if task_id else None})
         if push:
             # one job per device: a retry resends only to the device that failed
             for sub_id in (await db.execute(
