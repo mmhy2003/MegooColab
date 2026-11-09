@@ -35,6 +35,15 @@ from app.mcp_server.auth import (
     require_run_task,
 )
 from app.mcp_server.auth import tool_session as _tool_session
+from app.mcp_server.board_tools import (
+    BOARD_FIELDS,
+    board_line,
+    freestyle_board,
+    from_chat,
+    project_of,
+    register_board_tools,
+    task_key,
+)
 from app.mcp_server.cron_tools import register_cron_tools
 from app.mcp_server.kb_draft_tools import register_kb_draft_tools
 from app.mcp_server.kb_tools import register_kb_tools
@@ -88,18 +97,6 @@ async def _column_by_name(db: AsyncSession, project: Project, name: str) -> Boar
         if col.name.casefold() == name.strip().casefold():
             return col
     raise ToolError("invalid_column")
-
-
-async def _freestyle_round(db: AsyncSession, run, project_key: str) -> Task:
-    """The freestyle turn's own task (its chat round), when `project_key` is that task's project; else wrong_project.
-    A freestyle turn creates tasks on its own project only."""
-    task = await db.get(Task, run.task_id) if run.task_id else None
-    if task is None:
-        raise ToolError("not_allowed_in_role")
-    project = await db.get(Project, task.project_id)
-    if project_key.strip().upper() != project.key.upper():
-        raise ToolError("wrong_project")
-    return task
 
 
 async def _from_line(db: AsyncSession, asking: Task) -> str:
@@ -161,14 +158,24 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
         column: str | None = None,
         q: str | None = None,
         mine: bool = False,
+        type: str | None = None,
     ) -> list[dict[str, Any]]:
         """Tasks of a project. `assignee` is a user id, or `agent:<agent id>`; `column` is a column name;
-        `q` matches titles; `mine` keeps tasks assigned to me or to one of my agents."""
+        `q` matches titles; `mine` keeps tasks assigned to me or to one of my agents; `type` keeps one type
+        (epic, story, task, bug or subtask): `type="epic"` lists the project's epics."""
         async with _tool_session() as (db, user):
-            await require_cron_reading(db, project_key)  # a cron's run reads its own project's tasks; others none
+            run = current_run.get()
+            if run is not None and run.workflow_role == "freestyle":
+                (await freestyle_board(db)).check(project_key)  # a freestyle turn reads its chat's project
+            else:
+                await require_cron_reading(db, project_key)  # a cron's run reads its own project's tasks; others none
             project = await get_project_for(db, user, project_key)
             column_id = (await _column_by_name(db, project, column)).id if column else None
-            tasks = await service.list_tasks(db, project, assignee=assignee, column=column_id, q=q)
+            try:
+                type_ = TaskType(type) if type else None
+            except ValueError:
+                raise ToolError("invalid_input") from None
+            tasks = await service.list_tasks(db, project, type_=type_, assignee=assignee, column=column_id, q=q)
             if mine:
                 my_agents = set((await db.execute(select(Agent.id).where(Agent.owner_id == user.id))).scalars())
                 tasks = [t for t in tasks if t.assignee_user_id == user.id or t.assignee_agent_id in my_agents]
@@ -179,7 +186,11 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
         """A task by key (e.g. PAY-12) with its last 20 activity items (comments, events and questions), and the
         images people sent you with their messages, after the task's JSON."""
         async with _tool_session() as (db, user):
-            await require_run_task(db, key, reading=True)
+            run = current_run.get()
+            if run is not None and run.workflow_role == "freestyle":
+                (await freestyle_board(db)).check(project_of(key))  # a freestyle turn reads its chat's project
+            else:
+                await require_run_task(db, key, reading=True)
             task, _ = await service.get_task_for(db, user, key)
             out = _json(await service.task_out(db, task, user))
             out["activity"] = [_json(i) for i in await activity_items(db, task, ACTIVITY_LIMIT)]
@@ -196,11 +207,11 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
     ) -> dict[str, Any]:
         """Create a task in the project's first column. `type` is epic, story, task, bug or subtask.
         In a freestyle chat: only on the chat's own project, unassigned, with a link back to the chat."""
-        run = current_run.get()
-        if run is None or run.workflow_role != "freestyle":
-            refuse_run_token()  # a person's token, or a freestyle turn: nothing else creates tasks
         async with _tool_session() as (db, user):
-            asking = await _freestyle_round(db, run, project_key) if run is not None else None
+            board = await freestyle_board(db)  # a person's token, or a freestyle turn: nothing else creates tasks
+            if board is not None:
+                board.check(project_key)
+            asking = board.round if board is not None else None
             if asking is not None:
                 assignee_agent_id, parent_key = None, None  # it's reviewed before anyone takes it
                 description_md = f"{description_md.rstrip()}\n\n{await _from_line(db, asking)}".lstrip()
@@ -224,8 +235,8 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
             out = await service.task_out(db, task, user)
             if asking is not None:
                 await service.record_event(db, asking, None, "agent_task_created", {
-                    "key": out.key, "title": task.title, "task_id": str(task.id),
-                    "agent_id": str(run.agent_id), "run_id": str(run.id),
+                    "key": out.key, "title": task.title, "task_id": str(task.id), "type": str(task.type),
+                    "agent_id": str(board.run.agent_id), "run_id": str(board.run.id),
                 })
             return _json(out)
 
@@ -236,34 +247,66 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
         description_md: str | None = None,
         priority: str | None = None,
         story_points: int | None = None,
+        type: str | None = None,
+        epic_key: str | None = None,
     ) -> dict[str, Any]:
-        """Change a task's title, description, priority (lowest, low, medium, high or highest) or story points."""
-        refuse_run_token()
+        """Change a task's title, description, priority (lowest, low, medium, high or highest), story points or
+        type (epic, story, task, bug or subtask). `epic_key` puts it under that epic; an empty string takes it out
+        of its epic."""
         async with _tool_session() as (db, user):
+            board = await freestyle_board(db)
+            if board is not None:
+                board.check(project_of(key))
             task, project = await service.get_task_for(db, user, key, write=True)
+            if board is not None:
+                board.check_task(task)
             try:
                 wanted = {
                     "title": title,
                     "description_md": description_md,
                     "priority": Priority(priority) if priority else None,
                     "story_points": story_points,
+                    "type": TaskType(type) if type else None,
                 }
                 data = TaskUpdate(**{k: v for k, v in wanted.items() if v is not None})
             except ValueError:
                 raise ToolError("invalid_input") from None
-            await service.update_task(db, user, project, task, data)
+            epic = None
+            if epic_key:
+                epic, _ = await service.get_task_for(db, user, epic_key)
+                if epic.project_id != project.id or epic.in_chat:
+                    raise ToolError("invalid_parent")
+            if epic_key is not None:
+                data.parent_id = epic.id if epic else None
+            before = {name: getattr(task, name) for name in BOARD_FIELDS}
+            parent_before = task.parent_id
+            with from_chat(board):
+                await service.update_task(db, user, project, task, data)
             await service.task_changed(db, task)
+            changed_key = task_key(project, task)
+            if task.parent_id != parent_before:
+                await board_line(db, board, "epic_set", key=changed_key, title=task.title,
+                                 epic=task_key(project, epic) if epic else None)
+            fields = [name for name in BOARD_FIELDS if getattr(task, name) != before[name]]
+            if fields:
+                await board_line(db, board, "task_changed", key=changed_key, title=task.title, fields=fields)
             return _json(await service.task_out(db, task, user))
 
     @mcp.tool()
     async def move_task(key: str, column: str) -> dict[str, Any]:
         """Move a task to the end of the named column (case-insensitive), e.g. "In Progress"."""
-        refuse_run_token()
         async with _tool_session() as (db, user):
+            board = await freestyle_board(db)
+            if board is not None:
+                board.check(project_of(key))
             task, project = await service.get_task_for(db, user, key, write=True)
+            if board is not None:
+                board.check_task(task)
             col = await _column_by_name(db, project, column)
-            await service.move_task(db, user, project, task, MoveIn(column_id=col.id))
+            with from_chat(board):
+                await service.move_task(db, user, project, task, MoveIn(column_id=col.id))
             await service.task_changed(db, task)
+            await board_line(db, board, "task_moved", key=task_key(project, task), title=task.title, column=col.name)
             await engine.dispatch_queued(db)  # a move into working may have started the workflow
             return _json(await service.task_out(db, task, user))
 
@@ -282,6 +325,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
             comment = await create_comment(db, user, key, body)
             return {"comment_id": str(comment.id)}
 
+    register_board_tools(mcp)
     register_workflow_tools(mcp)
     register_kb_tools(mcp)
     register_memory_tools(mcp)

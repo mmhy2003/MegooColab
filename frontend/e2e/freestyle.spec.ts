@@ -21,11 +21,15 @@ const KEY = "FRE-1";
 const FREESTYLE = "# Freestyle: do what the person asks, one turn at a time";
 
 const SCENARIO = [
-  // asked for a task: it creates one on the chat's project (the last turn before End chat, so nothing repeats it)
+  // asked for a task in a new sprint: it creates the task, plans the sprint and puts the task in it, each change a
+  // line in the chat (the last turn before End chat, so nothing repeats it)
   onPrompt(
-    "Make a task for the docs cleanup",
+    "Make a high-priority task for the docs cleanup, in a new sprint",
     mcp("create_task", { project_key: "FRE", title: "Clean up the docs", description_md: "Merge NOTES.md into the README." }),
-    say("Created FRE-2 for the docs cleanup."),
+    mcp("create_sprint", { project_key: "FRE", name: "Sprint 1", start_date: "2026-11-16", end_date: "2026-11-27" }),
+    mcp("set_task_sprint", { key: "FRE-2", sprint: "Sprint 1" }),
+    mcp("update_task", { key: "FRE-2", priority: "high" }),
+    say("Created FRE-2 for the docs cleanup, in Sprint 1 with high priority."),
   ),
   onPrompt(
     FREESTYLE,
@@ -134,15 +138,30 @@ test("a freestyle chat: two turns, then End chat", async ({ browser }) => {
   await expect(view.getByText("Renamed to NOTES.md").first()).toBeVisible({ timeout: 60_000 });
   await expect(view.locator("[data-chat]").getByText("waiting for your reply", { exact: true })).toBeVisible({ timeout: 30_000 });
 
-  // 3. asked for a task, the agent creates it on the project's board, unassigned, linked back to the chat
-  await box.fill("Make a task for the docs cleanup");
+  // 3. asked for a task in a sprint, the agent creates it on the project's board, unassigned, linked back to the chat,
+  // plans the sprint and puts the task in it: each change is a line in the chat, linked
+  await box.fill("Make a high-priority task for the docs cleanup, in a new sprint");
   await view.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(view.getByText("Created FRE-2 for the docs cleanup.")).toBeVisible({ timeout: 60_000 });
-  await expect(view.getByRole("link", { name: "FRE-2" })).toHaveAttribute("href", "/projects/FRE/board?task=FRE-2");
-  const made = await get<{ title: string; description_md: string; assignee_agent_id: string | null; in_chat: boolean }>(
+  await expect(view.getByText("Created FRE-2 for the docs cleanup, in Sprint 1 with high priority.")).toBeVisible({ timeout: 60_000 });
+  await expect(view.getByRole("link", { name: "FRE-2" }).first()).toHaveAttribute("href", "/projects/FRE/board?task=FRE-2");
+  await expect(view.getByText(/created the sprint/)).toContainText("created the sprint Sprint 1 (16 – 27 Nov)");
+  await expect(view.getByText(/added/).filter({ hasText: "to Sprint 1" })).toBeVisible();
+  await expect(view.getByText(/: priority$/)).toBeVisible();
+  await expect(view.getByRole("link", { name: "Sprint 1" }).first()).toHaveAttribute("href", "/projects/FRE/backlog");
+  const made = await get<{
+    title: string; description_md: string; assignee_agent_id: string | null; in_chat: boolean; priority: string; sprint_id: string | null;
+  }>(
     request, "/api/tasks/FRE-2",
   );
-  expect(made).toMatchObject({ title: "Clean up the docs", assignee_agent_id: null });
+  expect(made).toMatchObject({ title: "Clean up the docs", assignee_agent_id: null, priority: "high" });
+  expect(made.sprint_id).not.toBeNull();
+  // the task's own history links each change back to the chat
+  const history = await ctx.newPage();
+  await history.goto("/projects/FRE/tasks/2");
+  const changedRow = history.getByRole("listitem").filter({ hasText: "changed priority to high" });
+  await expect(changedRow).toContainText("· from the chat Add a notes file");
+  await expect(changedRow.getByRole("link", { name: "Add a notes file" })).toHaveAttribute("href", /^\/chats\/[0-9a-f-]{36}$/);
+  await history.close();
   expect(made.description_md).toContain("From chat: [");
   await expect(view.locator("[data-chat]").getByText("waiting for your reply", { exact: true })).toBeVisible({ timeout: 30_000 });
 

@@ -66,22 +66,35 @@ async def earlier_rounds(db: AsyncSession, task: Task, role: RunRole) -> str | N
     return render()
 
 
-FREESTYLE_TASKS = """## Creating tasks
+FREESTYLE_TASKS = """## Working on the board
 
-You can create tasks on this project's board with create_task(project_key="{key}", title, description_md), so a topic
-talked through here can be reviewed and run later. A task you create lands in the first column with nobody assigned:
-creating it never starts any work.
+You can work on this project's board ({key}) with the rights of this agent's owner: what they can't do there, you
+can't either.
 
-- When the person asks for a task, create it.
-- When you think a topic deserves its own task, ask first: end your reply with the title you'd give it and a sentence
-  on what it would cover, and ask whether to create it. Create it only once they say yes.
-- Write the description from the conversation: what was decided, what's still open, and the files or links that
-  matter, so someone who wasn't here can pick it up. A link back to this chat is added for you.
-- Tell the person the new task's key in your reply."""
+- Read: list_tasks(project_key="{key}") (type="epic" lists the epics), get_task(key), list_sprints(project_key="{key}").
+- Tasks and epics (an epic is a task of type epic): create_task(project_key="{key}", title, type, description_md),
+  update_task(key, title, description_md, type, priority, story_points, epic_key) (epic_key="" takes a task out of
+  its epic), move_task(key, column), delete_task(key).
+- Sprints: create_sprint(project_key="{key}", name, start_date, end_date, goal), update_sprint(sprint, ...),
+  start_sprint(sprint), complete_sprint(sprint, move_open_to), delete_sprint(sprint), and set_task_sprint(key,
+  sprint) to put a story, task or bug in a sprint (sprint=null takes it out). A sprint is named by its id or name.
+
+How to go about it:
+
+- When the person asks for a change, make it.
+- When you think a change is worth making, ask first: say exactly what you'd change (the keys, and what each would
+  become) and ask whether to go ahead. Make it only once they say yes.
+- Delete a task, an epic or a sprint only when the person asked for that one, by its key or name, or said yes to
+  your naming it. Deleting can't be undone.
+- Never assign a task to anyone: assigning one can start an agent's work. A task you create lands in the first column
+  with nobody assigned.
+- When you create a task, write its description from the conversation: what was decided, what's still open, and the
+  files or links that matter, so someone who wasn't here can pick it up. A link back to this chat is added for you.
+- Each change you make shows in this chat. In your reply, say what you changed, with the keys."""
 
 
 async def freestyle_tasks_context(db: AsyncSession, task: Task, role: RunRole) -> str | None:
-    """A freestyle turn may create tasks on its own project: when, and how."""
+    """A freestyle turn may work on its own project's board (tasks, epics and sprints): when, and how."""
     if role != RunRole.freestyle:
         return None
     from app.projects.models import Project  # local: projects import the workflow

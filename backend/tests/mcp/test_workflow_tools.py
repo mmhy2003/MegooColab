@@ -73,7 +73,7 @@ ALLOWED = {
 }
 
 
-def _tool(tc, token: str, name: str, **args):
+def _tool(tc, token: str, name: str, /, **args):
     """(is_error, payload): MCP JSON-RPC tools/call over the ASGI app. A 401 is (True, its detail)."""
     r = tc.post(
         "/api/mcp",

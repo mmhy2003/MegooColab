@@ -71,6 +71,13 @@ describe("DraftPage", () => {
     expect(screen.getAllByText(/shorten the prerequisites/).length).toBeGreaterThan(0);
   });
 
+  it("keeps the conversation in view while the draft scrolls, on a wide screen", async () => {
+    renderPage(draft());
+    const pane = await screen.findByRole("region", { name: "Conversation with the agent" });
+    for (const c of ["lg:sticky", "lg:top-16", "lg:flex", "lg:flex-col"]) expect(pane.classList).toContain(c);
+    expect(pane.className).toMatch(/lg:h-\[calc\(100vh-5\.5rem\)\]/);
+  });
+
   it("keeps or undoes one change, or all of them", async () => {
     const calls = renderPage(draft());
     await screen.findByText("Draft · not saved");

@@ -111,7 +111,11 @@ export function DraftPage({ draftId }: { draftId: string }) {
     </section>
   );
   const conversationPane = (
-    <section aria-label="Conversation with the agent" className="card min-w-0 p-4">
+    // on a wide screen it stays in view under the top bar while the draft scrolls, one window tall
+    <section
+      aria-label="Conversation with the agent"
+      className="card min-w-0 p-4 lg:sticky lg:top-16 lg:flex lg:h-[calc(100vh-5.5rem)] lg:flex-col"
+    >
       <DraftConversation
         draft={draft}
         target={target}

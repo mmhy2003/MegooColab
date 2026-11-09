@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
@@ -40,6 +40,13 @@ export function DraftConversation({
   const busy = draft.state !== "idle";
   const choosing = pickAgent || !draft.agent;
   const agents = useDraftAgents(draft.space.id, choosing);
+  const list = useRef<HTMLOListElement>(null);
+  const count = draft.messages.length;
+
+  // open at the newest message, and follow the ones that arrive
+  useEffect(() => {
+    if (list.current) list.current.scrollTop = list.current.scrollHeight;
+  }, [count]);
 
   const send = async () => {
     setSending(true);
@@ -48,8 +55,9 @@ export function DraftConversation({
   };
 
   return (
-    <div className="flex min-h-0 flex-col gap-3">
-      <ol aria-label="Conversation" className="flex flex-col gap-2">
+    <div className="flex min-h-0 flex-col gap-3 lg:flex-1">
+      {/* on a wide screen the messages scroll inside the panel, and the request box stays at its foot */}
+      <ol ref={list} aria-label="Conversation" className="flex flex-col gap-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
         {draft.messages.map((m) => (
           <li key={m.id} className={`rounded px-3 py-2 text-sm break-words whitespace-pre-wrap ${AUTHOR_STYLE[m.author]}`}>
             {m.author !== "system" && (
@@ -80,7 +88,7 @@ export function DraftConversation({
         </Select>
       )}
       <form
-        className="space-y-2"
+        className="space-y-2 lg:border-t lg:border-line lg:pt-3"
         onSubmit={(e) => {
           e.preventDefault();
           void send();
