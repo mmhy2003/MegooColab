@@ -159,7 +159,18 @@ test("a document written with an agent, from the first draft to a saved revision
   await ui.getByRole("button", { name: "Keep all" }).click();
   await expect(changed).toHaveCount(0);
 
-  // 6. on a phone the draft and the conversation are tabs, and nothing scrolls sideways
+  // 6. on a wide but short screen, the conversation stays in view while the draft scrolls, request box and all
+  const wide = await ctx.newPage();
+  await wide.setViewportSize({ width: 1280, height: 420 });
+  await wide.goto(ui.url());
+  const pane = wide.getByRole("region", { name: "Conversation with the agent" });
+  await expect(pane).toBeVisible();
+  await wide.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(() => wide.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  expect(Math.round((await pane.boundingBox())!.y)).toBe(64);
+  await expect(wide.getByLabel("Your request")).toBeInViewport();  await wide.close();
+
+  // 7. on a phone the draft and the conversation are tabs, and nothing scrolls sideways
   const phone = await ctx.newPage();
   await phone.setViewportSize({ width: 280, height: 640 });
   await phone.goto(ui.url());
@@ -168,7 +179,7 @@ test("a document written with an agent, from the first draft to a saved revision
   expect(await phone.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(280);
   await phone.close();
 
-  // 7. saved: the document has the text, and its history credits the person with the agent
+  // 8. saved: the document has the text, and its history credits the person with the agent
   await ui.getByRole("button", { name: "Save to KB…" }).click();
   await ui.getByRole("button", { name: "Save", exact: true }).click();
   await expect(ui).toHaveURL(new RegExp(`/kb/doc/${doc.id}$`));
