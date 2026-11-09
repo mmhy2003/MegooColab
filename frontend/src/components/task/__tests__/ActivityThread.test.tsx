@@ -193,6 +193,55 @@ describe("ActivityThread agent events", () => {
     expect(screen.getByRole("link", { name: "PAY-42" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-42");
   });
 
+  it("marks an epic the agent created as an epic", () => {
+    render1(agentEvent("t2", "agent_task_created", { key: "PAY-31", title: "Checkout v2", task_id: "t31", type: "epic" }));
+    expect(screen.getByRole("listitem").textContent).toContain("Ann's Codex created PAY-31: Checkout v2epic");
+  });
+
+  it("describes each board change the agent made from the chat, with links", () => {
+    const cases: [Record<string, unknown>, string, [string, string][]][] = [
+      [{ action: "epic_set", key: "PAY-14", title: "Card retries", epic: "PAY-31" }, "Ann's Codex put PAY-14 under the epic PAY-31",
+        [["PAY-14", "/projects/PAY/board?task=PAY-14"], ["PAY-31", "/projects/PAY/board?task=PAY-31"]]],
+      [{ action: "epic_set", key: "PAY-14", title: "Card retries", epic: null }, "Ann's Codex took PAY-14 out of its epic", [["PAY-14", "/projects/PAY/board?task=PAY-14"]]],
+      [{ action: "task_changed", key: "PAY-14", title: "Card retries", fields: ["priority", "story_points", "description_md"] },
+        "Ann's Codex changed PAY-14: priority, story points, description", [["PAY-14", "/projects/PAY/board?task=PAY-14"]]],
+      [{ action: "task_moved", key: "PAY-14", title: "Card retries", column: "Done" }, "Ann's Codex moved PAY-14 to Done", [["PAY-14", "/projects/PAY/board?task=PAY-14"]]],
+      [{ action: "task_deleted", key: "PAY-9", title: "Card retries time out" }, "Ann's Codex deleted PAY-9: Card retries time out", []],
+      [{ action: "sprint_created", project: "PAY", sprint: "Sprint 12", start: "2026-11-16", end: "2026-11-27" },
+        "Ann's Codex created the sprint Sprint 12 (16 – 27 Nov)", [["Sprint 12", "/projects/PAY/backlog"]]],
+      [{ action: "sprint_created", project: "PAY", sprint: "Sprint 13", start: "2026-11-30", end: "2026-12-11" },
+        "created the sprint Sprint 13 (30 Nov – 11 Dec)", [["Sprint 13", "/projects/PAY/backlog"]]],
+      [{ action: "sprint_changed", project: "PAY", sprint: "Sprint 12" }, "Ann's Codex changed the sprint Sprint 12", [["Sprint 12", "/projects/PAY/backlog"]]],
+      [{ action: "sprint_started", project: "PAY", sprint: "Sprint 12" }, "Ann's Codex started the sprint Sprint 12", [["Sprint 12", "/projects/PAY/backlog"]]],
+      [{ action: "sprint_completed", project: "PAY", sprint: "Sprint 12" }, "Ann's Codex completed the sprint Sprint 12", [["Sprint 12", "/projects/PAY/backlog"]]],
+      [{ action: "sprint_deleted", project: "PAY", sprint: "Sprint 12" }, "Ann's Codex deleted the sprint Sprint 12", []],
+      [{ action: "sprint_set", project: "PAY", key: "PAY-14", title: "Card retries", sprint: "Sprint 12" }, "Ann's Codex added PAY-14 to Sprint 12",
+        [["PAY-14", "/projects/PAY/board?task=PAY-14"], ["Sprint 12", "/projects/PAY/backlog"]]],
+      [{ action: "sprint_set", project: "PAY", key: "PAY-14", title: "Card retries", sprint: null }, "Ann's Codex took PAY-14 out of its sprint",
+        [["PAY-14", "/projects/PAY/board?task=PAY-14"]]],
+    ];
+    for (const [data, text, links] of cases) {
+      const { unmount } = render1(agentEvent("b", "agent_board_changed", data));
+      const row = screen.getByRole("listitem");
+      expect(row.textContent).toContain(text);
+      expect(within(row).queryAllByRole("link").map((a) => [a.textContent, a.getAttribute("href")])).toEqual(links);
+      unmount();
+    }
+  });
+
+  it("strikes out a task the agent deleted", () => {
+    render1(agentEvent("b", "agent_board_changed", { action: "task_deleted", key: "PAY-9", title: "Card retries time out" }));
+    expect(screen.getByText("PAY-9").tagName).toBe("S");
+  });
+
+  it("links a change an agent made from a chat back to that chat", () => {
+    const changed: ActivityItem = { type: "event", id: "e11", at: "2026-10-22T10:10:00Z", actor, kind: "field_changed",
+      data: { field: "priority", from: "low", to: "high", chat: { id: "ch1", title: "Sprint planning" } } };
+    render(<ActivityThread items={[changed]} columnNames={new Map()} userNames={new Map()} />);
+    expect(screen.getByRole("listitem").textContent).toContain("Ahmed Ali changed priority to high · from the chat Sprint planning");
+    expect(screen.getByRole("link", { name: "Sprint planning" })).toHaveAttribute("href", "/chats/ch1");
+  });
+
   it("describes the other agent kinds", () => {
     const cases: [string, Record<string, unknown>, string][] = [
       ["agent_run_queued", {}, "queued a run"],

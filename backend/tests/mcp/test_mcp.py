@@ -36,7 +36,7 @@ async def mcp_session(app, secret: str):
         yield session
 
 
-async def call(session, name: str, **args):
+async def call(session, name: str, /, **args):
     """(is_error, payload) where payload is the parsed JSON, or the error text."""
     res = await session.call_tool(name, args)
     text = res.content[0].text if res.content else ""
@@ -93,7 +93,9 @@ async def test_tools_list_contains_expected_names(app, client, db, mcp_running):
         names = {t.name for t in (await s.list_tools()).tools}
     assert names == {
         "whoami", "list_projects", "list_tasks", "get_task", "create_task",
-        "update_task", "move_task", "comment_on_task",
+        "update_task", "move_task", "comment_on_task", "delete_task",
+        "list_sprints", "create_sprint", "update_sprint", "start_sprint", "complete_sprint", "delete_sprint",
+        "set_task_sprint",
         "get_workflow", "get_document", "ask_human", "submit_design", "submit_plan", "complete_step",
         "submit_review", "report_finish", "report_pr_fix", "submit_pr_review", "show_mockup", "record_decision", "record_tests",
         "kb_search", "kb_list", "kb_read", "kb_write", "kb_draft_read", "kb_draft_submit", "submit_cron_report",
@@ -193,3 +195,32 @@ async def test_viewer_token_cannot_write(app, client, client_factory, db, mcp_ru
         ):
             err, text = await call(s, name, **args)
             assert err and "forbidden" in text, name
+
+
+async def test_a_person_plans_sprints_and_deletes_tasks_via_mcp(app, client, db, mcp_running):
+    await make_project(client, db, "PAY")  # leaves the client logged in as the project's manager
+    secret = await _mint(client)
+    async with mcp_session(app, secret) as s:
+        err, epic = await call(s, "create_task", project_key="PAY", title="Checkout v2", type="epic")
+        assert not err, epic
+        err, task = await call(s, "create_task", project_key="PAY", title="Card retries")
+        assert not err, task
+        err, upd = await call(s, "update_task", key=task["key"], epic_key=epic["key"], type="bug")
+        assert not err and upd["parent_id"] == epic["id"] and upd["type"] == "bug", upd
+        err, epics = await call(s, "list_tasks", project_key="PAY", type="epic")
+        assert not err and [e["key"] for e in epics] == [epic["key"]]
+        err, sprint = await call(s, "create_sprint", project_key="PAY", name="Sprint 1", start_date="2026-11-16",
+                                 end_date="2026-11-27")
+        assert not err, sprint
+        err, text = await call(s, "start_sprint", sprint="Sprint 1")
+        assert err and "project_key_needed" in text  # a name needs its project
+        err, out = await call(s, "set_task_sprint", key=task["key"], sprint="Sprint 1")
+        assert not err and out["sprint_id"] == sprint["id"], out
+        err, out = await call(s, "start_sprint", sprint=sprint["id"])
+        assert not err and out["state"] == "active"
+        err, out = await call(s, "delete_task", key=task["key"])
+        assert not err, out
+        err, text = await call(s, "get_task", key=task["key"])
+        assert err
+    events = (await db.execute(select(TaskEvent))).scalars().all()
+    assert all("chat" not in e.data for e in events)  # a person's own changes come from no chat
