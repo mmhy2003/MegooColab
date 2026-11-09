@@ -454,7 +454,7 @@ async def enqueue(
     if role == RunRole.pr_fix:
         from app.git import send_back  # local: the git modules import this one
 
-        extra = [send_back.prompt_section(wf)]
+        extra = [send_back.prompt_section(wf, task)]
     if role == RunRole.pr_review:
         from app.git import agent_review  # local: the git modules import this one
 

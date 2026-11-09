@@ -84,13 +84,37 @@ async def send_back_now(db: AsyncSession, wf, task: Task, trigger: Trigger) -> s
     return "sent_back"
 
 
-def prompt_section(wf) -> str:
-    """The fix run's own section: the pull request, its branch, the round, and what was asked (from the host: untrusted)."""
+CONFLICT_SECTION = """## The pull request has merge conflicts
+Pull request: {pr_url} (branch {branch}) · round {round} of {of}
+The reviewer approved it, but the host refused to merge it: its base branch moved on and now conflicts with it.
+This round, change nothing but what resolving the conflicts takes:
+
+1. Find the base branch (`gh pr view <n> --json baseRefName`, `glab mr view <n>`, `tea pulls <n>`){base_hint}, fetch it
+   and merge it into this branch: `git fetch origin <base>` then `git merge origin/<base>`. Never rebase, never
+   force-push.
+2. Resolve each conflict keeping the intent of both sides: this task's change, and what the base branch gained since.
+   Add nothing else. Record each conflicted file and how you resolved it with `record_decision`.
+3. Run the full test suite and record it with `record_tests`. If three attempts at resolving the conflicts don't make it
+   pass, abort the merge (`git merge --abort`), push nothing, and call `report_pr_fix` with `tests_passed=false` and
+   what stood in the way.
+4. Commit the merge, push to the same branch, and call `report_pr_fix` with a summary of how you resolved the
+   conflicts. The reviewer then reviews the pull request again and merges it."""
+
+
+def prompt_section(wf, task=None) -> str:
+    """The fix run's own section: the pull request, its branch, the round, and what was asked (from the host: untrusted);
+    for a merge refused over conflicts, how to bring the base branch in and resolve them."""
     from app.workflow.context import (
         wrap_untrusted,  # local: the workflow imports the git modules
     )
 
     t = wf.pr_fix_trigger or {}
+    if t.get("kind") == "merge_conflict":
+        base = getattr(task, "start_branch", None)
+        return CONFLICT_SECTION.format(
+            pr_url=wf.pr_url, branch=wf.branch, round=wf.pr_fix_rounds, of=MAX_PR_FIX_ROUNDS,
+            base_hint=f"; it should be `{base}`" if base else "",
+        ) + "\n" + wrap_untrusted("pull request merge", str(t.get("excerpt") or ""))
     asked = f'{t.get("by") or "A reviewer"} asked: "{t.get("excerpt") or ""}"' + (f" at {t['where']}" if t.get("where") else "")
     return (
         "## Changes requested on the pull request\n"

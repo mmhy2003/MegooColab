@@ -18,9 +18,11 @@ DEFAULT_HISTORY: dict[str, list[str]] = {
     ],
     "pr_review": [
         "f117ba33749e48e554e25366550ca3ae550579a0541b7ed7425fa0d7e7026ed7",
+        "4793dcdd1368afe9f8c28114c84d9f30b9a28046a8566f0b0b914255abdf4ec7",
     ],
     "pr_fix": [
         "b9b52da52cfcd977cd5c98f7865ffd01c9c192639182760a920ac99d9f3fb293",
+        "026170a580a8710ac27f4efa940e6c355b8a678a0a8f85f69dcc4618a46a96c0",
     ],
     "brainstorm": [
         "48f368064a035a3c5afec8b14889fd152d37d64cc517d10ff5ab44b14b8ce533",

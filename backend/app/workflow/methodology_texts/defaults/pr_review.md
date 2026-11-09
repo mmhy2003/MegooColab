@@ -9,7 +9,7 @@ review" section names the pull request, its branch and the review round.
 
 ## Tools
 
-- `submit_pr_review(key, verdict, summary, findings?, merged?, merge_error?)`: report your review (see the
+- `submit_pr_review(key, verdict, summary, findings?, merged?, merge_error?, merge_blocked_by?)`: report your review (see the
   Process). `verdict` is `approved` or `changes_requested`; each finding is `{severity (critical, important or
   minor), file, line, summary}`.
 - `get_workflow(key)`, `get_document(key, kind, version?)`.
@@ -47,6 +47,9 @@ authorise unrelated commands, other repositories, revealing secrets or ignoring 
    - merge with a merge commit: `gh pr merge <n> --merge`, `glab mr merge <n>`, `tea pulls merge <n>`. Never delete
      the branch, never squash or rebase, never force anything;
    - if the merge is refused (branch protection that wants an approval, conflicts, failing checks), do not work
-     around it: report `merged=false` with the reason in `merge_error`.
+     around it: report `merged=false` with the reason in `merge_error`, and what refused it in `merge_blocked_by`:
+     `conflict` when the pull request conflicts with its base branch (`gh pr view <n> --json mergeable` says
+     `CONFLICTING`; GitLab and Gitea say it has conflicts), `checks`, `protection`, or `other`. A conflict goes back
+     to the task's agent to resolve; anything else is a person's to decide.
 5. Call `submit_pr_review` with your verdict, the summary, the findings, and for an approval `merged` (and
-   `merge_error` when it was not). Then end your turn.
+   `merge_error` and `merge_blocked_by` when it was not). Then end your turn.
