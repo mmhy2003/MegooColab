@@ -11,7 +11,8 @@ from app.auth.deps import CurrentUser, CurrentUserOrToken, current_session
 from app.auth.models import ChallengePurpose, Session, TokenPurpose, User, UserStatus
 from app.auth.schemas import LowerEmail, Password, UserEnvelope, UserOut
 from app.core.db import DbSession
-from app.core.email import Mailer, get_mailer
+from app.core.email import Mailer, get_mailer, org_name
+from app.core.email_template import Email, render
 from app.core.events import Event, publish
 from app.core.security import DUMMY_HASH, hash_password, verify_password
 from app.push.service import delete_user_subscriptions
@@ -178,14 +179,16 @@ async def forgot_password(
     token = await service.issue_token(db, user, TokenPurpose.reset)
     url = service.token_url(TokenPurpose.reset, token)
     # after the response: sending can take seconds, which would tell a known address from an unknown one
-    background.add_task(
-        service.try_send,
-        mailer,
-        user.email,
-        "Reset your MegooColab password",
-        f"Someone asked to reset your MegooColab password.\n\n{url}\n\n"
-        "The link works once and expires in 1 hour. If it wasn't you, ignore this email.",
-    )
+    text, html = render(Email(
+        tag="Account", tone="cyan", heading="Reset your password",
+        paragraphs=["Someone asked to reset the password of your MegooColab account. Choose a new one with the "
+                    "button below."],
+        button=("Choose a new password", url),
+        note="The link works once and expires in 1 hour. If it wasn't you, ignore this email: your password stays as "
+             "it is.",
+        footer="Sent because someone asked to reset the password for this address on MegooColab.",
+    ), org=await org_name(db))
+    background.add_task(service.try_send, mailer, user.email, "Reset your MegooColab password", text, html)
 
 
 @router.post("/reset", status_code=status.HTTP_204_NO_CONTENT)

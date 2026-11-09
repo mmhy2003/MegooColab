@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import service as audit
 from app.auth.models import Passkey, User, WebauthnChallenge
 from app.auth.service import try_send
-from app.core.email import Mailer
+from app.core.config import get_settings
+from app.core.email import Mailer, org_name
+from app.core.email_template import Email, render
 
 
 
@@ -27,7 +29,12 @@ async def reset_two_factor(
         data={"via": via},
     )
     who = actor.name if actor else "An administrator"
-    await try_send(
-        mailer, user.email, "Two-factor sign-in turned off",
-        f"{who} turned off two-factor sign-in for your MegooColab account. If you didn't ask for this, tell them.",
-    )
+    text, html = render(Email(
+        tag="Security", tone="pink", heading="Two-factor sign-in was turned off",
+        paragraphs=[f"{who} turned off two-factor sign-in for your MegooColab account.",
+                    "You can sign in with your password alone now. If you didn't ask for this, tell your admin straight "
+                    "away."],
+        button=("Set up two-factor again", f"{get_settings().public_url}/settings/profile?tab=two-factor"),
+        footer="A security notice about your MegooColab account. It's always sent.",
+    ), org=await org_name(db))
+    await try_send(mailer, user.email, "Two-factor sign-in turned off", text, html)

@@ -16,6 +16,7 @@ from app.auth.models import Role, TokenPurpose, User, UserStatus
 from app.auth.schemas import UserEnvelope, UserOut
 from app.core.db import DbSession
 from app.core.email import Mailer, get_mailer
+from app.core.email_template import Email, render
 from app.core.events import Event, publish
 from app.core.security import hash_password
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
@@ -67,13 +68,16 @@ async def invite_user(
     token = await auth_service.issue_token(db, user, TokenPurpose.invite)
     url = auth_service.token_url(TokenPurpose.invite, token)
     org = await _org_name(db)
-    sent = await auth_service.try_send(
-        mailer,
-        user.email,
-        f"You're invited to {org} on MegooColab",
-        f"{admin.name} invited you to join {org} on MegooColab.\n\n{url}\n\n"
-        "The link works once and expires in 7 days.",
-    )
+    text, html = render(Email(
+        tag="Invitation", tone="violet", heading=f"{admin.name} invited you to {org}",
+        paragraphs=["Join your team on MegooColab, where people and AI agents work on projects together. Set your "
+                    "password to get started."],
+        button=("Accept the invitation", url),
+        note="The link works once and expires in 7 days.",
+        footer=f"You got this because an admin of {org} invited this address. If you weren't expecting it, you can "
+               "ignore it.",
+    ), org=org)
+    sent = await auth_service.try_send(mailer, user.email, f"You're invited to {org} on MegooColab", text, html)
     await audit.record(
         db, "user.invited", actor_id=admin.id, target_type="user", target_id=user.id,
         data={"email": user.email, "role": user.role},

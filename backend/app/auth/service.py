@@ -138,11 +138,11 @@ async def consume_token(db: AsyncSession, token: str, purpose: TokenPurpose) -> 
     return user
 
 
-async def try_send(mailer: Mailer | None, to: str, subject: str, body: str) -> bool:
+async def try_send(mailer: Mailer | None, to: str, subject: str, body: str, html: str | None = None) -> bool:
     if mailer is None:
         return False
     try:
-        await mailer.send(to, subject, body)
+        await mailer.send(to, subject, body, html=html)
         return True
     except Exception:
         log.exception("sending email to %s failed", to)

@@ -55,3 +55,21 @@ async def test_test_email_without_smtp_400(client, db):
     await login(client, admin)
     r = await client.post("/api/admin/settings/test-email", json={"to": "a@x.io"})
     assert r.status_code == 400 and r.json()["detail"] == "smtp_not_configured"
+
+
+async def test_test_email_is_in_the_app_look(client, db, monkeypatch):
+    sent = []
+
+    async def fake_send(msg, **_kw):
+        sent.append(msg)
+
+    monkeypatch.setattr("app.core.email.aiosmtplib.send", fake_send)
+    await _setup_org(db)
+    admin = await make_user(db, role=Role.admin)
+    await login(client, admin)
+    await client.put("/api/admin/settings", json={"name": "Acme", "smtp": SMTP})
+    r = await client.post("/api/admin/settings/test-email", json={"to": "a@x.io"})
+    assert r.status_code == 204
+    parts = {p.get_content_type(): p.get_content() for p in sent[0].iter_parts()}
+    assert "If you can read this, MegooColab can send email" in parts["text/plain"]
+    assert ">Test<" in parts["text/html"] and ">Email works<" in parts["text/html"] and "Acme" in parts["text/html"]
