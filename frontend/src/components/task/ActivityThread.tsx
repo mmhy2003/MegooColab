@@ -29,6 +29,128 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
 
+const taskHref = (key: string) => `/projects/${key.replace(/-\d+$/, "")}/board?task=${key}`;
+
+function TaskKey({ value }: { value?: string }) {
+  if (!value) return <>a task</>;
+  return (
+    <Link href={taskHref(value)} className="text-cyan-ink underline">
+      {value}
+    </Link>
+  );
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "16 – 27 Nov", "30 Nov – 11 Dec", or with the years when they differ; from two YYYY-MM-DD dates. */
+export function dateSpan(start?: string, end?: string): string | undefined {
+  const parse = (v?: string) => /^(\d{4})-(\d{2})-(\d{2})$/.exec(v ?? "")?.slice(1).map(Number);
+  const a = parse(start);
+  const b = parse(end);
+  if (!a || !b) return undefined;
+  const [y1, m1, d1] = a;
+  const [y2, m2, d2] = b;
+  if (y1 !== y2) return `${d1} ${MONTHS[m1 - 1]} ${y1} – ${d2} ${MONTHS[m2 - 1]} ${y2}`;
+  if (m1 !== m2) return `${d1} ${MONTHS[m1 - 1]} – ${d2} ${MONTHS[m2 - 1]}`;
+  return `${d1} – ${d2} ${MONTHS[m2 - 1]}`;
+}
+
+/** One change a chat's agent made on the board (agent_board_changed), with links to what is still there. */
+function boardChange(data: Record<string, unknown>): React.ReactNode {
+  const key = str(data.key);
+  const project = str(data.project) ?? key?.replace(/-\d+$/, "");
+  const sprint = str(data.sprint);
+  const sprintLink =
+    sprint && project ? (
+      <Link href={`/projects/${project}/backlog`} className="text-cyan-ink underline">
+        {sprint}
+      </Link>
+    ) : (
+      (sprint ?? "a sprint")
+    );
+  switch (data.action) {
+    case "epic_set": {
+      const epic = str(data.epic);
+      return epic ? (
+        <>
+          put <TaskKey value={key} /> under the epic <TaskKey value={epic} />
+        </>
+      ) : (
+        <>
+          took <TaskKey value={key} /> out of its epic
+        </>
+      );
+    }
+    case "task_changed": {
+      const fields = Array.isArray(data.fields) ? data.fields.filter((f): f is string => typeof f === "string") : [];
+      return (
+        <>
+          changed <TaskKey value={key} />
+          {fields.length > 0 && `: ${fields.map((f) => f.replace(/_md$/, "").replace(/_/g, " ")).join(", ")}`}
+        </>
+      );
+    }
+    case "task_moved":
+      return (
+        <>
+          moved <TaskKey value={key} /> to {str(data.column) ?? "another column"}
+        </>
+      );
+    case "task_deleted":
+      return (
+        <>
+          deleted <s>{key ?? "a task"}</s>
+          {str(data.title) ? `: ${str(data.title)}` : ""}
+        </>
+      );
+    case "sprint_created": {
+      const span = dateSpan(str(data.start), str(data.end));
+      return (
+        <>
+          created the sprint {sprintLink}
+          {span && ` (${span})`}
+        </>
+      );
+    }
+    case "sprint_changed":
+      return <>changed the sprint {sprintLink}</>;
+    case "sprint_started":
+      return <>started the sprint {sprintLink}</>;
+    case "sprint_completed":
+      return <>completed the sprint {sprintLink}</>;
+    case "sprint_deleted":
+      return <>deleted the sprint {sprint ?? "a sprint"}</>;
+    case "sprint_set":
+      return sprint ? (
+        <>
+          added <TaskKey value={key} /> to {sprintLink}
+        </>
+      ) : (
+        <>
+          took <TaskKey value={key} /> out of its sprint
+        </>
+      );
+    default:
+      return "changed the board";
+  }
+}
+
+/** " · from the chat <title>": a change a chat's agent made to this task, linked back to that chat. */
+function ChatOrigin({ chat }: { chat: unknown }) {
+  if (!chat || typeof chat !== "object") return null;
+  const id = str((chat as Record<string, unknown>).id);
+  const title = str((chat as Record<string, unknown>).title);
+  if (!id) return null;
+  return (
+    <>
+      {" · from the chat "}
+      <Link href={`/chats/${id}`} className="text-cyan-ink underline">
+        {title || "a chat"}
+      </Link>
+    </>
+  );
+}
+
 /** Sentence fragment describing an event; unknown kinds (from later features) fall back to the kind itself.
  * `byPerson`: the event has a human actor (e.g. a user cancelled the run). */
 export function describeEvent(
@@ -333,6 +455,14 @@ export function ActivityThread({
                 "a task"
               )}
               {`: ${str(data.title) ?? ""}`}
+              {data.type === "epic" && <span className="ml-1 rounded border border-violet px-1 text-violet">epic</span>}
+            </EventRow>
+          );
+        }
+        if (kind === "agent_board_changed") {
+          return (
+            <EventRow key={item.id} at={item.at} lead={actor} text="">
+              {boardChange(data)}
             </EventRow>
           );
         }
@@ -350,6 +480,7 @@ export function ActivityThread({
         return (
           <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind} docVersion={num(data.version)}
             images={item.images}>
+            <ChatOrigin chat={data.chat} />
             {isSafeUrl(prUrl) && (
               <>
                 {" — "}

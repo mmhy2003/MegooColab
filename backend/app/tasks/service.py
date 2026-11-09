@@ -1,6 +1,7 @@
 import re
 import uuid
 from collections import defaultdict
+from contextvars import ContextVar
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
@@ -43,6 +44,10 @@ from app.teams.service import user_team_ids
 from app.workflow.models import DocKind, DocStatus, TaskWorkflow, WorkflowDocument
 from app.workflow.rules import can_act
 from app.workflow.schemas import PullRequestOut, TaskWorkflowOut
+
+# the chat a change came from, while a chat's agent changes the board: {"id", "title"}. The changed task's events
+# carry it, so its history links back to the conversation.
+event_origin: ContextVar[dict[str, str] | None] = ContextVar("event_origin", default=None)
 
 KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$")
 POSITION_STEP = 1024.0
@@ -312,7 +317,11 @@ async def task_out(db: AsyncSession, task: Task, viewer: User) -> TaskOut:
 async def record_event(
     db: AsyncSession, task: Task, actor_id: uuid.UUID | None, kind: str, data: dict | None = None
 ) -> TaskEvent:
-    event = TaskEvent(task_id=task.id, actor_user_id=actor_id, kind=kind, data=data or {})
+    data = dict(data or {})
+    origin = event_origin.get()
+    if origin is not None and not task.in_chat:
+        data.setdefault("chat", origin)
+    event = TaskEvent(task_id=task.id, actor_user_id=actor_id, kind=kind, data=data)
     db.add(event)
     if actor_id is not None:  # a person acted on the task: what they were told about it is dealt with
         await notifications.read_by_acting(db, actor_id, task_id=task.id)

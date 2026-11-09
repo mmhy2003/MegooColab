@@ -3,15 +3,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.agent_runs.service import stop_runs_before_delete
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
-from app.projects.access import can_manage_project, get_project_for, project_team_ids
-from app.sprints.service import snapshot_if_active
-from app.tasks import service, uploads
+from app.projects.access import get_project_for
+from app.tasks import service
 from app.tasks.models import Task, TaskLink, TaskType
+from app.tasks.removal import remove_task
 from app.tasks.schemas import LinkIn, MoveIn, TaskCreate, TaskOut, TaskUpdate
-from app.teams.service import user_team_ids
 from app.workflow import engine
 from app.workflow.models import QUIET_NEEDS, WorkflowStatus
 
@@ -72,16 +70,7 @@ async def update_task(key: str, body: TaskUpdate, user: AuthedUser, db: DbSessio
 @router.delete("/api/tasks/{key}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_task(key: str, user: AuthedUser, db: DbSession) -> None:
     task, project = await service.get_task_for(db, user, key, write=True)
-    if task.reporter_id != user.id and not can_manage_project(
-        user, await project_team_ids(db, project.id), await user_team_ids(db, user.id)
-    ):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "forbidden")
-    sprint_id = task.sprint_id
-    await stop_runs_before_delete(db, service.deleted_with(task))
-    uploads.remove_after_commit(db, (await db.execute(service.deleted_with(task))).scalars().all())
-    await _changed(db, task, "task.deleted")
-    await service.delete_task(db, task)
-    await snapshot_if_active(db, sprint_id)
+    await remove_task(db, user, project, task)
 
 
 @router.post("/api/tasks/{key}/move")

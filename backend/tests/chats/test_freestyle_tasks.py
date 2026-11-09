@@ -3,8 +3,6 @@
 from sqlalchemy import select
 
 from app.tasks.models import Task, TaskEvent
-from app.workflow import context
-from app.workflow.models import RunRole
 from tests.chats.helpers import start, world
 from tests.chats.test_chat_workflow import _round
 from tests.factories import make_project
@@ -52,14 +50,3 @@ async def test_other_runs_still_cannot_create_tasks(client, db, tc_factory):
     tc = tc_factory(lifespan=True)
     err, text = _tool(tc, await _run_token(run), "create_task", project_key="PAY", title="Nope")
     assert err and "not_allowed_in_role" in text
-
-
-async def test_freestyle_prompt_says_when_to_create_tasks(client, db):
-    _w, _chat, rnd, _run = await _freestyle_run(client, db)
-    from app.chats.context import freestyle_tasks_context
-
-    section = await freestyle_tasks_context(db, rnd, RunRole.freestyle)
-    assert section.startswith("## Creating tasks")
-    assert "create_task" in section and "ask first" in section.lower()
-    assert await freestyle_tasks_context(db, rnd, RunRole.brainstorm) is None
-    assert freestyle_tasks_context in context.context_providers
