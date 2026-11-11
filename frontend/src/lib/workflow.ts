@@ -83,6 +83,7 @@ export const ESCALATION_REASON_TEXT: Record<string, string> = {
   back_merge_pr_closed: "The back-merge pull request (into the default branch) was closed without being merged.",
   no_output: "The agent finished twice without a question or a design.",
   enforcement_violation: "The agent changed the repository during a read-only stage.",
+  uncommitted_changes: "The agent left its changes uncommitted, so they can't be reviewed.",
   step_incomplete: "The agent ended its run without finishing the step.",
   review_incomplete: "The reviewer ended its run without a verdict.",
   review_rounds_exhausted: "The step still had review findings after 3 review rounds.",

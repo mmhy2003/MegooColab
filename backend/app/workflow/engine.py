@@ -799,7 +799,9 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
         wf.failures = 0
         wf.nudged = False
         wf.status = WorkflowStatus.running
-        if reason in RETRY_HANDLERS:
+        if await _retry_commit_first(db, wf, task, user, reason):
+            pass
+        elif reason in RETRY_HANDLERS:
             await RETRY_HANDLERS[reason](db, wf, task, user)
         else:
             await rerun(db, wf, task, requested_by=user.id)
@@ -952,11 +954,76 @@ _handling: contextvars.ContextVar[bool] = contextvars.ContextVar("workflow_handl
 
 def _git_changed(run: AgentRun) -> bool:
     """R1: a read-only run moved HEAD or left edits. Without both reports (an old runner, or a run that never
-    reached the runner) nothing is known."""
+    reached the runner) nothing is known. Edits that were already there when it started are not its own."""
     before, after = run.git_before, run.git_after
     if not before or not after:
         return False
-    return before.get("head") != after.get("head") or bool(after.get("dirty"))
+    return before.get("head") != after.get("head") or (bool(after.get("dirty")) and not before.get("dirty"))
+
+
+# ---- uncommitted work ---------------------------------------------------------------------------
+# A run that may change the repository and ends with its work uncommitted would hand that work to a read-only review,
+# which can't commit it and can't approve it either. It goes back to its agent to commit (once); then a human decides.
+
+COMMIT_TEXT = (
+    "You left changes in the worktree uncommitted, and nothing can be reviewed until they are committed. Look at "
+    "`git status` and `git diff`, then commit the work as one commit with a conventional message. Never commit "
+    "`.megoocolab/`; remove stray files you created instead of committing them. Leave the worktree clean, change "
+    "nothing else, and end your turn."
+)
+COMMIT_PUSH_TEXT = COMMIT_TEXT.replace("and end your turn.", "push the commit to the pull request's branch, and end your "
+                                       "turn.")
+COMMIT_MARK = "You left changes in the worktree uncommitted"
+# the review that follows each work role, and the work role whose work a review looks at
+REVIEW_OF_WORK = {RunRole.step_review: RunRole.step_fix, RunRole.final_review: RunRole.final_fix,
+                  RunRole.pr_review: RunRole.pr_fix}
+
+
+def left_uncommitted(run: AgentRun) -> bool:
+    return bool((run.git_after or {}).get("dirty"))
+
+
+def is_commit_run(run: AgentRun) -> bool:
+    """The run was sent back only to commit what an earlier run left uncommitted."""
+    return COMMIT_MARK in (run.resume_prompt or "") or COMMIT_MARK in (run.prompt or "")
+
+
+async def _queue_commit(db: AsyncSession, wf: TaskWorkflow, task: Task, role: RunRole, step: int | None, *,
+                        session: str | None, requested_by: uuid.UUID) -> AgentRun:
+    text = COMMIT_PUSH_TEXT if role == RunRole.pr_fix else COMMIT_TEXT
+    wf.nudged = False
+    return await enqueue(db, wf, task, role, step=step, resume_kind="nudge", payload=text,
+                         resume_session_ref=session if role in FRESH_ROLES else None, requested_by=requested_by)
+
+
+async def send_back_to_commit(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
+    """`run` ended with its work uncommitted: the same agent, in the same session, commits it. A run that was
+    already sent back for that and still left it uncommitted goes to a human (uncommitted_changes)."""
+    if is_commit_run(run):
+        await escalate(db, wf, "uncommitted_changes")
+        return
+    role = RunRole(run.workflow_role)
+    await record_workflow_event(db, task, None, "workflow.uncommitted", {"role": role.value, "step": run.step})
+    await _queue_commit(db, wf, task, role, run.step, session=run.session_ref, requested_by=await owner_id(db, run))
+
+
+async def _retry_commit_first(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User, reason: str | None) -> bool:
+    """Retry where uncommitted work is what's stuck: it goes back to be committed, and is reviewed after. True when
+    that is the case: the escalation is uncommitted_changes, or the latest run is a review that started on
+    uncommitted work (a task stuck before this check existed)."""
+    last = await latest_run(db, task.id)
+    if last is None or last.workflow_role is None:
+        return False
+    role = RunRole(last.workflow_role)
+    if reason == "uncommitted_changes":
+        work, session = role, last.session_ref
+    elif role in REVIEW_OF_WORK and (last.git_before or {}).get("dirty"):
+        work, session = REVIEW_OF_WORK[role], None
+        await record_workflow_event(db, task, None, "workflow.uncommitted", {"role": work.value, "step": last.step})
+    else:
+        return False
+    await _queue_commit(db, wf, task, work, last.step, session=session, requested_by=user.id)
+    return True
 
 
 async def on_run_finished(db: AsyncSession, run: AgentRun) -> None:

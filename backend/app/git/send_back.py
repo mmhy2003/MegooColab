@@ -149,7 +149,11 @@ async def _handle_pr_fix(db: AsyncSession, wf, task: Task, run) -> None:
     if await finish._asked_or_answered(db, wf, task, run):
         return
     result = run.step_result or {}
-    if result.get("tests_passed") is True:
+    # a run sent back only to commit (and push) carries on from the fix its earlier run reported
+    if result.get("tests_passed") is True or engine.is_commit_run(run):
+        if engine.left_uncommitted(run):  # the reviewer must find the fix committed and pushed
+            await engine.send_back_to_commit(db, wf, task, run)
+            return
         await engine.set_stage(db, wf, task, Stage.done)
         await engine.record_workflow_event(db, task, None, "pr.fix_pushed", {
             "pr_url": wf.pr_url, "pr_number": (wf.pr_fix_trigger or {}).get("pr_number"), "round": wf.pr_fix_rounds,
