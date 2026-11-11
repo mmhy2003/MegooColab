@@ -318,6 +318,17 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
     }
     case "step.no_commit":
       return `Step ${num(data.step)} finished without a commit`;
+    case "workflow.uncommitted": {
+      const who =
+        data.role === "final_fix"
+          ? "The fix round"
+          : data.role === "pr_fix"
+            ? "The pull request fix"
+            : typeof data.step === "number"
+              ? `Step ${data.step}`
+              : "The agent's run";
+      return `${who} left its changes uncommitted: sent back to its agent to commit them`;
+    }
     case "review.result": {
       const counts = (data.counts ?? {}) as Record<string, unknown>;
       const parts = SEVERITY_ORDER.filter((sv) => num(counts[sv]) > 0).map((sv) => `${num(counts[sv])} ${sv}`);
@@ -345,6 +356,7 @@ const STANDALONE = new Set([
   "step.completed",
   "step.approved",
   "step.no_commit",
+  "workflow.uncommitted",
   "mockup.shown",
   "decision.recorded",
   "review.result",

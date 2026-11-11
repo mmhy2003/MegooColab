@@ -115,8 +115,11 @@ async def _asked_or_answered(db: AsyncSession, wf: TaskWorkflow, task: Task, run
 
 
 async def _handle_final_fix(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
-    """The fix round ended: the scoped re-review (round 2) follows."""
+    """The fix round ended: the scoped re-review (round 2) follows, once its work is committed."""
     if await _asked_or_answered(db, wf, task, run):
+        return
+    if engine.left_uncommitted(run):  # the read-only re-review could neither commit it nor approve it
+        await engine.send_back_to_commit(db, wf, task, run)
         return
     wf.review_round = 2
     wf.nudged = False

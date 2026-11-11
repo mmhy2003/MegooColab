@@ -56,3 +56,11 @@ describe("an agent's merge that can't be confirmed", () => {
     expect(needsText("merge_confirmation")).toBe("Agent merged · confirming");
   });
 });
+
+describe("work left uncommitted", () => {
+  it("is worded, and can only be retried (back to its agent to commit)", async () => {
+    const { escalationReasonText, ACCEPTABLE_REASONS } = await import("@/lib/workflow");
+    expect(escalationReasonText("uncommitted_changes")).toBe("The agent left its changes uncommitted, so they can't be reviewed.");
+    expect(ACCEPTABLE_REASONS).not.toContain("uncommitted_changes");
+  });
+});

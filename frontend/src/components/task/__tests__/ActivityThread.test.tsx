@@ -193,6 +193,16 @@ describe("ActivityThread agent events", () => {
     expect(screen.getByRole("link", { name: "PAY-42" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-42");
   });
 
+  it("says work left uncommitted went back to its agent to commit", () => {
+    const sentBack: ActivityItem = { type: "event", id: "u1", at: "2026-10-22T10:00:00Z", actor: null, kind: "workflow.uncommitted",
+      data: { role: "final_fix", step: null } };
+    const step: ActivityItem = { ...sentBack, id: "u2", data: { role: "implement", step: 3 } };
+    render(<ActivityThread items={[sentBack, step]} columnNames={new Map()} userNames={new Map()} />);
+    const rows = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(rows[0]).toContain("The fix round left its changes uncommitted: sent back to its agent to commit them");
+    expect(rows[1]).toContain("Step 3 left its changes uncommitted: sent back to its agent to commit them");
+  });
+
   it("marks an epic the agent created as an epic", () => {
     render1(agentEvent("t2", "agent_task_created", { key: "PAY-31", title: "Checkout v2", task_id: "t31", type: "epic" }));
     expect(screen.getByRole("listitem").textContent).toContain("Ann's Codex created PAY-31: Checkout v2epic");
