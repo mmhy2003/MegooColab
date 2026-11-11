@@ -241,7 +241,11 @@ async def _handle_work(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Agen
         await engine.wait_for(db, wf, Needs.question)
         return
     owner_id = await engine.owner_id(db, run)
-    if (run.step_result or {}).get("tests_passed") is True:
+    # a run sent back only to commit carries on from the step its earlier run reported done
+    if (run.step_result or {}).get("tests_passed") is True or engine.is_commit_run(run):
+        if engine.left_uncommitted(run):  # a review can't approve what isn't committed: commit first
+            await engine.send_back_to_commit(db, wf, task, run)
+            return
         await _warn_if_no_commit(db, wf, task, run)
         await _queue_review(db, wf, task, run.step, owner_id)
         return
