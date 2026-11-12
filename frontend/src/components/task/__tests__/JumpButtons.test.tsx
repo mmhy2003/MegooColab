@@ -7,6 +7,8 @@ import { JumpButtons, useLiftAbove } from "@/components/task/JumpButtons";
 type Entry = { id: string; at: string };
 const entry = (n: number): Entry => ({ id: `a${n}`, at: new Date(Date.UTC(2026, 9, 31, 10, 0, n)).toISOString() });
 const entries = (count: number) => Array.from({ length: count }, (_, i) => entry(i));
+/** the live page: `size` entries from `from` on, as the newest page slides forward */
+const livePage = (from: number, size: number) => Array.from({ length: size }, (_, i) => entry(from + i));
 
 // jsdom does no layout: the scroller gets a height, a content height and a scroll position the test controls
 const laidOut = new WeakSet<HTMLElement>();
@@ -31,8 +33,9 @@ function fakeLayout(el: HTMLElement, layout: { scrollHeight: number; clientHeigh
 
 const layout = { scrollHeight: 3000, clientHeight: 500 };
 
-function Harness({ activity, waiting = [], loadEarlier, expectQuestion, startFollowing, jumpRef }: {
+function Harness({ activity, waiting = [], loadEarlier, expectQuestion, startFollowing, jumpRef, countAfter }: {
   activity: Entry[];
+  countAfter?: (at: string, id: string) => Promise<number>;
   waiting?: string[];
   loadEarlier?: () => Promise<boolean>;
   expectQuestion?: boolean;
@@ -64,6 +67,7 @@ function Harness({ activity, waiting = [], loadEarlier, expectQuestion, startFol
         expectQuestion={expectQuestion}
         startFollowing={startFollowing}
         jumpRef={jumpRef}
+        countAfter={countAfter}
       />
     </div>
   );
@@ -115,6 +119,42 @@ describe("JumpButtons", () => {
     rerender(<Harness activity={entries(5)} />);
     expect(scroller().scrollTop).toBe(1800); // the page stays where they are reading
     expect(screen.getByRole("button", { name: "Go to the latest and follow (2 new)" })).toBeInTheDocument();
+  });
+
+  it("shows 99+ once more than 99 have arrived", () => {
+    layout.scrollHeight = 3000;
+    const { rerender } = render(<Harness activity={entries(3)} />);
+    fireEvent.click(screen.getByRole("button", { name: "Go to the latest and follow" }));
+    userScrollsTo(1800);
+
+    rerender(<Harness activity={entries(102)} />);
+    expect(screen.getByRole("button", { name: "Go to the latest and follow (99 new)" })).toBeInTheDocument();
+    rerender(<Harness activity={entries(103)} />);
+    expect(screen.getByRole("button", { name: "Go to the latest and follow (99+ new)" })).toBeInTheDocument();
+    expect(screen.getByText("99+")).toBeInTheDocument();
+  });
+
+  it("asks the server how many came in once every loaded entry is new", async () => {
+    layout.scrollHeight = 3000;
+    const countAfter = vi.fn(async () => 73);
+    const { rerender } = render(<Harness activity={livePage(0, 50)} countAfter={countAfter} />);
+    fireEvent.click(screen.getByRole("button", { name: "Go to the latest and follow" }));
+    userScrollsTo(1800);
+
+    rerender(<Harness activity={livePage(10, 50)} countAfter={countAfter} />); // the seen entry is still loaded
+    expect(screen.getByRole("button", { name: "Go to the latest and follow (10 new)" })).toBeInTheDocument();
+    expect(countAfter).not.toHaveBeenCalled();
+
+    rerender(<Harness activity={livePage(73, 50)} countAfter={countAfter} />); // the live page moved past it
+    expect(await screen.findByRole("button", { name: "Go to the latest and follow (73 new)" })).toBeInTheDocument();
+    expect(countAfter).toHaveBeenCalledWith(entry(49).at, entry(49).id);
+
+    countAfter.mockResolvedValue(100);
+    rerender(<Harness activity={livePage(80, 50)} countAfter={countAfter} />);
+    expect(await screen.findByRole("button", { name: "Go to the latest and follow (99+ new)" })).toBeInTheDocument();
+    const calls = countAfter.mock.calls.length;
+    rerender(<Harness activity={livePage(90, 50)} countAfter={countAfter} />); // 99+ can only stay 99+: no more asking
+    expect(countAfter).toHaveBeenCalledTimes(calls);
   });
 
   it("follows again once the person scrolls back to the very bottom", () => {

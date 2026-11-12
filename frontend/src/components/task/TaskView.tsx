@@ -2,10 +2,11 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { TYPE_ICON } from "@/components/board/TaskCard";
 import { ChatRedirect } from "@/components/chats/ChatRedirect";
+import { countActivityAfter } from "@/lib/activity";
 import { agentHint, hintText } from "@/lib/agentMessages";
 import { useAgentRuns, useProjectAgents } from "@/lib/agents";
 import { api } from "@/lib/api";
@@ -69,6 +70,8 @@ export function TaskView({
     queryKey: qk.activity(taskKey),
     queryFn: () => api<ActivityItem[]>(`/api/tasks/${taskKey}/activity?limit=${ACTIVITY_PAGE}`),
   });
+  // the ↓ count, once more have arrived than the live page holds
+  const countAfter = useCallback((at: string, id: string) => countActivityAfter(taskKey, at, id), [taskKey]);
   // older pages, prepended as the user asks for them; the live first page keeps refreshing
   const [older, setOlder] = useState<{ items: ActivityItem[]; more: boolean }>({ items: [], more: true });
   // the latest older pages, for loadEarlier called several times in a row (the jump to an older agent question)
@@ -358,6 +361,7 @@ export function TaskView({
               scrollRef={scrollRef}
               activity={activity.data}
               loadEarlier={loadEarlier}
+              countAfter={countAfter}
               expectQuestion={workflow.data?.needs === "question" && workflow.data.can_act && !disabled}
               lift={lift}
             />
