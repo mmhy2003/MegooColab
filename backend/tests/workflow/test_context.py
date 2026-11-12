@@ -279,6 +279,27 @@ async def test_read_only_roles_get_the_command_rules(client, db):
     assert "backslash" in context.READ_ONLY_NOTE and "can end your session" in context.READ_ONLY_NOTE
 
 
+async def test_working_roles_run_long_commands_in_the_foreground(client, db):
+    """A run ends with the agent's turn, and a command left in the background ends with it, unread: a role that
+    runs tests is told to wait for them in the foreground, right after the instructions."""
+    task = await _setup(client, db)
+    for role in (RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish):
+        prompt, meth = await context.build_prompt(db, task, role)
+        assert prompt.index(context.FOREGROUND_NOTE) == len(meth.body_md.rstrip()) + 2, role
+    for role in (RunRole.brainstorm, RunRole.plan, RunRole.step_review, RunRole.final_review):
+        prompt, _ = await context.build_prompt(db, task, role)
+        assert context.FOREGROUND_NOTE not in prompt, role
+    for words in ("in the foreground", "background", "never read", "time limit", "Never end your turn"):
+        assert words in context.FOREGROUND_NOTE
+
+
+def test_work_nudge_names_the_background_mistake():
+    from app.workflow import build
+
+    assert "complete_step" in build.WORK_NUDGE
+    assert "background" in build.WORK_NUDGE and "foreground" in build.WORK_NUDGE
+
+
 # ---- Plan 8 Task 3: reviewers read the recorded decisions and test runs ------------------------------------
 
 

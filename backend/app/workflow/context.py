@@ -80,6 +80,15 @@ or other parentheses, "{ }", a backslash, double quotes or comments. Put a patte
 single quotes, and simplify a pattern that would need a backslash. Reading files with your own file tools is
 always fine."""
 
+# A run ends with the agent's turn, and so does a command left running in the background: its result is never read
+# and the work stays unfinished. Sessions that change the repository run tests, often long ones, so they are told to
+# wait for them (the runner also gives Claude Code no background commands and up to 3 hours per command).
+FOREGROUND_NOTE = """## Long commands
+Your session ends when your turn ends, and so does anything still running in the background: nothing wakes you
+when it finishes, and its result is never read. Run long commands, such as a full test suite, in the foreground
+and wait for them. If your shell tool takes a time limit, give the command one long enough for it to finish (up to
+3 hours). Never end your turn to wait for a command."""
+
 
 def _escape(text: str) -> str:
     """Neutralise text for the prompt: drop Unicode format (Cf) characters, escape every angle bracket."""
@@ -274,8 +283,7 @@ async def build_prompt(
 
     def render() -> str:
         parts = [meth.body_md.rstrip()]
-        if role in READ_ONLY_ROLES:
-            parts.append(READ_ONLY_NOTE)
+        parts.append(READ_ONLY_NOTE if role in READ_ONLY_ROLES else FOREGROUND_NOTE)
         desc_note = "\n(Description truncated to fit the prompt size limit.)" if "desc" in notes else ""
         parts.append(
             f"## Task {key}\n"
