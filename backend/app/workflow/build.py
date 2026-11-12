@@ -49,7 +49,10 @@ MAX_FINDING_FILE = 300
 MAX_FINDING_SUMMARY = 1_000
 SEVERITIES = ("critical", "important", "minor")
 
-WORK_NUDGE = "Call complete_step after the step's tests pass, or ask_human if you are blocked."
+WORK_NUDGE = (
+    "Call complete_step after the step's tests pass, or ask_human if you are blocked. A command you leave running "
+    "in the background stops when your turn ends, unread: run the tests in the foreground and wait for them."
+)
 REVIEW_NUDGE = "Call submit_review with your verdict and findings."
 
 WORK_ROLES = (RunRole.implement, RunRole.step_fix)

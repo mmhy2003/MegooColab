@@ -34,11 +34,20 @@ func For(program string) (Spec, error) {
 	return forOS(runtime.GOOS, program, os.Getenv, exec.LookPath)
 }
 
+// claudeEnv keeps Claude Code's commands in the foreground. A run ends with the agent's turn, and a command left
+// running in the background ends with it: its result is never read, and the step is left unfinished. So background
+// commands are off (a command that reaches its time limit is stopped, not moved to the background), and a single
+// command may run for up to 3 hours (30 minutes when the agent sets no limit), room for a long test suite.
+// The adapter passes its own environment on to Claude Code.
+var claudeEnv = []string{"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1", "BASH_DEFAULT_TIMEOUT_MS=1800000", "BASH_MAX_TIMEOUT_MS=10800000"}
+
 func forOS(goos, program string, getenv func(string) string, lookPath func(string) (string, error)) (Spec, error) {
 	var pkg string
+	var env []string
 	switch program {
 	case ClaudeCode:
 		pkg = "@agentclientprotocol/claude-agent-acp@0.94.0"
+		env = append([]string(nil), claudeEnv...)
 	case Codex:
 		pkg = "@agentclientprotocol/codex-acp@2.3.0" // replaces the deprecated @zed-industries/codex-acp
 	case Omp:
@@ -53,7 +62,7 @@ func forOS(goos, program string, getenv func(string) string, lookPath func(strin
 		if len(words) == 0 {
 			return Spec{}, fmt.Errorf("adapters: MEGOO_ADAPTER_%s is empty", strings.ToUpper(program))
 		}
-		return Spec{Program: program, Command: words[0], Args: words[1:]}, nil
+		return Spec{Program: program, Command: words[0], Args: words[1:], Env: env}, nil
 	}
 	if program == Omp {
 		// omp serves ACP itself. "write" overrides the person's own approval settings (a global yolo included): every
@@ -71,7 +80,7 @@ func forOS(goos, program string, getenv func(string) string, lookPath func(strin
 			npx = "npx"
 		}
 	}
-	return Spec{Program: program, Command: npx, Args: []string{"-y", pkg}}, nil
+	return Spec{Program: program, Command: npx, Args: []string{"-y", pkg}, Env: env}, nil
 }
 
 // splitCommandLine splits on whitespace; double quotes group a segment (so

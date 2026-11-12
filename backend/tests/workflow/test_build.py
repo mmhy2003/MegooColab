@@ -31,7 +31,7 @@ from tests.workflow.test_engine import (
     _wf,
 )
 
-FIX_NUDGE = "Call complete_step after the step's tests pass, or ask_human if you are blocked."
+FIX_NUDGE = build.WORK_NUDGE
 REVIEW_NUDGE = "Call submit_review with your verdict and findings."
 FINDING = {"severity": "important", "file": "app/x.py", "line": 12, "summary": "Missing error handling"}
 
