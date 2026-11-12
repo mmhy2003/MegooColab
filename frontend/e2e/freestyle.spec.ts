@@ -130,6 +130,17 @@ test("a freestyle chat: two turns, then End chat", async ({ browser }) => {
   await expect(view.getByText(/ finished$/)).toHaveCount(1);
   await expect(view.locator("[data-run-summary]")).toHaveCount(0);
   await expect(view.getByText("**")).toHaveCount(0);
+  // on a phone the reply's time sits beside the name and its box reaches under the dot: the words get the width
+  const wide = ui.viewportSize()!;
+  await ui.setViewportSize({ width: 390, height: 844 });
+  const reply = view.locator("[data-agent-reply]").first();
+  await expect(reply.locator("[data-time='phone']")).toBeVisible();
+  await expect(reply.locator("[data-time='wide']")).toBeHidden();
+  const row = (await reply.boundingBox())!;
+  const words = (await reply.locator(".border-cyan").boundingBox())!;
+  expect(words.width).toBeGreaterThan(row.width * 0.9);
+  await ui.setViewportSize(wide);
+  await expect(reply.locator("[data-time='wide']")).toBeVisible();
 
   // 2. a second message is the next turn
   const box = view.getByRole("textbox", { name: `Message ${AGENT_NAME}` });
