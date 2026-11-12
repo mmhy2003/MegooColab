@@ -132,9 +132,8 @@ async def _changed(db, task: Task, kind: str) -> None:
 # ---- activity ---------------------------------------------------------------
 
 
-async def activity_items(
-    db, task: Task, limit: int = 50, before: datetime | None = None, before_id: uuid.UUID | None = None
-) -> list[ActivityItem]:
+def _shown(task: Task):
+    """The statements for what a task's Activity shows: its comments, events and questions."""
     c_stmt = select(Comment).where(Comment.task_id == task.id)
     # the question item shows its own asked/answered state, so those events are not repeated; the pull request's
     # bare state changes are shown by the badge and the git.* entries; a merge or close the webhook named stands
@@ -152,6 +151,28 @@ async def activity_items(
         ~(TaskEvent.kind.in_(("pr.merged", "pr.closed")) & same_pr),
     )
     q_stmt = select(WorkflowQuestion).where(WorkflowQuestion.task_id == task.id)
+    return c_stmt, e_stmt, q_stmt
+
+
+async def count_after(db, task: Task, after: datetime, after_id: uuid.UUID, limit: int) -> int:
+    """How many Activity items came after the (at, id) cursor, counting no further than `limit`."""
+    total = 0
+    for stmt, model in zip(_shown(task), (Comment, TaskEvent, WorkflowQuestion), strict=True):
+        ids = (
+            stmt.with_only_columns(model.id)
+            .where(tuple_(model.created_at, model.id) > (after, after_id))
+            .limit(limit - total)
+        )
+        total += (await db.execute(select(func.count()).select_from(ids.subquery()))).scalar_one()
+        if total >= limit:
+            break
+    return total
+
+
+async def activity_items(
+    db, task: Task, limit: int = 50, before: datetime | None = None, before_id: uuid.UUID | None = None
+) -> list[ActivityItem]:
+    c_stmt, e_stmt, q_stmt = _shown(task)
     if before and before_id:
         # (at, id) cursor: items written in one transaction share a timestamp
         cursor = (before, before_id)
@@ -236,6 +257,25 @@ async def task_activity(
     """Newest `limit` items, oldest first. Page back with the first item's (at, id) as the cursor."""
     task, _ = await get_task_for(db, user, key)
     return await activity_items(db, task, limit, before, before_id)
+
+
+class ActivityCount(BaseModel):
+    count: int
+
+
+@router.get("/api/tasks/{key}/activity/count")
+async def task_activity_count(
+    key: str,
+    user: AuthedUser,
+    db: DbSession,
+    after: datetime,
+    after_id: uuid.UUID,
+    limit: int = Query(default=100, ge=1, le=100),
+) -> ActivityCount:
+    """How many Activity items came after the (at, id) cursor, up to `limit`: the count on the ↓ button once more
+    have arrived than the live page holds (it shows "99+" from 100)."""
+    task, _ = await get_task_for(db, user, key)
+    return ActivityCount(count=await count_after(db, task, after, after_id, limit))
 
 
 # ---- comments ---------------------------------------------------------------

@@ -10,6 +10,7 @@ const AT_BOTTOM = 4; // px of slack: a fractional scroll position still counts a
 const MAX_EARLIER_PAGES = 10;
 const WAITING = "[data-waiting]";
 const FLASH_MS = 1600;
+const MOST_SHOWN = 99; // the ↓ count shows "99+" past this
 const flashes = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
 
 type Entry = { id: string; at: string };
@@ -91,7 +92,9 @@ export function FollowRoom() {
  * visited in page order. Following stops only when the person scrolls up, and starts again when they reach the
  * bottom themselves.
  *
- * `activity` is the live Activity page, oldest first: what arrives while not following is counted on ↓.
+ * `activity` is the live Activity page, oldest first: what arrives while not following is counted on ↓, shown as
+ * "99+" past 99. Once the page has moved past the newest entry the person saw, it no longer holds everything that
+ * came after it: `countAfter` asks the server how many came after that entry (at, id).
  * `expectQuestion` with `loadEarlier`: an agent question waits on the person but may be older than the loaded
  * Activity; it counts, and jumping to it loads earlier pages until it shows.
  * `startFollowing`: open at the latest, following (a chat, which is read from its newest message).
@@ -105,6 +108,7 @@ export function JumpButtons({
   lift = NO_LIFT,
   startFollowing = false,
   jumpRef,
+  countAfter,
 }: {
   scrollRef: RefObject<HTMLElement | null>;
   activity: Entry[];
@@ -114,6 +118,8 @@ export function JumpButtons({
   lift?: Lift;
   startFollowing?: boolean;
   jumpRef?: RefObject<(() => void) | null>;
+  /** how many Activity entries came after the one at (at, id), counted by the server up to 100 */
+  countAfter?: (at: string, id: string) => Promise<number>;
 }) {
   const subscribe = useCallback(
     (onChange: () => void) => {
@@ -150,7 +156,7 @@ export function JumpButtons({
   );
   const [nearTop, atBottom, marked, question] = reading.split(" ");
 
-  const newest = activity.length ? activity[activity.length - 1].at : null;
+  const newest = activity.length ? activity[activity.length - 1] : null;
   const newestRef = useRef(newest);
   useEffect(() => {
     newestRef.current = newest;
@@ -159,11 +165,11 @@ export function JumpButtons({
   const [following, setFollowingState] = useState(startFollowing);
   const followingRef = useRef(startFollowing);
   // the newest entry the person has seen: what came after it, while not following, is counted on ↓
-  const [seenAt, setSeenAt] = useState(newest);
+  const [seen, setSeen] = useState(newest);
   const follow = useCallback((on: boolean) => {
     followingRef.current = on;
     setFollowingState(on);
-    setSeenAt(newestRef.current);
+    setSeen(newestRef.current);
   }, []);
 
   // only the person's own scrolling decides: up stops following, reaching the bottom starts it again. The page
@@ -204,7 +210,26 @@ export function JumpButtons({
 
   const missingQuestion = expectQuestion && !!loadEarlier && question !== "question";
   const waiting = Number(marked) + (missingQuestion ? 1 : 0);
-  const unseen = following || !seenAt ? 0 : activity.filter((a) => Date.parse(a.at) > Date.parse(seenAt)).length;
+  const seenTime = seen ? Date.parse(seen.at) : null;
+  const loaded = following || seenTime === null ? 0 : activity.filter((a) => Date.parse(a.at) > seenTime).length;
+  // every loaded entry is newer than the seen one: more may have come than the live page holds
+  const beyond = !following && seenTime !== null && activity.length > 0 && Date.parse(activity[0].at) > seenTime;
+  const [counted, setCounted] = useState<{ after: string; count: number } | null>(null);
+  const known = beyond && seen && counted?.after === seen.id ? counted.count : 0;
+  const newestAt = newest?.at;
+  useEffect(() => {
+    if (!beyond || !seen || !countAfter || known > MOST_SHOWN) return;
+    let live = true;
+    countAfter(seen.at, seen.id).then(
+      (count) => live && setCounted({ after: seen.id, count }),
+      () => {}, // the loaded count stands
+    );
+    return () => {
+      live = false;
+    };
+  }, [beyond, seen, countAfter, known, newestAt]);
+  const unseen = Math.max(loaded, known);
+  const unseenText = unseen > MOST_SHOWN ? `${MOST_SHOWN}+` : String(unseen);
 
   const next = useRef(0);
   const jumpToWaiting = async () => {
@@ -248,7 +273,7 @@ export function JumpButtons({
   const round =
     "pointer-events-auto relative flex size-9 items-center justify-center rounded-full border bg-surface shadow-lg transition-colors hover:border-cyan";
   const bottom = `calc(1rem + ${lift.right}px)`;
-  const downLabel = unseen ? `Go to the latest and follow (${unseen} new)` : "Go to the latest and follow";
+  const downLabel = unseen ? `Go to the latest and follow (${unseenText} new)` : "Go to the latest and follow";
   return (
     <>
       {following && (
@@ -294,7 +319,7 @@ export function JumpButtons({
                   aria-hidden
                   className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-cyan px-1 text-[11px] font-bold text-on-accent"
                 >
-                  {unseen}
+                  {unseenText}
                 </span>
               )}
             </button>
