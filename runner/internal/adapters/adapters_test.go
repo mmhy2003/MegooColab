@@ -81,6 +81,25 @@ func TestDefaultSpecs(t *testing.T) {
 	}
 }
 
+// A run ends with the agent's turn, and a background command ends with it, unread: Claude Code keeps every command
+// in the foreground, with room for an hour-long test suite.
+func TestClaudeCodeKeepsLongCommandsInTheForeground(t *testing.T) {
+	want := []string{"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1", "BASH_DEFAULT_TIMEOUT_MS=1800000", "BASH_MAX_TIMEOUT_MS=10800000"}
+	for _, goos := range []string{"linux", "windows"} {
+		s, err := forOS(goos, "claude_code", noEnv, lookAll)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(s.Env, want) {
+			t.Fatalf("%s: claude env = %v, want %v", goos, s.Env, want)
+		}
+	}
+	s, _ := forOS("linux", "codex", noEnv, lookAll)
+	if len(s.Env) != 0 {
+		t.Fatalf("codex env = %v, want none", s.Env)
+	}
+}
+
 func TestWindowsUsesNpxCmd(t *testing.T) {
 	s, err := forOS("windows", "codex", noEnv, lookAll)
 	if err != nil {
