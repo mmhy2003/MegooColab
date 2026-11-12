@@ -298,6 +298,11 @@ async def _approved_body(db: AsyncSession, task_id: uuid.UUID, kind: DocKind) ->
     )
 
 
+def _git_state(state) -> dict:
+    """A git state as stored: `uncommitted` only when the runner said (an older one can't)."""
+    return state.model_dump(mode="json", exclude={"uncommitted"} if state.uncommitted is None else None)
+
+
 async def _v2_start_fields(db: AsyncSession, run: AgentRun, task: Task, task_key: str) -> dict:
     """The run_start fields for a workflow run. Issues the run's MCP token: the caller holds the run row
     lock and sends right after, and must clear the hash again if the send fails."""
@@ -309,6 +314,7 @@ async def _v2_start_fields(db: AsyncSession, run: AgentRun, task: Task, task_key
         "resume_session_id": run.resume_session_ref,
         "resume_prompt": run.resume_prompt,
         "mcp": McpAccess(url=get_settings().public_url.rstrip("/") + "/api/mcp", token=issue_run_token(run)),
+        "report_uncommitted": True,
     }
     design = plan = None
     if role in DOC_ROLES:
@@ -1076,9 +1082,9 @@ async def finish_run(
         if finished.session_id:
             run.session_ref = finished.session_id
         if finished.git_before is not None:
-            run.git_before = finished.git_before.model_dump(mode="json")
+            run.git_before = _git_state(finished.git_before)
         if finished.git_after is not None:
-            run.git_after = finished.git_after.model_dump(mode="json")
+            run.git_after = _git_state(finished.git_after)
     if run.status == RunStatus.running:
         reason = None
         if outcome == "failed":

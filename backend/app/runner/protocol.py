@@ -82,7 +82,11 @@ class RunUpdate(_FromRunner):
 class GitState(_FromRunner):
     head: str | None = Field(default=None, pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")  # SHA-1 or SHA-256 repos
     branch: Annotated[str, _trunc(200)] | None = None
+    # anything the run changed, ignored files included (R1's question); in a git_before, what status shows
     dirty: bool
+    # git_after only, from a runner asked with run_start.report_uncommitted: whether `git status` shows changes nobody
+    # committed when the run ended. None: the runner is too old to say.
+    uncommitted: bool | None = None
 
 
 class RunFinished(_FromRunner):
@@ -345,6 +349,8 @@ class RunStart(BaseModel):
     secrets: list[RunSecret] = []
     # only for a cron's run, to a runner with crons/1
     cron: RunCron | None = None
+    # a workflow run: report git_after.uncommitted (an older runner ignores it and never sends the field)
+    report_uncommitted: bool = False
 
     @field_validator("files")
     @classmethod

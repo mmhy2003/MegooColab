@@ -980,7 +980,9 @@ REVIEW_OF_WORK = {RunRole.step_review: RunRole.step_fix, RunRole.final_review: R
 
 
 def left_uncommitted(run: AgentRun) -> bool:
-    return bool((run.git_after or {}).get("dirty"))
+    # not git_after.dirty: that is anything the run changed, a __pycache__ it made or removed included. A runner
+    # too old to say leaves the work to the review, as before.
+    return (run.git_after or {}).get("uncommitted") is True
 
 
 def is_commit_run(run: AgentRun) -> bool:

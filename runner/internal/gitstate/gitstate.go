@@ -383,9 +383,11 @@ func exitIsOne(err error) bool {
 // assume-unchanged files, the stash, the branch HEAD is on, or the git config,
 // attributes and exclude files. Edits that were already there, left by
 // an earlier run, do not count. With no baseline only after's own state is
-// known.
+// known. Uncommitted is after's own state either way: what status shows.
 func After(before *Snapshot, after Snapshot) protocol.GitState {
 	st := after.State
+	uncommitted := after.State.Dirty // Read's own: status shows changes, .megoocolab/ aside
+	st.Uncommitted = &uncommitted
 	if before != nil {
 		st.Dirty = before.working != after.working || before.ignored != after.ignored ||
 			before.flagged != after.flagged || before.stash != after.stash ||
