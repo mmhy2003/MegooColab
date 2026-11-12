@@ -898,6 +898,31 @@ func TestRunFinishedCarriesGitStates(t *testing.T) {
 	}
 }
 
+// git_after says whether changes were left uncommitted only when the run_start asks: a server that doesn't ask
+// refuses fields it doesn't know.
+func TestGitAfterReportsUncommittedOnlyWhenAsked(t *testing.T) {
+	cache := t.TempDir()
+	e := newEnvWithCache(t, `[{"write":{"path":`+jsonStr(filepath.Join(cache, "worktrees", "agent-1", "MEG-12", "left.txt"))+
+		`,"content":"x"}},{"say":"done"}]`, 2, cache)
+	e.startRunWith("run-asked", "MEG-12", func(rs *protocol.RunStart) { rs.ReportUncommitted = true })
+	rf := e.finished("run-asked")
+	if rf.GitAfter == nil || rf.GitAfter.Uncommitted == nil || !*rf.GitAfter.Uncommitted {
+		t.Fatalf("asked: git_after = %+v, want uncommitted true", rf.GitAfter)
+	}
+
+	e.startRun("run-unasked", "MEG-13", "workspace")
+	rf = e.finished("run-unasked")
+	if rf.GitAfter == nil || rf.GitAfter.Uncommitted != nil {
+		t.Fatalf("not asked: git_after = %+v, want no uncommitted", rf.GitAfter)
+	}
+	for _, f := range e.srv.Frames() {
+		if f.Type == protocol.TypeRunFinished && strings.Contains(string(f.Raw), `"run-unasked"`) &&
+			strings.Contains(string(f.Raw), "uncommitted") {
+			t.Fatalf("not asked, yet sent: %s", f.Raw)
+		}
+	}
+}
+
 func TestWorkflowRunMaterializesFilesAndCommitsDocsBeforeGitBefore(t *testing.T) {
 	scenario := `[{"report_file":{"path":".megoocolab/plan.md"}},{"commit":{"message":"agent work"}}]`
 	e := newEnvWithCache(t, scenario, 1, t.TempDir())

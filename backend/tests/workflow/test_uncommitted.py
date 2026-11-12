@@ -12,11 +12,21 @@ from tests.workflow.test_engine import SHA_A, SHA_B, _events, _finish, _started,
 from tests.workflow.test_review_done import _final_review
 
 DIRTY = {"git_before": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": False},
-         "git_after": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": True}}
+         "git_after": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": True, "uncommitted": True}}
 STILL_DIRTY = {"git_before": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": True},
-               "git_after": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": True}}
+               "git_after": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": True, "uncommitted": True}}
 COMMITTED = {"git_before": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": True},
-             "git_after": {"head": SHA_B, "branch": "megoo/PAY-1", "dirty": False}}
+             "git_after": {"head": SHA_B, "branch": "megoo/PAY-1", "dirty": False, "uncommitted": False}}
+# GH-72: the step was committed, but the run made (or removed) files git ignores, a __pycache__: the run changed
+# something (dirty), and nothing is left uncommitted
+IGNORED_ONLY = {"git_before": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": False},
+                "git_after": {"head": SHA_B, "branch": "megoo/PAY-1", "dirty": True, "uncommitted": False}}
+# a commit run that found nothing to commit and deleted those ignored files
+CLEANED_UP = {"git_before": {"head": SHA_B, "branch": "megoo/PAY-1", "dirty": False},
+              "git_after": {"head": SHA_B, "branch": "megoo/PAY-1", "dirty": True, "uncommitted": False}}
+# a runner from before git_after.uncommitted: it can't say, so nothing is sent back
+OLD_RUNNER = {"git_before": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": False},
+              "git_after": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": True}}
 MARK = "You left changes in the worktree uncommitted"
 
 
@@ -85,6 +95,36 @@ async def test_a_clean_step_goes_straight_to_review(db, tc_factory):
     b, run = await _building(db, tc)
     await _complete(run)
     await _finish(b.manager.id, run, "completed", session_id="impl-1", **_git(SHA_A, SHA_B))
+    assert (await _last(b.task_id)).workflow_role == "step_review"
+    assert await _events(b.task_id, "workflow.uncommitted") == []
+
+
+async def test_ignored_files_a_committed_step_made_are_not_uncommitted_work(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _building(db, tc)
+    await _complete(run)
+    await _finish(b.manager.id, run, "completed", session_id="impl-1", **IGNORED_ONLY)
+    assert (await _last(b.task_id)).workflow_role == "step_review"
+    assert await _events(b.task_id, "workflow.uncommitted") == []
+
+
+async def test_a_commit_run_that_only_removed_ignored_files_goes_on_to_review(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _building(db, tc)
+    await _complete(run)
+    await _finish(b.manager.id, run, "completed", session_id="impl-1", **DIRTY)
+    commit = await _last(b.task_id)
+    assert MARK in commit.resume_prompt
+    await _finish(b.manager.id, commit, "completed", session_id="impl-1", **CLEANED_UP)
+    assert (await _wf(b.task_id)).escalation_reason is None
+    assert (await _last(b.task_id)).workflow_role == "step_review"
+
+
+async def test_an_older_runner_that_cant_say_goes_on_to_review(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _building(db, tc)
+    await _complete(run)
+    await _finish(b.manager.id, run, "completed", session_id="impl-1", **OLD_RUNNER)
     assert (await _last(b.task_id)).workflow_role == "step_review"
     assert await _events(b.task_id, "workflow.uncommitted") == []
 
