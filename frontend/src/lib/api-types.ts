@@ -1547,6 +1547,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{key}/activity/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Task Activity Count
+         * @description How many Activity items came after the (at, id) cursor, up to `limit`: the count on the ↓ button once more
+         *     have arrived than the live page holds (it shows "99+" from 100).
+         */
+        get: operations["task_activity_count_api_tasks__key__activity_count_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{key}/comments": {
         parameters: {
             query?: never;
@@ -1650,10 +1671,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /**
-         * Delete Sprint
-         * @description Its tasks lose the sprint (ON DELETE SET NULL): open ones are back in the backlog. Its snapshots go with it.
-         */
+        /** Delete Sprint */
         delete: operations["delete_sprint_api_sprints__sprint_id__delete"];
         options?: never;
         head?: never;
@@ -3978,6 +3996,11 @@ export interface components {
              * @default
              */
             description: string;
+        };
+        /** ActivityCount */
+        ActivityCount: {
+            /** Count */
+            count: number;
         };
         /** ActivityItem */
         ActivityItem: {
@@ -12149,6 +12172,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActivityItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    task_activity_count_api_tasks__key__activity_count_get: {
+        parameters: {
+            query: {
+                after: string;
+                after_id: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityCount"];
                 };
             };
             /** @description Validation Error */

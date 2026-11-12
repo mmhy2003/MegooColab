@@ -159,18 +159,20 @@ async def test_run_finished_stores_session_and_git_state(db, tc_factory):
     with tc.websocket_connect(URL, headers=token["headers"]) as ws:
         ws.receive_json()
         ws.send_json(_hello_v2(agent))
-        assert ws.receive_json()["run_id"] == run["id"]
+        start = ws.receive_json()
+        # a workflow run asks whether changes were left uncommitted (git_after.uncommitted)
+        assert start["run_id"] == run["id"] and start["report_uncommitted"] is True
         ws.send_json({
             "type": "run_finished", "run_id": run["id"], "outcome": "completed", "summary": "done",
             "session_id": "acp-session-9",
             "git_before": {"head": SHA, "branch": "megoo/PAY-1", "dirty": False},
-            "git_after": {"head": "b" * 40, "branch": None, "dirty": True},
+            "git_after": {"head": "b" * 40, "branch": None, "dirty": True, "uncommitted": False},
         })
         _wait_run(tc, task, run["id"], "completed")
     row = await _row(db, run["id"])
     assert row.session_ref == "acp-session-9"
-    assert row.git_before == {"head": SHA, "branch": "megoo/PAY-1", "dirty": False}
-    assert row.git_after == {"head": "b" * 40, "branch": None, "dirty": True}
+    assert row.git_before == {"head": SHA, "branch": "megoo/PAY-1", "dirty": False}  # never asked of git_before
+    assert row.git_after == {"head": "b" * 40, "branch": None, "dirty": True, "uncommitted": False}
 
 
 async def test_run_finished_rejects_bad_git_state(db, tc_factory):
@@ -470,7 +472,7 @@ def test_v2_start_fields_are_exactly_the_non_v1_fields():
 
     assert V2_START_FIELDS == {
         "role", "stage", "step", "resume_session_id", "resume_prompt", "mcp", "files", "repo_files", "commit_message",
-        "images", "draft", "secrets", "cron",
+        "images", "draft", "secrets", "cron", "report_uncommitted",
     }
 
 

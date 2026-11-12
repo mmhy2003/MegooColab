@@ -121,6 +121,10 @@ type GitState struct {
 	Head   *string `json:"head"`
 	Branch *string `json:"branch"`
 	Dirty  bool    `json:"dirty"`
+	// Uncommitted, in a git_after only and only when the run_start asked (report_uncommitted): whether `git status`
+	// shows changes nobody committed when the run ends, .megoocolab/ aside. Dirty is broader: anything the run
+	// changed, ignored files included. A server that doesn't ask would refuse the field.
+	Uncommitted *bool `json:"uncommitted,omitempty"`
 }
 
 // RunFinished ends a run. Outcome is completed, failed or cancelled.
@@ -242,6 +246,10 @@ type RunStart struct {
 
 	// Only a cron's run (capability crons/1).
 	Cron *RunCron `json:"cron,omitempty"`
+
+	// ReportUncommitted asks for git_after.uncommitted. Sent by a server that takes the field; an older one leaves
+	// it out and is never sent the field.
+	ReportUncommitted bool `json:"report_uncommitted,omitempty"`
 }
 
 // RunCron names the cron a run belongs to and the branch its worktree is reset to.

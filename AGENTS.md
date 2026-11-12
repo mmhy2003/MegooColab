@@ -48,9 +48,12 @@ and [docs/releasing.md](docs/releasing.md) is the full reference for releases.
   `uv run alembic downgrade -1 && uv run alembic upgrade head`.
 - **Runner** (`runner/`): `go test ./...`.
 - **Browser tests** (Playwright, `frontend/e2e/`): run them on a freshly built stack before merging a change to the
-  app. The dev Caddy holds port 8080, so stop it first and start it again afterwards:
+  app. The dev Caddy holds port 8080, so stop it first and start it again afterwards. `BUILDX_BAKE_ENTITLEMENTS_FS=0`
+  is needed on Windows: without it, recent Docker versions stop the build to ask for permission to read
+  `backend\Dockerfile`.
 
   ```bash
+  export BUILDX_BAKE_ENTITLEMENTS_FS=0
   C="docker compose -p megoo-e2e -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml --env-file .superpowers/e2e.env"
   docker stop megoocolab-dev-caddy-1
   $C down -v; $C up -d --build --wait

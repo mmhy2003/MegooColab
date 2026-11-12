@@ -811,6 +811,9 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 					return
 				}
 			}
+			if !rs.ReportUncommitted { // a server that didn't ask would refuse the field
+				st.Uncommitted = nil
+			}
 			r.mu.Lock()
 			r.gitAfter = &st
 			r.mu.Unlock()
