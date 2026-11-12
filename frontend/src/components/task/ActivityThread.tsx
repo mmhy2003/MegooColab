@@ -378,6 +378,24 @@ function when(at: string): string {
   return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+/** A row's time on a phone: in the line, after the name or the text, so what is below gets the whole width. */
+function PhoneTime({ at }: { at: string }) {
+  // the space before it lets the line break there, not inside the words before it
+  return (
+    <>
+      {" "}
+      <span data-time="phone" className="whitespace-nowrap sm:hidden">
+        · {when(at)}
+      </span>
+    </>
+  );
+}
+
+/** A row's time from sm up: in its own column on the right. */
+function WideTime({ at }: { at: string }) {
+  return <span data-time="wide" className="ml-auto whitespace-nowrap max-sm:hidden">{when(at)}</span>;
+}
+
 export function ActivityThread({
   items,
   columnNames,
@@ -491,7 +509,17 @@ export function ActivityThread({
         const runSummary = kind === "agent_run_completed" ? str(data.summary)?.trim() : undefined;
         return (
           <EventRow key={item.id} at={item.at} lead={STANDALONE.has(kind) ? null : who} text={text} docKind={docKind} docVersion={num(data.version)}
-            images={item.images}>
+            images={item.images}
+            below={
+              <>
+                {fixSummary && (
+                  <div data-fix-summary className="mt-1 border-l-2 border-line pl-2 text-fg max-sm:-ml-3.5">
+                    <Markdown compact>{fixSummary}</Markdown>
+                  </div>
+                )}
+                {runSummary && !repliedRun(runSummary) && <ReplyBox data-run-summary text={runSummary} />}
+              </>
+            }>
             <ChatOrigin chat={data.chat} />
             {isSafeUrl(prUrl) && (
               <>
@@ -502,12 +530,6 @@ export function ActivityThread({
               </>
             )}
             {reviewId && <ReviewResult taskKey={taskKey} reviewId={reviewId} total={findingTotal(data)} />}
-            {fixSummary && (
-              <div data-fix-summary className="mt-1 border-l-2 border-line pl-2 text-fg">
-                <Markdown compact>{fixSummary}</Markdown>
-              </div>
-            )}
-            {runSummary && !repliedRun(runSummary) && <ReplyBox data-run-summary text={runSummary} />}
           </EventRow>
         );
       })}
@@ -525,6 +547,7 @@ function EventRow({
   docVersion = 0,
   images = [],
   children,
+  below,
 }: {
   at: string;
   text: string;
@@ -536,6 +559,8 @@ function EventRow({
   /** sent with it: a change request's */
   images?: ImageRef[];
   children?: React.ReactNode;
+  /** under the line, as wide as the row allows: a summary in a box */
+  below?: React.ReactNode;
 }) {
   return (
     <li className={`flex items-start gap-2 pl-1 text-xs ${violation ? "text-pink" : "text-muted-foreground"}`}>
@@ -544,13 +569,18 @@ function EventRow({
       ) : (
         <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan" />
       )}
-      <span className="min-w-0 break-words">
-        {lead && <span className="text-fg">{lead} </span>}
-        {docKind ? <DocText text={text} kind={docKind} version={docVersion} /> : text}
-        {children}
+      <span className="min-w-0 flex-1 break-words">
+        {/* the line's own words in one element, the phone's time after it */}
+        <span>
+          {lead && <span className="text-fg">{lead} </span>}
+          {docKind ? <DocText text={text} kind={docKind} version={docVersion} /> : text}
+          {children}
+        </span>
+        <PhoneTime at={at} />
         <ImageGallery images={images} />
+        {below}
       </span>
-      <span className="ml-auto whitespace-nowrap">{when(at)}</span>
+      <WideTime at={at} />
     </li>
   );
 }
@@ -562,10 +592,13 @@ function AgentReplyRow({ at, who, text }: { at: string; who: string; text: strin
     <li data-agent-reply className="flex items-start gap-2 pl-1 text-xs text-muted-foreground">
       <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan" />
       <div className="min-w-0 flex-1">
-        <span className="text-fg">{who}</span>
+        <p>
+          <span className="text-fg">{who}</span>
+          <PhoneTime at={at} />
+        </p>
         <ReplyBox text={text} />
       </div>
-      <span className="ml-auto whitespace-nowrap">{when(at)}</span>
+      <WideTime at={at} />
     </li>
   );
 }
@@ -585,10 +618,14 @@ const GIT_ICON: Record<GitLine["icon"], { Icon: typeof GitMerge; tone: string }>
 
 /** A pull request or branch event: who (an agent tagged as one), what (linked to the host), the host, and an
  * excerpt quoted as plain text. */
-/** An agent's own words, as Markdown in a box with a cyan edge. */
+/** An agent's own words, as Markdown in a box with a cyan edge. On a phone the box starts under the row's dot, so
+ * the words get the whole width. */
 function ReplyBox({ text, ...rest }: { text: string; "data-run-summary"?: boolean }) {
   return (
-    <div {...rest} className="mt-1 rounded-r border-l-2 border-cyan bg-surface-2/70 px-3 py-0.5 text-fg">
+    <div
+      {...rest}
+      className="mt-1 rounded-r border-l-2 border-cyan bg-surface-2/70 px-3 py-0.5 text-fg max-sm:-ml-3.5 max-sm:px-2.5 max-sm:[&_li]:ml-4"
+    >
       <Markdown compact>{text}</Markdown>
     </div>
   );
@@ -631,14 +668,15 @@ function GitEventRow({ at, line }: { at: string; line: GitLine }) {
         )}
         {line.host && <span className="ml-1.5 rounded border border-line px-1 text-[0.65rem]">{line.host}</span>}
         {line.detail && <span className="ml-1.5">{line.detail}</span>}
+        <PhoneTime at={at} />
         {(line.quote || line.where) && (
-          <span className="mt-1 block border-l-2 border-line pl-2">
+          <span data-git-excerpt className="mt-1 block border-l-2 border-line pl-2 max-sm:-ml-5">
             {line.where && <span className="mr-1 font-mono">{line.where}</span>}
             {line.quote}
           </span>
         )}
       </span>
-      <span className="ml-auto whitespace-nowrap">{when(at)}</span>
+      <WideTime at={at} />
     </li>
   );
 }
