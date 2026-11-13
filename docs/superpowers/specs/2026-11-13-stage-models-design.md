@@ -1,6 +1,6 @@
 # A model and effort for each workflow stage — design
 
-Status: draft for the owner's approval · 2026-11-13. The owner chose the placement (on the agent) from a mockup.
+Status: approved by the owner on 2026-11-13. The owner chose the placement (on the agent) from a mockup and approved this document, including the table in mockup A.
 Calls marked *(my call)* were made while writing this up.
 
 ## Why
