@@ -293,6 +293,22 @@ async def test_working_roles_run_long_commands_in_the_foreground(client, db):
         assert words in context.FOREGROUND_NOTE
 
 
+async def test_every_role_checks_library_docs_in_the_kb_then_context7(client, db):
+    """What an agent remembers about a library may be out of date: every session is told to look in the Knowledge
+    Base first, then in Context7 when it has Context7's tools, after the session note."""
+    task = await _setup(client, db)
+    for role in RunRole:
+        if role == RunRole.freestyle:
+            continue  # a chat's task; built the same way (test_chats)
+        prompt, _ = await context.build_prompt(db, task, role)
+        note = context.READ_ONLY_NOTE if role in (RunRole.brainstorm, RunRole.plan, RunRole.step_review,
+                                                   RunRole.final_review) else context.FOREGROUND_NOTE
+        assert prompt.index(context.DOCS_NOTE) == prompt.index(note) + len(note) + 2, role
+    for words in ("Knowledge Base first", "kb_search", "Context7", "resolve-library-id", "query-docs",
+                  "out of date", "carry on without it"):
+        assert words in context.DOCS_NOTE, words
+
+
 def test_work_nudge_names_the_background_mistake():
     from app.workflow import build
 

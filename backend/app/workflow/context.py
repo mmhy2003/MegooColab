@@ -89,6 +89,16 @@ when it finishes, and its result is never read. Run long commands, such as a ful
 and wait for them. If your shell tool takes a time limit, give the command one long enough for it to finish (up to
 3 hours). Never end your turn to wait for a command."""
 
+# What an agent remembers about a library may be out of date. Context7 (an MCP server a person may add through the
+# Tool Hub) serves current library documentation; a session that doesn't have it carries on without it.
+DOCS_NOTE = """## Library documentation
+When you need facts about a library, framework, SDK, API or command-line tool (how to call or configure it, what
+changed between versions), look in the Knowledge Base first (kb_search). If it doesn't answer and you have
+Context7's tools, use them next: resolve-library-id to find the library, then query-docs with what you need to
+know. Do this even for well-known libraries: what you remember may be out of date. Context7 covers libraries and
+tools, not this project's own code.
+If you don't have Context7's tools, or a call of one is refused, carry on without it."""
+
 
 def _escape(text: str) -> str:
     """Neutralise text for the prompt: drop Unicode format (Cf) characters, escape every angle bracket."""
@@ -284,6 +294,7 @@ async def build_prompt(
     def render() -> str:
         parts = [meth.body_md.rstrip()]
         parts.append(READ_ONLY_NOTE if role in READ_ONLY_ROLES else FOREGROUND_NOTE)
+        parts.append(DOCS_NOTE)
         desc_note = "\n(Description truncated to fit the prompt size limit.)" if "desc" in notes else ""
         parts.append(
             f"## Task {key}\n"

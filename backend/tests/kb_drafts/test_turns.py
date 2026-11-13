@@ -42,6 +42,9 @@ async def test_request_queues_a_read_only_draft_run(client, db, world):
     assert second.resume_session_ref == "s1" and second.draft_request["target"] == target
     assert "shorten this" in second.resume_prompt and "Prerequisites" in second.resume_prompt
     assert "kb_draft_read" in second.prompt
+    from app.workflow.context import DOCS_NOTE
+
+    assert DOCS_NOTE in second.prompt
 
 
 async def test_second_request_while_writing_is_409(client, db, world):
