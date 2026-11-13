@@ -157,7 +157,7 @@ async def test_kb_section_is_trimmed_before_the_thread(client, db, monkeypatch):
     task, _, org, _ = await _world(client, db)
     await _doc(client, db, org.id, "Webhook secrets", "Rotate webhook secrets. " * 300)
     kb_context.register()
-    monkeypatch.setattr(context, "MAX_PROMPT_CHARS", 9_000)
+    monkeypatch.setattr(context, "MAX_PROMPT_CHARS", 9_000 + len(context.DOCS_NOTE) + 2)  # room for the fixed notes
     task.description_md = "Webhook secrets expire. " * 200
     await db.commit()
     prompt, _ = await context.build_prompt(db, task, RunRole.brainstorm)
