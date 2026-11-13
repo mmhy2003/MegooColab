@@ -294,6 +294,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "model": a.model,
             "effort": a.effort,
             "known_models": (a.known_models or []) if a.owner_id == viewer.id else [],
+            "stage_models": a.stage_models or {},
         }
         for a in agents
     ]
