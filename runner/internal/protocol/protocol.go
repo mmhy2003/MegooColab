@@ -85,6 +85,10 @@ const CapabilitySecrets = "secrets/1"
 // in the cron's own worktree, reset to the project's default branch before and after the run.
 const CapabilityCrons = "crons/1"
 
+// CapabilityStageModel is advertised in every hello: the runner takes run_start.model_choice, a run's own model and
+// effort (its workflow stage's), and puts even a resumed session on them.
+const CapabilityStageModel = "stagemodel/1"
+
 // Outcomes of a run_steer.
 const (
 	SteerInjected    = "injected"    // the agent has it, in its running turn
@@ -250,6 +254,17 @@ type RunStart struct {
 	// ReportUncommitted asks for git_after.uncommitted. Sent by a server that takes the field; an older one leaves
 	// it out and is never sent the field.
 	ReportUncommitted bool `json:"report_uncommitted,omitempty"`
+
+	// ModelChoice is the model and effort of this run's workflow stage (capability stagemodel/1), in place of the
+	// agent's. nil: the agent's, as before.
+	ModelChoice *RunModelChoice `json:"model_choice,omitempty"`
+}
+
+// RunModelChoice is the model and effort a run starts on, applied also to a resumed session. Model "" is the
+// program's starting model (what a new session starts on); Effort "" is the chosen model's default effort.
+type RunModelChoice struct {
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
 }
 
 // RunCron names the cron a run belongs to and the branch its worktree is reset to.
@@ -319,7 +334,7 @@ func NewHello(version, os, arch string, agents []AgentAvailability) Hello {
 		}
 		out[i] = a
 	}
-	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages, CapabilityDrafts, CapabilitySecrets, CapabilityCrons}}
+	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages, CapabilityDrafts, CapabilitySecrets, CapabilityCrons, CapabilityStageModel}}
 }
 
 // NewHeartbeat builds a heartbeat.

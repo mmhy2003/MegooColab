@@ -26,6 +26,8 @@ from app.runner.registry import (
     MODEL_PROBLEM,
     OMP_CAPABILITY,
     OMP_PROBLEM,
+    STAGE_MODEL_CAPABILITY,
+    STAGE_MODEL_PROBLEM,
     WORKFLOW_CAPABILITY,
     WORKFLOW_PROBLEM,
     registry,
@@ -96,7 +98,8 @@ def runner_info(agent_id: uuid.UUID) -> RunnerInfo | None:
 
 
 def agent_problems(
-    agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, chooses: bool = False, program: str | None = None
+    agent_id: uuid.UUID, owner_id: uuid.UUID, viewer: User, chooses: bool = False, program: str | None = None,
+    stages: bool = False,
 ) -> list[str]:
     """What its machine's live runner reports as wrong with the agent (shown to the owner and admins only),
     plus the server's own too-old-runner notices (shown to everyone who can see the agent)."""
@@ -113,6 +116,8 @@ def agent_problems(
         problems.append(MODEL_PROBLEM)
     if program == AgentProgram.omp and OMP_CAPABILITY not in conn.capabilities:
         problems.append(OMP_PROBLEM)
+    if stages and STAGE_MODEL_CAPABILITY not in conn.capabilities:  # a stage with a model or effort of its own
+        problems.append(STAGE_MODEL_PROBLEM)
     return problems
 
 
@@ -287,13 +292,16 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "owner": UserOut.model_validate(owners[a.owner_id]),
             "status": statuses[a.id],
             "running": running.get(a.id, 0),
-            "problems": agent_problems(a.id, a.owner_id, viewer, bool(a.model or a.effort), a.program),
+            "problems": agent_problems(
+                a.id, a.owner_id, viewer, bool(a.model or a.effort), a.program, stages=bool(a.stage_models)
+            ),
             "bindings": bindings.get(a.id, []),
             "runner": runner_info(a.id),
             "machine": _machine(tokens.get(a.runner_token_id), a.owner_id, viewer),
             "model": a.model,
             "effort": a.effort,
             "known_models": (a.known_models or []) if a.owner_id == viewer.id else [],
+            "stage_models": a.stage_models or {},
         }
         for a in agents
     ]

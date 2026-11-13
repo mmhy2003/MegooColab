@@ -35,6 +35,7 @@ type openedSession struct {
 	modes   *acp.SessionModeState
 	options []acp.SessionConfigOption // its configuration, the model selector among them
 	prompt  string
+	resumed bool // a stored session continued, which may be on a model an earlier run chose
 }
 
 // sessionRequest is what opening a session needs.
@@ -47,6 +48,9 @@ type sessionRequest struct {
 	meta    map[string]any
 	servers []acp.McpServer
 	log     io.Writer
+	// fresh: start a new session even when the run asks to resume one (the model to go back to is not known yet)
+	fresh   bool
+	program string
 }
 
 // openSession resumes the stored session when the run asks for it and the agent
@@ -55,7 +59,12 @@ type sessionRequest struct {
 // so the new session still gets it.
 func openSession(ctx context.Context, q sessionRequest) (openedSession, error) {
 	prompt := q.rs.Prompt
-	if q.rs.ResumeSessionID != "" {
+	if q.rs.ResumeSessionID != "" && q.fresh {
+		fmt.Fprintf(q.log, "runner: fresh_session: the starting model of %s is not known yet\n", q.program)
+		if q.rs.ResumePrompt != "" {
+			prompt += "\n\n" + q.rs.ResumePrompt
+		}
+	} else if q.rs.ResumeSessionID != "" {
 		s, err := resumeSession(ctx, q)
 		if err == nil {
 			return s, nil
@@ -88,7 +97,7 @@ func resumeSession(ctx context.Context, q sessionRequest) (openedSession, error)
 		if err != nil {
 			return openedSession{}, fmt.Errorf("session/resume: %w", err)
 		}
-		return openedSession{id: id, modes: resp.Modes, options: resp.ConfigOptions, prompt: prompt}, nil
+		return openedSession{id: id, modes: resp.Modes, options: resp.ConfigOptions, prompt: prompt, resumed: true}, nil
 	case q.caps.LoadSession:
 		// The agent replays the old conversation as updates while it loads;
 		// none of it is a run update.
@@ -98,7 +107,7 @@ func resumeSession(ctx context.Context, q sessionRequest) (openedSession, error)
 		if err != nil {
 			return openedSession{}, fmt.Errorf("session/load: %w", err)
 		}
-		return openedSession{id: id, modes: resp.Modes, options: resp.ConfigOptions, prompt: prompt}, nil
+		return openedSession{id: id, modes: resp.Modes, options: resp.ConfigOptions, prompt: prompt, resumed: true}, nil
 	}
 	return openedSession{}, errors.New("the agent supports neither session/resume nor session/load")
 }

@@ -140,6 +140,14 @@ func (a *fakeAgent) begin(event string, id acp.SessionId, cwd string, meta map[s
 	a.mode = "default"
 	a.model = "default"
 	a.effort = "default"
+	if event != "new" { // a program that keeps a continued session's model and effort, as an earlier run left them
+		if m := os.Getenv("FAKEAGENT_RESUME_MODEL"); m != "" {
+			a.model = m
+		}
+		if e := os.Getenv("FAKEAGENT_RESUME_EFFORT"); e != "" {
+			a.effort = e
+		}
+	}
 	a.allowed = allowedTools(meta)
 	a.report.Cwd = cwd
 	if meta != nil {

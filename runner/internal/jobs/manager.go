@@ -74,6 +74,7 @@ type Manager struct {
 	early    []string // run ids cancelled before they started, oldest first
 	reported map[string]string
 	efforts  efforts           // each program's models' effort levels, learned on its first run
+	starts   *starts           // each program's starting model, kept in the cache
 	versions map[string]string // `--version` output by program path, size and time: run once per file
 	closed   bool
 	gen      int // connection generation; bumped by StopAll
@@ -97,6 +98,7 @@ func New(send func(any) error, cacheRoot string) *Manager {
 		runs:        map[string]*run{},
 		reported:    map[string]string{},
 		versions:    map[string]string{},
+		starts:      loadStarts(filepath.Join(cacheRoot, "model-starts.json")),
 	}
 }
 
@@ -897,9 +899,19 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	r.mu.Lock()
 	r.images.blocks = initResp.AgentCapabilities.PromptCapabilities.Image
 	r.mu.Unlock()
+	want := choice{
+		model: agent.Model, effort: agent.Effort, program: agent.Program, efforts: &m.efforts, starts: m.starts, log: logf,
+	}
+	if mc := rs.ModelChoice; mc != nil {
+		want.model, want.effort, want.explicit = mc.Model, mc.Effort, true
+	}
+	// back to the program's own model on a continued session needs that model: not known yet, start a new session
+	_, knownStart := m.starts.get(agent.Program)
+	fresh := want.explicit && want.model == "" && rs.ResumeSessionID != "" && !knownStart
 	sess, err := openSession(r.ctx, sessionRequest{
 		ac: ac, client: client, caps: initResp.AgentCapabilities, rs: rs, cwd: wt,
 		meta: adapters.SessionMeta(agent.Program, kind, tools.PluginDir(m.cacheRoot)), servers: servers, log: logf,
+		fresh: fresh, program: agent.Program,
 	})
 	if err != nil {
 		return fail("session_failed", err)
@@ -907,9 +919,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	r.mu.Lock()
 	r.sessionID = string(sess.id)
 	r.mu.Unlock()
-	if code, err := startModel(r.ctx, ac, sess, choice{
-		model: agent.Model, effort: agent.Effort, program: agent.Program, efforts: &m.efforts,
-	}, r.emit); err != nil {
+	if code, err := startModel(r.ctx, ac, sess, want, r.emit); err != nil {
 		return fail(code, err)
 	}
 	var available []string

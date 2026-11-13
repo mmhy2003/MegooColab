@@ -322,6 +322,14 @@ class RunSecret(BaseModel):
     value: str
 
 
+class RunModelChoice(BaseModel):
+    """A run's own model and effort (its workflow stage's). "" is the program's starting model / the model's default
+    effort: a resumed session is put back on them."""
+
+    model: str = ""
+    effort: str = ""
+
+
 class RunStart(BaseModel):
     type: Literal["run_start"] = "run_start"
     run_id: uuid.UUID
@@ -351,6 +359,8 @@ class RunStart(BaseModel):
     cron: RunCron | None = None
     # a workflow run: report git_after.uncommitted (an older runner ignores it and never sends the field)
     report_uncommitted: bool = False
+    # only to a runner with stagemodel/1, for a workflow run of an agent with stages of their own
+    model_choice: RunModelChoice | None = None
 
     @field_validator("files")
     @classmethod

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import { qk } from "@/lib/queries";
-import type { AgentProgram, AgentRun, AnswerMode, ProjectAgent } from "@/lib/types";
+import type { AgentProgram, AgentRun, AnswerMode, ModelOption, ProjectAgent } from "@/lib/types";
 
 export type AgentStatus = "online" | "busy" | "offline";
 
@@ -34,6 +34,59 @@ export function effortName(value: string): string {
     .split(/[_\s-]+/)
     .map((part) => (part ? part.charAt(0).toUpperCase() + part.slice(1) : part))
     .join(" ");
+}
+
+/** The model the agent offered that a saved name means (its value, its name, or either written as an id); null is
+ * the program's default, which the "default" entry stands for. */
+export function findModel(knownModels: ModelOption[], m: string | null): ModelOption | undefined {
+  if (m === null) return knownModels.find((k) => k.value === "default");
+  return knownModels
+    .filter((k) => k.value !== "default")
+    .find((k) => k.value === m || [k.value, k.name].some((n) => modelKey(n) === modelKey(m)));
+}
+
+/** The effort levels a model offers ("default" aside); an unknown model (typed, or before the agent's first run) may
+ * have any of the usual levels, which the runner checks. */
+export function effortLevels(knownModels: ModelOption[], m: string | null): { value: string; name: string }[] {
+  const entry = findModel(knownModels, m);
+  return entry ? entry.efforts.filter((e) => e.value !== "default") : COMMON_EFFORTS;
+}
+
+/** A level and a saved effort are the same, by value or by name, case and spaces aside. */
+export function sameEffort(level: { value: string; name: string }, effort: string): boolean {
+  return modelKey(level.value) === modelKey(effort) || modelKey(level.name) === modelKey(effort);
+}
+
+/** The workflow stages an agent can give a model and effort of their own (the server's STAGE_ROWS). */
+export type StageKey = "design" | "plan" | "build" | "review" | "finish";
+export type StageModels = Partial<Record<StageKey, { model?: string | null; effort?: string | null }>>;
+
+export const STAGE_ROWS: { key: StageKey; label: string; note?: string }[] = [
+  { key: "design", label: "Design" },
+  { key: "plan", label: "Plan" },
+  { key: "build", label: "Build", note: "steps and their fixes" },
+  { key: "review", label: "Review", note: "step, final and pull request reviews" },
+  { key: "finish", label: "Finish" },
+];
+
+/** The stages with no model of their own whose effort the agent's model (once changed to agentModel) doesn't offer. */
+export function staleStageEfforts(rows: StageModels, knownModels: ModelOption[], agentModel: string | null): StageKey[] {
+  const levels = effortLevels(knownModels, agentModel);
+  return STAGE_ROWS.map((r) => r.key).filter((key) => {
+    const row = rows[key];
+    return !!row && !row.model && !!row.effort && !levels.some((l) => sameEffort(l, row.effort!));
+  });
+}
+
+/** The stages as saved: only the keys set, and no stage with neither. */
+export function cleanStages(rows: StageModels): StageModels {
+  const out: StageModels = {};
+  for (const { key } of STAGE_ROWS) {
+    const row = rows[key];
+    const kept = { ...(row?.model ? { model: row.model } : {}), ...(row?.effort ? { effort: row.effort } : {}) };
+    if (Object.keys(kept).length > 0) out[key] = kept;
+  }
+  return out;
 }
 
 export const ANSWER_MODE_HELP: Record<AnswerMode, string> = {

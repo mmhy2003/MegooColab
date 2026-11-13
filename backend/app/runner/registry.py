@@ -36,6 +36,10 @@ DRAFTS_CAPABILITY = "drafts/1"
 SECRETS_CAPABILITY = "secrets/1"
 # a run start may name a cron (run_start.cron): the runner runs it in the cron's own worktree, reset to the default branch
 CRONS_CAPABILITY = "crons/1"
+# a run start may carry its own model and effort (run_start.model_choice), its workflow stage's: the runner applies them
+# even to a resumed session
+STAGE_MODEL_CAPABILITY = "stagemodel/1"
+STAGE_MODEL_PROBLEM = "runner too old to choose a model per stage — update megoocolab-runner"
 
 
 class RunnerClosed(Exception):

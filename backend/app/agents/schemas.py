@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field
 
@@ -12,6 +12,18 @@ MaxRuns = Annotated[int, Field(ge=1, le=5)]
 ModelName = Annotated[NoNulStr, Field(max_length=100), AfterValidator(lambda v: v.strip() or None)]
 # a thinking effort ("high"); blank is the model's own default
 EffortName = Annotated[NoNulStr, Field(max_length=40), AfterValidator(lambda v: v.strip() or None)]
+
+
+# the workflow stages a model and effort can be chosen for (app.agents.stage_models.STAGE_ROWS)
+StageRow = Literal["design", "plan", "build", "review", "finish"]
+
+
+class StageChoice(BaseModel):
+    """A stage's own model and effort; None: the agent's (or, for an effort with the stage's own model, that
+    model's default)."""
+
+    model: ModelName | None = None
+    effort: EffortName | None = None
 
 
 class AgentIn(BaseModel):
@@ -31,6 +43,7 @@ class AgentPatch(BaseModel):
     runner_token_id: uuid.UUID | None = None  # only when sent: null unlinks
     model: ModelName | None = None  # only when sent: null or blank goes back to the program's default
     effort: EffortName | None = None  # only when sent: null or blank goes back to the model's default
+    stage_models: dict[StageRow, StageChoice] | None = None  # only when sent: replaces them all
 
 
 class BindingIn(BaseModel):
@@ -93,6 +106,7 @@ class AgentOut(BaseModel):
     model: str | None = None  # None: the program's own default
     effort: str | None = None  # None: the model's own default
     known_models: list[ModelOption] = []  # owner only
+    stage_models: dict[str, StageChoice] = {}  # the stages with a model or effort of their own
 
 
 class ProjectAgentOut(AgentOut):

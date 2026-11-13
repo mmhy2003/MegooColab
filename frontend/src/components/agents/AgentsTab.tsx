@@ -10,10 +10,21 @@ import { ModelField } from "@/components/agents/ModelField";
 import { ProjectBindings } from "@/components/agents/ProjectBindings";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { RunsField, runsLabel } from "@/components/agents/RunsField";
+import { StageModelsField } from "@/components/agents/StageModelsField";
 import { Badge } from "@/components/ui/Badge";
 import { ListDetail, ListRow, pickChosen, useChosenParam } from "@/components/ui/ListDetail";
 import { api } from "@/lib/api";
-import { PROGRAM_LABEL } from "@/lib/agents";
+import {
+  PROGRAM_LABEL,
+  STAGE_ROWS,
+  cleanStages,
+  effortLevels,
+  effortName,
+  findModel,
+  sameEffort,
+  staleStageEfforts,
+  type StageModels,
+} from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
 import type { AccessToken, Agent, Project } from "@/lib/types";
 
@@ -33,6 +44,8 @@ function AgentDetails({
   onDeleted: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [stageNote, setStageNote] = useState<string | null>(null);
+  const stages = (agent.stage_models ?? {}) as StageModels;
   const runs = runsLabel(agent.running ?? 0, agent.max_concurrent_runs);
   const patch = async (json: Record<string, unknown>) => {
     setError(null);
@@ -69,7 +82,27 @@ function AgentDetails({
             model={agent.model ?? null}
             effort={agent.effort ?? null}
             knownModels={agent.known_models}
-            onSave={(choice) => patch(choice)}
+            onSave={(choice) => {
+              setStageNote(null);
+              if (choice.model === undefined) return patch(choice);
+              // a stage with only an effort runs on the agent's model: one the new model lacks goes back to As above
+              const stale = staleStageEfforts(stages, agent.known_models, choice.model);
+              if (stale.length === 0) return patch(choice);
+              const name = findModel(agent.known_models, choice.model)?.name ?? choice.model ?? "The program's default model";
+              setStageNote(
+                stale
+                  .map((key) => {
+                    const effort = stages[key]!.effort!;
+                    const level = effortLevels(agent.known_models, agent.model ?? null).find((l) => sameEffort(l, effort));
+                    const stage = STAGE_ROWS.find((r) => r.key === key)!.label;
+                    return `${name} has no ${level?.name ?? effortName(effort)} effort, so ${stage}'s effort went back to As above.`;
+                  })
+                  .join(" "),
+              );
+              const kept: StageModels = { ...stages };
+              for (const key of stale) kept[key] = { ...kept[key], effort: null };
+              return patch({ ...choice, stage_models: cleanStages(kept) });
+            }}
           />
           <RunsField
             key={agent.max_concurrent_runs}
@@ -79,6 +112,17 @@ function AgentDetails({
           />
         </div>
       </div>
+      <StageModelsField
+        agentModel={agent.model ?? null}
+        agentEffort={agent.effort ?? null}
+        knownModels={agent.known_models}
+        value={stages}
+        notice={stageNote}
+        onSave={(rows) => {
+          setStageNote(null);
+          return patch({ stage_models: rows });
+        }}
+      />
       <ProjectBindings agent={agent} projects={projects} onSaved={onChanged} />
     </section>
   );

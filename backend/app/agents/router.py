@@ -88,6 +88,16 @@ async def update_agent(agent_id: uuid.UUID, body: AgentPatch, user: AuthedUser, 
             db, "agent.model_changed", actor_id=user.id, target_type="agent", target_id=agent.id,
             data={"model": agent.model, "effort": agent.effort},
         )
+    if body.stage_models is not None:
+        stages = {row: c.model_dump(exclude_none=True) for row, c in body.stage_models.items()}
+        stages = {row: c for row, c in stages.items() if c}  # a stage with neither runs on the agent's own
+        if stages != (agent.stage_models or {}):
+            # as for the model: a running run keeps what it started on
+            agent.stage_models = stages
+            await audit.record(
+                db, "agent.model_changed", actor_id=user.id, target_type="agent", target_id=agent.id,
+                data={"stage_models": stages},
+            )
     if "runner_token_id" in body.model_fields_set and body.runner_token_id != agent.runner_token_id:
         # a running run belongs to the machine it was sent to: moving the agent would orphan it. The agent row is
         # locked as a dispatch's claim locks it, so a claim in progress commits (and is seen) first.

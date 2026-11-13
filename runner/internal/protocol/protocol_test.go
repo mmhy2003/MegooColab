@@ -92,7 +92,7 @@ func TestWireFieldNames(t *testing.T) {
 
 func TestListsNeverNull(t *testing.T) {
 	data, _ := json.Marshal(NewHello("1", "linux", "amd64", nil))
-	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1","omp/1","images/1","drafts/1","secrets/1","crons/1"]}` {
+	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1","omp/1","images/1","drafts/1","secrets/1","crons/1","stagemodel/1"]}` {
 		t.Fatalf("hello = %s", data)
 	}
 	data, _ = json.Marshal(NewHello("1", "l", "a", []AgentAvailability{{AgentID: "x"}}))
@@ -187,5 +187,32 @@ func TestToolsPushRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(in, out) {
 		t.Fatalf("round trip:\n%+v\n%+v", in, out)
+	}
+}
+
+func TestHelloAdvertisesStageModel(t *testing.T) {
+	h := NewHello("1", "linux", "amd64", nil)
+	for _, c := range h.Capabilities {
+		if c == "stagemodel/1" {
+			return
+		}
+	}
+	t.Fatalf("capabilities = %v, want stagemodel/1", h.Capabilities)
+}
+
+func TestRunStartDecodesModelChoice(t *testing.T) {
+	var rs RunStart
+	if err := json.Unmarshal([]byte(`{"type":"run_start","run_id":"r","model_choice":{"model":"","effort":"max"}}`), &rs); err != nil {
+		t.Fatal(err)
+	}
+	if rs.ModelChoice == nil || rs.ModelChoice.Model != "" || rs.ModelChoice.Effort != "max" {
+		t.Fatalf("model_choice = %+v", rs.ModelChoice)
+	}
+	var plain RunStart
+	if err := json.Unmarshal([]byte(`{"type":"run_start","run_id":"r"}`), &plain); err != nil {
+		t.Fatal(err)
+	}
+	if plain.ModelChoice != nil {
+		t.Fatalf("no model_choice sent, got %+v", plain.ModelChoice)
 	}
 }
