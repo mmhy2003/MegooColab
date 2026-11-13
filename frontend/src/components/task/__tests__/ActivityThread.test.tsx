@@ -203,35 +203,33 @@ describe("ActivityThread agent events", () => {
     expect(rows[1]).toContain("Step 3 left its changes uncommitted: sent back to its agent to commit them");
   });
 
-  describe("on a phone, the text gets the full width", () => {
+  describe("on every screen, the text gets the full width", () => {
     const time = new Date("2026-10-22T10:00:00Z").toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-    // jsdom applies no media queries: the classes say which time shows where
-    const times = (row: Element) => ({
-      phone: row.querySelector("[data-time='phone']")!,
-      wide: row.querySelector("[data-time='wide']")!,
-    });
+    // one time per row, in the line, shown at every width: no column on the right takes width from the text
+    const onlyTime = (row: Element) => {
+      const all = row.querySelectorAll("[data-time]");
+      expect(all).toHaveLength(1);
+      expect(all[0].className).not.toMatch(/(^|\s)(max-)?sm:hidden/);
+      return all[0];
+    };
 
     it("puts an agent reply's time beside the name, and its box reaches under the dot", () => {
       const { container } = render1(agentEvent("p1", "agent_message", { text: "Release **done**.\n\n- one" }));
       const reply = container.querySelector("[data-agent-reply]")!;
-      const { phone, wide } = times(reply);
-      expect(phone).toHaveTextContent(`· ${time}`);
-      expect(phone).toHaveClass("sm:hidden");
-      expect(phone.parentElement).toHaveTextContent(`Ann's Codex · ${time}`); // on the name's line
-      expect(wide).toHaveTextContent(time);
-      expect(wide).toHaveClass("max-sm:hidden");
-      expect(reply.querySelector(".border-cyan")).toHaveClass("max-sm:-ml-3.5");
+      const t = onlyTime(reply);
+      expect(t).toHaveTextContent(`· ${time}`);
+      expect(t.parentElement).toHaveTextContent(`Ann's Codex · ${time}`); // on the name's line
+      const box = reply.querySelector(".border-cyan")!;
+      expect(box).toHaveClass("-ml-3.5");
+      expect(box.className).not.toMatch(/max-sm:/);
     });
 
     it("puts an event's time at the end of its line, above a summary box that reaches under the dot", () => {
       const { container } = render1(agentEvent("p2", "agent_run_completed", { summary: "Fixed the **bug**." }));
-      const row = screen.getByRole("listitem");
-      const { phone, wide } = times(row);
-      expect(phone).toHaveClass("sm:hidden");
-      expect(wide).toHaveClass("max-sm:hidden");
+      const t = onlyTime(screen.getByRole("listitem"));
       const box = container.querySelector("[data-run-summary]")!;
-      expect(phone.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); // the time comes first
-      expect(box).toHaveClass("max-sm:-ml-3.5");
+      expect(t.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); // the time comes first
+      expect(box).toHaveClass("-ml-3.5");
     });
 
     it("puts a pull request line's time at the end of its line, above its excerpt", () => {
@@ -240,13 +238,10 @@ describe("ActivityThread agent events", () => {
         data: { actor: { login: "sara", name: "Sara Kim" }, excerpt: "Please rename this.", pr: { number: 7, url: "https://github.com/o/r/pull/7" } },
       };
       render(<ActivityThread items={[item]} columnNames={new Map()} userNames={new Map()} />);
-      const row = screen.getByRole("listitem");
-      const { phone, wide } = times(row);
-      expect(phone).toHaveClass("sm:hidden");
-      expect(wide).toHaveClass("max-sm:hidden");
+      const t = onlyTime(screen.getByRole("listitem"));
       const excerpt = screen.getByText("Please rename this.").closest("[data-git-excerpt]")!;
-      expect(phone.compareDocumentPosition(excerpt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(excerpt).toHaveClass("max-sm:-ml-5");
+      expect(t.compareDocumentPosition(excerpt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(excerpt).toHaveClass("-ml-5");
     });
   });
 

@@ -378,22 +378,17 @@ function when(at: string): string {
   return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
-/** A row's time on a phone: in the line, after the name or the text, so what is below gets the whole width. */
-function PhoneTime({ at }: { at: string }) {
+/** A row's time, in the line after the name or the text, so what is below gets the whole width. */
+function RowTime({ at }: { at: string }) {
   // the space before it lets the line break there, not inside the words before it
   return (
     <>
       {" "}
-      <span data-time="phone" className="whitespace-nowrap sm:hidden">
+      <span data-time className="whitespace-nowrap">
         · {when(at)}
       </span>
     </>
   );
-}
-
-/** A row's time from sm up: in its own column on the right. */
-function WideTime({ at }: { at: string }) {
-  return <span data-time="wide" className="ml-auto whitespace-nowrap max-sm:hidden">{when(at)}</span>;
 }
 
 export function ActivityThread({
@@ -513,7 +508,7 @@ export function ActivityThread({
             below={
               <>
                 {fixSummary && (
-                  <div data-fix-summary className="mt-1 border-l-2 border-line pl-2 text-fg max-sm:-ml-3.5">
+                  <div data-fix-summary className="mt-1 border-l-2 border-line pl-2 text-fg -ml-3.5">
                     <Markdown compact>{fixSummary}</Markdown>
                   </div>
                 )}
@@ -570,17 +565,16 @@ function EventRow({
         <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan" />
       )}
       <span className="min-w-0 flex-1 break-words">
-        {/* the line's own words in one element, the phone's time after it */}
+        {/* the line's own words in one element, the time after it */}
         <span>
           {lead && <span className="text-fg">{lead} </span>}
           {docKind ? <DocText text={text} kind={docKind} version={docVersion} /> : text}
           {children}
         </span>
-        <PhoneTime at={at} />
+        <RowTime at={at} />
         <ImageGallery images={images} />
         {below}
       </span>
-      <WideTime at={at} />
     </li>
   );
 }
@@ -594,11 +588,10 @@ function AgentReplyRow({ at, who, text }: { at: string; who: string; text: strin
       <div className="min-w-0 flex-1">
         <p>
           <span className="text-fg">{who}</span>
-          <PhoneTime at={at} />
+          <RowTime at={at} />
         </p>
         <ReplyBox text={text} />
       </div>
-      <WideTime at={at} />
     </li>
   );
 }
@@ -618,13 +611,13 @@ const GIT_ICON: Record<GitLine["icon"], { Icon: typeof GitMerge; tone: string }>
 
 /** A pull request or branch event: who (an agent tagged as one), what (linked to the host), the host, and an
  * excerpt quoted as plain text. */
-/** An agent's own words, as Markdown in a box with a cyan edge. On a phone the box starts under the row's dot, so
- * the words get the whole width. */
+/** An agent's own words, as Markdown in a box with a cyan edge. The box starts under the row's dot, so the words
+ * get the whole width. */
 function ReplyBox({ text, ...rest }: { text: string; "data-run-summary"?: boolean }) {
   return (
     <div
       {...rest}
-      className="mt-1 rounded-r border-l-2 border-cyan bg-surface-2/70 px-3 py-0.5 text-fg max-sm:-ml-3.5 max-sm:px-2.5 max-sm:[&_li]:ml-4"
+      className="mt-1 rounded-r border-l-2 border-cyan bg-surface-2/70 py-0.5 text-fg -ml-3.5 px-2.5 [&_li]:ml-4"
     >
       <Markdown compact>{text}</Markdown>
     </div>
@@ -668,15 +661,14 @@ function GitEventRow({ at, line }: { at: string; line: GitLine }) {
         )}
         {line.host && <span className="ml-1.5 rounded border border-line px-1 text-[0.65rem]">{line.host}</span>}
         {line.detail && <span className="ml-1.5">{line.detail}</span>}
-        <PhoneTime at={at} />
+        <RowTime at={at} />
         {(line.quote || line.where) && (
-          <span data-git-excerpt className="mt-1 block border-l-2 border-line pl-2 max-sm:-ml-5">
+          <span data-git-excerpt className="mt-1 block border-l-2 border-line pl-2 -ml-5">
             {line.where && <span className="mr-1 font-mono">{line.where}</span>}
             {line.quote}
           </span>
         )}
       </span>
-      <WideTime at={at} />
     </li>
   );
 }

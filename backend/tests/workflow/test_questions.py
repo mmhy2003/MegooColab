@@ -178,6 +178,26 @@ async def test_mockup_view_headers_exact(db, tc_factory):
     assert r.text.count(questions.CHOICE_SCRIPT) == 1
 
 
+async def test_mockup_view_shows_the_megoocolab_icon(db, tc_factory):
+    # the page's CSP allows only data: images, so the browser can't fetch /favicon.ico for a mockup's tab
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    await _asked(b, run, mockup=MOCKUP)
+    [m] = tc.get(f"/api/tasks/{b.key}/mockups").json()
+    page = tc.get(f"/api/mockups/{m['id']}/view").text
+    assert page.count('<link rel="icon"') == 1
+    assert '<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgo' in page
+
+
+def test_mockup_icon_goes_in_the_head_and_never_replaces_its_own():
+    out = questions.mockup_page("<html><HEAD ><title>t</title></head><body>x</body></html>")
+    assert out.index(questions.ICON_LINK) < out.index("</head>")
+    assert out.startswith("<html><HEAD >" + questions.ICON_LINK)
+    own = '<html><head><link rel="shortcut icon" href="data:image/png;base64,AA"></head><body></body></html>'
+    assert questions.ICON_LINK not in questions.mockup_page(own)
+    assert questions.mockup_page("<p>x</p>") == questions.ICON_LINK + "<p>x</p>" + questions.CHOICE_SCRIPT
+
+
 def test_choice_script_is_appended_without_a_body_tag():
     assert questions.inject_choice_script("<p>x</p>") == "<p>x</p>" + questions.CHOICE_SCRIPT
     out = questions.inject_choice_script("<BODY>a</BODY ></html>")
