@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,7 +20,7 @@ const TASK = {
   pull_request: null, branch_from: null, start_branch: null, back_merge_into: null, branch_from_locked: false,
 };
 
-function show(expanded?: boolean, task: Record<string, unknown> = {}) {
+function show(expanded?: boolean, task: Record<string, unknown> = {}, workflow: Record<string, unknown> | null = null) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
@@ -31,7 +31,8 @@ function show(expanded?: boolean, task: Record<string, unknown> = {}) {
         : url === "/api/projects/PAY/columns" ? [{ id: "c1", name: "To Do", category: "before", position: 0 }]
         : url === "/api/users" ? [{ id: "u1", name: "Mona", email: "m@x.io", role: "member", status: "active" }]
         : url.endsWith("/records") ? { decisions: [], test_runs: [], unverified_steps: [] }
-        : url.startsWith("/api/tasks/PAY-1/workflow") ? null
+        : url.startsWith("/api/tasks/PAY-1/workflow") ? workflow
+        : url === "/api/projects/PAY/agents" ? [{ id: "a1", name: "laptop-claude", status: "online", owner: { id: "u2", name: "Sam" }, runner: null }]
         : [];
       return new Response(JSON.stringify(body), { status: 200 });
     }),
@@ -63,6 +64,23 @@ describe("TaskView expanded", () => {
     await screen.findByText("Fix login");
     expect(document.querySelector("header")).not.toHaveClass(CENTRED);
     expect(document.querySelector("[data-task-scroll]")).not.toHaveClass(CENTRED);
+  });
+});
+
+describe("TaskView comment box", () => {
+  const withAgent = { assignee_agent_id: "a1" };
+  const canAct = { can_act: true, status: "running", stage: "build", documents: [], steps: [], needs: null };
+  const toggle = () => screen.findByRole("switch", { name: "Send to laptop-claude" });
+
+  it("sends to the task's agent by default while the task isn't done", async () => {
+    show(false, withAgent, canAct);
+    await waitFor(async () => expect(await toggle()).toHaveAttribute("aria-checked", "true"));
+  });
+
+  it("starts as a comment once the task is done", async () => {
+    show(false, { ...withAgent, column_category: "done" }, canAct);
+    await waitFor(async () => expect(await toggle()).not.toBeDisabled());
+    expect(await toggle()).toHaveAttribute("aria-checked", "false");
   });
 });
 

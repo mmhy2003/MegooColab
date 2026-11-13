@@ -27,12 +27,14 @@ function matching(people: Option[], query: string): Option[] {
 
 /** A comment, or with the switch on (or the agent @mentioned), a message for the task's agent: an instruction it
  * reads in the turn it is working on, or at its next run. Only people who direct the task's work may send one
- * (`canTellAgent`); after each send the box goes back to an ordinary comment. Either may carry images: a message
+ * (`canTellAgent`). The switch starts on when `agentByDefault` (the task isn't done), off otherwise, and goes back
+ * to that after each send. Either may carry images: a message
  * to the agent only when it can be sent them (`takesImages`), a comment always (they are for people). */
 export function CommentBox({
   users = [],
   agent = null,
   canTellAgent = false,
+  agentByDefault = false,
   takesImages = false,
   hint,
   onSubmit,
@@ -40,6 +42,8 @@ export function CommentBox({
   users?: Person[];
   agent?: Person | null;
   canTellAgent?: boolean;
+  /** the switch starts on, and goes back on after each send */
+  agentByDefault?: boolean;
   takesImages?: boolean;
   hint?: string;
   onSubmit: (body: string, toAgent: boolean, imageIds: string[]) => Promise<void>;
@@ -47,7 +51,8 @@ export function CommentBox({
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const phone = useContext(PhoneComposerContext);
-  const [manualOn, setManualOn] = useState(false);
+  // the switch as set by hand for this message; null: as the task's default
+  const [manual, setManual] = useState<boolean | null>(null);
   const [focused, setFocused] = useState(false);
   const [mention, setMention] = useState<{ start: number; end: number; query: string } | null>(null);
   // who was picked from the list: the box shows `@Name`, and their tokens are written only when it is sent
@@ -63,7 +68,7 @@ export function CommentBox({
   }, [body]);
   const tellable = agent !== null && canTellAgent;
   const sent = encodeMentions(body, picked);
-  const toAgent = tellable && (manualOn || hasAgentMention(sent, agent.id));
+  const toAgent = tellable && ((manual ?? agentByDefault) || hasAgentMention(sent, agent.id));
   const noImages = toAgent && !takesImages ? `Update the runner on ${agent?.name ?? "the agent"}'s machine to send images.` : undefined;
   const images = useImageDraft(noImages);
   // switched to the agent with images it can't be sent: they stay, the send waits until they are taken out
@@ -102,7 +107,7 @@ export function CommentBox({
           await onSubmit(sent, toAgent, images.ids);
           setBody("");
           setPicked([]);
-          setManualOn(false);
+          setManual(null);
           images.clear();
           phone?.close();
         } finally {
@@ -225,7 +230,7 @@ export function CommentBox({
           disabled={!tellable}
           onClick={() => {
             if (toAgent) {
-              setManualOn(false);
+              setManual(false);
               if (agent) {
                 // the agent's mentions go, picked ones (shown as @Name) and any typed as a token
                 const mine = mentionRanges(body, picked).filter((r) => r.mention.agent && r.mention.id === agent.id);
@@ -234,7 +239,7 @@ export function CommentBox({
                 setBody(removeAgentMentions(next, agent.id));
               }
             } else {
-              setManualOn(true);
+              setManual(true);
             }
           }}
           className={`inline-flex items-center gap-2 text-xs disabled:cursor-not-allowed disabled:opacity-60 ${toAgent ? "text-violet" : "text-muted-foreground"}`}
