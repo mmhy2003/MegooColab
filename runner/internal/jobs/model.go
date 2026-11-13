@@ -189,6 +189,17 @@ type choice struct {
 	log      io.Writer
 }
 
+// recordStart keeps the model a new session started on ("": the program offers
+// no model list) as the program's starting model.
+func (want choice) recordStart(sess openedSession, model string) {
+	if sess.resumed || want.starts == nil {
+		return
+	}
+	if err := want.starts.set(want.program, model); err != nil && want.log != nil {
+		fmt.Fprintf(want.log, "runner: %v\n", err)
+	}
+}
+
 // startModel reports the models the agent offers with their effort levels,
 // puts the session on the chosen model and effort, and reports what the run
 // uses. An error, with its failure code, means the choice could not be made, or
@@ -200,6 +211,8 @@ func startModel(ctx context.Context, ac *acp.ClientSideConnection, sess openedSe
 	wantModel, wantEffort := strings.TrimSpace(want.model), strings.TrimSpace(want.effort)
 	sel := modelSelector(sess.options)
 	if sel == nil {
+		// no model list: nothing to go back to on a continued session, so its starting model is known: "" (none)
+		want.recordStart(sess, "")
 		if wantModel != "" {
 			return "model_unavailable", errors.New("the agent offers no model choice")
 		}
@@ -224,12 +237,8 @@ func startModel(ctx context.Context, ac *acp.ClientSideConnection, sess openedSe
 	emit("model_options", map[string]any{"options": options})
 
 	start := string(sel.CurrentValue)
-	if !sess.resumed && want.starts != nil {
-		// a new session is on the program's starting model: what "the program's own" means for a continued one
-		if err := want.starts.set(want.program, start); err != nil && want.log != nil {
-			fmt.Fprintf(want.log, "runner: %v\n", err)
-		}
-	}
+	// a new session is on the program's starting model: what "the program's own" means for a continued one
+	want.recordStart(sess, start)
 	current, latest := start, sess.options
 	if wantModel != "" {
 		if current = resolve(models, wantModel); current == "" {
@@ -237,7 +246,7 @@ func startModel(ctx context.Context, ac *acp.ClientSideConnection, sess openedSe
 		}
 	} else if want.explicit && want.starts != nil {
 		// a continued session may be on the model an earlier stage chose: back to the program's own
-		if s, ok := want.starts.get(want.program); ok {
+		if s, ok := want.starts.get(want.program); ok && s != "" {
 			current = s
 		}
 	}

@@ -107,3 +107,16 @@ func TestWithoutAModelChoiceAResumedSessionKeepsItsModel(t *testing.T) {
 		t.Fatalf("prompted on %q", r.PromptModel)
 	}
 }
+
+func TestAProgramWithoutAModelChoiceStillContinuesItsSessions(t *testing.T) {
+	// no FAKEAGENT_MODELS: the agent offers no model list, so there is nothing to go back to
+	t.Setenv("FAKEAGENT_SESSIONS_DIR", t.TempDir())
+	t.Setenv("FAKEAGENT_RESUME", "1")
+	e := newEnvWithCache(t, `[{"say":"ok"}]`, 1, t.TempDir())
+	first := e.runOn("run-1", "", nil)
+	e.runOn("run-2", *first.SessionID, &protocol.RunModelChoice{})
+	r := e.finalReport()
+	if last := r.SessionEvents[len(r.SessionEvents)-1]; last != "resume:"+*first.SessionID {
+		t.Fatalf("events = %v", r.SessionEvents)
+	}
+}
