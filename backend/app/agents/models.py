@@ -42,6 +42,9 @@ class Agent(IdMixin, Base):
     # the models its program offered on its last run, each with its effort levels
     # ([{value, name, efforts: [{value, name}]}]), for the owner to pick from
     known_models: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    # a model and effort for a workflow stage ({"plan": {"model": "fable", "effort": "max"}}): only the stages and
+    # keys set; a stage without one runs on the agent's own (app.agents.stage_models)
+    stage_models: Mapped[dict] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
-import { COMMON_EFFORTS, effortName, modelKey } from "@/lib/agents";
+import { effortLevels, effortName, findModel, sameEffort } from "@/lib/agents";
 import type { ModelOption } from "@/lib/types";
 
 const OTHER = "__other";
@@ -32,19 +32,11 @@ export function ModelField({
   const [note, setNote] = useState<string | null>(null);
   const typed = text.trim() || null;
   // a model saved by its name (a default model, say) is the listed model of that name, as the runner matches it
-  const find = (m: string | null) =>
-    m === null
-      ? knownModels.find((k) => k.value === "default")
-      : known.find((k) => k.value === m || [k.value, k.name].some((n) => modelKey(n) === modelKey(m)));
+  const find = (m: string | null) => findModel(knownModels, m);
   const match = model === null ? undefined : find(model);
   const label = match?.name ?? model;
 
-  const levelsOf = (m: string | null) => {
-    const entry = find(m);
-    // an unknown model (typed, or before the first run) may have any of the usual levels; the runner checks
-    return entry ? entry.efforts.filter((e) => e.value !== "default") : COMMON_EFFORTS;
-  };
-  const sameEffort = (l: { value: string; name: string }, e: string) => modelKey(l.value) === modelKey(e) || modelKey(l.name) === modelKey(e);
+  const levelsOf = (m: string | null) => effortLevels(knownModels, m);
   const levels = levelsOf(model);
   const effortMatch = effort === null ? undefined : levels.find((l) => sameEffort(l, effort));
   const effortLabel = effortMatch?.name ?? (effort && effortName(effort));

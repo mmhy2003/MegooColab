@@ -472,7 +472,7 @@ def test_v2_start_fields_are_exactly_the_non_v1_fields():
 
     assert V2_START_FIELDS == {
         "role", "stage", "step", "resume_session_id", "resume_prompt", "mcp", "files", "repo_files", "commit_message",
-        "images", "draft", "secrets", "cron", "report_uncommitted",
+        "images", "draft", "secrets", "cron", "report_uncommitted", "model_choice",
     }
 
 

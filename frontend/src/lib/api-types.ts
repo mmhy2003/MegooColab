@@ -4107,6 +4107,13 @@ export interface components {
              * @default []
              */
             known_models: components["schemas"]["ModelOption"][];
+            /**
+             * Stage Models
+             * @default {}
+             */
+            stage_models: {
+                [key: string]: components["schemas"]["StageChoice"];
+            };
             /** Current Run */
             current_run?: {
                 [key: string]: unknown;
@@ -4295,6 +4302,13 @@ export interface components {
              * @default []
              */
             known_models: components["schemas"]["ModelOption"][];
+            /**
+             * Stage Models
+             * @default {}
+             */
+            stage_models: {
+                [key: string]: components["schemas"]["StageChoice"];
+            };
         };
         /** AgentPatch */
         AgentPatch: {
@@ -4309,6 +4323,10 @@ export interface components {
             model?: string | null;
             /** Effort */
             effort?: string | null;
+            /** Stage Models */
+            stage_models?: {
+                [key: string]: components["schemas"]["StageChoice"];
+            } | null;
         };
         /**
          * AgentProgram
@@ -6659,6 +6677,13 @@ export interface components {
              * @default []
              */
             known_models: components["schemas"]["ModelOption"][];
+            /**
+             * Stage Models
+             * @default {}
+             */
+            stage_models: {
+                [key: string]: components["schemas"]["StageChoice"];
+            };
             /** Can Use */
             can_use: boolean;
         };
@@ -7674,6 +7699,17 @@ export interface components {
          * @enum {string}
          */
         Stage: "brainstorm" | "design" | "plan" | "build" | "review" | "done";
+        /**
+         * StageChoice
+         * @description A stage's own model and effort; None: the agent's (or, for an effort with the stage's own model, that
+         *     model's default).
+         */
+        StageChoice: {
+            /** Model */
+            model?: string | null;
+            /** Effort */
+            effort?: string | null;
+        };
         /** StageRow */
         StageRow: {
             stage: components["schemas"]["Stage"];
