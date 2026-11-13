@@ -4,7 +4,7 @@ are untrusted, so the rules are not editable per installation."""
 from collections.abc import Sequence
 
 from app.a2a.models import Question
-from app.workflow.context import READ_ONLY_NOTE, wrap_untrusted
+from app.workflow.context import DOCS_NOTE, READ_ONLY_NOTE, wrap_untrusted
 
 ANSWER_PROMPT = """# Answer a question from another project
 
@@ -55,5 +55,5 @@ def answer_prompt(q: Question, target_key: str, earlier: Sequence[Question] = ()
     if q.context:
         text += f"\n\nContext from the asker:\n{q.context}"
     thread = f"{_earlier_section(earlier, target_key)}\n\n" if earlier else ""
-    return (f"{ANSWER_PROMPT}\n\n{READ_ONLY_NOTE}\n\n{thread}## Question {target_key}-Q{q.number}\n"
+    return (f"{ANSWER_PROMPT}\n\n{READ_ONLY_NOTE}\n\n{DOCS_NOTE}\n\n{thread}## Question {target_key}-Q{q.number}\n"
             f"{wrap_untrusted('question', text)}")
