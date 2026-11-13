@@ -1,10 +1,12 @@
 """Agent questions to humans: choices, sandboxed HTML mockups, and answers that resume the asking session
 (WF-5, WF-6, WF-6d)."""
 
+import base64
 import re
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -47,6 +49,16 @@ CHOICE_SCRIPT = (
     "choice:t.getAttribute('data-megoo-choice')},'*')}});</script>"
 )
 _BODY_CLOSE = re.compile(r"</body\s*>", re.IGNORECASE)
+_HEAD_OPEN = re.compile(r"<head\b[^>]*>", re.IGNORECASE)
+_OWN_ICON = re.compile(r"""<link\b[^>]*\brel\s*=\s*["']?[^"'>]*\bicon\b""", re.IGNORECASE)
+
+# A mockup page opened on its own gets MegooColab's icon on its tab. Its CSP allows only data: images, so the
+# browser can't fetch /favicon.ico for it: the icon (32px) goes in the page itself.
+ICON_LINK = (
+    '<link rel="icon" type="image/png" href="data:image/png;base64,'
+    + base64.b64encode((Path(__file__).with_name("mockup_icon.png")).read_bytes()).decode()
+    + '">'
+)
 
 
 def _422(code: str) -> HTTPException:
@@ -292,3 +304,13 @@ def inject_choice_script(html: str) -> str:
     if last is None:
         return html + CHOICE_SCRIPT
     return html[: last.start()] + CHOICE_SCRIPT + html[last.start():]
+
+
+def mockup_page(html: str) -> str:
+    """A mockup as served: MegooColab's icon at the top of its head (unless it brings its own) and the choice
+    script."""
+    if not _OWN_ICON.search(html):
+        head = _HEAD_OPEN.search(html)
+        at = head.end() if head else 0
+        html = html[:at] + ICON_LINK + html[at:]
+    return inject_choice_script(html)
