@@ -156,6 +156,9 @@ async def test_run_start_carries_cron_branch_and_workspace_policy(client, db, wo
     assert start["task"]["key"] == f"CRN-{cron_id.hex[:12]}" and start["role"] == "cron"
     assert start["secrets"] == [{"name": "API_KEY", "value": "key-12345"}]
     assert "Check the dependencies." in start["prompt"]
+    from app.workflow.context import DOCS_NOTE
+
+    assert DOCS_NOTE in start["prompt"]
     [run] = await _rows(CronRun, CronRun.cron_id == cron_id)
     assert run.status == "running"
 

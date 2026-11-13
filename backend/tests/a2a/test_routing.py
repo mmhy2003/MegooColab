@@ -177,6 +177,9 @@ def test_answer_prompt_wraps_and_escapes_question():
     from app.workflow.context import READ_ONLY_NOTE
 
     assert READ_ONLY_NOTE in text  # an answering session is read-only too
+    from app.workflow.context import DOCS_NOTE
+
+    assert DOCS_NOTE in text
 
 
 async def test_run_without_answer_retries_other_agent_then_needs_human_after_3(client, db):

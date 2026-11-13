@@ -21,7 +21,7 @@ from app.projects.models import Project, ProjectRepository, ProjectTeam
 from app.runner.protocol import McpAccess, RunCron, RunTask
 from app.teams.models import TeamMember
 from app.workflow import methodology
-from app.workflow.context import wrap_untrusted
+from app.workflow.context import DOCS_NOTE, wrap_untrusted
 from app.workflow.models import MethodologyVersion
 
 DEFAULT_BRANCH = "main"
@@ -59,6 +59,7 @@ async def cron_prompt(db: AsyncSession, cron: Cron, run: CronRun) -> tuple[str, 
     )
     parts = [
         version.body_md.strip(),
+        DOCS_NOTE,
         f"## This run\n\nProject {project.name} ({project.key}), cron \"{cron.name}\". "
         f"This run: {run.scheduled_at:%Y-%m-%d %H:%M} UTC."
         + (f" Last report: {previous.scheduled_at:%Y-%m-%d %H:%M} UTC." if previous else " This is its first report."),

@@ -195,3 +195,11 @@ async def test_freestyle_prompt_covers_the_board(client, db):
     from app.workflow import context
 
     assert freestyle_tasks_context in context.context_providers
+
+
+async def test_freestyle_prompt_checks_library_docs(client, db):
+    _w, _chat, rnd, _run = await _freestyle_run(client, db)
+    from app.workflow import context
+
+    prompt, _ = await context.build_prompt(db, rnd, RunRole.freestyle)
+    assert context.DOCS_NOTE in prompt
