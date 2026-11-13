@@ -171,3 +171,54 @@ async def test_an_older_runner_leaves_only_overridden_stages_queued(db, tc_facto
         ws.send_json(_hello_v2(agent))
         start = ws.receive_json()
         assert start["run_id"] == other["id"] and start.get("model_choice") is None
+
+
+async def test_clearing_the_stages_still_puts_a_continued_session_back(db, tc_factory):
+    """A session an earlier run put on a stage's model goes back to the agent's own even after the owner cleared
+    every stage (final review)."""
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    earlier = _start(tc, task)
+    await _make_workflow(db, earlier["id"], role="brainstorm")
+    async with SessionLocal() as s:
+        row = await s.get(AgentRun, uuid.UUID(earlier["id"]))
+        row.status, row.session_ref, row.model_choice = "completed", "sess-1", {"model": "fable", "effort": ""}
+        await s.commit()
+    run = _start(tc, task)  # no stages set any more
+    await _make_workflow(db, run["id"], role="brainstorm", resume_session_ref="sess-1")
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello_v2(agent, capabilities=CURRENT))
+        start = ws.receive_json()
+        assert start["run_id"] == run["id"]
+        assert start["model_choice"] == {"model": agent["model"] or "", "effort": ""}
+        # read while connected: the server commits the start after sending it
+        assert await _kept_choice(run["id"]) == start["model_choice"]
+
+
+async def test_the_choice_sent_is_kept_on_the_run(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    await _with_stages(agent["id"], {"plan": {"model": "fable"}})
+    run = _start(tc, task)
+    await _make_workflow(db, run["id"], role="plan")
+    with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+        ws.receive_json()
+        ws.send_json(_hello_v2(agent, capabilities=CURRENT))
+        assert ws.receive_json()["run_id"] == run["id"]
+        assert await _kept_choice(run["id"]) == {"model": "fable", "effort": ""}
+
+
+async def _kept_choice(run_id: str):
+    """The choice stored on the run, once the server has committed the start (it commits after the send)."""
+    import asyncio
+
+    for _ in range(50):
+        async with SessionLocal() as s:
+            choice = (await s.get(AgentRun, uuid.UUID(run_id))).model_choice
+        if choice is not None:
+            return choice
+        await asyncio.sleep(0.05)
+    return None

@@ -41,6 +41,7 @@ from app.runner.protocol import (
     RunCancel,
     RunFile,
     RunFinished,
+    RunModelChoice,
     RunStart,
     RunTask,
 )
@@ -291,6 +292,17 @@ async def _claim_next(
     return run
 
 
+async def _session_had_choice(db: AsyncSession, session_ref: str | None) -> bool:
+    """Whether the last run of this agent session was started on a model choice of its own."""
+    if not session_ref:
+        return False
+    choice = await db.scalar(
+        select(AgentRun.model_choice).where(AgentRun.session_ref == session_ref)
+        .order_by(AgentRun.created_at.desc()).limit(1)
+    )
+    return choice is not None
+
+
 async def _approved_body(db: AsyncSession, task_id: uuid.UUID, kind: DocKind) -> str | None:
     return await db.scalar(
         select(WorkflowDocument.body_md)
@@ -399,7 +411,12 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
         v2 = await _v2_start_fields(db, run, task, task_key) if run.workflow_role else {}
         if run.workflow_role and STAGE_MODEL_CAPABILITY in conn.capabilities:
             # the run's stage may have its own model and effort (none: run_start goes as before)
-            v2["model_choice"] = run_model(await db.get(Agent, agent_id), RunRole(run.workflow_role))
+            choice = run_model(agent := await db.get(Agent, agent_id), RunRole(run.workflow_role))
+            if choice is None and resumed and await _session_had_choice(db, run.resume_session_ref):
+                # an earlier run put this session on a stage's model, since cleared: back to the agent's own
+                choice = RunModelChoice(model=agent.model or "", effort=agent.effort or "")
+            v2["model_choice"] = choice
+            run.model_choice = choice.model_dump() if choice else None
         if resumed and (earlier or new_instructions):
             v2["resume_prompt"] = "\n\n".join(p for p in (run.resume_prompt, earlier, new_instructions) if p)
         elif new_instructions:
