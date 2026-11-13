@@ -137,6 +137,19 @@ describe("AgentsTab", () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
+  it("resets an effort-only stage the agent's new model lacks", async () => {
+    const level = (value: string, name: string) => ({ value, name });
+    const known_models = [
+      { value: "opus", name: "Opus 5.5", efforts: [level("default", "Default"), level("high", "High"), level("max", "Max")] },
+      { value: "claude-haiku-4-5", name: "Haiku 4.5", efforts: [] },
+    ];
+    show([agent({ model: "opus", known_models, stage_models: { plan: { effort: "max" }, design: { model: "opus" } } })]);
+    await userEvent.selectOptions(screen.getByLabelText("Model"), "claude-haiku-4-5");
+    await waitFor(() => expect(sent("PATCH")).toBeDefined());
+    expect(sent("PATCH")!.body).toEqual({ model: "claude-haiku-4-5", stage_models: { design: { model: "opus" } } });
+    expect(await screen.findByText("Haiku 4.5 has no Max effort, so Plan's effort went back to As above.")).toBeInTheDocument();
+  });
+
   it("points to the Runner tab when there are no machines", () => {
     show([], false);
     expect(screen.getByText("No agents yet.")).toBeInTheDocument();
