@@ -14,6 +14,7 @@ from app.agent_runs.models import ACTIVE_STATUSES, AgentRun, RunStatus
 from app.agent_runs.schemas import RunAgentOut, RunOut
 from app.agent_runs.tokens import issue_run_token
 from app.agents.models import Agent, AgentBinding, AgentProgram
+from app.agents.stage_models import overriding_roles, run_model
 from app.kb_drafts.models import KbDraft
 from app.secrets import delivery as secret_delivery
 from app.agents.service import (
@@ -50,6 +51,7 @@ from app.runner.registry import (
     IMAGES_CAPABILITY,
     MODEL_CAPABILITY,
     OMP_CAPABILITY,
+    STAGE_MODEL_CAPABILITY,
     WORKFLOW_CAPABILITY,
     RunnerClosed,
     RunnerConn,
@@ -237,6 +239,9 @@ async def _claim_next(
         drafts = registry.agent_supports(agent.id, DRAFTS_CAPABILITY)
         # one without crons/1 leaves cron runs queued (it has no cron worktree to run them in)
         crons = registry.agent_supports(agent.id, CRONS_CAPABILITY)
+        # one without stagemodel/1 leaves runs of a stage with its own model or effort queued: it would use the agent's
+        stages = [r.value for r in overriding_roles(agent)]
+        stage_models = registry.agent_supports(agent.id, STAGE_MODEL_CAPABILITY) or not stages
         task_run = AgentRun.task_id.is_not(None)
         runnable = and_(
             true() if workflow else and_(AgentRun.workflow_role.is_(None), task_run),
@@ -244,6 +249,7 @@ async def _claim_next(
             true() if images else ~image_delivery.undelivered_for_run(),
             true() if drafts else AgentRun.draft_id.is_(None),
             true() if crons else AgentRun.cron_run_id.is_(None),
+            true() if stage_models else or_(AgentRun.workflow_role.is_(None), AgentRun.workflow_role.not_in(stages)),
         )
         sibling = aliased(AgentRun)
         task_running = (
@@ -391,6 +397,9 @@ async def _send_start(db: AsyncSession, conn: RunnerConn, agent_id: uuid.UUID, r
     images: list = []
     try:
         v2 = await _v2_start_fields(db, run, task, task_key) if run.workflow_role else {}
+        if run.workflow_role and STAGE_MODEL_CAPABILITY in conn.capabilities:
+            # the run's stage may have its own model and effort (none: run_start goes as before)
+            v2["model_choice"] = run_model(await db.get(Agent, agent_id), RunRole(run.workflow_role))
         if resumed and (earlier or new_instructions):
             v2["resume_prompt"] = "\n\n".join(p for p in (run.resume_prompt, earlier, new_instructions) if p)
         elif new_instructions:
