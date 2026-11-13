@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 
@@ -98,6 +99,16 @@ func nameOf(choices []option, value string) string {
 type efforts struct {
 	mu        sync.Mutex
 	byProgram map[string]map[string][]option // program -> model value -> levels (none: no effort setting)
+	// program -> model value -> the effort it is on right after a session switches to it: its default
+	defaults map[string]map[string]string
+}
+
+// defaultEffort is the model's default effort, once learned.
+func (e *efforts) defaultEffort(program, model string) (string, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	d, ok := e.defaults[program][model]
+	return d, ok
 }
 
 // levels are the efforts of every model offered, learning the ones not known
@@ -115,6 +126,7 @@ func (e *efforts) levels(ctx context.Context, ac *acp.ClientSideConnection, sid 
 	}
 	e.mu.Unlock()
 	learned := map[string][]option{}
+	defaults := map[string]string{}
 	for _, m := range missing {
 		resp, err := setOption(ctx, ac, sid, sel.Id, m.Value)
 		if err != nil {
@@ -127,6 +139,7 @@ func (e *efforts) levels(ctx context.Context, ac *acp.ClientSideConnection, sid 
 		learned[m.Value] = []option{}
 		if es := effortSelector(resp.ConfigOptions); es != nil {
 			learned[m.Value] = selectChoices(es)
+			defaults[m.Value] = string(es.CurrentValue)
 		}
 	}
 	e.mu.Lock()
@@ -136,6 +149,15 @@ func (e *efforts) levels(ctx context.Context, ac *acp.ClientSideConnection, sid 
 	}
 	if e.byProgram[program] == nil {
 		e.byProgram[program] = map[string][]option{}
+	}
+	if e.defaults == nil {
+		e.defaults = map[string]map[string]string{}
+	}
+	if e.defaults[program] == nil {
+		e.defaults[program] = map[string]string{}
+	}
+	for v, d := range defaults {
+		e.defaults[program][v] = d
 	}
 	out := map[string][]option{}
 	for v, l := range learned {
@@ -159,6 +181,12 @@ func setOption(ctx context.Context, ac *acp.ClientSideConnection, sid acp.Sessio
 type choice struct {
 	model, effort, program string
 	efforts                *efforts
+	// explicit: the run's own choice (run_start.model_choice), applied even to a
+	// resumed session: model "" is the program's starting model, effort "" the
+	// model's default effort
+	explicit bool
+	starts   *starts
+	log      io.Writer
 }
 
 // startModel reports the models the agent offers with their effort levels,
@@ -196,10 +224,21 @@ func startModel(ctx context.Context, ac *acp.ClientSideConnection, sess openedSe
 	emit("model_options", map[string]any{"options": options})
 
 	start := string(sel.CurrentValue)
+	if !sess.resumed && want.starts != nil {
+		// a new session is on the program's starting model: what "the program's own" means for a continued one
+		if err := want.starts.set(want.program, start); err != nil && want.log != nil {
+			fmt.Fprintf(want.log, "runner: %v\n", err)
+		}
+	}
 	current, latest := start, sess.options
 	if wantModel != "" {
 		if current = resolve(models, wantModel); current == "" {
 			current = wantModel
+		}
+	} else if want.explicit && want.starts != nil {
+		// a continued session may be on the model an earlier stage chose: back to the program's own
+		if s, ok := want.starts.get(want.program); ok {
+			current = s
 		}
 	}
 	// learning the levels moved the session through the models: it goes back to the one it runs on
@@ -230,6 +269,12 @@ func startModel(ctx context.Context, ac *acp.ClientSideConnection, sess openedSe
 	}
 	effortLevels := selectChoices(es)
 	effort := string(es.CurrentValue)
+	if wantEffort == "" && want.explicit {
+		// the model's own default effort, not one an earlier stage left the session on
+		if d, ok := want.efforts.defaultEffort(want.program, current); ok {
+			wantEffort = d
+		}
+	}
 	if wantEffort != "" {
 		value := resolve(effortLevels, wantEffort)
 		if value == "" {
