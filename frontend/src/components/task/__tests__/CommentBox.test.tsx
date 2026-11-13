@@ -167,6 +167,43 @@ describe("CommentBox", () => {
       expect(screen.getByRole("button", { name: "Comment" })).toBeInTheDocument();
     });
 
+    describe("when sending to the agent is the default (the task isn't done)", () => {
+      it("starts on, and stays on after a message to the agent", async () => {
+        const onSubmit = vi.fn(async () => undefined);
+        render(<CommentBox users={users} agent={agent} canTellAgent agentByDefault onSubmit={onSubmit} />);
+        expect(toggle()).toHaveAttribute("aria-checked", "true");
+        type(box(), "Use X");
+        fireEvent.click(screen.getByRole("button", { name: "Send to agent" }));
+        await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Use X", true, []));
+        await waitFor(() => expect(box().value).toBe(""));
+        expect(toggle()).toHaveAttribute("aria-checked", "true");
+      });
+
+      it("turned off, sends one comment for people, then is back on", async () => {
+        const onSubmit = vi.fn(async () => undefined);
+        render(<CommentBox users={users} agent={agent} canTellAgent agentByDefault onSubmit={onSubmit} />);
+        fireEvent.click(toggle());
+        expect(toggle()).toHaveAttribute("aria-checked", "false");
+        type(box(), "Looks good");
+        fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+        await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("Looks good", false, []));
+        await waitFor(() => expect(toggle()).toHaveAttribute("aria-checked", "true"));
+      });
+
+      it("turned off, still goes to the agent when the agent is mentioned", () => {
+        render(<CommentBox users={users} agent={agent} canTellAgent agentByDefault onSubmit={vi.fn()} />);
+        fireEvent.click(toggle());
+        type(box(), `${token} use X`);
+        expect(toggle()).toHaveAttribute("aria-checked", "true");
+      });
+
+      it("stays off for people who can't message the agent", () => {
+        render(<CommentBox users={users} agent={agent} canTellAgent={false} agentByDefault onSubmit={vi.fn()} />);
+        expect(toggle()).toHaveAttribute("aria-checked", "false");
+        expect(screen.getByRole("button", { name: "Comment" })).toBeInTheDocument();
+      });
+    });
+
     it("people who can't act see the switch disabled with the reason", () => {
       render(<CommentBox users={users} agent={agent} canTellAgent={false} onSubmit={vi.fn()} />);
       expect(toggle()).toBeDisabled();

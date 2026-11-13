@@ -116,7 +116,7 @@ test("images reach the agent from a chat and from a task", async ({ browser }) =
   const key = (await get<{ key: string; title: string }[]>(request, "/api/projects/IMG/tasks")).find((t) => t.title === "Fix the button")!.key;
   await ui.goto(`/projects/IMG/tasks/${key.split("-")[1]}`);
   const box = ui.getByRole("textbox", { name: "Add a comment" });
-  await ui.getByRole("switch", { name: `Send to ${AGENT_NAME}` }).click();
+  await expect(ui.getByRole("switch", { name: `Send to ${AGENT_NAME}` })).toHaveAttribute("aria-checked", "true"); // the default
   await box.fill("Make it full width, like this");
   await ui.locator('form input[type="file"]').setInputFiles(SHOT);
   await expect(ui.getByRole("button", { name: "Remove screenshot.png" })).toBeVisible();

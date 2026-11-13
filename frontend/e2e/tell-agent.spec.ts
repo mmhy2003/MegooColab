@@ -113,8 +113,10 @@ test("telling the agent something while it works, and before its next run", asyn
   await post(request, `/api/tasks/${KEY}/workflow/start`, {});
   await expect(drawer.getByText("Thinking about retries")).toBeVisible({ timeout: 30_000 });
 
-  // 1. while the brainstorm run works: @mention the agent, which turns the switch on, and send
+  // 1. while the brainstorm run works: the task isn't done, so the box already sends to the agent; @mentioning it
+  // keeps it so
   const box = drawer.getByRole("textbox", { name: "Add a comment" });
+  await expect(drawer.getByRole("switch", { name: `Send to ${AGENT_NAME}` })).toHaveAttribute("aria-checked", "true");
   await box.fill(`@${ADMIN.name.split(" ")[0]}`);
   // the list opens over the page, outside the drawer's own box
   await ui.getByRole("listbox", { name: "Mention someone" }).getByRole("option", { name: /agent on this task/ }).click();
@@ -125,13 +127,12 @@ test("telling the agent something while it works, and before its next run", asyn
   await expect(drawer.getByText(`${ADMIN.name} → ${AGENT_NAME}`)).toBeVisible();
   await expect(drawer.getByText(/read while working/)).toBeVisible({ timeout: 15_000 });
   await expect(drawer.getByText(/steered: .*Use RetryPolicy/).first()).toBeVisible({ timeout: 15_000 });
-  await expect(drawer.getByRole("switch", { name: `Send to ${AGENT_NAME}` })).toHaveAttribute("aria-checked", "false");
+  await expect(drawer.getByRole("switch", { name: `Send to ${AGENT_NAME}` })).toHaveAttribute("aria-checked", "true");
 
   // 2. the design is waiting for approval and no run is going: the next message waits
   await expect
     .poll(async () => (await get<{ needs: string | null }>(request, `/api/tasks/${KEY}/workflow`)).needs, { timeout: 30_000 })
     .toBe("design_approval");
-  await drawer.getByRole("switch", { name: `Send to ${AGENT_NAME}` }).click();
   await expect(drawer.getByText(/isn't working right now/)).toBeVisible();
   await box.fill("Log retries");
   await drawer.getByRole("button", { name: "Send to agent" }).click();
