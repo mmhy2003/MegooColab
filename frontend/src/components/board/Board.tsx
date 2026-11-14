@@ -5,7 +5,6 @@ import {
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
-  closestCorners,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -20,6 +19,7 @@ import { api } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { Column, Task } from "@/lib/types";
 
+import { boardCollision } from "./boardCollision";
 import { BoardColumn } from "./Column";
 import { moveTarget } from "./moveTarget";
 import { TaskCardView } from "./TaskCard";
@@ -116,7 +116,7 @@ export function Board({
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={boardCollision}
         onDragStart={(e: DragStartEvent) => setDragging(tasks.find((t) => t.key === e.active.id) ?? null)}
         onDragCancel={() => setDragging(null)}
         onDragEnd={onDragEnd}
