@@ -214,6 +214,22 @@ async def resume_extra(db: AsyncSession, task: Task, role: RunRole) -> str | Non
     return "\n\n".join(parts) or None
 
 
+async def _files_section(db: AsyncSession, task: Task) -> str | None:
+    """The files in the task's Attachments: they never reach the agent by themselves, so it is told they are there
+    and how to get them. Their names are the person's text."""
+    from app.tasks import file_links  # local: the tasks modules import the workflow modules
+
+    files = await file_links.task_files(db, task)
+    if not files:
+        return None
+    return (
+        f"## Attached files\nThe task has {len(files)} {'file' if len(files) == 1 else 'files'} in its Attachments. "
+        "get_attachment gives you one "
+        "(a download link, and the picture of an image); list_attachments lists them all.\n"
+        + wrap_untrusted("attachments", "\n".join(file_links.prompt_lines(files)))
+    )
+
+
 async def build_prompt(
     db: AsyncSession,
     task: Task,
@@ -284,6 +300,7 @@ async def build_prompt(
     extra = [s for p in context_providers if (s := await _provided(db, task, role, p))]
 
     description = task.description_md or ""
+    files_section = await _files_section(db, task)
     dropped = 0
     notes: set[str] = set()
 
@@ -301,6 +318,8 @@ async def build_prompt(
             + wrap_untrusted("task", f"{task.title}\n\n{description}".rstrip())
             + desc_note
         )
+        if files_section:
+            parts.append(files_section)
         if instructions:  # MegooColab's framing around escaped, quoted text: never trimmed for the thread
             parts.append(instructions)
         thread_note = f"\n({dropped} older thread items omitted to fit the prompt size limit.)" if dropped else ""

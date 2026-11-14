@@ -22,6 +22,7 @@ from app.images.files import ImageRef, MessageKind, save_upload, sniff
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.access import get_project_for
+from app.tasks import file_links
 from app.tasks.models import Attachment, Comment, Delivery, Task, TaskEvent
 from app.tasks.service import get_task_for
 from app.workflow.models import Mockup, WorkflowQuestion
@@ -456,6 +457,20 @@ async def download_attachment(
     return FileResponse(path, media_type=att.content_type, filename=att.filename,
                         content_disposition_type="inline" if inline and att.image else "attachment",
                         headers={"X-Content-Type-Options": "nosniff"})
+
+
+@router.get(file_links.LINK_PATH + "/{attachment_id}")
+async def download_by_link(attachment_id: uuid.UUID, expires: int, sig: str, db: DbSession) -> FileResponse:
+    """A file of the task's Attachments, through the short-lived signed link its agent was given (get_attachment):
+    no sign-in. A changed or expired link, or a file since deleted, is not found."""
+    att = await db.get(Attachment, attachment_id) if file_links.valid(attachment_id, expires, sig) else None
+    if att is None or att.task_id is None or att.message_kind is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
+    path = _upload_root() / att.storage_key
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
+    return FileResponse(path, media_type=att.content_type, filename=att.filename,
+                        content_disposition_type="attachment", headers={"X-Content-Type-Options": "nosniff"})
 
 
 @router.delete("/api/attachments/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)

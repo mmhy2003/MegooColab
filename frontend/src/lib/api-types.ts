@@ -1643,6 +1643,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/attachment-links/{attachment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download By Link
+         * @description A file of the task's Attachments, through the short-lived signed link its agent was given (get_attachment):
+         *     no sign-in. A changed or expired link, or a file since deleted, is not found.
+         */
+        get: operations["download_by_link_api_attachment_links__attachment_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{ref}/sprints": {
         parameters: {
             query?: never;
@@ -12471,6 +12492,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_by_link_api_attachment_links__attachment_id__get: {
+        parameters: {
+            query: {
+                expires: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Validation Error */
             422: {
