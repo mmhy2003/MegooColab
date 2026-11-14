@@ -36,9 +36,9 @@ from app.core.events import Event, publish
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.access import can_manage_project, project_team_ids
-from app.projects.models import BoardColumn, Project, PrReview
+from app.projects.models import BoardColumn, ColumnCategory, Project, PrReview
 from app.tasks.models import Task, TaskEvent, TaskType
-from app.tasks.service import apply_column, end_position, record_event
+from app.tasks.service import apply_column, end_position, notify_done, record_event
 from app.teams.service import user_team_ids
 from app.workflow.context import FIX_ROLES, MAX_PROMPT_CHARS, build_prompt, resume_text
 from app.workflow.models import (
@@ -1179,12 +1179,15 @@ async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
     if task.column_id == column.id:
         return
     frm = task.column_id
+    was_done = await db.scalar(select(BoardColumn.category).where(BoardColumn.id == frm)) == ColumnCategory.done
     task.position = await end_position(db, column.id)
     apply_column(task, column)
     task.updated_at = _now()
     await record_workflow_event(db, task, None, "status_changed", {
         "from_column": str(frm), "to_column": str(column.id), "to_category": str(column.category), "by": "workflow",
     })
+    if column.category == ColumnCategory.done and not was_done:
+        await notify_done(db, task)
 
 
 # The build and finish stages and freestyle turns register their role and accept handlers on import; importing them

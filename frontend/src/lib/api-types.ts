@@ -6008,7 +6008,7 @@ export interface components {
          * Kind
          * @enum {string}
          */
-        Kind: "needs_you" | "assigned" | "mentioned" | "agent_offline" | "question_waiting" | "agent_replied";
+        Kind: "needs_you" | "assigned" | "mentioned" | "agent_offline" | "question_waiting" | "agent_replied" | "task_done" | "team_task_done";
         /** LabelIn */
         LabelIn: {
             /** Name */
