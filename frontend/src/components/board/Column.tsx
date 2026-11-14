@@ -27,6 +27,7 @@ export function BoardColumn({
   const { setNodeRef, isOver } = useDroppable({ id: `column:${column.id}`, data: { columnId: column.id } });
   return (
     <section
+      ref={setNodeRef} // the whole column takes a card: its header and its empty space too
       aria-label={`${column.name} column`}
       className={`flex w-72 max-w-[calc(100vw-3rem)] shrink-0 flex-col rounded border bg-surface-2/50 ${isOver ? "border-cyan" : "border-line"}`}
     >
@@ -37,7 +38,7 @@ export function BoardColumn({
       </header>
       {canWrite && <QuickCreate columnName={column.name} onCreate={onCreate} />}
       <SortableContext id={column.id} items={tasks.map((t) => t.key)} strategy={verticalListSortingStrategy}>
-        <ul ref={setNodeRef} className="flex min-h-24 flex-1 flex-col gap-2 p-2">
+        <ul className="flex min-h-24 flex-1 flex-col gap-2 p-2">
           {tasks.map((t) => (
             <SortableTaskCard
               key={t.key}
