@@ -26,6 +26,7 @@ from app.agents.models import Agent
 from app.core.config import get_settings
 from app.images import delivery as image_delivery
 from app.mcp_server.a2a_tools import register_a2a_tools
+from app.mcp_server.attachment_tools import readable_task, register_attachment_tools
 from app.mcp_server.auth import (
     McpBearerAuth,
     current_run,
@@ -51,7 +52,7 @@ from app.mcp_server.memory_tools import register_memory_tools
 from app.mcp_server.workflow_tools import register_workflow_tools
 from app.projects.access import accessible_project_ids, get_project_for
 from app.projects.models import BoardColumn, Project
-from app.tasks import service
+from app.tasks import file_links, service
 from app.tasks.activity import CommentIn, activity_items, create_comment
 from app.tasks.models import Priority, Task, TaskType
 from app.tasks.schemas import MoveIn, TaskCreate, TaskUpdate
@@ -183,17 +184,14 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
 
     @mcp.tool()
     async def get_task(key: str) -> dict[str, Any]:
-        """A task by key (e.g. PAY-12) with its last 20 activity items (comments, events and questions), and the
-        images people sent you with their messages, after the task's JSON."""
+        """A task by key (e.g. PAY-12) with its last 20 activity items (comments, events and questions), the files
+        in its Attachments (get one with get_attachment), and the images people sent you with their messages, after
+        the task's JSON."""
         async with _tool_session() as (db, user):
-            run = current_run.get()
-            if run is not None and run.workflow_role == "freestyle":
-                (await freestyle_board(db)).check(project_of(key))  # a freestyle turn reads its chat's project
-            else:
-                await require_run_task(db, key, reading=True)
-            task, _ = await service.get_task_for(db, user, key)
+            task = await readable_task(db, user, key)
             out = _json(await service.task_out(db, task, user))
             out["activity"] = [_json(i) for i in await activity_items(db, task, ACTIVITY_LIMIT)]
+            out["attachments"] = await file_links.entries(db, await file_links.task_files(db, task))
             return await _with_images(db, task, out)
 
     @mcp.tool()
@@ -332,6 +330,7 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
     register_a2a_tools(mcp)
     register_kb_draft_tools(mcp)
     register_cron_tools(mcp)
+    register_attachment_tools(mcp)
 
     http_app = mcp.streamable_http_app(
         streamable_http_path=MCP_PATH,
