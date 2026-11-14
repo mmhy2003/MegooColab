@@ -534,6 +534,42 @@ async def notify_assigned(db: AsyncSession, actor: User, project: Project, task:
                                project_id=project.id, actor_id=actor.id)
 
 
+async def notify_done(db: AsyncSession, task: Task, *, actor: User | None = None, agent: Agent | None = None) -> None:
+    """The task moved into Done (from a column that isn't): its assignee (for an agent, the agent's owner) hears it as
+    task_done, everyone else on the project's teams as team_task_done; never the person who moved it. Moved by
+    `actor` (a person), by `agent` (a chat's agent, with its owner's rights), or, with neither, by its workflow."""
+    if task.in_chat:  # a chat's round: the chat itself is what the people concerned follow
+        return
+    project = await db.get(Project, task.project_id)
+    key = f"{project.key}-{task.number}"
+    if actor is not None:
+        by = f"by {actor.name}"
+    elif agent is not None:
+        by = f"by {agent.name}"
+    else:
+        by = "when its workflow finished"
+    mine: set[uuid.UUID] = set()
+    if task.assignee_user_id is not None:
+        mine.add(task.assignee_user_id)
+    elif task.assignee_agent_id is not None:
+        owner = await db.scalar(select(Agent.owner_id).where(Agent.id == task.assignee_agent_id))
+        if owner is not None:
+            mine.add(owner)
+    team = set((await db.execute(
+        select(TeamMember.user_id).join(ProjectTeam, ProjectTeam.team_id == TeamMember.team_id)
+        .where(ProjectTeam.project_id == project.id)
+    )).scalars()) - mine
+    mover_owner = agent.owner_id if agent is not None else None
+    for kind, people in ((Kind.task_done, mine), (Kind.team_task_done, team)):
+        for told, body in (
+            ([u for u in people if u != mover_owner], f"{task.title} — moved to Done {by}"),
+            ([u for u in people if u == mover_owner], f"{task.title} — moved to Done {by} (your agent)"),
+        ):
+            await notifications.notify(db, told, kind, title=f"{key} is done", body=body,
+                                       link=f"/projects/{project.key}/board?task={key}", task_id=task.id,
+                                       project_id=project.id, actor_id=actor.id if actor is not None else None)
+
+
 TRACKED_FIELDS = (
     "type", "parent_id", "title", "description_md", "priority", "story_points", "due_date", "branch_from",
 )
@@ -745,8 +781,17 @@ async def move_task(db: AsyncSession, user: User, project: Project, task: Task, 
     if column.id != task.column_id:
         await record_event(db, task, user.id, "status_changed", {
             "from_column": str(task.column_id), "to_column": str(column.id), "to_category": str(column.category)})
+    was_done = await db.scalar(select(BoardColumn.category).where(BoardColumn.id == task.column_id)) == ColumnCategory.done
     apply_column(task, column)
     task.updated_at = _now()
+    if column.category == ColumnCategory.done and not was_done:
+        from app.mcp_server.auth import current_run  # local: the MCP tools import this module
+
+        run = current_run.get()  # a chat's agent, acting with its owner's rights
+        if run is not None:
+            await notify_done(db, task, agent=await db.get(Agent, run.agent_id))
+        else:
+            await notify_done(db, task, actor=user)
     return task
 
 

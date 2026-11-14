@@ -33,6 +33,8 @@ KIND_LOOK: dict[str, tuple[str, str, str]] = {
     "agent_offline": ("Agent offline", "pink", "You get this because one of your agents went offline with work waiting."),
     "question_waiting": ("Question waiting", "amber", "You get this because a question waits for an answer."),
     "agent_replied": ("Agent replied", "green", "You get this because an agent replied in a chat you started."),
+    "task_done": ("Done", "green", "You get this because a task assigned to you or your agent is done."),
+    "team_task_done": ("Done", "green", "You get this because a task in one of your team's projects is done."),
 }
 
 

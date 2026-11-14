@@ -6,6 +6,7 @@ import { CARD_TABLE } from "@/components/ui/cardTable";
 import { ScrollX } from "@/components/ui/ScrollX";
 import { errorMessage } from "@/lib/errors";
 import {
+  KIND_HINTS,
   KIND_LABELS,
   type NotificationKind,
   type NotificationPref,
@@ -59,7 +60,12 @@ export function NotificationPrefs() {
           <tbody className={CARD_TABLE.tbody}>
             {(prefs.data ?? []).map((saved) => unsaved[saved.kind] ?? saved).map((p) => (
               <tr key={p.kind} className={`border-t border-line ${CARD_TABLE.tr}`}>
-                <td className="px-2 py-2 sm:px-3 max-md:block max-md:p-0 max-md:pb-1.5 max-md:font-medium">{KIND_LABELS[p.kind]}</td>
+                <td className="px-2 py-2 sm:px-3 max-md:block max-md:p-0 max-md:pb-1.5 max-md:font-medium">
+                  {KIND_LABELS[p.kind]}
+                  {KIND_HINTS[p.kind] && (
+                    <span className="block text-xs font-normal text-muted-foreground">{KIND_HINTS[p.kind]}</span>
+                  )}
+                </td>
                 <td data-label="In app" className="px-2 py-2 sm:px-3 max-md:mr-4 max-md:inline-flex max-md:items-center max-md:gap-1.5 max-md:p-0 max-md:text-xs max-md:text-muted-foreground max-md:before:content-[attr(data-label)]">
                   <label className="max-md:inline-flex max-md:min-h-8 max-md:min-w-8 max-md:items-center max-md:justify-center">
                     <input type="checkbox" aria-label={`In app: ${KIND_LABELS[p.kind]}`} checked={p.in_app} onChange={() => toggle(p, "in_app")} />

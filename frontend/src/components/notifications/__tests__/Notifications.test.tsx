@@ -106,6 +106,21 @@ describe("NotificationPrefs", () => {
     expect(email.closest("label")).toHaveClass("max-md:min-h-8", "max-md:min-w-8");
   });
 
+  it("has a row for a task of mine being done and one for my team's, each saying when it comes", async () => {
+    const prefs = [
+      { kind: "task_done", in_app: true, email: true, push: false, telegram: false },
+      { kind: "team_task_done", in_app: true, email: false, push: false, telegram: false },
+    ];
+    mockFetch((url, init) => (url === "/api/me/notification-preferences" && !init?.method ? json(prefs) : undefined));
+    wrap(<NotificationPrefs />);
+    const mine = await screen.findByRole("checkbox", { name: "Email: A task assigned to me or my agent is done" });
+    expect(mine).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Email: A task in my team's projects is done" })).not.toBeChecked();
+    expect(within(mine.closest("tr")!).getByText("Moved into a Done column")).toBeInTheDocument();
+    const team = screen.getByRole("checkbox", { name: "In app: A task in my team's projects is done" });
+    expect(within(team.closest("tr")!).getByText("Any task, whoever worked on it")).toBeInTheDocument();
+  });
+
   it("toggles in-app and email per kind", async () => {
     const prefs = [
       { kind: "needs_you", in_app: true, email: true },
