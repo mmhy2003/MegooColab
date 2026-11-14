@@ -109,7 +109,8 @@ async def test_recipients_filtered_by_access_and_status(client_factory, db):
 async def test_preferences_default_and_update(client_factory, db):
     _manager, bea, m, b, task = await _world(client_factory, db)
     prefs = (await b.get("/api/me/notification-preferences")).json()
-    assert prefs == [{"kind": k.value, "in_app": True, "email": k not in (Kind.question_waiting, Kind.agent_replied), "push": False,
+    quiet = (Kind.question_waiting, Kind.agent_replied, Kind.team_task_done)  # in the app only, unless chosen
+    assert prefs == [{"kind": k.value, "in_app": True, "email": k not in quiet, "push": False,
                       "telegram": False} for k in Kind]
     r = await b.put("/api/me/notification-preferences",
                     json=[{"kind": "assigned", "in_app": False, "email": False}])

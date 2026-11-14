@@ -183,4 +183,17 @@ test("notifications reach the right people", async ({ browser }) => {
   expect((await get<{ count: number }>(bea.ctx.request, "/api/notifications/unread-count")).count).toBe(before);
   const beaNotes = await get<Notification[]>(bea.ctx.request, "/api/notifications");
   expect(beaNotes.map((n) => n.title)).not.toContain(`${ADMIN.name} assigned you NOT-3`);
+
+  // 5. the admin moves NOT-1, Bea's task, to Done: she is told, and the admin, who moved it, is not
+  await expect(beaPage.getByRole("checkbox", { name: "Email: A task assigned to me or my agent is done" })).toBeChecked();
+  await expect(beaPage.getByRole("checkbox", { name: "Email: A task in my team's projects is done" })).not.toBeChecked();
+  await expect(beaPage.getByText("Any task, whoever worked on it")).toBeVisible();
+  const columns = await get<{ id: string; category: string }[]>(request, "/api/projects/NOT/columns");
+  await post(request, "/api/tasks/NOT-1/move", { column_id: columns.find((c) => c.category === "done")!.id });
+  await beaPage.goto("/projects");
+  await expect(bell(beaPage)).toHaveText(/^\d+$/, { timeout: 15_000 });
+  await bell(beaPage).click();
+  await expect(beaPage.getByRole("link", { name: "NOT-1 is done" })).toBeVisible();
+  const doneForAdmin = (await get<Notification[]>(request, "/api/notifications")).filter((n) => n.title === "NOT-1 is done");
+  expect(doneForAdmin).toEqual([]);
 });

@@ -21,6 +21,14 @@ export const KIND_LABELS: Record<NotificationKind, string> = {
   agent_offline: "My agent went offline mid-task",
   question_waiting: "A question waits for an answer",
   agent_replied: "An agent replied in my freestyle chat",
+  task_done: "A task assigned to me or my agent is done",
+  team_task_done: "A task in my team's projects is done",
+};
+
+/** A line under a kind's label, where the label alone doesn't say when it comes. */
+export const KIND_HINTS: Partial<Record<NotificationKind, string>> = {
+  task_done: "Moved into a Done column",
+  team_task_done: "Any task, whoever worked on it",
 };
 
 /** Every notifications query starts with "notifications", so one invalidation (notification.* events) refreshes
