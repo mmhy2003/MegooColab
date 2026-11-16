@@ -879,9 +879,10 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 	servers := mcpServers(rs.Mcp)
 	if man, err := tools.LoadManifest(); err == nil {
 		opts = append(opts, acpclient.WithSafeMcpServers(tools.SafeServers(man, agent.Program)))
-		// OMP ignores its own MCP config in ACP mode: its hub servers come with the session
-		if home, err := tools.Home(); err == nil && agent.Program == adapters.Omp {
-			servers = append(servers, withSecrets(tools.RunServers(man, adapters.Omp, home, kind == policy.ReadOnly), rs.Secrets)...)
+		// Claude Code (settingSources: []) and OMP (ACP mode) load no MCP config of their own: their hub servers come
+		// with the session. Codex loads config.toml itself, so RunServers gives it none.
+		if home, err := tools.Home(); err == nil {
+			servers = append(servers, withSecrets(tools.RunServers(man, agent.Program, home, kind == policy.ReadOnly), rs.Secrets)...)
 		}
 	}
 	client := acpclient.New(pol, wt, r.emit, opts...)

@@ -76,6 +76,7 @@ func newEnvWithCache(t *testing.T, scenario string, maxRuns int, cache string, t
 	e.report = filepath.Join(t.TempDir(), "report.json")
 	t.Setenv("MEGOO_ADAPTER_CLAUDE_CODE", `"`+testutil.BuildFakeAgent(t)+`"`)
 	t.Setenv("MEGOO_ADAPTER_OMP", `"`+testutil.BuildFakeAgent(t)+`"`)
+	t.Setenv("MEGOO_ADAPTER_CODEX", `"`+testutil.BuildFakeAgent(t)+`"`)
 	t.Setenv("FAKEAGENT_SCENARIO", scenario)
 	t.Setenv("FAKEAGENT_REPORT", e.report)
 	e.srv = testserver.New(t, token)

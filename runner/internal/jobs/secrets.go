@@ -63,8 +63,8 @@ func secretEnv(secrets []protocol.RunSecret) []string {
 	return env
 }
 
-// withSecrets adds the run's secrets to the environment of each stdio MCP server the runner hands an OMP agent (OMP
-// starts them with exactly that environment).
+// withSecrets adds the run's secrets to the environment of each stdio MCP server the runner hands a run (Claude Code
+// and OMP start them with exactly that environment).
 func withSecrets(servers []acp.McpServer, secrets []protocol.RunSecret) []acp.McpServer {
 	usable := usableSecrets(secrets)
 	for _, srv := range servers {
