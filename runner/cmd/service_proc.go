@@ -31,6 +31,36 @@ func cacheRoot() (string, error) {
 // runValue is the command line stored in the Windows Run key.
 func runValue(exe string) string { return `"` + exe + `" run --background` }
 
+// runValueExe returns the quoted executable at the start of a Run value, and
+// false when the value has another shape.
+func runValueExe(value string) (string, bool) {
+	rest, ok := strings.CutPrefix(value, `"`)
+	if !ok {
+		return "", false
+	}
+	exe, _, ok := strings.Cut(rest, `"`)
+	return exe, ok && exe != ""
+}
+
+// startupDisabled reports whether the entry's StartupApproved\Run value says
+// it is disabled. Explorer stores 12 bytes there: an odd first byte (03) means
+// disabled in Task Manager, an even one (02, 06) enabled, and a missing value
+// means enabled.
+func startupDisabled(b []byte) bool { return len(b) > 0 && b[0]%2 == 1 }
+
+// autostartLines are the lines `service status` adds on Windows when the Run
+// value exists: the stored command line, then why it would not start at logon.
+func autostartLines(value string, exists func(string) bool, disabled bool) []string {
+	lines := []string{"autostart: " + value}
+	if exe, ok := runValueExe(value); ok && !exists(exe) {
+		lines = append(lines, "warning: that file does not exist, so the runner will not start at logon; run `megoocolab-runner service install` again")
+	}
+	if disabled {
+		lines = append(lines, "warning: the startup entry is disabled (Task Manager → Startup apps); enable it there or run `megoocolab-runner service install`")
+	}
+	return lines
+}
+
 func parsePID(b []byte) (int, bool) {
 	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
 	return pid, err == nil && pid > 0

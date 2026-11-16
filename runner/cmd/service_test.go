@@ -51,6 +51,60 @@ func TestRunValue(t *testing.T) {
 	}
 }
 
+func TestRunValueExe(t *testing.T) {
+	p := `C:\Users\me\My Tools\megoocolab-runner.exe`
+	if got, ok := runValueExe(runValue(p)); !ok || got != p {
+		t.Errorf("runValueExe(runValue(%q)) = %q, %v", p, got, ok)
+	}
+	for _, in := range []string{`C:\x.exe run`, `"unterminated`, `"" run`} {
+		if got, ok := runValueExe(in); ok {
+			t.Errorf("runValueExe(%q) = %q, true; want false", in, got)
+		}
+	}
+}
+
+func TestStartupDisabled(t *testing.T) {
+	for _, b := range [][]byte{nil, {}, {0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {0x06}} {
+		if startupDisabled(b) {
+			t.Errorf("startupDisabled(%v) = true, want false", b)
+		}
+	}
+	for _, b := range [][]byte{{0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {0x07}} {
+		if !startupDisabled(b) {
+			t.Errorf("startupDisabled(%v) = false, want true", b)
+		}
+	}
+}
+
+func TestAutostartLines(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "megoocolab-runner.exe")
+	if err := os.WriteFile(exe, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value := runValue(exe)
+	lines := autostartLines(value, fileExists, false)
+	if want := []string{`autostart: "` + exe + `" run --background`}; !reflect.DeepEqual(lines, want) {
+		t.Errorf("existing file: lines = %q, want %q", lines, want)
+	}
+
+	missing := runValue(filepath.Join(t.TempDir(), "gone.exe"))
+	lines = autostartLines(missing, fileExists, false)
+	if len(lines) != 2 || !strings.Contains(lines[1], "does not exist") {
+		t.Errorf("missing file: lines = %q", lines)
+	}
+
+	lines = autostartLines(value, fileExists, true)
+	if !strings.Contains(lines[len(lines)-1], "Startup apps") {
+		t.Errorf("disabled: lines = %q", lines)
+	}
+
+	noFileCheck := func(string) bool { t.Fatal("exists called for an unquoted value"); return false }
+	lines = autostartLines("megoocolab-runner.exe run", noFileCheck, false)
+	if len(lines) != 1 {
+		t.Errorf("unquoted value: lines = %q, want 1 line", lines)
+	}
+}
+
 func TestParsePID(t *testing.T) {
 	for in, want := range map[string]int{"123": 123, " 42\r\n": 42} {
 		if pid, ok := parsePID([]byte(in)); !ok || pid != want {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,10 @@ import (
 // runner itself) with backoff after a crash (see supervise.go).
 
 const runKeyPath = `Software\Microsoft\Windows\CurrentVersion\Run`
+
+// startupApprovedPath holds what Task Manager → Startup apps records about
+// the Run entries; a value here can disable the runner's entry.
+const startupApprovedPath = `Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`
 
 type winManager struct {
 	exe  string
@@ -41,20 +46,40 @@ func newServiceManager() (serviceManager, error) {
 	return winManager{exe: exe, root: root}, nil
 }
 
-func (m winManager) installed() (bool, error) {
+// runValueRead returns the Run value, and false when the key or the value
+// does not exist.
+func (m winManager) runValueRead() (string, bool, error) {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.QUERY_VALUE)
 	if errors.Is(err, registry.ErrNotExist) {
-		return false, nil
+		return "", false, nil
 	}
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
 	defer k.Close()
-	_, _, err = k.GetStringValue(runKeyValueName)
+	v, _, err := k.GetStringValue(runKeyValueName)
 	if errors.Is(err, registry.ErrNotExist) {
-		return false, nil
+		return "", false, nil
 	}
-	return err == nil, err
+	if err != nil {
+		return "", false, err
+	}
+	return v, true, nil
+}
+
+// startupApprovedBytes returns the entry's StartupApproved\Run value, or nil
+// when it cannot be read (a missing value means enabled).
+func (m winManager) startupApprovedBytes() []byte {
+	k, err := registry.OpenKey(registry.CURRENT_USER, startupApprovedPath, registry.QUERY_VALUE)
+	if err != nil {
+		return nil
+	}
+	defer k.Close()
+	b, _, err := k.GetBinaryValue(runKeyValueName)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // runningPID returns the pid in the pid file when that process is alive and is
@@ -90,13 +115,29 @@ func processImage(pid int) (string, bool) {
 	return windows.UTF16ToString(buf[:n]), true
 }
 
+// Install stops a running runner, so the new binary replaces it, writes the
+// Run value and re-enables the entry if it was disabled in Task Manager.
 func (m winManager) Install() error {
+	if err := m.Stop(); err != nil {
+		return err
+	}
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
 	if err != nil {
 		return err
 	}
 	defer k.Close()
-	return k.SetStringValue(runKeyValueName, runValue(m.exe))
+	if err := k.SetStringValue(runKeyValueName, runValue(m.exe)); err != nil {
+		return err
+	}
+	a, err := registry.OpenKey(registry.CURRENT_USER, startupApprovedPath, registry.SET_VALUE)
+	if err != nil {
+		return nil // no StartupApproved key: nothing is disabled
+	}
+	defer a.Close()
+	if err := a.DeleteValue(runKeyValueName); err != nil && !errors.Is(err, registry.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (m winManager) Uninstall() error {
@@ -132,7 +173,7 @@ func (m winManager) Start() error {
 			return nil
 		}
 	}
-	return errors.New("the runner did not start; run `megoocolab-runner run` in a terminal to see why")
+	return fmt.Errorf("the runner did not start; see %s", logPath(m.root))
 }
 
 func (m winManager) Stop() error {
@@ -166,12 +207,16 @@ func (m winManager) Stop() error {
 }
 
 func (m winManager) Status() (string, error) {
-	installed, err := m.installed()
+	value, installed, err := m.runValueRead()
 	if err != nil {
 		return "", fmt.Errorf("cannot read the Run key: %w", err)
 	}
 	pid, running := m.runningPID()
-	return statusText(installed, running, pid), nil
+	lines := []string{statusText(installed, running, pid)}
+	if installed {
+		lines = append(lines, autostartLines(value, fileExists, startupDisabled(m.startupApprovedBytes()))...)
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 // hiddenCmd builds a command that runs exe with a hidden console of its own
