@@ -881,7 +881,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		opts = append(opts, acpclient.WithSafeMcpServers(tools.SafeServers(man, agent.Program)))
 		// OMP ignores its own MCP config in ACP mode: its hub servers come with the session
 		if home, err := tools.Home(); err == nil && agent.Program == adapters.Omp {
-			servers = append(servers, withSecrets(tools.OmpRunServers(man, home, kind == policy.ReadOnly), rs.Secrets)...)
+			servers = append(servers, withSecrets(tools.RunServers(man, adapters.Omp, home, kind == policy.ReadOnly), rs.Secrets)...)
 		}
 	}
 	client := acpclient.New(pol, wt, r.emit, opts...)

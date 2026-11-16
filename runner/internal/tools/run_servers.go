@@ -7,19 +7,30 @@ import (
 	"github.com/coder/acp-go-sdk"
 )
 
-// OmpRunServers are the hub MCP servers an OMP run gets in session/new: OMP turns its own MCP config off in ACP
-// mode, so the runner hands them over. Only the hub's own entries (the manifest's) go, as written in mcp.json with
-// their keys; a read-only run gets only those marked safe in read-only runs. An entry missing or unreadable is
-// left out.
-func OmpRunServers(m *Manifest, home string, readOnly bool) []acp.McpServer {
-	servers, err := readServersAt(ompMCPJSON(home), "mcp.json")
+// RunServers are the hub MCP servers the runner hands a run of program in session/new, load and resume. Claude Code
+// runs start with settingSources: [], which also leaves ~/.claude.json's servers out, and OMP turns its own MCP
+// config off in ACP mode, so the runner hands both their hub servers. Codex gets none: codex-acp loads every
+// [mcp_servers.*] table of config.toml itself, and skips a passed server whose name the config already defines.
+// Only the hub's own entries (the manifest's) go, as written in the program's file; a read-only run gets only
+// those marked safe; never one named "megoocolab". An entry missing, unreadable or of another type is left out.
+func RunServers(m *Manifest, program, home string, readOnly bool) []acp.McpServer {
+	var path, label string
+	switch program {
+	case "claude_code":
+		path, label = claudeJSON(home), ".claude.json"
+	case "omp":
+		path, label = ompMCPJSON(home), "mcp.json"
+	default:
+		return nil
+	}
+	servers, err := readServersAt(path, label)
 	if err != nil {
 		return nil
 	}
 	var names []string
 	for _, e := range m.Entries {
 		// the run's own server, with its run token, is the only "megoocolab"
-		if e.Program == "omp" && e.Kind == "mcp" && e.Name != megooColabServer && (e.ReadOnlySafe || !readOnly) {
+		if e.Program == program && e.Kind == "mcp" && e.Name != megooColabServer && (e.ReadOnlySafe || !readOnly) {
 			names = append(names, e.Name)
 		}
 	}
