@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mmhy2003/megoocolab/runner/internal/config"
 )
 
 func TestServiceConfig(t *testing.T) {
@@ -261,5 +265,130 @@ func TestOpenRunLogTruncatesWhenLarge(t *testing.T) {
 	}
 	if string(b) != "fresh\n" {
 		t.Fatalf("not truncated: %d bytes", len(b))
+	}
+}
+
+// fakeManager records the calls the shared install/start flow makes.
+type fakeManager struct {
+	calls    []string
+	status   string
+	startErr error
+}
+
+func (f *fakeManager) Install() error   { f.calls = append(f.calls, "install"); return nil }
+func (f *fakeManager) Uninstall() error { f.calls = append(f.calls, "uninstall"); return nil }
+func (f *fakeManager) Stop() error      { f.calls = append(f.calls, "stop"); return nil }
+
+func (f *fakeManager) Start() error {
+	f.calls = append(f.calls, "start")
+	if f.startErr != nil {
+		return f.startErr
+	}
+	f.status = "running (pid 1)"
+	return nil
+}
+
+func (f *fakeManager) Status() (string, error) {
+	f.calls = append(f.calls, "status")
+	return f.status, nil
+}
+
+// stubLoggedIn makes loadConfig return a usable login for one test.
+func stubLoggedIn(t *testing.T) {
+	t.Helper()
+	orig := loadConfig
+	t.Cleanup(func() { loadConfig = orig })
+	loadConfig = func() (config.Config, error) {
+		return config.Config{URL: "https://colab.example", Token: "t"}, nil
+	}
+}
+
+func TestServiceInstallRefusesWithoutLogin(t *testing.T) {
+	stubLoadConfig(t)
+	m := &fakeManager{status: "not installed"}
+	var out strings.Builder
+	err := serviceInstall(m, &out)
+	if !errors.Is(err, errNotLoggedIn) {
+		t.Fatalf("err = %v, want errNotLoggedIn", err)
+	}
+	if !strings.HasPrefix(err.Error(), "service install: not logged in") {
+		t.Errorf("err = %q", err)
+	}
+	if len(m.calls) != 0 {
+		t.Errorf("calls = %v, want none", m.calls)
+	}
+	if out.Len() != 0 {
+		t.Errorf("out = %q, want nothing", out.String())
+	}
+}
+
+func TestServiceInstallRegistersThenStarts(t *testing.T) {
+	stubLoggedIn(t)
+	m := &fakeManager{status: "stopped"}
+	var out strings.Builder
+	if err := serviceInstall(m, &out); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"install", "start", "status"}; !reflect.DeepEqual(m.calls, want) {
+		t.Errorf("calls = %v, want %v", m.calls, want)
+	}
+	for _, want := range []string{"service install: ok", "running (pid 1)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("out = %q, want it to contain %q", out.String(), want)
+		}
+	}
+}
+
+func TestServiceInstallReportsStartFailure(t *testing.T) {
+	stubLoggedIn(t)
+	m := &fakeManager{status: "stopped", startErr: errors.New("boom")}
+	err := serviceInstall(m, io.Discard)
+	if err == nil || !strings.HasPrefix(err.Error(), "service start:") {
+		t.Fatalf("err = %v, want a service start: error", err)
+	}
+}
+
+func TestServiceStartWhenRunning(t *testing.T) {
+	stubLoggedIn(t)
+	m := &fakeManager{status: "running (pid 9)"}
+	var out strings.Builder
+	if err := serviceStart(m, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "already running\n" {
+		t.Errorf("out = %q", out.String())
+	}
+	for _, c := range m.calls {
+		if c == "start" {
+			t.Errorf("calls = %v, want no start", m.calls)
+		}
+	}
+}
+
+func TestServiceStartWhenStopped(t *testing.T) {
+	stubLoggedIn(t)
+	m := &fakeManager{status: "stopped"}
+	var out strings.Builder
+	if err := serviceStart(m, &out); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"status", "start"}; !reflect.DeepEqual(m.calls, want) {
+		t.Errorf("calls = %v, want %v", m.calls, want)
+	}
+	if !strings.Contains(out.String(), "service start: ok") {
+		t.Errorf("out = %q", out.String())
+	}
+}
+
+func TestServiceStartRefusesWithoutLogin(t *testing.T) {
+	stubLoadConfig(t)
+	m := &fakeManager{status: "stopped"}
+	var out strings.Builder
+	err := serviceStart(m, &out)
+	if !errors.Is(err, errNotLoggedIn) {
+		t.Fatalf("err = %v, want errNotLoggedIn", err)
+	}
+	if len(m.calls) != 0 || out.Len() != 0 {
+		t.Errorf("calls = %v, out = %q; want nothing", m.calls, out.String())
 	}
 }
