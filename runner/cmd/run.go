@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -26,13 +27,6 @@ func newRunCmd(version string) *cobra.Command {
 		Short: "Connect to MegooColab and wait for work",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if background {
-				if relaunched, err := relaunchHiddenIfNeeded(); err != nil {
-					return fmt.Errorf("cannot restart without a console window: %w", err)
-				} else if relaunched {
-					return nil
-				}
-			}
 			if !background && service.Interactive() {
 				cfg, err := loadLogin()
 				if err != nil {
@@ -42,7 +36,11 @@ func newRunCmd(version string) *cobra.Command {
 				defer stop()
 				return runConnection(ctx, cmd.OutOrStdout(), cfg, version)
 			}
-			return runService(cmd.Context(), roleSingle, version)
+			role := roleSingle
+			if background {
+				role = backgroundRole(runtime.GOOS, os.Getenv(relaunchEnv))
+			}
+			return runService(cmd.Context(), role, version)
 		},
 	}
 	cmd.Flags().BoolVar(&background, "background", false, "write output to the log file instead of stdout (used by the service)")
@@ -78,7 +76,7 @@ func runServiceAt(ctx context.Context, role bgRole, version, root string, rootEr
 		log = newTSWriter(logf, time.Now)
 	}
 	fmt.Fprintf(log, "starting megoocolab-runner %s (pid %d)\n", version, os.Getpid())
-	err := serveRole(ctx, role, version, root, rootErr, log)
+	err := serveRole(ctx, role, version, root, rootErr, log, logf)
 	if err != nil {
 		fmt.Fprintf(log, "error: %v\n", err)
 		if role == roleWorker {
@@ -88,12 +86,36 @@ func runServiceAt(ctx context.Context, role bgRole, version, root string, rootEr
 	return err
 }
 
-// serveRole does the work of one service-mode process.
-func serveRole(ctx context.Context, role bgRole, version, root string, rootErr error, log io.Writer) error {
+// serveRole does the work of one service-mode process. logf is the file
+// behind log; the supervisor hands it to the worker as stdout and stderr.
+func serveRole(ctx context.Context, role bgRole, version, root string, rootErr error, log io.Writer, logf *os.File) error {
 	if rootErr != nil {
 		return rootErr
 	}
 	switch role {
+	case roleLauncher:
+		exe, err := os.Executable()
+		if err == nil {
+			err = spawnSupervisor(exe)
+		}
+		if err != nil {
+			return fmt.Errorf("cannot start the hidden runner: %w", err)
+		}
+		return nil
+	case roleSupervisor:
+		exe, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		return supervisor{
+			log:           log,
+			otherRunning:  func() (int, bool) { return otherRunnerPID(root, exe) },
+			claim:         func() (func(), error) { return beginBackground(root) },
+			runWorker:     runWorkerProcess(exe, logf),
+			stopRequested: func() bool { return fileExists(stopPath(root)) },
+			now:           time.Now,
+			sleep:         time.Sleep,
+		}.run()
 	case roleSingle, roleWorker:
 		cfg, err := loadLogin()
 		if err != nil {

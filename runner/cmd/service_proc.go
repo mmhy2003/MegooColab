@@ -51,15 +51,12 @@ func sameFile(a, b string) bool {
 	return os.SameFile(fa, fb)
 }
 
-// relaunchEnv marks a process that was already started hidden, so it never
-// relaunches itself again.
+// relaunchEnv carries the background role of a Windows `run --background`
+// process (see backgroundRole).
 const relaunchEnv = "MEGOOCOLAB_RUNNER_HIDDEN"
 
-// shouldRelaunchHidden decides whether `run --background` must restart itself
-// without a visible console (the Windows Run key starts a console exe).
-func shouldRelaunchHidden(marker string, ownsVisibleConsole bool) bool {
-	return marker == "" && ownsVisibleConsole
-}
+// workerMarker is the relaunchEnv value of the process the supervisor runs.
+const workerMarker = "worker"
 
 // bgRole is the part a `run` process plays in service mode.
 type bgRole int
@@ -70,6 +67,32 @@ const (
 	roleSupervisor               // Windows, marker "1": also what `service start` spawns
 	roleWorker                   // Windows, marker "worker"
 )
+
+// backgroundRole picks the role of `run --background` from goos and the
+// relaunchEnv marker. On Windows:
+//
+//	marker    role        what it does
+//	unset     launcher    started by the Run key: starts the supervisor hidden
+//	                      (CREATE_NO_WINDOW, marker "1") and exits 0
+//	"1"       supervisor  writes the pid file and runs the worker in a loop,
+//	                      restarting it with backoff
+//	"worker"  worker      the runner itself: loads the config, connects and
+//	                      watches the stop file; it never touches the pid file
+//
+// Linux and macOS have a service manager that restarts the runner, so there
+// it is always a single process.
+func backgroundRole(goos, marker string) bgRole {
+	switch {
+	case goos != "windows":
+		return roleSingle
+	case marker == "":
+		return roleLauncher
+	case marker == workerMarker:
+		return roleWorker
+	default:
+		return roleSupervisor
+	}
+}
 
 func fileExists(path string) bool { _, err := os.Stat(path); return err == nil }
 

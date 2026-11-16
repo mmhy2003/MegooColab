@@ -117,21 +117,39 @@ func TestSameFile(t *testing.T) {
 	}
 }
 
-func TestShouldRelaunchHidden(t *testing.T) {
+func TestBackgroundRole(t *testing.T) {
 	cases := []struct {
-		marker  string
-		visible bool
-		want    bool
+		goos, marker string
+		want         bgRole
 	}{
-		{"", true, true},
-		{"", false, false},
-		{"1", true, false},
-		{"1", false, false},
+		{"windows", "", roleLauncher},
+		{"windows", "1", roleSupervisor},
+		{"windows", workerMarker, roleWorker},
+		{"linux", "", roleSingle},
+		{"darwin", "1", roleSingle},
 	}
 	for _, c := range cases {
-		if got := shouldRelaunchHidden(c.marker, c.visible); got != c.want {
-			t.Errorf("shouldRelaunchHidden(%q,%v) = %v", c.marker, c.visible, got)
+		if got := backgroundRole(c.goos, c.marker); got != c.want {
+			t.Errorf("backgroundRole(%q, %q) = %v, want %v", c.goos, c.marker, got, c.want)
 		}
+	}
+}
+
+func TestRunServiceWorkerSkipsPidFile(t *testing.T) {
+	stubLoadConfig(t)
+	orig := os.Stderr
+	t.Cleanup(func() { os.Stderr = orig })
+	stderr, err := os.Create(filepath.Join(t.TempDir(), "stderr.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stderr.Close()
+	os.Stderr = stderr
+
+	root := t.TempDir()
+	_ = runServiceAt(context.Background(), roleWorker, "9.9.9", root, nil, t.TempDir())
+	if fileExists(pidPath(root)) {
+		t.Errorf("the worker wrote %s; only the supervisor owns the pid file", pidPath(root))
 	}
 }
 
