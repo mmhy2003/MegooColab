@@ -4,8 +4,9 @@ import { setupOrSignIn } from "./helpers/auth";
 
 /**
  * Popups and clicks outside them: search, the notification panel and the user menu close; a dialog you type in
- * and the task drawer stay open (Escape or ✕ closes them). The page behind every one of them is blurred. Creates
- * the "Popup Team" team and the POP project, so it needs a fresh stack. E2E_SCREENSHOT_DIR=<dir> saves screenshots.
+ * and the task drawer stay open (Escape or ✕ closes them). The page behind every one of them is blurred, and
+ * the task drawer resizes from its edge. Creates the "Popup Team" team and the POP project, so it needs a fresh
+ * stack. E2E_SCREENSHOT_DIR=<dir> saves screenshots.
  */
 
 const WEB = { "X-Megoo-Client": "web" };
@@ -120,4 +121,24 @@ test("clicks outside popups", async ({ page }) => {
   await expect(comment).toHaveValue("Thanks @ro");
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);
+
+  // 5b. on a desktop the drawer's left edge resizes it, and the width is kept when it opens again
+  await page.goto("/projects/POP/backlog?task=POP-1");
+  const edge = drawer.getByRole("separator", { name: "Resize task" });
+  const drawerPanel = edge.locator("..");
+  const before = (await drawerPanel.boundingBox())!.width;
+  expect(Math.round(before)).toBe(896);
+  const grip = (await edge.boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 - 200, grip.y + grip.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect(edge).toHaveAttribute("aria-valuenow", "1096");
+  expect(Math.round((await drawerPanel.boundingBox())!.width)).toBe(1096);
+  await shot(page, "task-drawer-wide");
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await page.goto("/projects/POP/backlog?task=POP-1");
+  await expect(edge).toHaveAttribute("aria-valuenow", "1096");
+  expect(Math.round((await drawerPanel.boundingBox())!.width)).toBe(1096);
 });

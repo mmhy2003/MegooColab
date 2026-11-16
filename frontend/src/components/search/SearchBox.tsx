@@ -3,7 +3,7 @@
 import { Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Dialog } from "@/components/ui/Dialog";
 import { Hint } from "@/components/ui/Hint";
@@ -16,6 +16,8 @@ import { ResultCard } from "./ResultCard";
 
 export const UNAVAILABLE = "Search is unavailable right now";
 
+const optionId = (i: number) => `quick-search-option-${i}`;
+
 export function searchError(err: unknown): string {
   return err instanceof ApiError && err.status === 503 ? UNAVAILABLE : errorMessage(err);
 }
@@ -27,6 +29,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const [card, setCard] = useState<Hit | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const results = useQuickSearch(open ? q : "");
   const groups = q.trim() ? (results.data?.groups ?? []) : [];
   const flat = groups.flatMap((g) => g.hits);
@@ -40,16 +43,30 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
     }
   };
 
+  // only the keyboard scrolls, and only as far as needed to show the row whole; no animation, so a held key keeps up
+  const select = (i: number) => {
+    setActive(i);
+    document.getElementById(optionId(i))?.scrollIntoView?.({ block: "nearest" });
+  };
+
+  // the pointer's last position: rows that slide under a resting pointer while the list scrolls must not take the selection
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  const onMouseMove = (e: React.MouseEvent, i: number) => {
+    const last = pointer.current;
+    pointer.current = { x: e.clientX, y: e.clientY };
+    if (last && (last.x !== e.clientX || last.y !== e.clientY)) setActive(i);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
       onClose();
     } else if (e.key === "ArrowDown" && flat.length) {
       e.preventDefault();
-      setActive((i) => Math.min(i + 1, flat.length - 1));
+      select(Math.min(active + 1, flat.length - 1));
     } else if (e.key === "ArrowUp" && flat.length) {
       e.preventDefault();
-      setActive((i) => Math.max(i - 1, 0));
+      select(Math.max(active - 1, 0));
     } else if (e.key === "Enter" && flat[active]) {
       e.preventDefault();
       choose(flat[active]);
@@ -67,6 +84,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
           aria-label="Search"
           aria-expanded={flat.length > 0}
           aria-controls="quick-search-results"
+          aria-activedescendant={!card && flat[active] ? optionId(active) : undefined}
           placeholder="Search tasks, docs, people…"
           className="w-full rounded border border-line bg-surface-2 px-3 py-2 text-sm"
           value={q}
@@ -74,6 +92,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
             setQ(e.target.value);
             setActive(0);
             setCard(null);
+            if (listRef.current) listRef.current.scrollTop = 0;
           }}
           onKeyDown={onKeyDown}
         />
@@ -91,22 +110,25 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
         ) : (
           groups.length > 0 && (
-            <div id="quick-search-results" role="listbox" aria-label="Results" className="max-h-[60vh] space-y-3 overflow-auto">
+            <div ref={listRef} id="quick-search-results" role="listbox" aria-label="Results" className="max-h-[60vh] space-y-3 overflow-auto">
               {groups.map((g, gi) => (
                 <div key={g.kind} role="presentation" className="space-y-1">
-                  <h3 className="text-[11px] tracking-widest text-muted-foreground uppercase">{KIND_LABELS[g.kind as SearchKind] ?? g.kind}</h3>
+                  <h3 className="sticky top-0 z-10 bg-surface pb-1 text-[11px] tracking-widest text-muted-foreground uppercase">{KIND_LABELS[g.kind as SearchKind] ?? g.kind}</h3>
                   {g.hits.map((hit, hi) => {
                     const mine = starts[gi] + hi;
                     return (
                       <div
                         key={`${hit.kind}-${hit.id}`}
+                        id={optionId(mine)}
                         role="option"
                         aria-selected={mine === active}
                         aria-label={`${plain(hit.key) ? `${plain(hit.key)} ` : ""}${plain(hit.title)}`}
                         tabIndex={-1}
-                        onMouseEnter={() => setActive(mine)}
+                        onMouseMove={(e) => onMouseMove(e, mine)}
                         onClick={() => choose(hit)}
-                        className={`cursor-pointer rounded px-2 py-1 text-sm ${mine === active ? "bg-surface-2" : ""}`}
+                        className={`cursor-pointer scroll-mt-6 rounded px-2 py-1 text-sm ${mine === flat.length - 1 ? "scroll-mb-11" : ""} ${
+                          mine === active ? "bg-cyan/15 shadow-[inset_3px_0_0_var(--cyan)]" : ""
+                        }`}
                       >
                         {hit.key && (
                           <span className="mr-2 font-mono text-xs text-muted-foreground">

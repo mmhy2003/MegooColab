@@ -5,7 +5,8 @@ import { setupOrSignIn } from "./helpers/auth";
 /**
  * End-to-end test of Plan 9: the Ctrl+K box finds a task a member can open, with a typo, within seconds of its
  * creation, and never a task of a project they are not in; "See all results" opens the filtered results page; a
- * rename is found too. Needs a fresh stack (see README "Global search end-to-end test"). Project keys SRA and SRB.
+ * rename is found too; in a short window, ↓ and ↑ keep the selected result fully in view. Needs a fresh stack
+ * (see README "Global search end-to-end test"). Project keys SRA and SRB.
  */
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
@@ -108,4 +109,35 @@ test("search finds what you may open", async ({ browser }) => {
       { timeout: 30_000 },
     )
     .toBe(true);
+
+  // 5. in a short window the list follows ↓ and ↑: the selected result is always fully in view
+  for (let i = 1; i <= 5; i++) await post(request, "/api/projects/SRA/tasks", { title: `Scrolling check ${i}`, type: "task" });
+  await page.setViewportSize({ width: 1280, height: 300 });
+  await page.goto("/projects");
+  await expect
+    .poll(
+      async () => {
+        if (!(await box.isVisible())) await page.keyboard.press("Control+K");
+        await box.fill("");
+        await box.fill("scrolling check");
+        return page.getByRole("option", { name: /Scrolling check 5/ }).waitFor({ state: "visible", timeout: 3_000 }).then(() => true, () => false);
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  const options = page.getByRole("option");
+  const n = await options.count();
+  expect(n).toBeGreaterThanOrEqual(5);
+  await expect(options.first()).toBeInViewport({ ratio: 1 });
+  for (let i = 1; i < n; i++) {
+    await box.press("ArrowDown");
+    await expect(options.nth(i)).toHaveAttribute("aria-selected", "true");
+    await expect(options.nth(i)).toBeInViewport({ ratio: 1 });
+  }
+  await expect(page.getByRole("link", { name: /See all \d+ results/ })).toBeInViewport();
+  for (let i = n - 2; i >= 0; i--) {
+    await box.press("ArrowUp");
+    await expect(options.nth(i)).toHaveAttribute("aria-selected", "true");
+    await expect(options.nth(i)).toBeInViewport({ ratio: 1 });
+  }
 });

@@ -53,28 +53,41 @@ replaces the first.
 ### Run in the background
 
 ```sh
-megoocolab-runner service install   # no admin rights needed
-megoocolab-runner service start
+megoocolab-runner service install   # checks the login, registers and starts it; no admin rights needed
 megoocolab-runner service status
 megoocolab-runner service stop
+megoocolab-runner service start
 megoocolab-runner service uninstall
 ```
 
 The service runs as you, because the adapters need your agent logins and repositories.
-`service install` only registers it; run `service start` to start it now.
+`service install` refuses until `login` has been done, then registers the runner, starts it and
+prints `service status`. `service start` does nothing when the runner is already running.
+Re-running `service install` replaces the installation.
 
 - **Linux:** a systemd user unit, enabled for `default.target`, so it starts when your user
   manager does. Run `loginctl enable-linger $USER` once to keep it running when you are
   logged out. When the server ends the session for good (the token was revoked, or another
   runner signed in with the same token) the runner exits with status 78 and systemd does not
-  restart it: run `login` again, then `service start`.
-- **macOS:** a LaunchAgent in `~/Library/LaunchAgents`, loaded at login.
-- **Windows:** an `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry that starts `megoocolab-runner run --background`
-  at logon; it restarts itself once without a console window, so you may see a brief console flash at logon. `service start` launches it detached right away,
-  `service stop` asks it to cancel its runs and exit (and ends it after 15 s if it does
-  not), `service status` shows `running (pid N)`, `stopped` or `not installed`.
-  Windows has no crash restart for this: after a crash it comes back at the next logon or
-  with `service start`.
+  restart it: run `login` again, then `service start`. A missing or unusable `runner.json`
+  also exits 78, with no restart. `service install` also replaces a unit in the `failed` state.
+- **macOS:** a LaunchAgent in `~/Library/LaunchAgents`, loaded at login, that launchd restarts
+  after a crash. After exit 78 (token revoked or replaced, or not logged in) the runner exits 0
+  under launchd and stays down: run `login`, then `service start`. A plain `kill` also leaves it
+  down until `service start` or the next login. **Existing installs:** run `service install`
+  once after updating to get this behaviour.
+- **Windows:** an `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` entry starts
+  `megoocolab-runner run --background` at sign-in. It starts a hidden supervisor (a brief
+  console flash is possible) and exits. The supervisor starts the runner and restarts it after a
+  crash: after 5 s, doubling up to 2 min, and back to 5 s after 5 min of uptime. It stops
+  restarting after a clean stop or exit 78. Task Manager therefore shows two
+  `megoocolab-runner.exe` processes. `service stop` stops both (a stop request, then the process
+  tree is ended after 15 s). `service status` shows `running (pid N)` (the supervisor), `stopped`
+  or `not installed`, the stored `autostart:` command line, and a warning when that file no
+  longer exists or the entry is disabled in Task Manager → Startup apps. `service install`
+  re-enables a disabled entry.
+  **The runner starts only after you sign in; a machine waiting at the sign-in screen (for
+  example after Windows Update) has no runner.**
 
 No admin rights are needed on any OS. On Linux and macOS, `service install` captures your
 current `PATH` into the unit (launchd and systemd start with a minimal one, which would not
@@ -86,6 +99,12 @@ the process inherits your normal logon environment.
 When started by the service, state lines are appended to
 `<user cache dir>/megoocolab/logs/runner.log` (`~/.cache/megoocolab/logs` on Linux,
 `~/Library/Caches/megoocolab/logs` on macOS, `%LocalAppData%\megoocolab\logs` on Windows).
+Every line starts with a local RFC 3339 timestamp. Each start writes
+`starting megoocolab-runner <version> (pid N)`, and a failure writes `error: …` (for example
+`error: not logged in …`). On Windows, the supervisor's restart lines and any crash trace are in
+the same file. If `runner.log` cannot be opened, the runner writes to
+`megoocolab-runner-start.log` in the temp directory (`%TEMP%` on Windows, `$TMPDIR` or `/tmp`
+elsewhere).
 The file is truncated at start when it exceeds 5 MiB. Interactive `run` prints to the terminal.
 
 ## What the runner does and does not do

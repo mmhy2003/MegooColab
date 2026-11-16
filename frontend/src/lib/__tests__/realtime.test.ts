@@ -1,8 +1,11 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { chimeForNotification } from "@/lib/beep";
 import { connectRealtime, invalidationsFor, THROTTLE_MS, throttledFor } from "@/lib/realtime";
 import { qk } from "@/lib/queries";
+
+vi.mock("@/lib/beep", () => ({ chimeForNotification: vi.fn() }));
 
 class MockSocket {
   static instances: MockSocket[] = [];
@@ -80,6 +83,7 @@ describe("connectRealtime", () => {
     vi.useFakeTimers();
     client = new QueryClient();
     client.setQueryData(qk.projects(), [{ id: "p1", key: "PAY" }]);
+    vi.mocked(chimeForNotification).mockClear();
     Object.defineProperty(window, "location", {
       value: { ...window.location, protocol: "http:", host: "localhost:8080", assign },
       writable: true,
@@ -108,6 +112,17 @@ describe("connectRealtime", () => {
     connectRealtime(client);
     MockSocket.instances[0].emit({ type: "ping" });
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("asks for one chime per new notification, none for other events", () => {
+    connectRealtime(client);
+    const ws = MockSocket.instances[0];
+    ws.emit({ type: "notification.created", user_id: "u1" });
+    expect(chimeForNotification).toHaveBeenCalledTimes(1);
+    ws.emit({ type: "notification.read", user_id: "u1" });
+    ws.emit({ type: "task.updated", project_id: "p1" });
+    ws.emit({ type: "ping" });
+    expect(chimeForNotification).toHaveBeenCalledTimes(1);
   });
 
   it("sends the user to login when the server closes with 4401", () => {

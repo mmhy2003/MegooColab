@@ -3,6 +3,7 @@
 import { useQueryClient, type QueryClient, type QueryKey } from "@tanstack/react-query";
 import { useEffect } from "react";
 
+import { chimeForNotification } from "@/lib/beep";
 import { qk } from "@/lib/queries";
 
 export type LiveEvent = {
@@ -129,6 +130,7 @@ export function connectRealtime(client: QueryClient): () => void {
         return;
       }
       if (event.type === "ping") return;
+      if (event.type === "notification.created") chimeForNotification();
       const keys = invalidationsFor(event, projectKeys(client));
       if (keys === "all") void client.invalidateQueries();
       else for (const queryKey of keys) void client.invalidateQueries({ queryKey });
