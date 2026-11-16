@@ -118,6 +118,21 @@ describe("SearchLauncher", () => {
     expect(screen.queryByRole("combobox", { name: "Search" })).toBeNull();
   });
 
+  it("the search field names the selected result for screen readers", async () => {
+    setup();
+    const box = open();
+    expect(box).not.toHaveAttribute("aria-activedescendant");
+    fireEvent.change(box, { target: { value: "retry" } });
+    await screen.findByRole("listbox");
+    const options = screen.getAllByRole("option");
+    expect(options[0].id).toBe("quick-search-option-0");
+    expect(box).toHaveAttribute("aria-activedescendant", "quick-search-option-0");
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    expect(box).toHaveAttribute("aria-activedescendant", options[1].id);
+    fireEvent.click(screen.getByRole("option", { name: /Ann Lee/ }));
+    expect(box).not.toHaveAttribute("aria-activedescendant");
+  });
+
   it("people and agents open a card", async () => {
     setup();
     fireEvent.change(open(), { target: { value: "ann" } });

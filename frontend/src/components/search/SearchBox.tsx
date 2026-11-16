@@ -16,6 +16,8 @@ import { ResultCard } from "./ResultCard";
 
 export const UNAVAILABLE = "Search is unavailable right now";
 
+const optionId = (i: number) => `quick-search-option-${i}`;
+
 export function searchError(err: unknown): string {
   return err instanceof ApiError && err.status === 503 ? UNAVAILABLE : errorMessage(err);
 }
@@ -67,6 +69,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
           aria-label="Search"
           aria-expanded={flat.length > 0}
           aria-controls="quick-search-results"
+          aria-activedescendant={!card && flat[active] ? optionId(active) : undefined}
           placeholder="Search tasks, docs, people…"
           className="w-full rounded border border-line bg-surface-2 px-3 py-2 text-sm"
           value={q}
@@ -100,6 +103,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
                     return (
                       <div
                         key={`${hit.kind}-${hit.id}`}
+                        id={optionId(mine)}
                         role="option"
                         aria-selected={mine === active}
                         aria-label={`${plain(hit.key) ? `${plain(hit.key)} ` : ""}${plain(hit.title)}`}
