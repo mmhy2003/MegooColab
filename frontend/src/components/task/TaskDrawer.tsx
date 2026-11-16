@@ -2,8 +2,10 @@
 
 import { Maximize2, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, type CSSProperties } from "react";
 
+import { DrawerResizeHandle } from "./DrawerResizeHandle";
+import { DRAWER_DEFAULT_WIDTH, useDrawerWidth } from "./drawerWidth";
 import { TaskView } from "./TaskView";
 import { Hint } from "@/components/ui/Hint";
 
@@ -23,12 +25,30 @@ export function TaskDrawer({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const panel = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useDrawerWidth();
+  // while dragging, only the panel's width changes: the task inside does not render again on every move
+  const showWidth = useCallback((w: number) => {
+    panel.current?.style.setProperty("--drawer-width", `${w}px`);
+  }, []);
+
   const [projectKey, number] = taskKey.split("-");
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={taskKey}>
       {/* No close on an outside click: the drawer holds a comment box and editors, so ✕ or Escape closes it */}
       <div data-backdrop aria-hidden className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div className="card absolute inset-y-0 right-0 w-full max-w-4xl rounded-none border-y-0 border-r-0">
+      {/* from md up: the chosen width, kept between 720 px and the window less 48 px; full width on a phone */}
+      <div
+        ref={panel}
+        style={{ "--drawer-width": `${width}px` } as CSSProperties}
+        className="card absolute inset-y-0 right-0 w-full rounded-none border-y-0 border-r-0 md:w-(--drawer-width) md:min-w-[45rem] md:max-w-[calc(100vw-3rem)]"
+      >
+        <DrawerResizeHandle
+          width={width}
+          onDrag={showWidth}
+          onCommit={setWidth}
+          onReset={() => setWidth(DRAWER_DEFAULT_WIDTH)}
+        />
         <TaskView
           taskKey={taskKey}
           onOpenTask={onOpenTask}
