@@ -167,7 +167,7 @@ cd frontend && npx playwright test e2e/mockups.spec.ts
 
 ### Global search end-to-end test
 
-`frontend/e2e/search.spec.ts` covers global search on the same stack. The env file needs `MEILI_MASTER_KEY` (any long random string: `openssl rand -hex 32`); the stack's `meilisearch` service holds the index. Bea, a member of project SRA but not SRB, presses Ctrl+K and types "retyr": SRA-1 "Retry failed card payments" appears within seconds of its creation, and SRB-1 never does. Enter opens the task. "See all results" opens the results page, where ticking Tasks and To do keeps SRA-1. After the admin renames SRA-1, Bea's search finds the new title. It creates the "Search Team" and "Search Private" teams, a user and the SRA and SRB projects, so it needs a fresh stack. To run it:
+`frontend/e2e/search.spec.ts` covers global search on the same stack. The env file needs `MEILI_MASTER_KEY` (any long random string: `openssl rand -hex 32`); the stack's `meilisearch` service holds the index. Bea, a member of project SRA but not SRB, presses Ctrl+K and types "retyr": SRA-1 "Retry failed card payments" appears within seconds of its creation, and SRB-1 never does. Enter opens the task. "See all results" opens the results page, where ticking Tasks and To do keeps SRA-1. After the admin renames SRA-1, Bea's search finds the new title. In a short window, Bea presses ↓ to the last "Scrolling check" result and ↑ back, and each selected result is fully in view. It creates the "Search Team" and "Search Private" teams, a user and the SRA and SRB projects, so it needs a fresh stack. To run it:
 
 ```bash
 cd frontend && npx playwright test e2e/search.spec.ts

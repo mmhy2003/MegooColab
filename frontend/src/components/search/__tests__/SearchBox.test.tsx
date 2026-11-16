@@ -118,6 +118,104 @@ describe("SearchLauncher", () => {
     expect(screen.queryByRole("combobox", { name: "Search" })).toBeNull();
   });
 
+  it("the search field names the selected result for screen readers", async () => {
+    setup();
+    const box = open();
+    expect(box).not.toHaveAttribute("aria-activedescendant");
+    fireEvent.change(box, { target: { value: "retry" } });
+    await screen.findByRole("listbox");
+    const options = screen.getAllByRole("option");
+    expect(options[0].id).toBe("quick-search-option-0");
+    expect(box).toHaveAttribute("aria-activedescendant", "quick-search-option-0");
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    expect(box).toHaveAttribute("aria-activedescendant", options[1].id);
+    fireEvent.click(screen.getByRole("option", { name: /Ann Lee/ }));
+    expect(box).not.toHaveAttribute("aria-activedescendant");
+  });
+
+  it("arrow keys scroll the selected result into view, the least needed", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      setup();
+      const box = open();
+      fireEvent.change(box, { target: { value: "retry" } });
+      await screen.findByRole("listbox");
+      const options = screen.getAllByRole("option");
+      scroll.mockClear();
+      fireEvent.keyDown(box, { key: "ArrowDown" });
+      fireEvent.keyDown(box, { key: "ArrowDown" });
+      expect(scroll).toHaveBeenLastCalledWith({ block: "nearest" });
+      expect(scroll.mock.contexts.at(-1)).toBe(options[2]);
+      fireEvent.keyDown(box, { key: "ArrowUp" });
+      expect(scroll).toHaveBeenCalledTimes(3);
+      expect(scroll).toHaveBeenLastCalledWith({ block: "nearest" });
+      expect(scroll.mock.contexts.at(-1)).toBe(options[1]);
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
+
+  it("a new search goes back to the top of the list", async () => {
+    setup();
+    const box = open();
+    fireEvent.change(box, { target: { value: "retry" } });
+    const list = await screen.findByRole("listbox");
+    // jsdom does no layout: give the list a scroll position of its own
+    Object.defineProperty(list, "scrollTop", { value: 120, writable: true, configurable: true });
+    fireEvent.change(box, { target: { value: "retry p" } });
+    expect(list.scrollTop).toBe(0);
+    expect(screen.getAllByRole("option")[0]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("moving the mouse onto a row selects it, without scrolling", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      setup();
+      fireEvent.change(open(), { target: { value: "retry" } });
+      await screen.findByRole("listbox");
+      const options = screen.getAllByRole("option");
+      scroll.mockClear();
+      fireEvent.mouseMove(options[2], { clientX: 40, clientY: 100 });
+      fireEvent.mouseMove(options[2], { clientX: 42, clientY: 101 });
+      expect(options[2]).toHaveAttribute("aria-selected", "true");
+      expect(scroll).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
+
+  it("a row that slides under a resting mouse does not take the selection", async () => {
+    setup();
+    const box = open();
+    fireEvent.change(box, { target: { value: "retry" } });
+    await screen.findByRole("listbox");
+    const options = screen.getAllByRole("option");
+    fireEvent.mouseMove(options[0], { clientX: 40, clientY: 100 });
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    // the list scrolled: the browser reports the row now under the pointer, at the same position
+    fireEvent.mouseMove(options[1], { clientX: 40, clientY: 100 });
+    expect(options[2]).toHaveAttribute("aria-selected", "true");
+    fireEvent.mouseMove(options[1], { clientX: 40, clientY: 104 });
+    expect(options[1]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("pins the group headings and marks the selected row clearly", async () => {
+    setup();
+    fireEvent.change(open(), { target: { value: "retry" } });
+    const list = await screen.findByRole("listbox");
+    for (const h of within(list).getAllByRole("heading")) expect(h).toHaveClass("sticky", "top-0", "z-10", "bg-surface");
+    const options = screen.getAllByRole("option");
+    for (const o of options) expect(o).toHaveClass("scroll-mt-6");
+    expect(options.at(-1)).toHaveClass("scroll-mb-11");
+    expect(options[0]).not.toHaveClass("scroll-mb-11");
+    expect(options[0]).toHaveClass("bg-cyan/15", "shadow-[inset_3px_0_0_var(--cyan)]");
+    expect(options[0]).not.toHaveClass("bg-surface-2");
+    expect(options[1]).not.toHaveClass("bg-cyan/15");
+  });
+
   it("people and agents open a card", async () => {
     setup();
     fireEvent.change(open(), { target: { value: "ann" } });
