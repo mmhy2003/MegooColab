@@ -32,7 +32,7 @@ Read from the adapter's source (`src/CodexAcpClient.ts`, `createSessionConfig`),
 
 ## Live check
 
-Status: **pending**. It was not run for this task: it needs hub pushes and runs started through the server with a runner built from this branch, which could not be done from inside a run. The owner chose to record the steps and run them later.
+Status: **pending, deferred by the owner**. It was not run for this task: it needs hub pushes and runs started through the server with a runner built from this branch, which could not be done from inside a run. On 2026-11-16 the owner chose to run it later (recorded as a decision on MC-31). Until then the Codex route rests only on the adapter's source; the Codex row is the one to check first.
 
 | Program | OS | Adapter | Workspace | Read-only | Resumed | No duplicate / startup failure |
 |---|---|---|---|---|---|---|
