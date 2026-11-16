@@ -220,7 +220,9 @@ machine as MegooColab is reachable from the containers as `host.docker.internal`
 The bell in the header shows what needs you: a task waiting on your answer, approval or review, a task assigned
 to you or your agent, a mention (`@` in a comment), your agent going offline mid-task, and agent-to-agent
 questions that need a person. Each person chooses, per kind, in-app, email and push under **avatar → Notifications**
-(`/settings/notifications`). Email needs SMTP (section 7); its links use `PUBLIC_URL`.
+(`/settings/notifications`). Email needs SMTP (section 7); its links use `PUBLIC_URL`. While MegooColab is open in a
+browser, a short chime also plays when a new notification arrives (after the first click in the tab, as browsers
+require); each person turns it off for that browser in the **Sound** card on the same page.
 
 ### Push notifications
 

@@ -12,7 +12,8 @@ import { pickAssignee } from "./helpers/assignee";
 /**
  * End-to-end test of Plan 7's notifications: an assignment and a mention reach the person through the bell (and an
  * outsider mentioned by hand gets nothing), the agent's owner is told when the workflow waits for a design
- * approval, and turning a kind off in-app silences it. Needs the Go toolchain and git on the PATH, and a fresh
+ * approval, turning a kind off in-app silences it, and a new notification chimes in an open tab until the sound is
+ * turned off. Needs the Go toolchain and git on the PATH, and a fresh
  * stack (see README "Git and notifications end-to-end tests"). Project key NOT.
  */
 
@@ -196,4 +197,50 @@ test("notifications reach the right people", async ({ browser }) => {
   await expect(beaPage.getByRole("link", { name: "NOT-1 is done" })).toBeVisible();
   const doneForAdmin = (await get<Notification[]>(request, "/api/notifications")).filter((n) => n.title === "NOT-1 is done");
   expect(doneForAdmin).toEqual([]);
+
+  // 6. with MegooColab open, a new notification chimes once Bea has clicked in the tab; with the sound off it only
+  // raises the bell. The page's AudioContext is swapped for a recorder of the notes played.
+  await bea.ctx.addInitScript(() => {
+    const w = window as unknown as { __notes: number[]; AudioContext: unknown };
+    w.__notes = [];
+    w.AudioContext = class {
+      state = "suspended";
+      currentTime = 0;
+      destination = {};
+      async resume() {
+        this.state = "running";
+      }
+      createGain() {
+        return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} };
+      }
+      createOscillator() {
+        const osc = { type: "sine", frequency: { value: 0 }, connect() {}, start: () => w.__notes.push(osc.frequency.value), stop() {} };
+        return osc;
+      }
+    };
+  });
+  const notes = () => beaPage.evaluate(() => (window as unknown as { __notes: number[] }).__notes);
+  const unread = async () => (await get<{ count: number }>(bea.ctx.request, "/api/notifications/unread-count")).count;
+  const mentionBea = (text: string) => post(request, "/api/tasks/NOT-1/comments", { body_md: `${text} @[${BEA.name}](user:${bea.id})` });
+  // a mention raises nothing new while a recent one about the same task is unread, so Bea reads hers first
+  const readAll = () => post(bea.ctx.request, "/api/notifications/read-all", {});
+  await beaPage.goto("/projects");
+  await beaPage.locator("main").click({ position: { x: 5, y: 5 } }); // browsers play sound only after a click or a key
+  await readAll();
+  let count = await unread();
+  await mentionBea("One more look,");
+  await expect(bell(beaPage)).toHaveText(String(count + 1), { timeout: 15_000 });
+  await expect.poll(notes).toEqual([784, 1175]);
+
+  await beaPage.goto("/settings/notifications");
+  const sound = beaPage.getByRole("region", { name: "Sound" });
+  await expect(sound.getByText("Sound is on in this browser")).toBeVisible();
+  await sound.getByRole("button", { name: "Turn off" }).click(); // also the click that lets this tab play sound
+  await expect(sound.getByText("Sound is off in this browser")).toBeVisible();
+  expect(await beaPage.evaluate(() => localStorage.getItem("notifications.sound"))).toBe("false");
+  await readAll();
+  count = await unread();
+  await mentionBea("And the title,");
+  await expect(bell(beaPage)).toHaveText(String(count + 1), { timeout: 15_000 });
+  expect(await notes()).toEqual([]);
 });
