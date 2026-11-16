@@ -3,7 +3,7 @@
 import { Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Dialog } from "@/components/ui/Dialog";
 import { Hint } from "@/components/ui/Hint";
@@ -29,6 +29,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const [card, setCard] = useState<Hit | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const results = useQuickSearch(open ? q : "");
   const groups = q.trim() ? (results.data?.groups ?? []) : [];
   const flat = groups.flatMap((g) => g.hits);
@@ -42,16 +43,22 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
     }
   };
 
+  // only the keyboard scrolls, and only as far as needed to show the row whole; no animation, so a held key keeps up
+  const select = (i: number) => {
+    setActive(i);
+    document.getElementById(optionId(i))?.scrollIntoView?.({ block: "nearest" });
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
       onClose();
     } else if (e.key === "ArrowDown" && flat.length) {
       e.preventDefault();
-      setActive((i) => Math.min(i + 1, flat.length - 1));
+      select(Math.min(active + 1, flat.length - 1));
     } else if (e.key === "ArrowUp" && flat.length) {
       e.preventDefault();
-      setActive((i) => Math.max(i - 1, 0));
+      select(Math.max(active - 1, 0));
     } else if (e.key === "Enter" && flat[active]) {
       e.preventDefault();
       choose(flat[active]);
@@ -77,6 +84,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
             setQ(e.target.value);
             setActive(0);
             setCard(null);
+            if (listRef.current) listRef.current.scrollTop = 0;
           }}
           onKeyDown={onKeyDown}
         />
@@ -94,7 +102,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
         ) : (
           groups.length > 0 && (
-            <div id="quick-search-results" role="listbox" aria-label="Results" className="max-h-[60vh] space-y-3 overflow-auto">
+            <div ref={listRef} id="quick-search-results" role="listbox" aria-label="Results" className="max-h-[60vh] space-y-3 overflow-auto">
               {groups.map((g, gi) => (
                 <div key={g.kind} role="presentation" className="space-y-1">
                   <h3 className="text-[11px] tracking-widest text-muted-foreground uppercase">{KIND_LABELS[g.kind as SearchKind] ?? g.kind}</h3>

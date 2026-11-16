@@ -133,6 +133,41 @@ describe("SearchLauncher", () => {
     expect(box).not.toHaveAttribute("aria-activedescendant");
   });
 
+  it("arrow keys scroll the selected result into view, the least needed", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      setup();
+      const box = open();
+      fireEvent.change(box, { target: { value: "retry" } });
+      await screen.findByRole("listbox");
+      const options = screen.getAllByRole("option");
+      scroll.mockClear();
+      fireEvent.keyDown(box, { key: "ArrowDown" });
+      fireEvent.keyDown(box, { key: "ArrowDown" });
+      expect(scroll).toHaveBeenLastCalledWith({ block: "nearest" });
+      expect(scroll.mock.contexts.at(-1)).toBe(options[2]);
+      fireEvent.keyDown(box, { key: "ArrowUp" });
+      expect(scroll).toHaveBeenCalledTimes(3);
+      expect(scroll).toHaveBeenLastCalledWith({ block: "nearest" });
+      expect(scroll.mock.contexts.at(-1)).toBe(options[1]);
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
+
+  it("a new search goes back to the top of the list", async () => {
+    setup();
+    const box = open();
+    fireEvent.change(box, { target: { value: "retry" } });
+    const list = await screen.findByRole("listbox");
+    // jsdom does no layout: give the list a scroll position of its own
+    Object.defineProperty(list, "scrollTop", { value: 120, writable: true, configurable: true });
+    fireEvent.change(box, { target: { value: "retry p" } });
+    expect(list.scrollTop).toBe(0);
+    expect(screen.getAllByRole("option")[0]).toHaveAttribute("aria-selected", "true");
+  });
+
   it("people and agents open a card", async () => {
     setup();
     fireEvent.change(open(), { target: { value: "ann" } });
