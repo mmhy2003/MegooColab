@@ -218,14 +218,18 @@ The panel flags three cases:
 MegooColab starts Claude Code agents with `settingSources: []` (`runner/internal/adapters/adapters.go`, around
 `SessionMeta`), so that a developer's personal settings don't leak into agent runs.
 
-- **MCP servers.** By the Agent SDK's documentation, `~/.claude.json` is read regardless of that setting, so
-  user-level MCP servers already reach agents.
+- **MCP servers.** With `settingSources: []` Claude Code loads **no** MCP servers from `~/.claude.json` (tested with
+  `@agentclientprotocol/claude-agent-acp@0.94.0`, Agent SDK 0.3.303, on the `system/init` message). The runner
+  therefore passes Claude Code's and OMP's hub servers itself in `session/new`, `session/load` and
+  `session/resume` (`tools.RunServers`, `runner/internal/tools/run_servers.go`). See
+  [Tool Hub MCP servers in runs](../notes/2026-11-16-hub-servers-in-runs.md).
 - **Skills.** User-level skills do **not** reach agents.
 - **The fix (my call).** The runner also hands the hub-installed skills to its Claude Code sessions directly (for
   example as a local plugin folder of only those skills) without turning on user settings. Agents get exactly the
   hub's skills, and the person's own Claude Code gets them too through `~/.claude/skills`.
-- **Codex.** The builder must check the same for Codex through `codex-acp`: does it load user-level MCP servers and
-  skills? If not, find the equivalent way to give its sessions the hub's tools.
+- **Codex.** `codex-acp` loads the `[mcp_servers.*]` entries of `config.toml` itself in every run, so the runner
+  passes Codex no hub servers (only the run's own `megoocolab`). See
+  [Tool Hub MCP servers in runs](../notes/2026-11-16-hub-servers-in-runs.md).
 
 ## Constraints
 
@@ -249,8 +253,8 @@ MegooColab starts Claude Code agents with `settingSources: []` (`runner/internal
   SDK offers), and the Codex equivalent.
 - Wording of states and empty screens, in the app's existing voice.
 - Where "Tool Hub" sits in the sidebar (the mockup puts it under Memory).
-- Checking against the Agent SDK and `codex-acp` that user-level `~/.claude.json` MCP entries really load with
-  `settingSources: []`, and where Codex reads user-level skills.
+- Where Codex reads user-level skills. (Whether user-level `~/.claude.json` MCP entries load with
+  `settingSources: []` is settled: they don't; see "Agents must actually see the tools".)
 - Writing `~/.claude.json` safely while a running Claude Code may also rewrite it, for example by retrying when the
   file changed between the read and the rename.
 - What a queued push sends when the library changes before the runner reconnects. The sensible default is the
