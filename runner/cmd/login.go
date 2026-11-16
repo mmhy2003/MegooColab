@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -57,4 +58,20 @@ func verifyLogin(client *http.Client, base, token string) error {
 		return fmt.Errorf("this token has no runner scope (it has: %v); create a token with the runner scope", scopes)
 	}
 	return nil
+}
+
+// errNotLoggedIn marks a missing or unusable runner.json: only `login` fixes it,
+// so the service manager must not restart into it (exit 78).
+var errNotLoggedIn = errors.New("not logged in")
+
+// loadConfig is config.Load; tests replace it.
+var loadConfig = config.Load
+
+// loadLogin loads the saved login, or says how to make one.
+func loadLogin() (config.Config, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return config.Config{}, fmt.Errorf("%w (%v); run: megoocolab-runner login --url URL --token TOKEN", errNotLoggedIn, err)
+	}
+	return cfg, nil
 }

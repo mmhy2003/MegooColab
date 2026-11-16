@@ -50,6 +50,51 @@ EnvironmentFile=-/etc/sysconfig/{{Name}}
 WantedBy=default.target
 `
 
+// launchdUserPlist is kardianos/service v1.3.0's launchd template with
+// KeepAlive as {SuccessfulExit = false} and RunAtLoad true. launchd then
+// restarts the runner after a crash, not after exit 0, which the runner
+// returns in service mode when only `login` can help. It is loaded at login
+// because of RunAtLoad.
+const launchdUserPlist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Disabled</key>
+	<false/>
+	{{if EnvVars}}<key>EnvironmentVariables</key>
+	<dict>
+{{range EnvVars}}{{.}}
+{{end}}	</dict>
+	{{end}}<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>Label</key>
+	<string>{{Name | html}}</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{Path | html}}</string>
+{{range Arguments}}		<string>{{. | html}}</string>
+{{end}}	</array>
+	{{if ChRoot}}<key>RootDirectory</key>
+	<string>{{ChRoot | html}}</string>
+	{{end}}<key>RunAtLoad</key>
+	<true/>
+	<key>SessionCreate</key>
+	<{{SessionCreate}}/>
+	{{if StandardErrorPath}}<key>StandardErrorPath</key>
+	<string>{{StandardErrorPath | html}}</string>
+	{{end}}{{if StandardOutPath}}<key>StandardOutPath</key>
+	<string>{{StandardOutPath | html}}</string>
+	{{end}}{{if UserName}}<key>UserName</key>
+	<string>{{UserName | html}}</string>
+	{{end}}{{if WorkingDirectory}}<key>WorkingDirectory</key>
+	<string>{{WorkingDirectory | html}}</string>
+	{{end}}</dict>
+</plist>
+`
+
 // serviceConfig describes the background service. It is a pure function so it
 // can be tested without touching the real service manager. The service runs as
 // the current user (systemd --user, launchd LaunchAgent) because the agent
@@ -67,6 +112,7 @@ func serviceConfig(path string) *service.Config {
 		Option: service.KeyValue{
 			"UserService":   true,
 			"SystemdScript": script,
+			"LaunchdConfig": launchdUserPlist,
 		},
 	}
 	if path != "" {
@@ -95,7 +141,8 @@ type serviceManager interface {
 	Uninstall() error
 	Start() error
 	Stop() error
-	// Status returns "running", "stopped" or "not installed".
+	// Status describes the runner. Its first line is "running…", "stopped" or
+	// "not installed"; Windows may add more lines.
 	Status() (string, error)
 }
 
@@ -104,13 +151,35 @@ func newServiceCmd() *cobra.Command {
 		Use:   "service",
 		Short: "Install and control the runner as a background service for the current user",
 	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "install",
+		Short: "Register the runner to start in the background and start it now (no admin rights needed)",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, _ []string) error {
+			m, err := newServiceManager()
+			if err != nil {
+				return err
+			}
+			return serviceInstall(m, c.OutOrStdout())
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "start",
+		Short: "Start the background service",
+		Args:  cobra.NoArgs,
+		RunE: func(c *cobra.Command, _ []string) error {
+			m, err := newServiceManager()
+			if err != nil {
+				return err
+			}
+			return serviceStart(m, c.OutOrStdout())
+		},
+	})
 	actions := []struct {
 		name, short string
 		do          func(serviceManager) error
 	}{
-		{"install", "Register the runner to start in the background (no admin rights needed)", serviceManager.Install},
 		{"uninstall", "Remove the background service", serviceManager.Uninstall},
-		{"start", "Start the background service", serviceManager.Start},
 		{"stop", "Stop the background service", serviceManager.Stop},
 	}
 	for _, a := range actions {
@@ -152,6 +221,44 @@ func newServiceCmd() *cobra.Command {
 	return cmd
 }
 
+// serviceInstall registers the runner, starts it and prints its status. It refuses
+// before touching anything when `login` was not done.
+func serviceInstall(m serviceManager, out io.Writer) error {
+	if _, err := loadLogin(); err != nil {
+		return fmt.Errorf("service install: %w", err)
+	}
+	if err := m.Install(); err != nil {
+		return fmt.Errorf("service install: %w", err)
+	}
+	fmt.Fprintln(out, "service install: ok")
+	if err := m.Start(); err != nil {
+		return fmt.Errorf("service start: %w", err)
+	}
+	s, err := m.Status()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(out, s)
+	return nil
+}
+
+// serviceStart starts the runner; one that is already running is left alone, so
+// `service install; service start` keeps working.
+func serviceStart(m serviceManager, out io.Writer) error {
+	if _, err := loadLogin(); err != nil {
+		return fmt.Errorf("service start: %w", err)
+	}
+	if s, err := m.Status(); err == nil && strings.HasPrefix(s, "running") {
+		fmt.Fprintln(out, "already running")
+		return nil
+	}
+	if err := m.Start(); err != nil {
+		return fmt.Errorf("service start: %w", err)
+	}
+	fmt.Fprintln(out, "service start: ok")
+	return nil
+}
+
 // kardianosStatus maps the library status to the words the CLI prints.
 func kardianosStatus(s service.Service) (string, error) {
 	st, err := s.Status()
@@ -169,12 +276,11 @@ func kardianosStatus(s service.Service) (string, error) {
 
 // openRunLog opens <cacheRoot>/logs/runner.log for appending. A log larger
 // than maxLogBytes is truncated first, which keeps rotation trivial.
-func openRunLog(cacheRoot string) (io.WriteCloser, error) {
-	dir := filepath.Join(cacheRoot, "logs")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+func openRunLog(cacheRoot string) (*os.File, error) {
+	path := logPath(cacheRoot)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, "runner.log")
 	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
 	if fi, err := os.Stat(path); err == nil && fi.Size() > maxLogBytes {
 		flags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC

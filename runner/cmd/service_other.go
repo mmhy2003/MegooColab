@@ -24,12 +24,11 @@ func newServiceManager() (serviceManager, error) {
 }
 
 // Install replaces an existing installation, so re-running it refreshes the
-// captured PATH.
+// captured PATH. A unit whose status cannot be read (systemd reports `failed`)
+// is replaced too. Stopping a stopped or failed unit may fail harmlessly.
 func (m libManager) Install() error {
-	if st, err := kardianosStatus(m.svc); err == nil && st != "not installed" {
-		if st == "running" {
-			_ = m.svc.Stop()
-		}
+	if st, err := kardianosStatus(m.svc); err != nil || st != "not installed" {
+		_ = m.svc.Stop()
 		if err := m.svc.Uninstall(); err != nil {
 			return err
 		}

@@ -2,15 +2,21 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
+
+	"github.com/mmhy2003/megoocolab/runner/internal/config"
 )
 
 func TestServiceConfig(t *testing.T) {
@@ -44,6 +50,60 @@ func TestRunValue(t *testing.T) {
 	want := `"C:\Users\me\My Tools\megoocolab-runner.exe" run --background`
 	if got != want {
 		t.Errorf("runValue = %q, want %q", got, want)
+	}
+}
+
+func TestRunValueExe(t *testing.T) {
+	p := `C:\Users\me\My Tools\megoocolab-runner.exe`
+	if got, ok := runValueExe(runValue(p)); !ok || got != p {
+		t.Errorf("runValueExe(runValue(%q)) = %q, %v", p, got, ok)
+	}
+	for _, in := range []string{`C:\x.exe run`, `"unterminated`, `"" run`} {
+		if got, ok := runValueExe(in); ok {
+			t.Errorf("runValueExe(%q) = %q, true; want false", in, got)
+		}
+	}
+}
+
+func TestStartupDisabled(t *testing.T) {
+	for _, b := range [][]byte{nil, {}, {0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {0x06}} {
+		if startupDisabled(b) {
+			t.Errorf("startupDisabled(%v) = true, want false", b)
+		}
+	}
+	for _, b := range [][]byte{{0x03, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, {0x07}} {
+		if !startupDisabled(b) {
+			t.Errorf("startupDisabled(%v) = false, want true", b)
+		}
+	}
+}
+
+func TestAutostartLines(t *testing.T) {
+	exe := filepath.Join(t.TempDir(), "megoocolab-runner.exe")
+	if err := os.WriteFile(exe, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value := runValue(exe)
+	lines := autostartLines(value, fileExists, false)
+	if want := []string{`autostart: "` + exe + `" run --background`}; !reflect.DeepEqual(lines, want) {
+		t.Errorf("existing file: lines = %q, want %q", lines, want)
+	}
+
+	missing := runValue(filepath.Join(t.TempDir(), "gone.exe"))
+	lines = autostartLines(missing, fileExists, false)
+	if len(lines) != 2 || !strings.Contains(lines[1], "does not exist") {
+		t.Errorf("missing file: lines = %q", lines)
+	}
+
+	lines = autostartLines(value, fileExists, true)
+	if !strings.Contains(lines[len(lines)-1], "Startup apps") {
+		t.Errorf("disabled: lines = %q", lines)
+	}
+
+	noFileCheck := func(string) bool { t.Fatal("exists called for an unquoted value"); return false }
+	lines = autostartLines("megoocolab-runner.exe run", noFileCheck, false)
+	if len(lines) != 1 {
+		t.Errorf("unquoted value: lines = %q, want 1 line", lines)
 	}
 }
 
@@ -117,21 +177,71 @@ func TestSameFile(t *testing.T) {
 	}
 }
 
-func TestShouldRelaunchHidden(t *testing.T) {
+func TestBackgroundRole(t *testing.T) {
 	cases := []struct {
-		marker  string
-		visible bool
-		want    bool
+		goos, marker string
+		want         bgRole
 	}{
-		{"", true, true},
-		{"", false, false},
-		{"1", true, false},
-		{"1", false, false},
+		{"windows", "", roleLauncher},
+		{"windows", "1", roleSupervisor},
+		{"windows", workerMarker, roleWorker},
+		{"linux", "", roleSingle},
+		{"darwin", "1", roleSingle},
 	}
 	for _, c := range cases {
-		if got := shouldRelaunchHidden(c.marker, c.visible); got != c.want {
-			t.Errorf("shouldRelaunchHidden(%q,%v) = %v", c.marker, c.visible, got)
+		if got := backgroundRole(c.goos, c.marker); got != c.want {
+			t.Errorf("backgroundRole(%q, %q) = %v, want %v", c.goos, c.marker, got, c.want)
 		}
+	}
+}
+
+func TestRunServiceWorkerSkipsPidFile(t *testing.T) {
+	stubLoadConfig(t)
+	orig := os.Stderr
+	t.Cleanup(func() { os.Stderr = orig })
+	stderr, err := os.Create(filepath.Join(t.TempDir(), "stderr.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stderr.Close()
+	os.Stderr = stderr
+
+	root := t.TempDir()
+	_ = runServiceAt(context.Background(), roleWorker, "9.9.9", root, nil, t.TempDir())
+	if fileExists(pidPath(root)) {
+		t.Errorf("the worker wrote %s; only the supervisor owns the pid file", pidPath(root))
+	}
+}
+
+func TestLaunchdPlistRestartsOnlyAfterFailure(t *testing.T) {
+	p, _ := serviceConfig("/usr/bin").Option["LaunchdConfig"].(string)
+	if !regexp.MustCompile(`<key>SuccessfulExit</key>\s*<false/>`).MatchString(p) {
+		t.Errorf("KeepAlive must be {SuccessfulExit = false}:\n%s", p)
+	}
+	if !regexp.MustCompile(`<key>RunAtLoad</key>\s*<true/>`).MatchString(p) {
+		t.Errorf("RunAtLoad must be true:\n%s", p)
+	}
+	if strings.Contains(p, "{{KeepAlive}}") || regexp.MustCompile(`<key>KeepAlive</key>\s*<(true|false)/>`).MatchString(p) {
+		t.Errorf("KeepAlive must not be a plain bool:\n%s", p)
+	}
+	if !strings.Contains(p, "<key>ProgramArguments</key>") || !strings.Contains(p, "<string>{{Path | html}}</string>") {
+		t.Errorf("LaunchdConfig lost ProgramArguments:\n%s", p)
+	}
+}
+
+// TestLaunchdPlistParses checks the template's actions are well formed.
+// kardianos' engine uses text/template's delimiters and block syntax but calls
+// every value by name, so each name is a function here.
+func TestLaunchdPlistParses(t *testing.T) {
+	p, _ := serviceConfig("/usr/bin").Option["LaunchdConfig"].(string)
+	value := func() string { return "" }
+	funcs := template.FuncMap{"html": func(s string) string { return s }}
+	for _, k := range []string{"EnvVars", "Name", "Path", "Arguments", "ChRoot", "SessionCreate",
+		"StandardErrorPath", "StandardOutPath", "UserName", "WorkingDirectory"} {
+		funcs[k] = value
+	}
+	if _, err := template.New("").Funcs(funcs).Parse(p); err != nil {
+		t.Errorf("LaunchdConfig does not parse: %v", err)
 	}
 }
 
@@ -243,5 +353,130 @@ func TestOpenRunLogTruncatesWhenLarge(t *testing.T) {
 	}
 	if string(b) != "fresh\n" {
 		t.Fatalf("not truncated: %d bytes", len(b))
+	}
+}
+
+// fakeManager records the calls the shared install/start flow makes.
+type fakeManager struct {
+	calls    []string
+	status   string
+	startErr error
+}
+
+func (f *fakeManager) Install() error   { f.calls = append(f.calls, "install"); return nil }
+func (f *fakeManager) Uninstall() error { f.calls = append(f.calls, "uninstall"); return nil }
+func (f *fakeManager) Stop() error      { f.calls = append(f.calls, "stop"); return nil }
+
+func (f *fakeManager) Start() error {
+	f.calls = append(f.calls, "start")
+	if f.startErr != nil {
+		return f.startErr
+	}
+	f.status = "running (pid 1)"
+	return nil
+}
+
+func (f *fakeManager) Status() (string, error) {
+	f.calls = append(f.calls, "status")
+	return f.status, nil
+}
+
+// stubLoggedIn makes loadConfig return a usable login for one test.
+func stubLoggedIn(t *testing.T) {
+	t.Helper()
+	orig := loadConfig
+	t.Cleanup(func() { loadConfig = orig })
+	loadConfig = func() (config.Config, error) {
+		return config.Config{URL: "https://colab.example", Token: "t"}, nil
+	}
+}
+
+func TestServiceInstallRefusesWithoutLogin(t *testing.T) {
+	stubLoadConfig(t)
+	m := &fakeManager{status: "not installed"}
+	var out strings.Builder
+	err := serviceInstall(m, &out)
+	if !errors.Is(err, errNotLoggedIn) {
+		t.Fatalf("err = %v, want errNotLoggedIn", err)
+	}
+	if !strings.HasPrefix(err.Error(), "service install: not logged in") {
+		t.Errorf("err = %q", err)
+	}
+	if len(m.calls) != 0 {
+		t.Errorf("calls = %v, want none", m.calls)
+	}
+	if out.Len() != 0 {
+		t.Errorf("out = %q, want nothing", out.String())
+	}
+}
+
+func TestServiceInstallRegistersThenStarts(t *testing.T) {
+	stubLoggedIn(t)
+	m := &fakeManager{status: "stopped"}
+	var out strings.Builder
+	if err := serviceInstall(m, &out); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"install", "start", "status"}; !reflect.DeepEqual(m.calls, want) {
+		t.Errorf("calls = %v, want %v", m.calls, want)
+	}
+	for _, want := range []string{"service install: ok", "running (pid 1)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("out = %q, want it to contain %q", out.String(), want)
+		}
+	}
+}
+
+func TestServiceInstallReportsStartFailure(t *testing.T) {
+	stubLoggedIn(t)
+	m := &fakeManager{status: "stopped", startErr: errors.New("boom")}
+	err := serviceInstall(m, io.Discard)
+	if err == nil || !strings.HasPrefix(err.Error(), "service start:") {
+		t.Fatalf("err = %v, want a service start: error", err)
+	}
+}
+
+func TestServiceStartWhenRunning(t *testing.T) {
+	stubLoggedIn(t)
+	m := &fakeManager{status: "running (pid 9)"}
+	var out strings.Builder
+	if err := serviceStart(m, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "already running\n" {
+		t.Errorf("out = %q", out.String())
+	}
+	for _, c := range m.calls {
+		if c == "start" {
+			t.Errorf("calls = %v, want no start", m.calls)
+		}
+	}
+}
+
+func TestServiceStartWhenStopped(t *testing.T) {
+	stubLoggedIn(t)
+	m := &fakeManager{status: "stopped"}
+	var out strings.Builder
+	if err := serviceStart(m, &out); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"status", "start"}; !reflect.DeepEqual(m.calls, want) {
+		t.Errorf("calls = %v, want %v", m.calls, want)
+	}
+	if !strings.Contains(out.String(), "service start: ok") {
+		t.Errorf("out = %q", out.String())
+	}
+}
+
+func TestServiceStartRefusesWithoutLogin(t *testing.T) {
+	stubLoadConfig(t)
+	m := &fakeManager{status: "stopped"}
+	var out strings.Builder
+	err := serviceStart(m, &out)
+	if !errors.Is(err, errNotLoggedIn) {
+		t.Fatalf("err = %v, want errNotLoggedIn", err)
+	}
+	if len(m.calls) != 0 || out.Len() != 0 {
+		t.Errorf("calls = %v, out = %q; want nothing", m.calls, out.String())
 	}
 }

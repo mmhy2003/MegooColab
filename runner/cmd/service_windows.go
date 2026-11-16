@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,12 +16,18 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// Windows has no per-user service that needs no admin rights, so the runner is
-// started at logon through the HKCU Run key and controlled through a pid file
-// and a stop-request file (see service_proc.go). There is no crash restart:
-// it comes back at the next logon or with `service start`.
+// Windows has no per-user service that needs no admin rights, and the runner
+// installs no admin service. It is started at logon through the HKCU Run key
+// and controlled through a pid file and a stop-request file (see
+// service_proc.go). The Run key starts a launcher that starts a hidden
+// supervisor; the supervisor owns the pid file and restarts the worker (the
+// runner itself) with backoff after a crash (see supervise.go).
 
 const runKeyPath = `Software\Microsoft\Windows\CurrentVersion\Run`
+
+// startupApprovedPath holds what Task Manager → Startup apps records about
+// the Run entries; a value here can disable the runner's entry.
+const startupApprovedPath = `Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`
 
 type winManager struct {
 	exe  string
@@ -39,20 +46,40 @@ func newServiceManager() (serviceManager, error) {
 	return winManager{exe: exe, root: root}, nil
 }
 
-func (m winManager) installed() (bool, error) {
+// runValueRead returns the Run value, and false when the key or the value
+// does not exist.
+func (m winManager) runValueRead() (string, bool, error) {
 	k, err := registry.OpenKey(registry.CURRENT_USER, runKeyPath, registry.QUERY_VALUE)
 	if errors.Is(err, registry.ErrNotExist) {
-		return false, nil
+		return "", false, nil
 	}
 	if err != nil {
-		return false, err
+		return "", false, err
 	}
 	defer k.Close()
-	_, _, err = k.GetStringValue(runKeyValueName)
+	v, _, err := k.GetStringValue(runKeyValueName)
 	if errors.Is(err, registry.ErrNotExist) {
-		return false, nil
+		return "", false, nil
 	}
-	return err == nil, err
+	if err != nil {
+		return "", false, err
+	}
+	return v, true, nil
+}
+
+// startupApprovedBytes returns the entry's StartupApproved\Run value, or nil
+// when it cannot be read (a missing value means enabled).
+func (m winManager) startupApprovedBytes() []byte {
+	k, err := registry.OpenKey(registry.CURRENT_USER, startupApprovedPath, registry.QUERY_VALUE)
+	if err != nil {
+		return nil
+	}
+	defer k.Close()
+	b, _, err := k.GetBinaryValue(runKeyValueName)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // runningPID returns the pid in the pid file when that process is alive and is
@@ -88,13 +115,29 @@ func processImage(pid int) (string, bool) {
 	return windows.UTF16ToString(buf[:n]), true
 }
 
+// Install stops a running runner, so the new binary replaces it, writes the
+// Run value and re-enables the entry if it was disabled in Task Manager.
 func (m winManager) Install() error {
+	if err := m.Stop(); err != nil {
+		return err
+	}
 	k, _, err := registry.CreateKey(registry.CURRENT_USER, runKeyPath, registry.SET_VALUE)
 	if err != nil {
 		return err
 	}
 	defer k.Close()
-	return k.SetStringValue(runKeyValueName, runValue(m.exe))
+	if err := k.SetStringValue(runKeyValueName, runValue(m.exe)); err != nil {
+		return err
+	}
+	a, err := registry.OpenKey(registry.CURRENT_USER, startupApprovedPath, registry.SET_VALUE)
+	if err != nil {
+		return nil // no StartupApproved key: nothing is disabled
+	}
+	defer a.Close()
+	if err := a.DeleteValue(runKeyValueName); err != nil && !errors.Is(err, registry.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (m winManager) Uninstall() error {
@@ -130,7 +173,7 @@ func (m winManager) Start() error {
 			return nil
 		}
 	}
-	return errors.New("the runner did not start; run `megoocolab-runner run` in a terminal to see why")
+	return fmt.Errorf("the runner did not start; see %s", logPath(m.root))
 }
 
 func (m winManager) Stop() error {
@@ -164,55 +207,71 @@ func (m winManager) Stop() error {
 }
 
 func (m winManager) Status() (string, error) {
-	installed, err := m.installed()
+	value, installed, err := m.runValueRead()
 	if err != nil {
 		return "", fmt.Errorf("cannot read the Run key: %w", err)
 	}
 	pid, running := m.runningPID()
-	return statusText(installed, running, pid), nil
+	lines := []string{statusText(installed, running, pid)}
+	if installed {
+		lines = append(lines, autostartLines(value, fileExists, startupDisabled(m.startupApprovedBytes()))...)
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
-// spawnHidden starts exe with a hidden console of its own. CREATE_NO_WINDOW
-// gives the process a console without a window that its children (git, node)
-// inherit; adding DETACHED_PROCESS would cancel that and every child would pop
-// up its own console window.
-func spawnHidden(exe string, args ...string) error {
+// hiddenCmd builds a command that runs exe with a hidden console of its own
+// and relaunchEnv set to marker (exec keeps the last of duplicate keys).
+// CREATE_NO_WINDOW gives the process a console without a window that its
+// children (git, node) inherit; adding DETACHED_PROCESS would cancel that and
+// every child would pop up its own console window.
+func hiddenCmd(exe, marker string, args ...string) *exec.Cmd {
 	cmd := exec.Command(exe, args...)
-	cmd.Env = append(os.Environ(), relaunchEnv+"=1")
+	cmd.Env = append(os.Environ(), relaunchEnv+"="+marker)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: windows.CREATE_NO_WINDOW | windows.CREATE_NEW_PROCESS_GROUP,
 		HideWindow:    true,
 	}
+	return cmd
+}
+
+// spawnHidden starts exe hidden as a supervisor and does not wait for it.
+func spawnHidden(exe string, args ...string) error {
+	cmd := hiddenCmd(exe, "1", args...)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	return cmd.Process.Release()
 }
 
-var (
-	kernel32         = windows.NewLazySystemDLL("kernel32.dll")
-	user32           = windows.NewLazySystemDLL("user32.dll")
-	procConsoleWnd   = kernel32.NewProc("GetConsoleWindow")
-	procIsWindowVisi = user32.NewProc("IsWindowVisible")
-)
+// spawnSupervisor is what the launcher (started by the Run key) does: the Run
+// key is the only thing that starts `run --background` without the marker, so
+// it always relaunches hidden, whatever console it was given (a conhost window
+// or a Windows Terminal tab).
+func spawnSupervisor(exe string) error { return spawnHidden(exe, "run", "--background") }
 
-// relaunchHiddenIfNeeded is called first by `run --background`. The Run key
-// starts the console exe with a visible console window (closing it would kill
-// the runner), so restart once without one and let this process exit. The
-// child carries relaunchEnv and never relaunches.
-func relaunchHiddenIfNeeded() (bool, error) {
-	hwnd, _, _ := procConsoleWnd.Call()
-	visible := false
-	if hwnd != 0 {
-		r, _, _ := procIsWindowVisi.Call(hwnd)
-		visible = r != 0
+// runWorkerProcess returns the supervisor's runWorker: it runs the worker
+// hidden with stdout and stderr on logf (discarded when logf is nil, so a
+// panic lands in runner.log) and returns its exit code.
+func runWorkerProcess(exe string, logf *os.File) func() (int, error) {
+	return func() (int, error) {
+		cmd := hiddenCmd(exe, workerMarker, "run", "--background")
+		if logf != nil {
+			cmd.Stdout = logf
+			cmd.Stderr = logf
+		}
+		if err := cmd.Start(); err != nil {
+			return 0, err
+		}
+		err := cmd.Wait()
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return ee.ExitCode(), nil
+		}
+		return 0, err
 	}
-	if !shouldRelaunchHidden(os.Getenv(relaunchEnv), visible) {
-		return false, nil
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return false, err
-	}
-	return true, spawnHidden(exe, os.Args[1:]...)
+}
+
+// otherRunnerPID reports a live runner that owns the pid file.
+func otherRunnerPID(root, exe string) (int, bool) {
+	return winManager{exe: exe, root: root}.runningPID()
 }
