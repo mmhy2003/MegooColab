@@ -129,6 +129,7 @@ func TestReadOnlyRunCanCallMegooColabMcpTools(t *testing.T) {
 }
 
 func TestMcpServerPassedWithBearerHeader(t *testing.T) {
+	isolateHome(t) // a Claude Code run also gets the hub servers of ~/.claude.json
 	ep := newMcpEndpoint(t)
 	e := newEnvWithCache(t, `[{"mcp_call":{"tool":"submit_plan","args":{"n":1}}}]`, 1, t.TempDir())
 	e.startRunWith("run-mcp", "MEG-1", withMcp(ep.URL+"/api/mcp"))
@@ -165,6 +166,7 @@ func TestMcpServerPassedWithBearerHeader(t *testing.T) {
 }
 
 func TestRunWithoutMcpPassesNoServers(t *testing.T) {
+	isolateHome(t) // a Claude Code run also gets the hub servers of ~/.claude.json
 	e := newEnvWithCache(t, `[{"say":"hi"}]`, 1, t.TempDir())
 	e.startRun("run-v1", "MEG-2", "workspace")
 	e.finished("run-v1")
@@ -206,6 +208,7 @@ func messages(e *env, runID string) string {
 }
 
 func TestResumeUsesLoadSessionAndDropsReplay(t *testing.T) {
+	isolateHome(t) // a Claude Code run also gets the hub servers of ~/.claude.json
 	t.Setenv("FAKEAGENT_SESSIONS_DIR", t.TempDir())
 	e := newEnvWithCache(t, twoTurns, 1, t.TempDir())
 	e.startRunWith("run-a", "MEG-4", func(rs *protocol.RunStart) { rs.Prompt = "first turn" })
