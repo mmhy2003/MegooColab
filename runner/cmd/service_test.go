@@ -8,10 +8,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 
 	"github.com/mmhy2003/megoocolab/runner/internal/config"
@@ -208,6 +210,38 @@ func TestRunServiceWorkerSkipsPidFile(t *testing.T) {
 	_ = runServiceAt(context.Background(), roleWorker, "9.9.9", root, nil, t.TempDir())
 	if fileExists(pidPath(root)) {
 		t.Errorf("the worker wrote %s; only the supervisor owns the pid file", pidPath(root))
+	}
+}
+
+func TestLaunchdPlistRestartsOnlyAfterFailure(t *testing.T) {
+	p, _ := serviceConfig("/usr/bin").Option["LaunchdConfig"].(string)
+	if !regexp.MustCompile(`<key>SuccessfulExit</key>\s*<false/>`).MatchString(p) {
+		t.Errorf("KeepAlive must be {SuccessfulExit = false}:\n%s", p)
+	}
+	if !regexp.MustCompile(`<key>RunAtLoad</key>\s*<true/>`).MatchString(p) {
+		t.Errorf("RunAtLoad must be true:\n%s", p)
+	}
+	if strings.Contains(p, "{{KeepAlive}}") || regexp.MustCompile(`<key>KeepAlive</key>\s*<(true|false)/>`).MatchString(p) {
+		t.Errorf("KeepAlive must not be a plain bool:\n%s", p)
+	}
+	if !strings.Contains(p, "<key>ProgramArguments</key>") || !strings.Contains(p, "<string>{{Path | html}}</string>") {
+		t.Errorf("LaunchdConfig lost ProgramArguments:\n%s", p)
+	}
+}
+
+// TestLaunchdPlistParses checks the template's actions are well formed.
+// kardianos' engine uses text/template's delimiters and block syntax but calls
+// every value by name, so each name is a function here.
+func TestLaunchdPlistParses(t *testing.T) {
+	p, _ := serviceConfig("/usr/bin").Option["LaunchdConfig"].(string)
+	value := func() string { return "" }
+	funcs := template.FuncMap{"html": func(s string) string { return s }}
+	for _, k := range []string{"EnvVars", "Name", "Path", "Arguments", "ChRoot", "SessionCreate",
+		"StandardErrorPath", "StandardOutPath", "UserName", "WorkingDirectory"} {
+		funcs[k] = value
+	}
+	if _, err := template.New("").Funcs(funcs).Parse(p); err != nil {
+		t.Errorf("LaunchdConfig does not parse: %v", err)
 	}
 }
 

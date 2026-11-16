@@ -50,6 +50,51 @@ EnvironmentFile=-/etc/sysconfig/{{Name}}
 WantedBy=default.target
 `
 
+// launchdUserPlist is kardianos/service v1.3.0's launchd template with
+// KeepAlive as {SuccessfulExit = false} and RunAtLoad true. launchd then
+// restarts the runner after a crash, not after exit 0, which the runner
+// returns in service mode when only `login` can help. It is loaded at login
+// because of RunAtLoad.
+const launchdUserPlist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Disabled</key>
+	<false/>
+	{{if EnvVars}}<key>EnvironmentVariables</key>
+	<dict>
+{{range EnvVars}}{{.}}
+{{end}}	</dict>
+	{{end}}<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>Label</key>
+	<string>{{Name | html}}</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>{{Path | html}}</string>
+{{range Arguments}}		<string>{{. | html}}</string>
+{{end}}	</array>
+	{{if ChRoot}}<key>RootDirectory</key>
+	<string>{{ChRoot | html}}</string>
+	{{end}}<key>RunAtLoad</key>
+	<true/>
+	<key>SessionCreate</key>
+	<{{SessionCreate}}/>
+	{{if StandardErrorPath}}<key>StandardErrorPath</key>
+	<string>{{StandardErrorPath | html}}</string>
+	{{end}}{{if StandardOutPath}}<key>StandardOutPath</key>
+	<string>{{StandardOutPath | html}}</string>
+	{{end}}{{if UserName}}<key>UserName</key>
+	<string>{{UserName | html}}</string>
+	{{end}}{{if WorkingDirectory}}<key>WorkingDirectory</key>
+	<string>{{WorkingDirectory | html}}</string>
+	{{end}}</dict>
+</plist>
+`
+
 // serviceConfig describes the background service. It is a pure function so it
 // can be tested without touching the real service manager. The service runs as
 // the current user (systemd --user, launchd LaunchAgent) because the agent
@@ -67,6 +112,7 @@ func serviceConfig(path string) *service.Config {
 		Option: service.KeyValue{
 			"UserService":   true,
 			"SystemdScript": script,
+			"LaunchdConfig": launchdUserPlist,
 		},
 	}
 	if path != "" {
