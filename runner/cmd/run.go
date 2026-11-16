@@ -33,44 +33,90 @@ func newRunCmd(version string) *cobra.Command {
 					return nil
 				}
 			}
-			cfg, err := config.Load()
-			if err != nil {
-				return fmt.Errorf("cannot load config (%w); run: megoocolab-runner login --url URL --token TOKEN", err)
-			}
-			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
-			out := cmd.OutOrStdout()
-			// Under a service manager (or with --background) there is no
-			// terminal, so state lines go to <cache>/megoocolab/logs/runner.log.
-			if background || !service.Interactive() {
-				root, err := cacheRoot()
+			if !background && service.Interactive() {
+				cfg, err := loadLogin()
 				if err != nil {
 					return err
 				}
-				f, err := openRunLog(root)
-				if err != nil {
-					return fmt.Errorf("cannot open the log file: %w", err)
-				}
-				defer f.Close()
-				out = f
-				// `service stop` on Windows asks for a graceful stop by creating
-				// a stop file; turn it into cancellation so agents are cancelled.
-				cleanup, err := beginBackground(root)
-				if err != nil {
-					return fmt.Errorf("cannot write the pid file: %w", err)
-				}
-				defer cleanup()
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithCancel(ctx)
-				defer cancel()
-				go watchStopFile(ctx, stopPath(root), time.Second, cancel)
+				ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+				defer stop()
+				return runConnection(ctx, cmd.OutOrStdout(), cfg, version)
 			}
-			return runConnection(ctx, out, cfg, version)
+			return runService(cmd.Context(), roleSingle, version)
 		},
 	}
 	cmd.Flags().BoolVar(&background, "background", false, "write output to the log file instead of stdout (used by the service)")
 	_ = cmd.Flags().MarkHidden("background")
 	return cmd
+}
+
+// runService runs under a service manager (or with --background), where there
+// is no terminal: everything goes to <cache>/megoocolab/logs/runner.log.
+func runService(ctx context.Context, role bgRole, version string) error {
+	root, rootErr := cacheRoot()
+	return runServiceAt(ctx, role, version, root, rootErr, os.TempDir())
+}
+
+// runServiceAt opens the log before anything else can fail, so that every
+// start and every startup error leaves a timestamped line behind.
+func runServiceAt(ctx context.Context, role bgRole, version, root string, rootErr error, tempDir string) error {
+	var logf *os.File
+	if role == roleWorker {
+		logf = os.Stderr // the supervisor pointed stdout and stderr at runner.log
+	} else {
+		logRoot := root
+		if rootErr != nil {
+			logRoot = ""
+		}
+		logf, _ = openServiceLog(logRoot, tempDir)
+		if logf != nil {
+			defer logf.Close()
+		}
+	}
+	var log io.Writer = io.Discard
+	if logf != nil {
+		log = newTSWriter(logf, time.Now)
+	}
+	fmt.Fprintf(log, "starting megoocolab-runner %s (pid %d)\n", version, os.Getpid())
+	err := serveRole(ctx, role, version, root, rootErr, log)
+	if err != nil {
+		fmt.Fprintf(log, "error: %v\n", err)
+		if role == roleWorker {
+			return quietError{err}
+		}
+	}
+	return err
+}
+
+// serveRole does the work of one service-mode process.
+func serveRole(ctx context.Context, role bgRole, version, root string, rootErr error, log io.Writer) error {
+	if rootErr != nil {
+		return rootErr
+	}
+	switch role {
+	case roleSingle, roleWorker:
+		cfg, err := loadLogin()
+		if err != nil {
+			return err
+		}
+		ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if role == roleSingle {
+			cleanup, err := beginBackground(root)
+			if err != nil {
+				return fmt.Errorf("cannot write the pid file: %w", err)
+			}
+			defer cleanup()
+		}
+		// `service stop` on Windows asks for a graceful stop by creating
+		// a stop file; turn it into cancellation so agents are cancelled.
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		go watchStopFile(ctx, stopPath(root), time.Second, cancel)
+		return runConnection(ctx, log, cfg, version)
+	default:
+		return fmt.Errorf("unknown background role %d", role)
+	}
 }
 
 // runConnection connects, prints state changes and executes the runs the

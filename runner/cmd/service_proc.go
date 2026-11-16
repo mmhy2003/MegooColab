@@ -61,6 +61,18 @@ func shouldRelaunchHidden(marker string, ownsVisibleConsole bool) bool {
 	return marker == "" && ownsVisibleConsole
 }
 
+// bgRole is the part a `run` process plays in service mode.
+type bgRole int
+
+const (
+	roleSingle     bgRole = iota // Linux, macOS, or no --background: one process, today's behaviour
+	roleLauncher                 // Windows, marker unset: started by the Run key
+	roleSupervisor               // Windows, marker "1": also what `service start` spawns
+	roleWorker                   // Windows, marker "worker"
+)
+
+func fileExists(path string) bool { _, err := os.Stat(path); return err == nil }
+
 func statusText(installed, running bool, pid int) string {
 	switch {
 	case running:
