@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -169,12 +168,11 @@ func kardianosStatus(s service.Service) (string, error) {
 
 // openRunLog opens <cacheRoot>/logs/runner.log for appending. A log larger
 // than maxLogBytes is truncated first, which keeps rotation trivial.
-func openRunLog(cacheRoot string) (io.WriteCloser, error) {
-	dir := filepath.Join(cacheRoot, "logs")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+func openRunLog(cacheRoot string) (*os.File, error) {
+	path := logPath(cacheRoot)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	path := filepath.Join(dir, "runner.log")
 	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
 	if fi, err := os.Stat(path); err == nil && fi.Size() > maxLogBytes {
 		flags = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
