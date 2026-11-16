@@ -1,11 +1,16 @@
 "use client";
 
+import { useRef, useState } from "react";
+
 import { clampDrawerWidth, drawerMaxWidth, DRAWER_MIN_WIDTH, DRAWER_STEP } from "./drawerWidth";
 import { Hint } from "@/components/ui/Hint";
 
-/** The drawer's left edge: arrow keys, Home / End to resize, double-click to reset. Shown from md up. */
+type Drag = { x: number; start: number; last: number };
+
+/** The drawer's left edge: drag, arrow keys, Home / End to resize, double-click to reset. Shown from md up. */
 export function DrawerResizeHandle({
   width,
+  onDrag,
   onCommit,
   onReset,
 }: {
@@ -14,6 +19,8 @@ export function DrawerResizeHandle({
   onCommit: (width: number) => void;
   onReset: () => void;
 }) {
+  const drag = useRef<Drag | null>(null);
+  const [dragging, setDragging] = useState(false);
   const now = clampDrawerWidth(width, window.innerWidth);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -28,6 +35,35 @@ export function DrawerResizeHandle({
     onCommit(clampDrawerWidth(next, window.innerWidth));
   };
 
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault(); // no text selection while dragging
+    // captured, the drag goes on over a mockup's iframe and outside the window
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { x: e.clientX, start: now, last: now };
+    setDragging(true);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    d.last = clampDrawerWidth(d.start + d.x - e.clientX, window.innerWidth);
+    onDrag(d.last);
+  };
+  const onPointerUp = () => {
+    const d = drag.current;
+    if (!d) return;
+    drag.current = null;
+    setDragging(false);
+    if (d.last !== d.start) onCommit(d.last); // a plain click (or a double-click) stores nothing
+  };
+  // cut short (cancelled, capture lost): back to the committed width
+  const onPointerCancel = () => {
+    if (!drag.current) return;
+    drag.current = null;
+    setDragging(false);
+    onDrag(width);
+  };
+
   return (
     <Hint label="Drag to resize · double-click to reset">
       <div
@@ -38,9 +74,15 @@ export function DrawerResizeHandle({
         aria-valuemax={drawerMaxWidth(window.innerWidth)}
         aria-valuenow={now}
         tabIndex={0}
+        data-dragging={dragging || undefined}
         className="group absolute inset-y-0 -left-1.5 z-10 hidden w-3 cursor-col-resize touch-none items-center justify-center md:flex"
         onKeyDown={onKeyDown}
         onDoubleClick={onReset}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onLostPointerCapture={onPointerCancel}
       >
         <span
           aria-hidden

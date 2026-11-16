@@ -93,6 +93,49 @@ describe("TaskDrawer", () => {
     expect(edge()).toHaveAttribute("aria-valuenow", "896");
   });
 
+  it("dragging the edge resizes live and keeps the width once, on release", () => {
+    open();
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    fireEvent.pointerDown(edge(), { pointerId: 1, button: 0, clientX: 500 });
+    fireEvent.pointerMove(edge(), { pointerId: 1, clientX: 400 });
+    expect(shown()).toBe("996px");
+    expect(stored()).toBeNull();
+    expect(edge()).toHaveAttribute("data-dragging");
+    fireEvent.pointerMove(edge(), { pointerId: 1, clientX: 300 });
+    expect(shown()).toBe("1096px");
+    fireEvent.pointerUp(edge(), { pointerId: 1, clientX: 300 });
+    expect(stored()).toBe(1096);
+    expect(edge()).toHaveAttribute("aria-valuenow", "1096");
+    expect(edge()).not.toHaveAttribute("data-dragging");
+    expect(setItem.mock.calls.filter(([key]) => key === KEY)).toHaveLength(1);
+    setItem.mockRestore();
+  });
+
+  it("a drag stops at the limits", () => {
+    open();
+    fireEvent.pointerDown(edge(), { pointerId: 1, button: 0, clientX: 500 });
+    fireEvent.pointerMove(edge(), { pointerId: 1, clientX: 2000 });
+    expect(shown()).toBe("720px");
+    fireEvent.pointerMove(edge(), { pointerId: 1, clientX: -2000 });
+    expect(shown()).toBe("1552px");
+  });
+
+  it("a cancelled drag goes back to the kept width", () => {
+    open();
+    fireEvent.pointerDown(edge(), { pointerId: 1, button: 0, clientX: 500 });
+    fireEvent.pointerMove(edge(), { pointerId: 1, clientX: 400 });
+    fireEvent.pointerCancel(edge(), { pointerId: 1 });
+    expect(shown()).toBe("896px");
+    expect(stored()).toBeNull();
+  });
+
+  it("a click on the edge stores nothing", () => {
+    open();
+    fireEvent.pointerDown(edge(), { pointerId: 1, button: 0, clientX: 500 });
+    fireEvent.pointerUp(edge(), { pointerId: 1, clientX: 500 });
+    expect(stored()).toBeNull();
+  });
+
   it("a stored width wider than the window is squeezed, not lost", () => {
     localStorage.setItem(KEY, "2000");
     open();
