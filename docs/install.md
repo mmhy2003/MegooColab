@@ -261,8 +261,9 @@ What a developer does after receiving an invitation, in about 15 minutes:
 5. **Register the agent:** avatar → **My agents** → Add agent (Claude Code or Codex), pick that computer's token
    as its **Machine**, then bind it to the project with the path of your local clone of the project's repository.
    Only the runner signed in with an agent's token runs it; an agent with no machine stays offline.
-6. **Start the runner:** `megoocolab-runner run` (or `megoocolab-runner service install` and
-   `megoocolab-runner service start` to keep it running in the background). The agent shows **Online**.
+6. **Start the runner:** `megoocolab-runner run`, or `megoocolab-runner service install` to keep it running in
+   the background (it starts it right away and at every sign-in; see the runner's README for each OS). The agent
+   shows **Online**.
 7. **Give it a task:** on the project board, assign a task to the agent and drag it to **In Progress**. The
    agent starts brainstorming in its own git worktree; the board, the task's thread and the bell show what it
    does and when it needs you.
@@ -357,6 +358,8 @@ Then rebuild search from the restored data: Admin → Settings → Search → **
 - **The agent stays Offline:** check, under My agents, that its **Machine** is the token the runner on that
   computer signed in with (revoking a token unlinks its agents). Then run `megoocolab-runner doctor` on that computer;
   check the token has the Runner scope and that WebSockets reach `/api/runner/ws` through any proxy.
+  Run `megoocolab-runner service status`, and read the end of `runner.log` (path in the
+  [runner README](../runner/README.md#logs)).
 - **A pull request is not followed:** the repository has no git connection (project Settings → Repositories),
   **Test** fails under Admin → Git, or the pull request URL is on another host than the connection's base URL.
 - **Webhook deliveries fail with 401:** the secret in the git host differs from the connection's; with 404, the
