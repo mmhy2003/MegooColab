@@ -202,6 +202,20 @@ describe("SearchLauncher", () => {
     expect(options[1]).toHaveAttribute("aria-selected", "true");
   });
 
+  it("pins the group headings and marks the selected row clearly", async () => {
+    setup();
+    fireEvent.change(open(), { target: { value: "retry" } });
+    const list = await screen.findByRole("listbox");
+    for (const h of within(list).getAllByRole("heading")) expect(h).toHaveClass("sticky", "top-0", "z-10", "bg-surface");
+    const options = screen.getAllByRole("option");
+    for (const o of options) expect(o).toHaveClass("scroll-mt-6");
+    expect(options.at(-1)).toHaveClass("scroll-mb-11");
+    expect(options[0]).not.toHaveClass("scroll-mb-11");
+    expect(options[0]).toHaveClass("bg-cyan/15", "shadow-[inset_3px_0_0_var(--cyan)]");
+    expect(options[0]).not.toHaveClass("bg-surface-2");
+    expect(options[1]).not.toHaveClass("bg-cyan/15");
+  });
+
   it("people and agents open a card", async () => {
     setup();
     fireEvent.change(open(), { target: { value: "ann" } });

@@ -113,7 +113,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
             <div ref={listRef} id="quick-search-results" role="listbox" aria-label="Results" className="max-h-[60vh] space-y-3 overflow-auto">
               {groups.map((g, gi) => (
                 <div key={g.kind} role="presentation" className="space-y-1">
-                  <h3 className="text-[11px] tracking-widest text-muted-foreground uppercase">{KIND_LABELS[g.kind as SearchKind] ?? g.kind}</h3>
+                  <h3 className="sticky top-0 z-10 bg-surface pb-1 text-[11px] tracking-widest text-muted-foreground uppercase">{KIND_LABELS[g.kind as SearchKind] ?? g.kind}</h3>
                   {g.hits.map((hit, hi) => {
                     const mine = starts[gi] + hi;
                     return (
@@ -126,7 +126,9 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
                         tabIndex={-1}
                         onMouseMove={(e) => onMouseMove(e, mine)}
                         onClick={() => choose(hit)}
-                        className={`cursor-pointer rounded px-2 py-1 text-sm ${mine === active ? "bg-surface-2" : ""}`}
+                        className={`cursor-pointer scroll-mt-6 rounded px-2 py-1 text-sm ${mine === flat.length - 1 ? "scroll-mb-11" : ""} ${
+                          mine === active ? "bg-cyan/15 shadow-[inset_3px_0_0_var(--cyan)]" : ""
+                        }`}
                       >
                         {hit.key && (
                           <span className="mr-2 font-mono text-xs text-muted-foreground">
