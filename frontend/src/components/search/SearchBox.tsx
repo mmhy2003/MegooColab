@@ -49,6 +49,14 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
     document.getElementById(optionId(i))?.scrollIntoView?.({ block: "nearest" });
   };
 
+  // the pointer's last position: rows that slide under a resting pointer while the list scrolls must not take the selection
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  const onMouseMove = (e: React.MouseEvent, i: number) => {
+    const last = pointer.current;
+    pointer.current = { x: e.clientX, y: e.clientY };
+    if (last && (last.x !== e.clientX || last.y !== e.clientY)) setActive(i);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -116,7 +124,7 @@ export function SearchBox({ open, onClose }: { open: boolean; onClose: () => voi
                         aria-selected={mine === active}
                         aria-label={`${plain(hit.key) ? `${plain(hit.key)} ` : ""}${plain(hit.title)}`}
                         tabIndex={-1}
-                        onMouseEnter={() => setActive(mine)}
+                        onMouseMove={(e) => onMouseMove(e, mine)}
                         onClick={() => choose(hit)}
                         className={`cursor-pointer rounded px-2 py-1 text-sm ${mine === active ? "bg-surface-2" : ""}`}
                       >

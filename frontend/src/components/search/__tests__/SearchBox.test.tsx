@@ -168,6 +168,40 @@ describe("SearchLauncher", () => {
     expect(screen.getAllByRole("option")[0]).toHaveAttribute("aria-selected", "true");
   });
 
+  it("moving the mouse onto a row selects it, without scrolling", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      setup();
+      fireEvent.change(open(), { target: { value: "retry" } });
+      await screen.findByRole("listbox");
+      const options = screen.getAllByRole("option");
+      scroll.mockClear();
+      fireEvent.mouseMove(options[2], { clientX: 40, clientY: 100 });
+      fireEvent.mouseMove(options[2], { clientX: 42, clientY: 101 });
+      expect(options[2]).toHaveAttribute("aria-selected", "true");
+      expect(scroll).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+  });
+
+  it("a row that slides under a resting mouse does not take the selection", async () => {
+    setup();
+    const box = open();
+    fireEvent.change(box, { target: { value: "retry" } });
+    await screen.findByRole("listbox");
+    const options = screen.getAllByRole("option");
+    fireEvent.mouseMove(options[0], { clientX: 40, clientY: 100 });
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    // the list scrolled: the browser reports the row now under the pointer, at the same position
+    fireEvent.mouseMove(options[1], { clientX: 40, clientY: 100 });
+    expect(options[2]).toHaveAttribute("aria-selected", "true");
+    fireEvent.mouseMove(options[1], { clientX: 40, clientY: 104 });
+    expect(options[1]).toHaveAttribute("aria-selected", "true");
+  });
+
   it("people and agents open a card", async () => {
     setup();
     fireEvent.change(open(), { target: { value: "ann" } });
