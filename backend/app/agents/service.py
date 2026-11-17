@@ -1,6 +1,5 @@
 import re
 import uuid
-from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, func, or_, select, update
@@ -32,7 +31,6 @@ from app.runner.registry import (
     WORKFLOW_PROBLEM,
     registry,
 )
-from app.tasks.models import Task
 from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
 from app.workflow.models import TaskWorkflow, WorkflowStatus
@@ -336,35 +334,5 @@ async def project_agents_out(
     ]
 
 
-def _newest(running: dict, agent_id: uuid.UUID, run: dict) -> None:
-    """Keep the most recently started run per agent (a run without a start time counts as oldest)."""
-    oldest = datetime.min.replace(tzinfo=UTC)
-    current = running.get(agent_id)
-    if current is None or (run["started_at"] or oldest) > (current["started_at"] or oldest):
-        running[agent_id] = run
-
-
 async def admin_agents_out(db: AsyncSession, agents: list[Agent], viewer: User) -> list[AdminAgentOut]:
-    fields = await _base_fields(db, agents, viewer)
-    from app.a2a.models import Question  # local: a2a imports this module
-
-    ids = [a.id for a in agents]
-    running: dict = {}
-    # ADM-3: what each agent works on now, a task or (§6.6) a question it answers; the newest run wins
-    for agent_id, run_id, pkey, num, run_status, started_at in await db.execute(
-        select(AgentRun.agent_id, AgentRun.id, Project.key, Task.number, AgentRun.status, AgentRun.started_at)
-        .join(Task, Task.id == AgentRun.task_id)
-        .join(Project, Project.id == Task.project_id)
-        .where(AgentRun.agent_id.in_(ids), AgentRun.status == RunStatus.running)
-    ):
-        _newest(running, agent_id, {"id": run_id, "kind": "task", "task_key": f"{pkey}-{num}", "status": run_status,
-                                    "started_at": started_at})
-    for agent_id, run_id, pkey, num, run_status, started_at in await db.execute(
-        select(AgentRun.agent_id, AgentRun.id, Project.key, Question.number, AgentRun.status, AgentRun.started_at)
-        .join(Question, Question.id == AgentRun.question_id)
-        .join(Project, Project.id == Question.target_project_id)
-        .where(AgentRun.agent_id.in_(ids), AgentRun.status == RunStatus.running)
-    ):
-        _newest(running, agent_id, {"id": run_id, "kind": "question", "task_key": f"{pkey}-Q{num}",
-                                    "status": run_status, "started_at": started_at})
-    return [AdminAgentOut(**f, current_run=running.get(f["id"])) for f in fields]
+    return [AdminAgentOut(**f) for f in await _base_fields(db, agents, viewer)]

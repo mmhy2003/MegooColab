@@ -4089,7 +4089,10 @@ export interface components {
                 [key: string]: string;
             };
         };
-        /** AdminAgentOut */
+        /**
+         * AdminAgentOut
+         * @description An agent on Admin → Agents (every agent in the workspace).
+         */
         AdminAgentOut: {
             /**
              * Id
@@ -4140,10 +4143,6 @@ export interface components {
             stage_models: {
                 [key: string]: components["schemas"]["StageChoice"];
             };
-            /** Current Run */
-            current_run?: {
-                [key: string]: unknown;
-            } | null;
         };
         /** AdminSettingsIn */
         AdminSettingsIn: {

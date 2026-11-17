@@ -116,4 +116,4 @@ class ProjectAgentOut(AgentOut):
 
 
 class AdminAgentOut(AgentOut):
-    current_run: dict | None = None
+    """An agent on Admin → Agents (every agent in the workspace)."""
