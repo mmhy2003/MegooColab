@@ -22,17 +22,35 @@ describe("RunningNow", () => {
     expect(screen.getByText("13 m")).toBeInTheDocument();
   });
 
-  it("shows Build progress and answering runs", () => {
+  it("puts the link before the agent and the status", () => {
+    render(<RunningNow running={[run(), run({ run_id: "r2" })]} queued={none} isAdmin={false} />);
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    for (const li of rows) {
+      const text = li.textContent!;
+      expect(text.indexOf("PAY-14")).toBeGreaterThanOrEqual(0);
+      expect(text.indexOf("PAY-14")).toBeLessThan(text.indexOf("Vera's Claude Code"));
+      expect(text.indexOf("Vera's Claude Code")).toBeLessThan(text.indexOf("Build · Step 2 of 3"));
+    }
+  });
+
+  it("a chat shows its title and a question its key", () => {
     render(
       <RunningNow
-        running={[run(), run({ run_id: "r2", task_key: null, stage: null, step: null, steps_total: null, question_from: "WEB", link: "/questions/q1" })]}
+        running={[
+          run({ kind: "chat", title: "Pricing ideas", chat_id: "c1", link: "/chats/c1" }),
+          run({
+            run_id: "r2", kind: "question", task_key: null, question_key: "PAY-Q12", stage: null, step: null, steps_total: null,
+            title: null, link: "/questions/q1",
+          }),
+        ]}
         queued={none}
         isAdmin={false}
       />,
     );
-    expect(screen.getByText("Step 2 of 3")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "PAY-14" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-14");
-    expect(screen.getByRole("link", { name: "Answering a question from WEB" })).toHaveAttribute("href", "/questions/q1");
+    expect(screen.getByRole("link", { name: "Pricing ideas" })).toHaveAttribute("href", "/chats/c1");
+    expect(screen.getByRole("link", { name: "PAY-Q12" })).toHaveAttribute("href", "/questions/q1");
+    expect(screen.getByText("Answering")).toBeInTheDocument();
   });
 
   it("lists five queued keys then the rest as a number", () => {

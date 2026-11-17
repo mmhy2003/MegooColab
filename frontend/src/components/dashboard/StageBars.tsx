@@ -1,8 +1,8 @@
 import { GitBranch } from "lucide-react";
 
-import { STAGE_LABEL } from "@/components/dashboard/RunningNow";
 import { Empty, Widget } from "@/components/dashboard/Widget";
 import type { Stages } from "@/lib/dashboard";
+import { STAGE_LABEL } from "@/lib/runs";
 
 const SEGMENTS = [
   { key: "running", label: "agent working", className: "bg-cyan" },
