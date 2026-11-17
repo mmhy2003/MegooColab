@@ -246,7 +246,8 @@ async def publish_agents_updated(
 
 async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> list[dict]:
     """Common AgentOut fields. Bindings are limited to projects the viewer can see;
-    local_path only goes to the owner."""
+    local_path only goes to the owner. Runs go to the owner and admins only, and a run in a project the viewer
+    cannot open has no link."""
     if not agents:
         return []
     owners = {
@@ -265,6 +266,10 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
     statuses = await agent_statuses(db, list(owner_of), {a.id: a.max_concurrent_runs for a in agents})
     running = await running_counts(db, list(owner_of))
     allowed = await accessible_project_ids(db, viewer)
+    from app.agent_runs.running import running_by_agent  # local: app.chats.service, which it uses, imports this module
+
+    private = [a.id for a in agents if a.owner_id == viewer.id or viewer.role == Role.admin]
+    runs = await running_by_agent(db, private, allowed)
     rows = await db.execute(
         select(AgentBinding, Project.key)
         .join(Project, Project.id == AgentBinding.project_id)
@@ -292,6 +297,7 @@ async def _base_fields(db: AsyncSession, agents: list[Agent], viewer: User) -> l
             "owner": UserOut.model_validate(owners[a.owner_id]),
             "status": statuses[a.id],
             "running": running.get(a.id, 0),
+            "runs": runs.get(a.id, []),
             "problems": agent_problems(
                 a.id, a.owner_id, viewer, bool(a.model or a.effort), a.program, stages=bool(a.stage_models)
             ),
