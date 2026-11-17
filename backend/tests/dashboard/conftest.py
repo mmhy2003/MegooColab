@@ -12,6 +12,10 @@ from app.a2a.models import Question
 from app.agent_runs.models import AgentRun
 from app.agents.models import Agent, AgentBinding
 from app.auth.models import Role, User
+from app.chats.models import Chat
+from app.crons.models import Cron, CronRun
+from app.kb import access
+from app.kb_drafts.models import KbDraft
 from app.projects.models import BoardColumn, Project
 from app.tasks.models import Task
 from app.teams.models import Team
@@ -65,7 +69,7 @@ async def column_id(db, project: Project, category: str) -> uuid.UUID:
 
 async def add_task(db, project: Project, *, type: str = "task", category: str = "before", user: User | None = None,
                    agent: Agent | None = None, due: date | None = None, completed_at: datetime | None = None,
-                   title: str = "T") -> Task:
+                   title: str = "T", chat: Chat | None = None) -> Task:
     number = await db.scalar(
         update(Project).where(Project.id == project.id).values(next_task_number=Project.next_task_number + 1)
         .returning(Project.next_task_number)
@@ -73,7 +77,7 @@ async def add_task(db, project: Project, *, type: str = "task", category: str = 
     task = Task(project_id=project.id, number=number, type=type, title=title,
                 column_id=await column_id(db, project, category), position=float(number),
                 assignee_user_id=user.id if user else None, assignee_agent_id=agent.id if agent else None,
-                due_date=due, completed_at=completed_at)
+                due_date=due, completed_at=completed_at, chat_id=chat.id if chat else None, in_chat=chat is not None)
     db.add(task)
     await db.commit()
     task.key = f"{project.key}-{number}"  # plain attribute, for task_key()
@@ -99,8 +103,10 @@ async def add_workflow(db, task: Task, *, stage: str, status: str, needs: str | 
 
 async def add_run(db, agent: Agent, *, task: Task | None = None, question: Question | None = None,
                   status: str = "running", stage: str | None = None, step: int | None = None,
-                  started_at: datetime | None = None, finished_at: datetime | None = None) -> AgentRun:
+                  started_at: datetime | None = None, finished_at: datetime | None = None,
+                  cron_run: CronRun | None = None, draft: KbDraft | None = None) -> AgentRun:
     run = AgentRun(task_id=task.id if task else None, question_id=question.id if question else None,
+                   cron_run_id=cron_run.id if cron_run else None, draft_id=draft.id if draft else None,
                    agent_id=agent.id, requested_by=agent.owner_id, policy="workspace", prompt="", status=status,
                    stage=stage, step=step, started_at=started_at, finished_at=finished_at)
     db.add(run)
@@ -120,6 +126,31 @@ async def add_question(db, project: Project, *, status: str, from_task: Task | N
     db.add(q)
     await db.commit()
     return q
+
+
+async def add_chat(db, project: Project, *, title: str = "Chat title") -> Chat:
+    chat = Chat(project_id=project.id, title=title)
+    db.add(chat)
+    await db.commit()
+    return chat
+
+
+async def add_cron_run(db, project: Project, *, name: str = "Nightly check") -> CronRun:
+    cron = Cron(project_id=project.id, name=name, prompt="", schedule="0 3 * * *", timezone="UTC")
+    db.add(cron)
+    await db.flush()
+    cron_run = CronRun(cron_id=cron.id, scheduled_at=datetime.now(UTC), status="running")
+    db.add(cron_run)
+    await db.commit()
+    return cron_run
+
+
+async def add_draft(db, user: User, agent: Agent, project: Project) -> KbDraft:
+    space = await access.space_for_project(db, project.id)
+    draft = KbDraft(user_id=user.id, agent_id=agent.id, space_id=space.id, brief="A runbook", sources=[])
+    db.add(draft)
+    await db.commit()
+    return draft
 
 
 async def dash(client, scope: str | None = None) -> dict:

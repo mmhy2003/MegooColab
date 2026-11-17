@@ -1,38 +1,35 @@
 """Agents and their runs: who is working, idle or offline, what is running and queued, and failed runs. A run is in
-scope through its task's project, or (a run answering another project's question) the question's target project."""
+scope through its project: its task's, the question's target project (a run answering another project's question),
+or its cron's."""
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import ColumnElement, and_, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
-from app.a2a.models import Question
 from app.agent_runs.models import AgentRun, RunStatus
+from app.agent_runs.running import run_project_id, run_targets, running_items
 from app.agents.models import Agent, AgentBinding
 from app.agents.service import agent_statuses, runner_info
-from app.chats.service import chat_link
 from app.dashboard.schemas import AgentItem, Queued, QueuedItem, RunningItem
 from app.dashboard.scope import Scope, task_link
 from app.projects.models import Project
 from app.tasks.models import Task
-from app.workflow.models import DocKind, DocStatus, Stage, TaskWorkflow, WorkflowDocument
 
 QUEUED_SHOWN = 5
 _ORDER = {"busy": 0, "busy_elsewhere": 1, "online": 2, "offline": 3}
 
 
+def _in_scope(scope: Scope) -> ColumnElement[bool]:
+    """Runs in scope, over run_targets: through their project (a task's, a question's target or a cron's)."""
+    # a Knowledge Base draft's turns are its person's own: not on anyone's dashboard
+    cond = and_(AgentRun.draft_id.is_(None), scope.in_projects(run_project_id()))
+    return and_(cond, AgentRun.agent_id.in_(scope.agent_ids)) if scope.name == "mine" else cond
+
+
 def _runs(scope: Scope, *columns):
-    """A select over runs in scope, with the run's task (if any) and question (if any) joined."""
-    stmt = (
-        select(*columns).select_from(AgentRun)
-        .outerjoin(Task, Task.id == AgentRun.task_id).outerjoin(Question, Question.id == AgentRun.question_id)
-        # a Knowledge Base draft's turns are its person's own: not on anyone's dashboard
-        .where(AgentRun.draft_id.is_(None), scope.in_projects(func.coalesce(Task.project_id, Question.target_project_id)))
-    )
-    if scope.name == "mine":
-        stmt = stmt.where(AgentRun.agent_id.in_(scope.agent_ids))
-    return stmt
+    """A select over runs in scope, with the run's task, question and cron joined."""
+    return run_targets(*columns).where(_in_scope(scope))
 
 
 async def agents(db: AsyncSession, scope: Scope) -> list[AgentItem]:
@@ -67,39 +64,7 @@ async def agents(db: AsyncSession, scope: Scope) -> list[AgentItem]:
 
 
 async def running(db: AsyncSession, scope: Scope) -> list[RunningItem]:
-    asking_task, asking_project = aliased(Task), aliased(Project)
-    steps_total = (
-        select(func.jsonb_array_length(WorkflowDocument.steps))
-        .where(WorkflowDocument.task_id == AgentRun.task_id, WorkflowDocument.kind == DocKind.plan,
-               WorkflowDocument.status == DocStatus.approved)
-        .order_by(WorkflowDocument.version.desc()).limit(1).scalar_subquery()
-    )
-    stmt = (
-        _runs(scope, AgentRun.id, Agent.name, AgentRun.started_at, Project.key, Task.number, AgentRun.stage,
-              AgentRun.step, steps_total, TaskWorkflow.review_round, AgentRun.question_id, asking_project.key,
-              Task.chat_id, Task.in_chat)
-        .join(Agent, Agent.id == AgentRun.agent_id)
-        .outerjoin(Project, Project.id == Task.project_id)
-        .outerjoin(TaskWorkflow, TaskWorkflow.task_id == AgentRun.task_id)
-        .outerjoin(asking_task, asking_task.id == Question.from_task_id)
-        .outerjoin(asking_project, asking_project.id == asking_task.project_id)
-        .where(AgentRun.status == RunStatus.running)
-        .order_by(AgentRun.started_at.desc().nulls_last())
-    )
-    out = []
-    for run_id, name, started, key, number, stage, step, total, rounds, question_id, asked_from, chat_id, in_chat in (
-        await db.execute(stmt)
-    ).all():
-        out.append(RunningItem(
-            run_id=run_id, agent_name=name, started_at=started, task_key=f"{key}-{number}" if key else None,
-            stage=stage, step=step if stage == Stage.build else None,
-            steps_total=total if stage == Stage.build else None,
-            review_round=rounds if stage == Stage.review else None,
-            question_from=asked_from if question_id else None,
-            link=(chat_link(chat_id) if in_chat else task_link(key, number)) if key else f"/questions/{question_id}",
-            chat_id=chat_id if in_chat else None,
-        ))
-    return out
+    return await running_items(db, _in_scope(scope))
 
 
 async def queued(db: AsyncSession, scope: Scope) -> Queued:
