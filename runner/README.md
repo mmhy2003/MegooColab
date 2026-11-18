@@ -169,9 +169,18 @@ Services are removed in three places, so nothing keeps running:
    removed. `services clean` does the same by hand.
 
 Writable runs (implement, the fix roles, finish, freestyle, crons) in a worktree with `megoocolab.toml` get a
-"Test services" section in their prompt that names the sets and the command. The runner puts its own folder first
-on the agent's `PATH` and sets `MEGOO_SERVICES_DIR`, so the agent's checks and the runner share the same records.
-Read-only runs get nothing.
+"Test services" section in their prompt. It names the sets and the command, and asks the agent to add any service,
+port or variable that new work needs to the file in the same commit. The runner puts its own folder first on the
+agent's `PATH` and sets `MEGOO_SERVICES_DIR`, so the agent's checks and the runner share the same records.
+`megoocolab-runner services --help` prints the file's format.
+
+The first run of a planning session gets a section too. Without `megoocolab.toml`, the planning agent is asked to
+find out whether any check needs a container, and if one does, to make "Add megoocolab.toml" the plan's first step.
+That step writes the file, points the repository's check instructions at `services run` and proves each set. With
+the file, the agent is told that a step adding a check that needs a new service, port or variable changes the file
+in that same step. Both include the file's format, because a planning run cannot run commands. A plan session
+continued with an answer or a rejection, the other read-only runs and Knowledge Base drafts get nothing. To stop
+the suggestion for a repository, commit an empty `megoocolab.toml`.
 
 The runner only removes Compose projects it recorded itself, and only names of the form `megoo-…-<8 hex>`. Other
 containers, such as a MegooColab instance's `megoocolab-*` containers, are never touched.
