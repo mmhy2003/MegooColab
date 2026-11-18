@@ -353,6 +353,52 @@ func TestFakeAgentCommitAllStagesChanges(t *testing.T) {
 	}
 }
 
+// run executes a program in the agent's cwd with its environment, without asking, and reports the
+// exit code and the output.
+func TestFakeAgentRunReportsExitAndOutput(t *testing.T) {
+	repo := t.TempDir()
+	if out, err := exec.Command("git", "init", "-q", repo).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	t.Setenv("GIT_AUTHOR_NAME", "runstep")
+	t.Setenv("GIT_AUTHOR_EMAIL", "runstep@localhost")
+	s := startIn(t, repo, []any{
+		map[string]any{"run": map[string]any{"args": []string{"git", "rev-parse", "--show-toplevel"}}},
+		map[string]any{"run": map[string]any{"args": []string{"git", "var", "GIT_AUTHOR_IDENT"}}},
+		map[string]any{"run": map[string]any{"args": []string{"git", "no-such-command"}}},
+		map[string]any{"run": map[string]any{"args": []string{"megoo-no-such-program"}}},
+	}, nil)
+	if _, err := s.conn.Prompt(context.Background(), acp.PromptRequest{SessionId: s.sid, Prompt: []acp.ContentBlock{acp.TextBlock("go")}}); err != nil {
+		t.Fatal(err)
+	}
+	r := s.finish(t)
+	steps, _ := r["steps"].([]any)
+	if len(steps) != 4 {
+		t.Fatalf("steps = %v", steps)
+	}
+	field := func(i int, k string) string { v, _ := steps[i].(map[string]any)[k].(string); return v }
+	for i := range steps {
+		if field(i, "type") != "run" {
+			t.Errorf("step %d type = %q", i, field(i, "type"))
+		}
+	}
+	if field(0, "outcome") != "exit:0" || !strings.Contains(field(0, "content"), filepath.Base(repo)) {
+		t.Errorf("cwd step = %v", steps[0])
+	}
+	if field(1, "outcome") != "exit:0" || !strings.HasPrefix(field(1, "content"), "runstep <runstep@localhost>") {
+		t.Errorf("env step = %v", steps[1])
+	}
+	if o := field(2, "outcome"); o == "exit:0" || o == "exit:-1" || !strings.HasPrefix(o, "exit:") || field(2, "content") == "" {
+		t.Errorf("failing step = %v", steps[2])
+	}
+	if field(3, "outcome") != "exit:-1" {
+		t.Errorf("missing program step = %v", steps[3])
+	}
+	if n := len(s.client.permReqs); n != 0 {
+		t.Errorf("perm requests = %d", n)
+	}
+}
+
 // FAKEAGENT_REPORT names one file and wins over FAKEAGENT_REPORT_DIR.
 func TestFakeAgentReportFileWinsOverReportDir(t *testing.T) {
 	bin := testutil.BuildFakeAgent(t)

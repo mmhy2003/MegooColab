@@ -1,5 +1,7 @@
 """Plan 10 final review fixes: each test reproduces one finding."""
 
+from urllib.parse import urlsplit
+
 import pytest
 
 from app.core.config import get_settings
@@ -22,7 +24,9 @@ def limits(monkeypatch):
 
 
 async def test_password_is_passed_apart_from_the_url(monkeypatch):
-    monkeypatch.setattr(get_settings(), "valkey_url", "valkey://localhost:6379/0")
+    # the configured Valkey (the worktree's own under `services run test`), with the password passed on its own
+    url = urlsplit(get_settings().valkey_url)
+    monkeypatch.setattr(get_settings(), "valkey_url", f"valkey://{url.hostname}:{url.port or 6379}{url.path}")
     monkeypatch.setattr(get_settings(), "valkey_password", "megoo-dev-valkey")
     store.reset_client()
     limit = Limit("t", max=1, window=60)

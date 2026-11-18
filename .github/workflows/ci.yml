@@ -99,6 +99,11 @@ jobs:
           git config --global user.name ci
           git config --global user.email ci@example.invalid
       - run: go test ./...
+      # one real Docker check of `services run`; Docker is only on the Linux runners
+      - if: runner.os == 'Linux'
+        run: go test ./internal/services -run TestRealDocker -count=1 -v
+        env:
+          MEGOO_DOCKER_TESTS: "1"
       - run: go vet ./...
 
   # the release rules (tools/release/versions.py) and the version files agreeing with each other

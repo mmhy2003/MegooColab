@@ -73,6 +73,7 @@ cd backend
 uv sync
 uv run pytest -n auto              # test suite, in parallel (each worker gets its own megoo_gwN_test database)
 uv run pytest tests/auth           # a part of it, one process (uses the megoo_test database)
+# or, on containers of its own (no dev stack needed): megoocolab-runner services run test -- uv run pytest -n auto
 export SECRET_KEY=megoo-dev-secret-key-not-for-production MEILI_MASTER_KEY=megoo-dev-master-key   # SECRET_KEY needs 16+ characters
 uv run fastapi dev app/main.py     # API on http://localhost:8000/api/docs
 uv run python -m app.worker        # background jobs (search indexing); needs the API's migrations
@@ -87,21 +88,23 @@ npm run dev                        # then open http://localhost:8080
 
 ### End-to-end test
 
-Runs against a fresh production-style stack on http://localhost:8080:
+Runs against a fresh production-style stack:
 
 ```bash
-cp deploy/.env.example .superpowers/e2e.env   # set SECRET_KEY, MEILI_MASTER_KEY, VALKEY_PASSWORD, CLIENT_IP_HEADER=X-Real-IP, HTTP_PORT=8080, PUBLIC_URL=http://localhost:8080, AI_FAKE=true, MEMORY_EXTRACT_DELAY_SECONDS=2
-docker compose -p megoo-e2e -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml --env-file .superpowers/e2e.env up -d --build --wait
-cd frontend && npx playwright install chromium && npx playwright test
-docker compose -p megoo-e2e -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml --env-file .superpowers/e2e.env down -v
+cd frontend && npx playwright install chromium
+megoocolab-runner services run e2e -- npx playwright test
 ```
+
+`services run e2e` (set in `megoocolab.toml`) builds the stack from this checkout on free ports, passes
+`E2E_BASE_URL`, and removes the stack, its volumes and its images when the tests end. Every run starts on a fresh
+stack.
 
 ### Agents end-to-end test
 
-`frontend/e2e/agents.spec.ts` drives the whole path (UI, server, runner, agent) against the same stack as above. It needs the Go toolchain and `git` on the PATH. The test builds the runner and the fake agent itself into a temp directory (`go build -o <tmp>/megoocolab-runner ./runner`, `go build -o <tmp>/fakeagent ./runner/internal/fakeagent`), runs the runner on the host with an isolated config and cache directory (HOME, USERPROFILE, APPDATA, LOCALAPPDATA, XDG_CONFIG_HOME and XDG_CACHE_HOME all point at a temp dir), and points `MEGOO_ADAPTER_CLAUDE_CODE` at the fake agent. It covers the token, the agent and its binding, online and offline, a workflow run queued while the runner is offline that starts once when it connects (a read-only brainstorm whose write is denied), and MCP `create_task`. It needs a fresh stack: it creates the "Agents Team" team and the AGT project, which already exist on a stack it has run against, so bring the stack down with `down -v` before each run. When it ends, pass or fail, it removes its temp directory (binaries, repository, worktree and the runner config with the token). To run it:
+`frontend/e2e/agents.spec.ts` drives the whole path (UI, server, runner, agent) against the same stack as above. It needs the Go toolchain and `git` on the PATH. The test builds the runner and the fake agent itself into a temp directory (`go build -o <tmp>/megoocolab-runner ./runner`, `go build -o <tmp>/fakeagent ./runner/internal/fakeagent`), runs the runner on the host with an isolated config and cache directory (HOME, USERPROFILE, APPDATA, LOCALAPPDATA, XDG_CONFIG_HOME and XDG_CACHE_HOME all point at a temp dir), and points `MEGOO_ADAPTER_CLAUDE_CODE` at the fake agent. It covers the token, the agent and its binding, online and offline, a workflow run queued while the runner is offline that starts once when it connects (a read-only brainstorm whose write is denied), and MCP `create_task`. It needs a fresh stack: it creates the "Agents Team" team and the AGT project, which already exist on a stack it has run against, and each `services run e2e` starts one. When it ends, pass or fail, it removes its temp directory (binaries, repository, worktree and the runner config with the token). To run it:
 
 ```bash
-cd frontend && npx playwright test e2e/agents.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/agents.spec.ts
 # optional: E2E_SCREENSHOT_DIR=<dir> saves light and dark screenshots of the agent pages
 #           E2E_RUNNER_LOG=1 prints the runner output at the end
 ```
@@ -115,24 +118,24 @@ The fake agent plays every role from one scenario (`FAKEAGENT_SCENARIO`): its st
 Along the way it answers a question through the sandboxed mockup, approves the design, rejects and then approves the plan, follows the thread's document version links, sees a step review ask for changes and the fix pass, stops and restarts the runner during step 2 (step 2 is retried once, nothing before it re-runs), and checks the pull request link and that the developer's checkout is untouched. Last, a second task's mockup tries to call `/api/auth/me`, read `document.cookie`, navigate the top window and post an undeclared choice; the test checks each is blocked and that no answer is recorded. To run it:
 
 ```bash
-cd frontend && npx playwright test e2e/workflow.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/workflow.spec.ts
 # optional: E2E_RUNNER_LOG=1 prints the runner output at the end
 ```
 
 ### Knowledge Base end-to-end test
 
-`frontend/e2e/kb.spec.ts` covers the Knowledge Base on the same stack. It needs `AI_FAKE=true` in the env file: the backend and the worker then use local, deterministic embeddings instead of calling a provider (never set it in production). It configures an embeddings provider and tests it, creates a folder and a document, edits it from a stale tab (the save is refused and the draft kept), compares revisions, links a document to a task and to another document, waits for the worker to embed so that a word only semantic search can match is found, checks that a member of another team sees none of the team or project documents, uses the MCP tools with a personal token, and files an approved connect-only design. It creates the "KB Team" and "Outside Team" teams and the KBX project, so it needs a fresh stack too. To run it:
+`frontend/e2e/kb.spec.ts` covers the Knowledge Base on the same stack. It needs `AI_FAKE=true` (set in the `e2e` set of `megoocolab.toml`): the backend and the worker then use local, deterministic embeddings instead of calling a provider (never set it in production). It configures an embeddings provider and tests it, creates a folder and a document, edits it from a stale tab (the save is refused and the draft kept), compares revisions, links a document to a task and to another document, waits for the worker to embed so that a word only semantic search can match is found, checks that a member of another team sees none of the team or project documents, uses the MCP tools with a personal token, and files an approved connect-only design. It creates the "KB Team" and "Outside Team" teams and the KBX project, so it needs a fresh stack too. To run it:
 
 ```bash
-cd frontend && npx playwright test e2e/kb.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/kb.spec.ts
 ```
 
 ### Memory end-to-end test
 
-`frontend/e2e/memory.spec.ts` covers the collective memory on the same stack. Besides `AI_FAKE=true` it needs `MEMORY_EXTRACT_DELAY_SECONDS=2` in the env file (sources are normally read 60 seconds after their last change). It sets every AI job to one provider, waits for the worker to learn a conclusion from a comment, deletes it and checks that editing the comment does not bring it back, lets the memory dream (an induced pattern with its reasoning chain and a summary card), asks the memory, checks that a member of another team sees nothing from the project, and uses the `search_memory` and `ask_memory` MCP tools. It creates the "Memory Team" and "Memory Outsiders" teams and the MEM project, so it needs a fresh stack. To run it:
+`frontend/e2e/memory.spec.ts` covers the collective memory on the same stack. Besides `AI_FAKE=true` it needs `MEMORY_EXTRACT_DELAY_SECONDS=2` (also set there; sources are normally read 60 seconds after their last change). It sets every AI job to one provider, waits for the worker to learn a conclusion from a comment, deletes it and checks that editing the comment does not bring it back, lets the memory dream (an induced pattern with its reasoning chain and a summary card), asks the memory, checks that a member of another team sees nothing from the project, and uses the `search_memory` and `ask_memory` MCP tools. It creates the "Memory Team" and "Memory Outsiders" teams and the MEM project, so it needs a fresh stack. To run it:
 
 ```bash
-cd frontend && npx playwright test e2e/memory.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/memory.spec.ts
 ```
 
 ### Questions end-to-end test
@@ -140,7 +143,7 @@ cd frontend && npx playwright test e2e/memory.spec.ts
 `frontend/e2e/questions.spec.ts` covers agent-to-agent questions on the same stack, with the same requirements as the workflow test (the Go toolchain and `git` on the PATH; it builds the runner and the fake agent into a temp directory). Task QAA-1 asks project QBB a question while no runner is online, so it waits ("Waiting on QBB"). The runner then starts, the fake agent answers from a temp QBB repository with a fake AWS key in the text (scrubbed to `[redacted]`), and the owner approves the draft with an edit. The answer is filed in QBB's Knowledge Base under `Q&A`, shows in QAA-1's thread, and is suggested when the same question is asked again and by the `find_answer` MCP tool. Someone in neither project gets 404, and with the runner stopped a second question is answered by a person from the Incoming tab. It creates the "Questions Team" team, a user and the QAA and QBB projects, so it needs a fresh stack. To run it:
 
 ```bash
-cd frontend && npx playwright test e2e/questions.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/questions.spec.ts
 # optional: E2E_RUNNER_LOG=1 prints the runner output at the end
 ```
 
@@ -153,7 +156,7 @@ cd frontend && npx playwright test e2e/questions.spec.ts
 Both create their own users, teams and projects (GIT and NOT), so they need a fresh stack. To run them:
 
 ```bash
-cd frontend && npx playwright test e2e/git.spec.ts e2e/notifications.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/git.spec.ts e2e/notifications.spec.ts
 # optional: E2E_RUNNER_LOG=1 prints the runner output at the end
 ```
 
@@ -162,15 +165,15 @@ cd frontend && npx playwright test e2e/git.spec.ts e2e/notifications.spec.ts
 `frontend/e2e/mockups.spec.ts` covers live mockups and the agent's records on the same stack (it also builds the runner and the fake agent). While the fake agent brainstorms MCK-1, it shows two mockup versions: the open task shows v1, then v2 replaces it with no reload. **Approve this version** on v2, the version the design was submitted with, approves the design. In Build, the implementer records a decision and a test run: the task's Decisions section shows the decision, and the plan step shows "✓ 3 passed — npm test". It creates the "Mockup Team" team and the MCK project, so it needs a fresh stack. To run it:
 
 ```bash
-cd frontend && npx playwright test e2e/mockups.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/mockups.spec.ts
 ```
 
 ### Global search end-to-end test
 
-`frontend/e2e/search.spec.ts` covers global search on the same stack. The env file needs `MEILI_MASTER_KEY` (any long random string: `openssl rand -hex 32`); the stack's `meilisearch` service holds the index. Bea, a member of project SRA but not SRB, presses Ctrl+K and types "retyr": SRA-1 "Retry failed card payments" appears within seconds of its creation, and SRB-1 never does. Enter opens the task. "See all results" opens the results page, where ticking Tasks and To do keeps SRA-1. After the admin renames SRA-1, Bea's search finds the new title. In a short window, Bea presses ↓ to the last "Scrolling check" result and ↑ back, and each selected result is fully in view. It creates the "Search Team" and "Search Private" teams, a user and the SRA and SRB projects, so it needs a fresh stack. To run it:
+`frontend/e2e/search.spec.ts` covers global search on the same stack. It needs `MEILI_MASTER_KEY` (the `e2e` set has one); the stack's `meilisearch` service holds the index. Bea, a member of project SRA but not SRB, presses Ctrl+K and types "retyr": SRA-1 "Retry failed card payments" appears within seconds of its creation, and SRB-1 never does. Enter opens the task. "See all results" opens the results page, where ticking Tasks and To do keeps SRA-1. After the admin renames SRA-1, Bea's search finds the new title. In a short window, Bea presses ↓ to the last "Scrolling check" result and ↑ back, and each selected result is fully in view. It creates the "Search Team" and "Search Private" teams, a user and the SRA and SRB projects, so it needs a fresh stack. To run it:
 
 ```bash
-cd frontend && npx playwright test e2e/search.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/search.spec.ts
 ```
 
 ### Popups end-to-end test
@@ -178,7 +181,7 @@ cd frontend && npx playwright test e2e/search.spec.ts
 `frontend/e2e/popups.spec.ts` checks clicks outside popups on the same stack. The user menu and the notification panel close on a click outside them (the panel on Escape too), and so does search (Ctrl+K). The "New team" dialog stays open with what was typed, and so does the task drawer; Escape closes both. The page behind each popup is blurred. It creates the "Popup Team" team and the POP project, so it needs a fresh stack. To run it:
 
 ```bash
-cd frontend && npx playwright test e2e/popups.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/popups.spec.ts
 # optional: E2E_SCREENSHOT_DIR=<dir> saves a screenshot of each popup
 ```
 
@@ -187,15 +190,15 @@ cd frontend && npx playwright test e2e/popups.spec.ts
 `frontend/e2e/pwa.spec.ts` checks the installable app (PWA) on any stack: the manifest, its icons and the service worker load before anyone signs in, the service worker takes over the page, and with the network off a page shows "You're offline". `frontend/e2e/mobile.spec.ts` opens every page in a 280-pixel-wide window (a Galaxy Fold's cover screen) and checks that nothing makes the page scroll sideways, and that long task titles wrap; it creates the "Mobile Team" team and the MOB project, so it needs a fresh stack. To run them:
 
 ```bash
-cd frontend && npx playwright test e2e/pwa.spec.ts e2e/mobile.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/pwa.spec.ts e2e/mobile.spec.ts
 ```
 
 ### Rate limits end-to-end test
 
-`frontend/e2e/ratelimits.spec.ts` checks the sign-in limit on the same stack. The env file needs `VALKEY_PASSWORD` and `CLIENT_IP_HEADER=X-Real-IP`: the test sends its requests as its own visitor (`X-Real-IP` with a random address in 203.0.113.0/24, new each run), so the other specs on the stack are never limited and it can run again at once. Thirty wrong passwords get 401; the next attempt gets 429, and the sign-in page then says "Too many attempts. Try again in 15 minutes". A visitor from another address still signs in. It creates nothing, so it runs on any stack. To run it:
+`frontend/e2e/ratelimits.spec.ts` checks the sign-in limit on the same stack. It needs `VALKEY_PASSWORD` and `CLIENT_IP_HEADER=X-Real-IP` (the `e2e` set has both): the test sends its requests as its own visitor (`X-Real-IP` with a random address in 203.0.113.0/24, new each run), so the other specs on the stack are never limited and it can run again at once. Thirty wrong passwords get 401; the next attempt gets 429, and the sign-in page then says "Too many attempts. Try again in 15 minutes". A visitor from another address still signs in. It creates nothing, so it runs on any stack. To run it:
 
 ```bash
-cd frontend && npx playwright test e2e/ratelimits.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/ratelimits.spec.ts
 ```
 
 ### Layout end-to-end test
@@ -203,5 +206,5 @@ cd frontend && npx playwright test e2e/ratelimits.spec.ts
 `frontend/e2e/layout.spec.ts` checks that the sidebar and the header bar stay in view while a long page scrolls (Admin → Settings in a 500-pixel-tall window), and that scrollbars stay hidden until the pointer is over the scrolling area, then fade in as a thin cyan bar, and that checkboxes are on/off switches that light up cyan when checked. It creates nothing, so it runs on any stack:
 
 ```bash
-cd frontend && npx playwright test e2e/layout.spec.ts
+cd frontend && megoocolab-runner services run e2e -- npx playwright test e2e/layout.spec.ts
 ```
