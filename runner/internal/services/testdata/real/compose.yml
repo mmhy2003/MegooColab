@@ -1,0 +1,14 @@
+services:
+  web:
+    build: ./web
+    ports:
+      - "127.0.0.1:${WEB_PORT:?}:80"
+    volumes:
+      - data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost/"]
+      interval: 1s
+      retries: 30
+
+volumes:
+  data:

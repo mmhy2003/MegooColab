@@ -26,7 +26,7 @@ func newRootCmd(version string) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newLoginCmd(), newDoctorCmd(), newVersionCmd(version), newRunCmd(version), newServiceCmd(), newSpikeCmd())
+	root.AddCommand(newLoginCmd(), newDoctorCmd(), newVersionCmd(version), newRunCmd(version), newServiceCmd(), newServicesCmd(), newSpikeCmd())
 	return root
 }
 
@@ -37,9 +37,27 @@ type quietError struct{ err error }
 func (q quietError) Error() string { return q.err.Error() }
 func (q quietError) Unwrap() error { return q.err }
 
+// exitError ends the runner with code without printing anything: the
+// command already said what went wrong.
+type exitError struct{ code int }
+
+func (e exitError) Error() string { return fmt.Sprintf("exit status %d", e.code) }
+
+// exitStatus returns the code of an exitError in err's chain.
+func exitStatus(err error) (int, bool) {
+	var e exitError
+	if errors.As(err, &e) {
+		return e.code, true
+	}
+	return 0, false
+}
+
 // Execute runs the CLI and exits non-zero on error.
 func Execute(version string) {
 	if err := newRootCmd(version).Execute(); err != nil {
+		if code, ok := exitStatus(err); ok {
+			os.Exit(code)
+		}
 		code := exitCode(err, runtime.GOOS, service.Interactive())
 		var q quietError
 		if !errors.As(err, &q) {

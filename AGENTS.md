@@ -32,44 +32,40 @@ and [docs/releasing.md](docs/releasing.md) is the full reference for releases.
 
 - **Frontend** (`frontend/`): `npx tsc --noEmit`, `npx eslint <changed files>` and `npm test` (Vitest). Don't run
   Prettier or reformat files you didn't otherwise change. After an API change, `npm run gen:api`.
-- **Backend** (`backend/`): `uv run pytest`. Never start a second pytest run while one is going: they share the test
-  databases.
-- **Migrations**: generate and try them only against the scratch database `megoo_migrate`, never the dev database
-  `megoo`:
+- **Services for checks**: the backend tests, migrations and browser tests need containers. Run them only through
+  `megoocolab-runner services run <set> -- <command>` (sets in `megoocolab.toml`): it starts this worktree's own
+  containers on free ports, gives the command their addresses, and removes them when the command ends, pass or fail.
+  Two worktrees can run checks at the same time.
+- **Backend** (`backend/`): `megoocolab-runner services run test -- uv run pytest` (add `-q -n auto` for the whole
+  suite).
+- **Migrations** (`backend/`): generate them on the `migrate` set's scratch database, never the dev database `megoo`:
 
   ```bash
-  docker exec megoocolab-dev-db-1 psql -U megoo -d postgres -c "CREATE DATABASE megoo_migrate"   # once
-  DEV_DATABASE_URL=postgresql+asyncpg://megoo:megoo@localhost:5433/megoo_migrate bash backend/scripts/makemigration.sh "<message>"
+  megoocolab-runner services run migrate -- bash scripts/makemigration.sh "<message>"
   ```
 
   Give every new foreign key and unique constraint an explicit name, and check that the migration goes down and up
-  again on `megoo_migrate`: in `backend/`, with `SECRET_KEY=dev` and
-  `DATABASE_URL=postgresql+asyncpg://megoo:megoo@localhost:5433/megoo_migrate`, run
-  `uv run alembic downgrade -1 && uv run alembic upgrade head`.
+  again. The database is new for each command, so do it in one:
+  `megoocolab-runner services run migrate -- bash -c "uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head"`.
 - **Runner** (`runner/`): `go test ./...`.
 - **Browser tests** (Playwright, `frontend/e2e/`): run them on a freshly built stack before merging a change to the
-  app. The dev Caddy holds port 8080, so stop it first and start it again afterwards. `BUILDX_BAKE_ENTITLEMENTS_FS=0`
-  is needed on Windows: without it, recent Docker versions stop the build to ask for permission to read
-  `backend\Dockerfile`.
+  app. `BUILDX_BAKE_ENTITLEMENTS_FS=0` is needed on Windows: without it, recent Docker versions stop the build to
+  ask for permission to read `backend\Dockerfile`. From `frontend/`:
 
   ```bash
-  export BUILDX_BAKE_ENTITLEMENTS_FS=0
-  C="docker compose -p megoo-e2e -f deploy/docker-compose.yml -f deploy/docker-compose.build.yml --env-file .superpowers/e2e.env"
-  docker stop megoocolab-dev-caddy-1
-  $C down -v; $C up -d --build --wait
-  (cd frontend && npx playwright test --reporter=line)
-  $C down -v
-  docker start megoocolab-dev-caddy-1
+  megoocolab-runner services run e2e -- npx playwright test --reporter=line
   ```
+
+  Each command builds and starts a fresh stack, so specs that need a fresh stack just run again.
 
   A spec written only to take screenshots is named `zz-*.spec.ts` and deleted before committing.
 
 ## Safety
 
-- Docker: use only the `megoo-e2e` project and the dev containers (`megoocolab-dev-*`). Never stop, remove or
-  change `cloudflared` or any other `megoocolab-*` container: those run the owner's real instance.
-- Never read files that hold credentials or secrets (`.env` files, tokens, keys). For `.superpowers/e2e.env`, show
-  its key names only, never the values.
+- Docker: start and stop containers for checks only through `megoocolab-runner services run`, and otherwise touch
+  only the dev containers (`megoocolab-dev-*`). Never stop, remove or change `cloudflared` or any other
+  `megoocolab-*` container: those run the owner's real instance.
+- Never read files that hold credentials or secrets (`.env` files, tokens, keys).
 - You have no access to the production server. Don't try to reach it.
 
 ## Commits
