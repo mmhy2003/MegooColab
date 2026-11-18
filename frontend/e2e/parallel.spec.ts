@@ -83,6 +83,18 @@ test("an agent works on three chats at once, and its limit can be raised and low
     await card.getByRole("button", { name: "Save runs at once" }).click();
     await expect(card.getByText("3 of 3 running")).toBeVisible({ timeout: 30_000 });
     await expect(card.getByText("Busy")).toBeVisible();
+    // every run shows on the card, each a link to its chat
+    const list = card.getByRole("list", { name: "Working on" });
+    await expect(list.getByRole("listitem")).toHaveCount(3);
+    await expect(list.getByRole("link")).toHaveCount(3);
+    // Admin → Agents: the newest, and the other two behind +2 more
+    await page.goto("/admin/agents");
+    const row = page.getByRole("row").filter({ hasText: AGENT_NAME });
+    await expect(row.getByText("3 of 3 running")).toBeVisible();
+    await expect(row.getByRole("list", { name: "Working on" }).getByRole("listitem")).toHaveCount(1);
+    await row.getByRole("button", { name: "+2 more" }).click();
+    await expect(row.getByRole("list", { name: "Working on" }).getByRole("listitem")).toHaveCount(3);
+    await page.goto(`/settings/agents?agent=${agent.id}`);
 
     // 3. lowered to 1 while all three run: they keep going, and the card says so
     await card.getByLabel("Runs at once", { exact: true }).fill("1");
