@@ -12,9 +12,10 @@ import { pickAssignee } from "./helpers/assignee";
 /**
  * End-to-end test of Plan 7's notifications: an assignment and a mention reach the person through the bell (and an
  * outsider mentioned by hand gets nothing), the agent's owner is told when the workflow waits for a design
- * approval, turning a kind off in-app silences it, and a new notification chimes in an open tab until the sound is
- * turned off. Needs the Go toolchain and git on the PATH, and a fresh
- * stack (see README "Git and notifications end-to-end tests"). Project key NOT.
+ * approval, turning a kind off in-app silences it, a new notification chimes in an open tab until the sound is
+ * turned off, and the tab shows unread notifications in its title and favicon, also in a second tab once they are
+ * read elsewhere. Needs the Go toolchain and git on the PATH, and a fresh stack (see README "Git and notifications
+ * end-to-end tests"). Project key NOT.
  */
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
@@ -243,4 +244,29 @@ test("notifications reach the right people", async ({ browser }) => {
   await mentionBea("And the title,");
   await expect(bell(beaPage)).toHaveText(String(count + 1), { timeout: 15_000 });
   expect(await notes()).toEqual([]);
+
+  // 7. while anything is unread, Bea's tab says so: the count before the title and a bell on the favicon, also after
+  // a page change; reading everything in one tab clears both in her other tab
+  const icons = (p: Page) => p.locator('link[rel~="icon"]').evaluateAll((ls) => ls.map((l) => l.getAttribute("href") ?? ""));
+  const badged = async (p: Page) => (await icons(p)).every((h) => h.startsWith("data:image/png"));
+  const plain = async (p: Page) => (await icons(p)).every((h) => !h.startsWith("data:"));
+  count = await unread();
+  expect(count).toBeGreaterThan(0); // section 6 left its mention unread
+  await beaPage.goto("/projects");
+  await expect(bell(beaPage)).toHaveText(String(count), { timeout: 15_000 });
+  await expect(beaPage).toHaveTitle(`(${count}) Projects · MegooColab`);
+  await expect.poll(() => badged(beaPage)).toBe(true);
+  await beaPage.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Teams", exact: true }).click();
+  await expect(beaPage).toHaveURL(/\/teams$/);
+  await expect(beaPage).toHaveTitle(new RegExp(`^\\(${count}\\) `));
+  await expect.poll(() => badged(beaPage)).toBe(true);
+  const other = await bea.ctx.newPage();
+  await other.goto("/projects");
+  await expect(other).toHaveTitle(`(${count}) Projects · MegooColab`, { timeout: 15_000 });
+  await expect.poll(() => badged(other)).toBe(true);
+  await bell(beaPage).click();
+  await beaPage.getByRole("button", { name: "Mark all read" }).click();
+  await expect(other).toHaveTitle("Projects · MegooColab", { timeout: 15_000 }); // told by the server, no reload
+  await expect.poll(() => plain(other)).toBe(true);
+  await expect(beaPage).not.toHaveTitle(/^\(/);
 });

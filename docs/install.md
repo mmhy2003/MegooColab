@@ -222,7 +222,9 @@ to you or your agent, a mention (`@` in a comment), your agent going offline mid
 questions that need a person. Each person chooses, per kind, in-app, email and push under **avatar → Notifications**
 (`/settings/notifications`). Email needs SMTP (section 7); its links use `PUBLIC_URL`. While MegooColab is open in a
 browser, a short chime also plays when a new notification arrives (after the first click in the tab, as browsers
-require); each person turns it off for that browser in the **Sound** card on the same page.
+require); each person turns it off for that browser in the **Sound** card on the same page. While anything is unread,
+the browser tab shows it too: the title starts with the count, such as `(3) Projects · MegooColab`, and the icon
+carries a small red bell.
 
 ### Push notifications
 
