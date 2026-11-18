@@ -8,7 +8,17 @@ from types import SimpleNamespace
 from app.agents.models import Agent, AgentBinding
 from app.runner.registry import RunnerRegistry, registry
 from app.workflow.models import WorkflowDocument
-from tests.dashboard.conftest import add_question, add_run, add_task, add_workflow, dash, task_key
+from tests.dashboard.conftest import (
+    add_chat,
+    add_cron_run,
+    add_draft,
+    add_question,
+    add_run,
+    add_task,
+    add_workflow,
+    dash,
+    task_key,
+)
 from tests.factories import login
 
 
@@ -49,6 +59,39 @@ async def test_running_rows_show_build_progress_and_answering_runs(client, db, w
     assert (build["agent_name"], build["stage"], build["step"], build["steps_total"]) == ("Viewer bot", "build", 2, 3)
     assert build["link"] == f"/projects/PAY/board?task={task_key(task)}"
     assert rows[0]["link"] == f"/questions/{q.id}"
+
+
+async def test_running_rows_carry_kind_title_and_question_key(client, db, world):
+    now = datetime.now(UTC)
+    await add_run(db, world.agent, task=await add_task(db, world.pay, title="Fix the login"),
+                  started_at=now - timedelta(minutes=3))
+    chat = await add_chat(db, world.pay, title="Pricing ideas")
+    await add_run(db, world.agent, task=await add_task(db, world.pay, chat=chat), started_at=now - timedelta(minutes=2))
+    q = await add_question(db, world.pay, status="routed")
+    await add_run(db, world.agent, question=q, started_at=now - timedelta(minutes=1))
+    await login(client, world.viewer)
+    rows = (await dash(client))["running"]
+    assert [(r["kind"], r["title"], r["question_key"]) for r in rows] == [
+        ("question", None, f"PAY-Q{q.number}"), ("chat", "Pricing ideas", None), ("task", "Fix the login", None)]
+    assert (rows[1]["link"], rows[1]["chat_id"]) == (f"/chats/{chat.id}", str(chat.id))
+
+
+async def test_a_cron_run_is_in_scope_through_its_project_and_links_to_its_cron(client, db, world):
+    cron_run = await add_cron_run(db, world.pay, name="Nightly check")
+    await add_run(db, world.agent, cron_run=cron_run, started_at=datetime.now(UTC))
+    await add_run(db, world.other_agent, cron_run=await add_cron_run(db, world.web), started_at=datetime.now(UTC))
+    await login(client, world.viewer)
+    [row] = (await dash(client))["running"]
+    assert (row["kind"], row["title"], row["link"], row["task_key"]) == (
+        "cron", "Nightly check", f"/projects/PAY/crons/{cron_run.cron_id}", None)
+
+
+async def test_a_draft_run_is_not_on_the_dashboard(client, db, world):
+    draft = await add_draft(db, world.viewer, world.agent, world.pay)
+    await add_run(db, world.agent, draft=draft, started_at=datetime.now(UTC))
+    await login(client, world.viewer)
+    assert (await dash(client))["running"] == []
+    assert (await dash(client, "mine"))["running"] == []
 
 
 async def test_queued_lists_five_and_counts_all(client, db, world):

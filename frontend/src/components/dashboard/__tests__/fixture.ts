@@ -28,7 +28,8 @@ export function need(kind: NeedItem["kind"], ref: string, title: string, over: P
 
 export function run(over: Partial<RunningItem> = {}): RunningItem {
   return {
-    run_id: "r1", agent_name: "Vera's Claude Code", started_at: "2026-10-28T10:00:00Z", task_key: "PAY-14",
+    run_id: "r1", agent_name: "Vera's Claude Code", started_at: "2026-10-28T10:00:00Z", kind: "task",
+    title: "Fix the login", task_key: "PAY-14", question_key: null,
     stage: "build", step: 2, steps_total: 3, review_round: null, question_from: null,
     link: "/projects/PAY/board?task=PAY-14", ...over,
   };

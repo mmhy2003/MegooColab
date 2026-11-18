@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field
 
+from app.agent_runs.schemas import RunningItem
 from app.agents.models import AgentProgram, AnswerMode
 from app.auth.schemas import UserOut
 from app.core.text import NoNulStr
@@ -99,6 +100,7 @@ class AgentOut(BaseModel):
     owner: UserOut
     status: str  # busy: every one of its max_concurrent_runs slots is taken
     running: int = 0  # its running runs; above max_concurrent_runs after the owner lowered it
+    runs: list[RunningItem] = []  # owner and admins only: what it works on now, newest first
     problems: list[str] = []
     bindings: list[BindingOut]
     runner: RunnerInfo | None = None  # None while the owner's runner is offline
@@ -114,4 +116,4 @@ class ProjectAgentOut(AgentOut):
 
 
 class AdminAgentOut(AgentOut):
-    current_run: dict | None = None
+    """An agent on Admin → Agents (every agent in the workspace)."""

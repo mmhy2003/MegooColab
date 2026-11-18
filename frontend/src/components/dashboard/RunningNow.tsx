@@ -2,24 +2,12 @@
 
 import { Activity } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment } from "react";
 
 import { Dot, Empty, Widget } from "@/components/dashboard/Widget";
+import { RunLink } from "@/components/runs/RunLink";
 import { type Queued, type RunningItem, shortDuration } from "@/lib/dashboard";
-import { STAGES } from "@/lib/workflow";
-
-/** A run in the Done stage is the finish run. */
-export const STAGE_LABEL: Record<string, string> = {
-  ...Object.fromEntries(STAGES.map((s) => [s.id, s.label])),
-  done: "Finishing",
-};
-
-/** Where the run is: the stage, with the review round past the first. */
-function where(run: RunningItem): string {
-  const stage = run.stage ? STAGE_LABEL[run.stage] : "";
-  if (run.stage === "review" && run.review_round && run.review_round > 1) return `${stage}, round ${run.review_round}`;
-  return stage;
-}
+import { STAGE_LABEL, runStatus, useNow } from "@/lib/runs";
 
 function QueuedLine({ queued }: { queued: Queued }) {
   const more = queued.total - queued.items.length;
@@ -44,11 +32,7 @@ function QueuedLine({ queued }: { queued: Queued }) {
 
 /** Agent runs at work now, with their time ticking in the browser, and what waits in the queue. */
 export function RunningNow({ running, queued, isAdmin }: { running: RunningItem[]; queued: Queued; isAdmin: boolean }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
+  const now = useNow();
   return (
     <Widget title="Running now" icon={Activity} more={{ href: isAdmin ? "/admin/agents" : "/settings/agents", label: "All runs" }}>
       {running.length === 0 && queued.total === 0 ? (
@@ -61,34 +45,17 @@ export function RunningNow({ running, queued, isAdmin }: { running: RunningItem[
             </li>
           )}
           {running.map((run) => (
-            <li key={run.run_id} className="flex min-w-0 items-center gap-2 py-1.5 text-sm">
-              <Dot state="busy" />
-              <span className="min-w-0 flex-1 truncate">
-                <b className="font-semibold">{run.agent_name}</b>
-                {" · "}
-                {run.task_key ? (
-                  <>
-                    {run.chat_id && <span className="mr-1 rounded border border-violet px-1 text-[10px] text-violet uppercase">chat</span>}
-                    <Link href={run.link} className="font-mono text-xs text-cyan-ink no-underline hover:underline">
-                      {run.chat_id ? "chat" : run.task_key}
-                    </Link>{" "}
-                    {where(run)}
-                    {run.stage === "build" && run.step && run.steps_total && (
-                      <>
-                        {" · "}
-                        <span className="text-muted-foreground">{`Step ${run.step} of ${run.steps_total}`}</span>
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <Link href={run.link} className="text-cyan-ink no-underline hover:underline">
-                    {run.question_from ? `Answering a question from ${run.question_from}` : "Answering a question"}
-                  </Link>
-                )}
-              </span>
-              {run.started_at && (
-                <span className="shrink-0 text-xs text-muted-foreground">{shortDuration(now - Date.parse(run.started_at))}</span>
-              )}
+            <li key={run.run_id} className="space-y-0.5 py-1.5 text-sm">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <Dot state="busy" />
+                <RunLink run={run} />
+                {run.kind === "task" && run.title && <span className="min-w-0 truncate">{run.title}</span>}
+              </div>
+              <div className="flex min-w-0 items-center gap-2 pl-3.5 text-xs text-muted-foreground">
+                <span className="min-w-0 truncate font-semibold text-foreground">{run.agent_name}</span>
+                <span className="shrink-0 rounded-full border border-line px-1.5">{runStatus(run)}</span>
+                {run.started_at && <span className="ml-auto shrink-0">{shortDuration(now - Date.parse(run.started_at))}</span>}
+              </div>
             </li>
           ))}
           {queued.total > 0 && (

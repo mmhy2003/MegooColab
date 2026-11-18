@@ -109,4 +109,4 @@ async def test_admin_agents_shows_answering_run(client, client_factory, db):
     finally:
         _cleanup(m1)
     [row] = [r for r in rows if r["id"] == a1["id"]]
-    assert row["current_run"]["kind"] == "question" and row["current_run"]["task_key"] == "QBB-Q1"
+    assert [(r["kind"], r["question_key"]) for r in row["runs"]] == [("question", "QBB-Q1")]

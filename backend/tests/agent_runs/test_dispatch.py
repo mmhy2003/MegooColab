@@ -382,20 +382,20 @@ async def test_deactivation_cancels_runs(db, tc_factory):
     assert rows == {running["id"]: "cancelled", queued["id"]: "cancelled"}
 
 
-async def test_delete_agent_with_active_runs_409_and_current_run(client, client_factory, db):
+async def test_delete_agent_with_active_runs_409_and_runs(client, client_factory, db):
     _me, agent, runs = await _offline_runs(client, db)
     r = await client.delete(f"/api/agents/{agent['id']}")
     assert r.status_code == 409 and r.json()["detail"] == "agent_has_active_runs"
     admin = await make_user(db, role=Role.admin)
     ac = client_factory()
     await login(ac, admin)
-    assert (await ac.get("/api/admin/agents")).json()[0]["current_run"] is None  # queued, not running
+    assert (await ac.get("/api/admin/agents")).json()[0]["runs"] == []  # queued, not running
     await db.execute(update(AgentRun).values(status="running"))
     await db.commit()
     row = (await ac.get("/api/admin/agents")).json()[0]
     assert row["status"] == "busy"
-    assert row["current_run"]["id"] == runs[0]["id"] and row["current_run"]["status"] == "running"
-    assert row["current_run"]["task_key"].startswith("PAY-")
+    assert [(r["run_id"], r["kind"]) for r in row["runs"]] == [(runs[0]["id"], "task")]
+    assert row["runs"][0]["task_key"].startswith("PAY-")
     await db.execute(update(AgentRun).values(status="completed"))
     await db.commit()
     assert (await client.delete(f"/api/agents/{agent['id']}")).status_code == 204
