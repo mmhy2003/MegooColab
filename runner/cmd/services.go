@@ -17,6 +17,7 @@ func newServicesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "services",
 		Short: "Start a worktree's test services for one command (megoocolab.toml)",
+		Long:  "Start a worktree's test services for one command.\n\n" + services.Format,
 	}
 	cmd.AddCommand(newServicesRunCmd(), newServicesCleanCmd())
 	return cmd
