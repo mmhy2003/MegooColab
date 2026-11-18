@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from app.audit import service as audit
 from app.auth.deps import AuthedUser
 from app.core.db import DbSession
+from app.core.events import Event, publish
 from app.notifications.models import DEFAULT_PREFS, Kind, Notification, NotificationPref
 from app.notifications.schemas import NotificationOut, NotificationPrefIO, UnreadCount
 
@@ -48,14 +49,19 @@ async def mark_read(notification_id: uuid.UUID, user: AuthedUser, db: DbSession)
         raise HTTPException(status.HTTP_404_NOT_FOUND, "notification_not_found")
     if n.read_at is None:
         n.read_at = datetime.now(UTC)
+        # the person's other tabs and devices refresh their count
+        await publish(db, Event(type="notification.read", user_id=user.id))
         await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/api/notifications/read-all", status_code=status.HTTP_204_NO_CONTENT)
 async def mark_all_read(user: AuthedUser, db: DbSession) -> Response:
-    await db.execute(update(Notification).where(Notification.user_id == user.id, Notification.read_at.is_(None))
-                     .values(read_at=datetime.now(UTC)))
+    done = await db.execute(update(Notification).where(Notification.user_id == user.id,
+                                                        Notification.read_at.is_(None))
+                            .values(read_at=datetime.now(UTC)))
+    if done.rowcount:  # the person's other tabs and devices refresh their count
+        await publish(db, Event(type="notification.read", user_id=user.id))
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
