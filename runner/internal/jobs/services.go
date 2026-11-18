@@ -1,10 +1,21 @@
 package jobs
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
+
+	"github.com/mmhy2003/megoocolab/runner/internal/services"
+)
+
+const (
+	// servicesWait is how long removing a worktree's services may take when its run ends.
+	servicesWait = 2 * time.Minute
+	// servicesSweepEvery is how often the runner removes services whose check is no longer running.
+	servicesSweepEvery = time.Hour
 )
 
 // servicesDir is where this runner keeps the records of the service sets its
@@ -22,4 +33,33 @@ func (m *Manager) servicesEnv(logf io.Writer) []string {
 		env = append(env, "PATH="+filepath.Dir(exe)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	}
 	return append(env, "MEGOO_SERVICES_DIR="+m.servicesDir())
+}
+
+// removeServices removes whatever service sets worktree wt still has, once its
+// run is over. A failure goes to the run's log and the runner's; the records
+// stay, so the sweep tries again.
+func (m *Manager) removeServices(wt string, logf io.Writer) {
+	ctx, cancel := context.WithTimeout(context.Background(), servicesWait)
+	defer cancel()
+	if err := services.CleanWorktree(ctx, m.servicesDir(), wt); err != nil {
+		fmt.Fprintf(logf, "runner: services: %v\n", err)
+		fmt.Fprintf(m.Log, "services: %v\n", err)
+	}
+}
+
+// sweepServices removes the service sets whose check is no longer running, now
+// and then every servicesSweepEvery until ctx ends.
+func (m *Manager) sweepServices(ctx context.Context) {
+	ticker := time.NewTicker(servicesSweepEvery)
+	defer ticker.Stop()
+	for {
+		if err := services.Sweep(ctx, m.servicesDir(), time.Now()); err != nil {
+			fmt.Fprintf(m.Log, "services: %v\n", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }

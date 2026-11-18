@@ -155,6 +155,7 @@ func runConnection(ctx context.Context, out io.Writer, cfg config.Config, versio
 	var c *conn.Client
 	mgr := jobs.New(func(v any) error { return c.Send(v) }, cacheRoot)
 	mgr.ServerURL, mgr.Token = cfg.URL, cfg.Token // where the runs' images are downloaded from
+	mgr.Log = out
 	c = conn.New(cfg, version, mgr.Probe)
 	c.OnState = func(s string) { fmt.Fprintln(out, s) }
 

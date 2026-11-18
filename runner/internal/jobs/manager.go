@@ -60,6 +60,7 @@ type Manager struct {
 	FlushInterval time.Duration                     // message coalescing interval; 0 keeps the default
 	LogCap        int                               // bytes of adapter output kept per run log; default 5 MiB
 	Executable    func() (string, error)            // this runner's own executable, put first on the agent's PATH; default os.Executable
+	Log           io.Writer                         // the runner's own log (failed service removals); default io.Discard
 	// Where a run's images are downloaded from (the server's base URL and this runner's token), and with what.
 	ServerURL  string
 	Token      string
@@ -95,6 +96,7 @@ func New(send func(any) error, cacheRoot string) *Manager {
 		ExitGrace:   2 * time.Second,
 		LogCap:      logCap,
 		Executable:  os.Executable,
+		Log:         io.Discard,
 		send:        send,
 		cacheRoot:   cacheRoot,
 		agents:      map[string]protocol.WelcomeAgent{},
@@ -273,6 +275,7 @@ func (m *Manager) Serve(ctx context.Context, c *conn.Client) error {
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 	go m.sweepDrafts(ctx)
+	go m.sweepServices(ctx)
 	for env := range c.Messages() {
 		m.Dispatch(ctx, env)
 	}
@@ -763,6 +766,11 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 				"start_branch": start.StartBranch, "default_branch": start.DefaultBranch, "repository_url": start.RepositoryURL,
 			})
 		}
+	}
+	// The services its checks left (one killed outright, say) go when the run ends, whatever its outcome.
+	// Registered before the adapter's reap and the git capture, so it runs once the agent is gone.
+	if rs.Draft == nil {
+		defer m.removeServices(wt, logf)
 	}
 	taskBranchPrefix := "megoo/" + rs.Task.Key + "-"
 	pol, err := policy.New(kind, wt)
