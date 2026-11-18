@@ -1,16 +1,16 @@
 {
-    "version": "0.11.0",
+    "version": "0.12.0",
     "description": "Runs coding agents on this machine for MegooColab",
     "homepage": "https://github.com/mmhy2003/MegooColab",
     "license": "Unknown",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/mmhy2003/MegooColab/releases/download/runner-v0.11.0/megoocolab-runner_0.11.0_windows_amd64.zip",
-            "hash": "918af83a029cfd6de1d61d50fb929538f0b2931c2580c6e3641867880781891d"
+            "url": "https://github.com/mmhy2003/MegooColab/releases/download/runner-v0.12.0/megoocolab-runner_0.12.0_windows_amd64.zip",
+            "hash": "ae034bbcaf7ec53ff66ace7ce6a934014b610006e77b8573a804d117f6a8a765"
         },
         "arm64": {
-            "url": "https://github.com/mmhy2003/MegooColab/releases/download/runner-v0.11.0/megoocolab-runner_0.11.0_windows_arm64.zip",
-            "hash": "b170ab45d61f05f4bfaae4ce5d010cb48b2fbc6f5645807093238e74401f1670"
+            "url": "https://github.com/mmhy2003/MegooColab/releases/download/runner-v0.12.0/megoocolab-runner_0.12.0_windows_arm64.zip",
+            "hash": "0b9e58b7feb712e8337386261755fd0fde54c126813bdebdceb006b88499238d"
         }
     },
     "bin": "megoocolab-runner.exe",
