@@ -13,6 +13,7 @@ from app.core.db import SessionLocal
 from app.core.email import OutboxMailer
 from app.jobs.models import Job
 from app.notifications import jobs as notify_jobs
+from app.notifications import router as notify_router
 from app.notifications import service
 from app.notifications.models import Kind, Notification
 from app.org.models import ORG_SETTINGS_ID, OrgSettings
@@ -199,6 +200,37 @@ async def test_list_read_and_unread_count(client_factory, db):
     assert (await b.post("/api/notifications/read-all")).status_code == 204
     assert (await b.get("/api/notifications/unread-count")).json() == {"count": 0}
     assert task
+
+
+async def test_mark_read_tells_other_tabs(client_factory, db, monkeypatch):
+    """Reading in one tab tells the person's other tabs and devices, so their bell (and tab badge) follows."""
+    _manager, bea, _m, b, _task = await _world(client_factory, db)
+    async with SessionLocal() as s:
+        for i in range(2):
+            s.add(Notification(user_id=bea.id, kind="assigned", title=f"r{i}", body="", link="/x"))
+        await s.commit()
+    first, second = [n for n in await _rows(bea.id) if n.title in ("r0", "r1")]
+    seen = []
+    real = notify_router.publish
+
+    async def capture(session, event):
+        seen.append((event.type, event.user_id))
+        await real(session, event)
+
+    monkeypatch.setattr(notify_router, "publish", capture)
+    other = client_factory()
+    await login(other, await make_user(db))
+    assert (await other.post(f"/api/notifications/{first.id}/read")).status_code == 404
+    assert seen == []  # someone else's notification: nothing read, nothing sent
+    assert (await b.post(f"/api/notifications/{first.id}/read")).status_code == 204
+    assert seen == [("notification.read", bea.id)]
+    assert (await b.post(f"/api/notifications/{first.id}/read")).status_code == 204
+    assert len(seen) == 1  # already read: no event
+    assert (await b.post("/api/notifications/read-all")).status_code == 204
+    assert seen == [("notification.read", bea.id)] * 2  # second (and any other unread) became read
+    assert (await b.post("/api/notifications/read-all")).status_code == 204
+    assert len(seen) == 2  # nothing unread: no event
+    assert second
 
 
 async def test_live_event_per_user(client_factory, db, monkeypatch):

@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { pageTitle, usePageTitle, useRecordTitle } from "@/lib/title";
+import { pageTitle, setTitleCount, usePageTitle, useRecordTitle } from "@/lib/title";
 
 function Page({ parts }: { parts: (string | null | undefined)[] }) {
   usePageTitle(...parts);
@@ -15,6 +15,7 @@ function Record({ parts }: { parts: (string | null | undefined)[] }) {
 
 afterEach(() => {
   cleanup();
+  setTitleCount(0);
   document.title = "MegooColab";
 });
 
@@ -74,5 +75,37 @@ describe("usePageTitle", () => {
       </>,
     );
     expect(document.title).toBe("New project · MegooColab");
+  });
+});
+
+describe("setTitleCount", () => {
+  it("puts the unread count before the page's title", () => {
+    render(<Page parts={["Projects"]} />);
+    setTitleCount(3);
+    expect(document.title).toBe("(3) Projects · MegooColab");
+  });
+
+  it("shows the number up to 99, then 99+", () => {
+    render(<Page parts={["Projects"]} />);
+    setTitleCount(100);
+    expect(document.title).toBe("(99+) Projects · MegooColab");
+    setTitleCount(99);
+    expect(document.title).toBe("(99) Projects · MegooColab");
+  });
+
+  it("takes the count away at 0", () => {
+    render(<Page parts={["Projects"]} />);
+    setTitleCount(3);
+    setTitleCount(0);
+    expect(document.title).toBe("Projects · MegooColab");
+  });
+
+  it("keeps the count as the page changes and goes", () => {
+    const { rerender, unmount } = render(<Page parts={["Projects"]} />);
+    setTitleCount(2);
+    rerender(<Page parts={["Teams"]} />);
+    expect(document.title).toBe("(2) Teams · MegooColab");
+    unmount();
+    expect(document.title).toBe("(2) MegooColab");
   });
 });
