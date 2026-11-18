@@ -14,13 +14,22 @@ export function pageTitle(...parts: (string | null | undefined)[]): string {
 // mount in can't decide this alone.
 const shown = new Map<string, { title: string; record: boolean; seq: number }>();
 let seq = 0;
+// unread notifications, shown before the title (TabBadge): "(3) Projects · MegooColab"
+let unread = 0;
 
 function apply() {
   let top: { title: string; record: boolean; seq: number } | undefined;
   for (const entry of shown.values()) {
     if (!top || Number(entry.record) > Number(top.record) || (entry.record === top.record && entry.seq > top.seq)) top = entry;
   }
-  document.title = top?.title ?? APP_NAME;
+  const count = unread > 99 ? "99+" : String(unread);
+  document.title = (unread > 0 ? `(${count}) ` : "") + (top?.title ?? APP_NAME);
+}
+
+/** Puts the unread count before the tab's title; 0 takes it away. */
+export function setTitleCount(count: number): void {
+  unread = count;
+  apply();
 }
 
 function useTitle(record: boolean, parts: (string | null | undefined)[]) {
