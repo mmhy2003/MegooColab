@@ -107,6 +107,75 @@ the same file. If `runner.log` cannot be opened, the runner writes to
 elsewhere).
 The file is truncated at start when it exceeds 5 MiB. Interactive `run` prints to the terminal.
 
+## Test services
+
+A repository can declare the containers its checks need (a database, a search engine, the whole app) in
+`megoocolab.toml` at its root. The runner then starts a worktree's own copy of them for one command, on free ports,
+and removes them when the command ends. Two worktrees can run the same checks at the same time without sharing
+anything. Docker with the Compose plugin is needed.
+
+```toml
+# megoocolab.toml
+[services.test]
+description = "PostgreSQL, Meilisearch and Valkey for backend pytest"
+compose = ["tools/test-services/docker-compose.yml"]
+ports = ["DB_PORT", "MEILI_PORT", "VALKEY_PORT"]
+
+[services.test.env]
+TEST_DATABASE_URL = "postgresql+asyncpg://megoo:megoo@localhost:${DB_PORT}/megoo_test"
+MEILI_URL = "http://localhost:${MEILI_PORT}"
+```
+
+Each `[services.<name>]` table is a set:
+
+- `compose` (required): one or more Docker Compose files, relative to `megoocolab.toml`.
+- `ports`: names of variables. The runner picks a free port on 127.0.0.1 for each.
+- `env`: more variables. A value may use `${NAME}` for a port, for `MEGOO_SERVICES_PROJECT` (the set's unique
+  Compose project name, also usable as an image tag), or for a variable already in the environment.
+- `description`: optional, one line of at most 200 characters, shown to the agent.
+
+A set's name is a lowercase letter followed by lowercase letters and digits, with single hyphens between them, 20
+characters at most. Variable names are those of environment variables; names starting with `MEGOO_SERVICES_` are
+reserved. The ports, the `env` entries and `MEGOO_SERVICES_PROJECT` go both to Docker Compose (so
+`"127.0.0.1:${DB_PORT}:5432"` works in a Compose file) and to the command. The runner passes its own env file to
+Compose, so a `.env` beside the Compose files is never read.
+
+```sh
+megoocolab-runner services run test -- uv run pytest   # from the worktree or any folder in it
+megoocolab-runner services clean                       # remove what ended checks left behind
+```
+
+`services run <name> -- <command...>` finds `megoocolab.toml` in the current folder or a parent, starts the set as
+the Compose project `megoo-<folder>-<name>-<8 hex of the folder's path>` (`up -d --build --wait`), runs the command
+in the current folder with the variables set, then removes the project's containers, volumes and networks and the
+images its Compose files built (pulled images and Docker's build cache stay). Ctrl+C and stop signals are passed to
+the command, and the set is removed afterwards. A worktree runs one check per set at a time: a second one is
+refused at once.
+
+It exits with the command's exit code, or 125 when the runner could not start or remove the services, or the set is
+already running in this worktree.
+
+Records, env files and logs are kept in `<user cache dir>/megoocolab/services` (`MEGOO_SERVICES_DIR` overrides it),
+never in the worktree. When the start or the command fails, the containers' logs are saved to `logs/<project>.log`
+there and the path is printed. Logs older than seven days are deleted.
+
+Services are removed in three places, so nothing keeps running:
+
+1. when the command ends: pass, fail, Ctrl+C or a stop signal;
+2. when a run ends (success, failure or cancel), the runner removes every set its worktree still has, for example
+   after a check was killed outright. What it cannot remove within two minutes stays recorded and is written to
+   the runner's log;
+3. when the runner starts, every hour, and before each `services run`, sets whose command is no longer running are
+   removed. `services clean` does the same by hand.
+
+Writable runs (implement, the fix roles, finish, freestyle, crons) in a worktree with `megoocolab.toml` get a
+"Test services" section in their prompt that names the sets and the command. The runner puts its own folder first
+on the agent's `PATH` and sets `MEGOO_SERVICES_DIR`, so the agent's checks and the runner share the same records.
+Read-only runs get nothing.
+
+The runner only removes Compose projects it recorded itself, and only names of the form `megoo-…-<8 hex>`. Other
+containers, such as a MegooColab instance's `megoocolab-*` containers, are never touched.
+
 ## What the runner does and does not do
 
 - **Metadata only.** The server receives agent messages, plan entries, tool titles and
