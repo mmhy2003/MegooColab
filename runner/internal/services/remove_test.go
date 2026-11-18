@@ -23,7 +23,8 @@ func fakeDocker(t *testing.T) string {
 	t.Setenv("PATH", testutil.BuildFakeDocker(t)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	log := filepath.Join(t.TempDir(), "docker.log")
 	t.Setenv("FAKEDOCKER_LOG", log)
-	for _, name := range []string{"FAKEDOCKER_FAIL", "FAKEDOCKER_LEFTOVER", "FAKEDOCKER_SHOW"} {
+	for _, name := range []string{"FAKEDOCKER_FAIL", "FAKEDOCKER_LEFTOVER", "FAKEDOCKER_SHOW",
+		"FAKEDOCKER_PORT_TAKEN", "FAKEDOCKER_CONFIG", "FAKEDOCKER_UP_SLEEP_MS"} {
 		t.Setenv(name, "")
 	}
 	return log
