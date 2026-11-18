@@ -3867,8 +3867,8 @@ export interface paths {
         };
         /**
          * Get Updates
-         * @description The latest releases, as the update check last found them. The server's own update is for admins only:
-         *     they are the ones who can install it.
+         * @description The running version, for everyone signed in, and the latest releases as the update check last found them.
+         *     The server's own update is for admins only: they are the ones who can install it.
          */
         get: operations["get_updates_api_updates_get"];
         put?: never;
@@ -8496,6 +8496,8 @@ export interface components {
         };
         /** UpdatesOut */
         UpdatesOut: {
+            /** App Version */
+            app_version: string;
             app?: components["schemas"]["AppUpdate"] | null;
             runner?: components["schemas"]["RunnerRelease"] | null;
         };
