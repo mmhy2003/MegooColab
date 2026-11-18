@@ -163,3 +163,37 @@ test("text is set in Geist, code and keys in Geist Mono, the wordmark in Orbitro
   expect(fonts.length).toBeGreaterThan(0);
   expect(fonts.every((n) => !n.includes("fonts.g"))).toBe(true);
 });
+
+test("everyone signed in sees the server's version at the foot of the sidebar", async ({ page, browser }) => {
+  // the e2e stack is built from source, so the server runs "dev": plain text, no release link
+  await setupOrSignIn(page);
+  const web = { "X-Megoo-Client": "web" };
+  const email = `vera-${Date.now()}@acme.io`; // any stack: fresh or not
+  const invite = await page.request.post("/api/admin/users/invite", {
+    data: { email, name: "Vera Version", role: "member" },
+    headers: web,
+  });
+  expect(invite.ok(), await invite.text()).toBeTruthy();
+  const token = (await invite.json()).invite_url.split("/invite/")[1];
+  const ctx = await browser.newContext({ baseURL: process.env.E2E_BASE_URL ?? "http://localhost:8080" });
+  try {
+    const accepted = await ctx.request.post("/api/auth/accept-invite", {
+      data: { token, password: "vera-password-123" },
+      headers: web,
+    });
+    expect(accepted.ok(), await accepted.text()).toBeTruthy();
+    const member = await ctx.newPage();
+    await member.setViewportSize({ width: 1280, height: 800 });
+    await member.goto("/projects");
+    const aside = member.locator("aside").first();
+    await expect(aside.getByText("MegooColab dev", { exact: true })).toBeVisible();
+    await expect(aside.getByRole("link", { name: /MegooColab/ })).toHaveCount(0);
+
+    await member.setViewportSize({ width: 375, height: 700 });
+    await member.getByRole("button", { name: "Open menu" }).click();
+    const menu = member.getByRole("dialog", { name: "Menu" });
+    await expect(menu.getByText("MegooColab dev", { exact: true })).toBeInViewport();
+  } finally {
+    await ctx.close();
+  }
+});

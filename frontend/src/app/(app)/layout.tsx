@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 
 import { NavRecorder } from "@/components/nav/NavRecorder";
 import { TabBadge } from "@/components/notifications/TabBadge";
+import { AppVersion } from "@/components/shell/AppVersion";
 import { DesktopSidebar } from "@/components/shell/DesktopSidebar";
 import { Header } from "@/components/shell/Header";
 import { Sidebar } from "@/components/shell/Sidebar";
@@ -32,8 +33,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {menuOpen && (
         <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-label="Menu">
           <button type="button" aria-label="Close menu" className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMenuOpen(false)} />
-          <aside className="relative h-full w-64 border-r border-line bg-surface">
-            <Sidebar user={user} onNavigate={() => setMenuOpen(false)} />
+          <aside className="relative flex h-full w-64 flex-col border-r border-line bg-surface">
+            <div className="min-h-0 flex-1">
+              <Sidebar user={user} onNavigate={() => setMenuOpen(false)} />
+            </div>
+            {/* px-5: in line with the menu's icons (the nav's p-2 plus the links' px-3) */}
+            <div className="shrink-0 px-5 py-3">
+              <AppVersion />
+            </div>
           </aside>
         </div>
       )}
