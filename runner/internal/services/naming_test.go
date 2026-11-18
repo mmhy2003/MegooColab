@@ -107,3 +107,38 @@ func TestIsOursNeverMatchesOtherProjects(t *testing.T) {
 		t.Errorf("IsOurs(megoo-mc-52-e2e-3fa9c1d2) = false")
 	}
 }
+
+// Every set name Load accepts must give a project IsOurs accepts, or its
+// containers could be started but never removed.
+func TestEveryValidSetNameIsOurs(t *testing.T) {
+	worktree := t.TempDir()
+	names := []string{"a", "e2e", "test", "a-b", "a1-b2-c3", strings.Repeat("a", 20), "a-" + strings.Repeat("b", 18)}
+	// Every name of up to 3 characters from a, 1 and -.
+	alphabet := []string{"a", "1", "-"}
+	var grow func(prefix string)
+	grow = func(prefix string) {
+		if prefix != "" {
+			names = append(names, prefix)
+		}
+		if len(prefix) == 3 {
+			return
+		}
+		for _, c := range alphabet {
+			grow(prefix + c)
+		}
+	}
+	grow("")
+	for _, name := range names {
+		if !validSetName(name) {
+			continue
+		}
+		if p := ProjectName(worktree, name); !IsOurs(p) {
+			t.Errorf("set %q is valid but IsOurs(%q) = false", name, p)
+		}
+	}
+	for _, name := range []string{"a-", "a--b", "-a", "1a", strings.Repeat("a", 21)} {
+		if validSetName(name) {
+			t.Errorf("validSetName(%q) = true", name)
+		}
+	}
+}

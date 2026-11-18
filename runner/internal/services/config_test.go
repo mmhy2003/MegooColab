@@ -95,6 +95,8 @@ func TestLoadRejects(t *testing.T) {
 		{"set name starts with digit", set("1x", ok), "services.1x"},
 		{"set name too long", set(strings.Repeat("a", 21), ok), "services." + strings.Repeat("a", 21)},
 		{"set name underscore", set("a_b", ok), "services.a_b"},
+		{"set name ends with hyphen", set("a-", ok), "services.a-"},
+		{"set name double hyphen", set("a--b", ok), "services.a--b"},
 		{"port name starts with digit", set("test", ok+`ports = ["1X"]`+"\n"), "services.test.ports"},
 		{"port name with hyphen", set("test", ok+`ports = ["A-B"]`+"\n"), "services.test.ports"},
 		{"reserved port", set("test", ok+`ports = ["MEGOO_SERVICES_PROJECT"]`+"\n"), "services.test.ports"},

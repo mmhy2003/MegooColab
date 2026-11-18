@@ -52,13 +52,20 @@ var ErrNoFile = errors.New("no megoocolab.toml in this folder or any parent")
 
 const (
 	maxDescription = 200
+	maxSetName     = 20
 	reservedPrefix = "MEGOO_SERVICES_"
 )
 
 var (
-	setNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,19}$`)
+	setNameRe = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 	varNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
+
+// validSetName reports whether name may name a set. Hyphens only join
+// letters and digits, so ProjectName always gives a name IsOurs accepts.
+func validSetName(name string) bool {
+	return len(name) <= maxSetName && setNameRe.MatchString(name)
+}
 
 type setDoc struct {
 	Description string            `toml:"description"`
@@ -152,8 +159,8 @@ func checkSet(folder, name string, doc setDoc) (Set, error) {
 		}
 		return Set{}, fmt.Errorf("%s%s: %s", key, field, fmt.Sprintf(format, args...))
 	}
-	if !setNameRe.MatchString(name) {
-		return fail("", "a set name is a lowercase letter, then up to 19 lowercase letters, digits or hyphens")
+	if !validSetName(name) {
+		return fail("", "a set name is up to 20 lowercase letters, digits and single hyphens between them, starting with a letter")
 	}
 
 	if strings.ContainsAny(doc.Description, "\r\n") {

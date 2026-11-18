@@ -66,8 +66,13 @@ func TestVars(t *testing.T) {
 	// Ports come before the environment: a process variable of the same name
 	// does not win.
 	got, err = Vars(set, map[string]int{"DB_PORT": 5000}, p, lookupFrom(map[string]string{"SECRET": "s", "DB_PORT": "1"}))
-	if err != nil || got[3] != "URL=pg://localhost:5000/"+p {
-		t.Errorf("Vars with DB_PORT in the environment = %q, %v", got, err)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("Vars with DB_PORT in the environment = %q, %v, want %q", got, err, want)
+	}
+
+	// A port without a picked number is an error, not DB_PORT=0.
+	if _, err := Vars(Set{Name: "test", Ports: []string{"DB_PORT"}}, map[string]int{}, p, lookupFrom(nil)); err == nil || !strings.Contains(err.Error(), "DB_PORT") {
+		t.Errorf("Vars without a port number: error = %v, want one naming DB_PORT", err)
 	}
 
 	// Another env key does not expand.

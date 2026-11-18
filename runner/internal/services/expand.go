@@ -45,13 +45,17 @@ func Expand(s string, lookup func(string) (string, bool)) (string, error) {
 }
 
 // Vars returns the variables a check of set gets, sorted NAME=VALUE: each
-// port, each env entry expanded, and MEGOO_SERVICES_PROJECT. An env value may
+// port (ports must hold a number for every name in set.Ports), each env entry expanded, and MEGOO_SERVICES_PROJECT. An env value may
 // name a port, MEGOO_SERVICES_PROJECT or a variable from lookup (the process
 // environment), in that order, but not another env entry.
 func Vars(set Set, ports map[string]int, project string, lookup func(string) (string, bool)) ([]string, error) {
 	vars := make([]string, 0, len(set.Ports)+len(set.Env)+1)
 	for _, name := range set.Ports {
-		vars = append(vars, name+"="+strconv.Itoa(ports[name]))
+		port, ok := ports[name]
+		if !ok {
+			return nil, fmt.Errorf("services.%s.ports: no port was picked for %s", set.Name, name)
+		}
+		vars = append(vars, name+"="+strconv.Itoa(port))
 	}
 	known := func(name string) (string, bool) {
 		if port, ok := ports[name]; ok {
