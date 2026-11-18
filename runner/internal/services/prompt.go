@@ -30,21 +30,77 @@ Example:
 Run a check with its set as: megoocolab-runner services run <name> -- <command>
 `
 
+// keepUpToDate ends a writable run's section.
+const keepUpToDate = "If your work adds a check or a command that needs a service, a port or a variable the file does not " +
+	"declare, add it to `megoocolab.toml` (and its Compose files) in the same commit, and run the new check through it. " +
+	"`megoocolab-runner services --help` describes the file."
+
+// planKeep is the planning rule once the file exists.
+const planKeep = "A step that adds a check or a command needing a service, a port or a variable the file does not declare " +
+	"changes `megoocolab.toml`, its Compose files and the repository's instructions for running checks in that same " +
+	"step, and runs the new check through `megoocolab-runner services run`."
+
+// planNoFile is the planning text for a repository without the file.
+const planNoFile = "This repository has no `megoocolab.toml`. With one, the runner gives each worktree its own copy of the " +
+	"containers a check needs (a database, a search engine, the whole app) on free ports, and removes them when the " +
+	"check ends, so the checks of different tasks never share containers.\n" +
+	"Find out how this repository's checks get their services: Compose files, the CI configuration, the README, the " +
+	"test settings. If any check needs a container, make \"Add megoocolab.toml\" the plan's first step, and say in the " +
+	"plan that the runner asked for this step, not the design. That step writes `megoocolab.toml` (and a Compose file " +
+	"for the checks if the repository has none that fits), changes the repository's instructions for running its " +
+	"checks (AGENTS.md, README or the like) to use `megoocolab-runner services run <name> -- <command>`, and proves " +
+	"each set by running its check through it. Later steps run those checks the same way. If no check needs a " +
+	"container, add no step."
+
 // PromptSection is the text a writable run's prompt gets about the worktree's
 // service sets: "" when the worktree has no megoocolab.toml or it declares no
 // set. Only the worktree's own file counts, not one in a parent folder.
 func PromptSection(worktree string) (string, error) {
-	path := filepath.Join(worktree, FileName)
-	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-		return "", nil
+	f, err := loadOwn(worktree)
+	if err != nil || f == nil || len(f.Sets) == 0 {
+		return "", err
 	}
-	f, err := Load(path)
+	return "\n\n## Test services\nThis repository declares services for its checks in `megoocolab.toml`: " +
+		setList(f) +
+		". Run every command that needs them as `megoocolab-runner services run <name> -- <command>`. " +
+		"It starts this worktree's own containers on free ports, gives your command the variables the file defines, " +
+		"and removes the containers when the command ends. Do not start, stop or reuse the project's containers any " +
+		"other way, and never touch containers you did not start. " + keepUpToDate + "\n", nil
+}
+
+// PlanSection is the text a planning run's prompt gets about megoocolab.toml:
+// how to add it in a worktree without one, how to keep it up to date in one
+// with it, then the file's format. Only the worktree's own file counts.
+func PlanSection(worktree string) (string, error) {
+	f, err := loadOwn(worktree)
 	if err != nil {
 		return "", err
 	}
-	if len(f.Sets) == 0 {
-		return "", nil
+	var body string
+	switch {
+	case f == nil:
+		body = planNoFile
+	case len(f.Sets) == 0:
+		body = "This repository has a `megoocolab.toml` that declares no services yet. " + planKeep
+	default:
+		body = "This repository declares services for its checks in `megoocolab.toml`: " + setList(f) +
+			". Steps run every command that needs them as `megoocolab-runner services run <name> -- <command>`. " + planKeep
 	}
+	return "\n\n## Test services\n" + body + "\n\n" + Format, nil
+}
+
+// loadOwn loads the worktree's own megoocolab.toml, not one in a parent
+// folder: nil, nil when it has none.
+func loadOwn(worktree string) (*File, error) {
+	path := filepath.Join(worktree, FileName)
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	return Load(path)
+}
+
+// setList names the sets for a prompt: `name` (description), sorted.
+func setList(f *File) string {
 	sets := make([]string, 0, len(f.Sets))
 	for _, name := range f.Names() {
 		s := "`" + name + "`"
@@ -53,10 +109,5 @@ func PromptSection(worktree string) (string, error) {
 		}
 		sets = append(sets, s)
 	}
-	return "\n\n## Test services\nThis repository declares services for its checks in `megoocolab.toml`: " +
-		strings.Join(sets, ", ") +
-		". Run every command that needs them as `megoocolab-runner services run <name> -- <command>`. " +
-		"It starts this worktree's own containers on free ports, gives your command the variables the file defines, " +
-		"and removes the containers when the command ends. Do not start, stop or reuse the project's containers any " +
-		"other way, and never touch containers you did not start.\n", nil
+	return strings.Join(sets, ", ")
 }
