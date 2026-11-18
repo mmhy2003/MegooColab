@@ -218,6 +218,7 @@ type agentReport struct {
 	Steers       []string        `json:"steers"`
 	Steps        []struct {
 		Type    string `json:"type"`
+		Outcome string `json:"outcome"`
 		Exists  *bool  `json:"exists"`
 		Content string `json:"content"`
 	} `json:"steps"`

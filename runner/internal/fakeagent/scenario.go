@@ -22,6 +22,7 @@ type Step struct {
 	Commit      *CommitStep `json:"commit,omitempty"`
 	ReportFile  *PathStep   `json:"report_file,omitempty"`
 	McpCall     *McpStep    `json:"mcp_call,omitempty"`
+	Run         *RunStep    `json:"run,omitempty"`
 	// AwaitSteerMS waits up to this long for a steer (_session/steering), then
 	// says "steered: " and the steer's last line (without its "> "). It goes on
 	// when none arrives.
@@ -60,6 +61,12 @@ func expand(steps []Step, prompt string) []Step {
 type CommitStep struct {
 	Message string `json:"message"`
 	All     bool   `json:"all,omitempty"`
+}
+
+// RunStep runs Args[0] with the rest as its arguments in the agent's cwd, with
+// the agent's environment and no permission request (like a commit).
+type RunStep struct {
+	Args []string `json:"args"`
 }
 
 // PathStep names a file (relative to the agent's cwd) to look at.
@@ -111,6 +118,8 @@ func (s Step) typeName() string {
 		return "report_file"
 	case s.McpCall != nil:
 		return "mcp_call"
+	case s.Run != nil:
+		return "run"
 	case s.AwaitSteerMS != nil:
 		return "await_steer"
 	}
@@ -133,12 +142,12 @@ func loadScenario() ([]Step, error) {
 // StepResult is one entry of the report's "steps" array.
 type StepResult struct {
 	Type    string `json:"type"`
-	Outcome string `json:"outcome,omitempty"` // tool/exec: allowed | rejected | cancelled; mcp_call also blocked (plan mode)
+	Outcome string `json:"outcome,omitempty"` // tool/exec: allowed | rejected | cancelled; mcp_call also blocked (plan mode); run: exit:<code>
 	OK      *bool  `json:"ok,omitempty"`      // write
 	Error   string `json:"error,omitempty"`
 	Length  *int   `json:"length,omitempty"`  // read: characters read, not the content
 	Exists  *bool  `json:"exists,omitempty"`  // report_file
-	Content string `json:"content,omitempty"` // report_file: the file's text, if it exists
+	Content string `json:"content,omitempty"` // report_file: the file's text, if it exists; run: the output, cut to 4,000 bytes
 	Tool    string `json:"tool,omitempty"`    // mcp_call
 	Result  string `json:"result,omitempty"`  // mcp_call: the tool result as JSON
 }

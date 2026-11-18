@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -42,6 +43,9 @@ type fakeAgent struct {
 }
 
 var _ acp.Agent = (*fakeAgent)(nil)
+
+// runOutputLimit is how much of a run step's output its result keeps.
+const runOutputLimit = 4000
 
 func (a *fakeAgent) SetAgentConnection(c *acp.AgentSideConnection) { a.conn = c }
 
@@ -411,6 +415,24 @@ func (a *fakeAgent) run(ctx context.Context, sid acp.SessionId, st Step) error {
 		if err != nil {
 			res.Error = strings.TrimSpace(string(out))
 		}
+	case st.Run != nil:
+		if len(st.Run.Args) == 0 {
+			return fmt.Errorf("run needs args")
+		}
+		out, err := exec.CommandContext(ctx, st.Run.Args[0], st.Run.Args[1:]...).CombinedOutput()
+		code := 0
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			code = exitErr.ExitCode()
+		} else if err != nil {
+			code = -1
+			out = append(out, err.Error()...)
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		res.Outcome = fmt.Sprintf("exit:%d", code)
+		res.Content = string(out[:min(len(out), runOutputLimit)])
 	case st.ReportFile != nil:
 		b, err := os.ReadFile(st.ReportFile.Path)
 		exists := err == nil

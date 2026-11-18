@@ -29,6 +29,7 @@ import (
 	"github.com/mmhy2003/megoocolab/runner/internal/mask"
 	"github.com/mmhy2003/megoocolab/runner/internal/policy"
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
+	"github.com/mmhy2003/megoocolab/runner/internal/services"
 	"github.com/mmhy2003/megoocolab/runner/internal/startbranch"
 	"github.com/mmhy2003/megoocolab/runner/internal/tools"
 	"github.com/mmhy2003/megoocolab/runner/internal/worktree"
@@ -58,6 +59,7 @@ type Manager struct {
 	ExitGrace     time.Duration                     // wait for the adapter to exit after a finished turn; default 2 s
 	FlushInterval time.Duration                     // message coalescing interval; 0 keeps the default
 	LogCap        int                               // bytes of adapter output kept per run log; default 5 MiB
+	Executable    func() (string, error)            // this runner's own executable, put first on the agent's PATH; default os.Executable
 	// Where a run's images are downloaded from (the server's base URL and this runner's token), and with what.
 	ServerURL  string
 	Token      string
@@ -92,6 +94,7 @@ func New(send func(any) error, cacheRoot string) *Manager {
 		CancelGrace: 10 * time.Second,
 		ExitGrace:   2 * time.Second,
 		LogCap:      logCap,
+		Executable:  os.Executable,
 		send:        send,
 		cacheRoot:   cacheRoot,
 		agents:      map[string]protocol.WelcomeAgent{},
@@ -859,6 +862,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		}
 	}
 
+	spec.Env = append(spec.Env, m.servicesEnv(logf)...)
 	spec.Env = append(spec.Env, secretEnv(rs.Secrets)...) // after the runner's own: never a name it relies on
 	proc, err := startAdapter(spec, wt, stderrLog)
 	if err != nil {
@@ -944,7 +948,15 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return "cancelled", ""
 	}
 
-	prompt, err := r.content(sess.prompt, rs.Images, imageData)
+	text := sess.prompt
+	if kind == policy.Workspace && rs.Draft == nil {
+		section, err := services.PromptSection(wt)
+		if err != nil {
+			fmt.Fprintf(logf, "runner: services: %v\n", err)
+		}
+		text += section
+	}
+	prompt, err := r.content(text, rs.Images, imageData)
 	if err != nil {
 		return fail("images_failed", err)
 	}
