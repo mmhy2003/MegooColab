@@ -1,0 +1,45 @@
+# Services the checks need. Run a check as `megoocolab-runner services run <name> -- <command>`: the runner starts
+# this worktree's own containers on free ports, runs the command with the variables below, then removes them.
+# Every value here is for throwaway local containers; none of them is a real secret.
+
+[services.test]
+description = "PostgreSQL, Meilisearch and Valkey for the backend tests (pytest)"
+compose = ["tools/test-services/docker-compose.yml"]
+ports = ["DB_PORT", "MEILI_PORT", "VALKEY_PORT"]
+
+[services.test.env]
+TEST_DATABASE_URL = "postgresql+asyncpg://megoo:megoo@localhost:${DB_PORT}/megoo_test"
+MEILI_URL = "http://localhost:${MEILI_PORT}"
+MEILI_MASTER_KEY = "megoo-test-meili-key"
+VALKEY_URL = "valkey://localhost:${VALKEY_PORT}/0"
+VALKEY_PASSWORD = "megoo-dev-valkey"
+
+[services.migrate]
+description = "a scratch PostgreSQL database (megoo_migrate) to generate and check Alembic migrations"
+compose = ["tools/test-services/docker-compose.yml"]
+ports = ["DB_PORT", "MEILI_PORT", "VALKEY_PORT"]
+
+[services.migrate.env]
+DATABASE_URL = "postgresql+asyncpg://megoo:megoo@localhost:${DB_PORT}/megoo_migrate"
+DEV_DATABASE_URL = "postgresql+asyncpg://megoo:megoo@localhost:${DB_PORT}/megoo_migrate"
+SECRET_KEY = "dev"
+MEILI_MASTER_KEY = "megoo-test-meili-key"
+VALKEY_PASSWORD = "megoo-dev-valkey"
+
+[services.e2e]
+description = "the whole app built from this worktree, for the browser tests (Playwright)"
+compose = ["deploy/docker-compose.yml", "deploy/docker-compose.build.yml"]
+ports = ["HTTP_PORT", "HTTPS_PORT"]
+
+[services.e2e.env]
+# each build gets its own tag, so two worktrees never start each other's images
+MEGOO_VERSION = "${MEGOO_SERVICES_PROJECT}"
+PUBLIC_URL = "http://localhost:${HTTP_PORT}"
+E2E_BASE_URL = "http://localhost:${HTTP_PORT}"
+POSTGRES_PASSWORD = "megoo-e2e-db"
+SECRET_KEY = "megoo-e2e-secret-key-0123456789abcdef"
+MEILI_MASTER_KEY = "megoo-e2e-meili-key"
+VALKEY_PASSWORD = "megoo-e2e-valkey"
+CLIENT_IP_HEADER = "X-Real-IP"
+AI_FAKE = "true"
+MEMORY_EXTRACT_DELAY_SECONDS = "2"
