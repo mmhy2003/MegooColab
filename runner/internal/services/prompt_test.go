@@ -3,8 +3,34 @@ package services
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
+	"strings"
 	"testing"
 )
+
+func TestFormatNamesEveryKey(t *testing.T) {
+	typ := reflect.TypeOf(setDoc{})
+	for i := 0; i < typ.NumField(); i++ {
+		tag := typ.Field(i).Tag.Get("toml")
+		// A key's line is "- key:" or "- key (required):".
+		line := regexp.MustCompile(`(?m)^- ` + regexp.QuoteMeta(tag) + `( \([^)]*\))?:`)
+		if !line.MatchString(Format) {
+			t.Errorf("Format does not describe the %q key", tag)
+		}
+	}
+	for _, want := range []string{
+		"[services.<name>]",
+		"${NAME}",
+		"MEGOO_SERVICES_",
+		".env",
+		"megoocolab-runner services run <name> -- <command>",
+	} {
+		if !strings.Contains(Format, want) {
+			t.Errorf("Format does not contain %q", want)
+		}
+	}
+}
 
 func TestPromptSection(t *testing.T) {
 	write := func(t *testing.T, dir, name, content string) {
