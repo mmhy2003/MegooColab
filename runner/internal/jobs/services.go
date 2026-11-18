@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/mmhy2003/megoocolab/runner/internal/policy"
+	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
 	"github.com/mmhy2003/megoocolab/runner/internal/services"
 )
 
@@ -17,6 +19,33 @@ const (
 	// servicesSweepEvery is how often the runner removes services whose check is no longer running.
 	servicesSweepEvery = time.Hour
 )
+
+// rolePlan is the workflow role of a planning run (RunStart.Role).
+const rolePlan = "plan"
+
+// servicesPrompt is what a run's prompt gets about megoocolab.toml: a writable
+// run the "Test services" section, the first run of a planning session the
+// planning one, other runs (drafts, the other read-only roles, a continued
+// planning session) nothing. An invalid file goes to the run's log and the
+// run gets nothing.
+func servicesPrompt(rs protocol.RunStart, kind policy.Kind, wt string, logf io.Writer) string {
+	var section func(string) (string, error)
+	switch {
+	case rs.Draft != nil:
+		return ""
+	case kind == policy.Workspace:
+		section = services.PromptSection
+	case kind == policy.ReadOnly && rs.Role == rolePlan && rs.ResumeSessionID == "":
+		section = services.PlanSection
+	default:
+		return ""
+	}
+	text, err := section(wt)
+	if err != nil {
+		fmt.Fprintf(logf, "runner: services: %v\n", err)
+	}
+	return text
+}
 
 // servicesDir is where this runner keeps the records of the service sets its
 // runs start.
