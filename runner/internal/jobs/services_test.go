@@ -57,9 +57,106 @@ func TestWritableRunGetsTheServicesSection(t *testing.T) {
 		t.Fatalf("finished = %+v", f)
 	}
 	r := e.readReport()
-	if len(r.Prompts) == 0 || !strings.Contains(r.Prompts[0], "## Test services") || !strings.Contains(r.Prompts[0], "`test`") {
+	if len(r.Prompts) == 0 || !strings.Contains(r.Prompts[0], "## Test services") || !strings.Contains(r.Prompts[0], "`test`") ||
+		!strings.Contains(r.Prompts[0], "`megoocolab-runner services --help` describes the file") {
 		t.Fatalf("prompts = %q", r.Prompts)
 	}
+}
+
+// planRun makes a run the read-only first run of a planning session.
+func planRun(rs *protocol.RunStart) { rs.Policy, rs.Role = "read_only", "plan" }
+
+func TestPlanRunGetsThePlanSection(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		files bool
+		parts []string
+	}{
+		{"without the file", false, []string{"This repository has no `megoocolab.toml`", "Add megoocolab.toml"}},
+		{"with the file", true, []string{"`test`", "changes `megoocolab.toml`"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnvWithCache(t, `[{"say":"done"}]`, 1, t.TempDir())
+			if tc.files {
+				commitFiles(t, e.repo, servicesFiles)
+			}
+			e.startRunWith("run-1", "MEG-1", planRun)
+			if f := e.finished("run-1"); f.Outcome != "completed" {
+				t.Fatalf("finished = %+v", f)
+			}
+			r := e.readReport()
+			if len(r.Prompts) == 0 {
+				t.Fatal("no prompt")
+			}
+			for _, part := range tc.parts {
+				if !strings.Contains(r.Prompts[0], part) {
+					t.Fatalf("prompt lacks %q: %q", part, r.Prompts[0])
+				}
+			}
+			want, err := services.PlanSection(e.worktree("MEG-1"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.Prompts[0] != "please"+want {
+				t.Fatalf("prompt = %q, want %q", r.Prompts[0], "please"+want)
+			}
+		})
+	}
+}
+
+func TestOtherReadOnlyRunsGetNoPlanSection(t *testing.T) {
+	for _, role := range []string{"", "brainstorm", "final_review", "pr_review"} {
+		t.Run("role "+role, func(t *testing.T) {
+			e := newEnvWithCache(t, `[{"say":"done"}]`, 1, t.TempDir())
+			e.startRunWith("run-1", "MEG-1", func(rs *protocol.RunStart) { rs.Policy, rs.Role = "read_only", role })
+			if f := e.finished("run-1"); f.Outcome != "completed" {
+				t.Fatalf("finished = %+v", f)
+			}
+			r := e.readReport()
+			if len(r.Prompts) == 0 || strings.Contains(r.Prompts[0], "## Test services") {
+				t.Fatalf("prompts = %q", r.Prompts)
+			}
+		})
+	}
+}
+
+func TestContinuedPlanSessionGetsNoSection(t *testing.T) {
+	t.Setenv("FAKEAGENT_SESSIONS_DIR", t.TempDir())
+	e := newEnvWithCache(t, twoTurns, 1, t.TempDir())
+	e.startRunWith("run-a", "MEG-1", func(rs *protocol.RunStart) { planRun(rs); rs.Prompt = "first turn" })
+	first := e.finished("run-a")
+	if first.Outcome != "completed" || first.SessionID == nil {
+		t.Fatalf("finished = %+v", first)
+	}
+	if r := e.finalReport(); len(r.Prompts) == 0 || !strings.Contains(r.Prompts[0], "## Test services") {
+		t.Fatalf("first prompts = %q", r.Prompts)
+	}
+
+	e.startRunWith("run-b", "MEG-1", func(rs *protocol.RunStart) {
+		planRun(rs)
+		rs.ResumeSessionID, rs.ResumePrompt = *first.SessionID, "continue please"
+	})
+	if f := e.finished("run-b"); f.Outcome != "completed" {
+		t.Fatalf("finished = %+v", f)
+	}
+	if r := e.finalReport(); !slices.Equal(r.Prompts, []string{"continue please"}) {
+		t.Fatalf("prompts = %q", r.Prompts)
+	}
+
+	t.Run("fallback", func(t *testing.T) {
+		t.Setenv("FAKEAGENT_SESSIONS_DIR", t.TempDir())
+		e := newEnvWithCache(t, twoTurns, 1, t.TempDir())
+		e.startRunWith("run-fb", "MEG-1", func(rs *protocol.RunStart) {
+			planRun(rs)
+			rs.Prompt, rs.ResumePrompt, rs.ResumeSessionID = "full prompt", "continue please", "fake-session-404"
+		})
+		if f := e.finished("run-fb"); f.Outcome != "completed" {
+			t.Fatalf("finished = %+v", f)
+		}
+		if r := e.finalReport(); !slices.Equal(r.Prompts, []string{"full prompt\n\ncontinue please"}) {
+			t.Fatalf("prompts = %q", r.Prompts)
+		}
+	})
 }
 
 func TestReadOnlyRunAndRunsWithoutTheFileGetNoSection(t *testing.T) {

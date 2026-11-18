@@ -29,7 +29,6 @@ import (
 	"github.com/mmhy2003/megoocolab/runner/internal/mask"
 	"github.com/mmhy2003/megoocolab/runner/internal/policy"
 	"github.com/mmhy2003/megoocolab/runner/internal/protocol"
-	"github.com/mmhy2003/megoocolab/runner/internal/services"
 	"github.com/mmhy2003/megoocolab/runner/internal/startbranch"
 	"github.com/mmhy2003/megoocolab/runner/internal/tools"
 	"github.com/mmhy2003/megoocolab/runner/internal/worktree"
@@ -956,14 +955,7 @@ func (m *Manager) drive(r *run, rs protocol.RunStart, agent protocol.WelcomeAgen
 		return "cancelled", ""
 	}
 
-	text := sess.prompt
-	if kind == policy.Workspace && rs.Draft == nil {
-		section, err := services.PromptSection(wt)
-		if err != nil {
-			fmt.Fprintf(logf, "runner: services: %v\n", err)
-		}
-		text += section
-	}
+	text := sess.prompt + servicesPrompt(rs, kind, wt, logf)
 	prompt, err := r.content(text, rs.Images, imageData)
 	if err != nil {
 		return fail("images_failed", err)

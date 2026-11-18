@@ -61,6 +61,17 @@ func runServices(t *testing.T, args ...string) (error, string, string) {
 	return err, stdout.String(), stderr.String()
 }
 
+func TestServicesHelpShowsTheFormat(t *testing.T) {
+	err, stdout, _ := runServices(t, "services", "--help")
+	if err != nil {
+		t.Fatalf("services --help = %v, want nil", err)
+	}
+	// Cobra trims the trailing whitespace of Long.
+	if !strings.Contains(stdout, strings.TrimSpace(services.Format)) {
+		t.Errorf("services --help does not show the format:\n%s", stdout)
+	}
+}
+
 func TestServicesRunExitsWithTheCommandsCode(t *testing.T) {
 	servicesEnv(t)
 	servicesWorktree(t)
