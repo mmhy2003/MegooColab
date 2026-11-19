@@ -118,13 +118,14 @@ async def record_decision(
 async def record_tests(
     db: AsyncSession, task: Task, wf: TaskWorkflow, *, run: AgentRun | None, posted_by: uuid.UUID | None,
     command: Any, passed: Any, total: Any = None, failed: Any = None, skipped: Any = None, failing: Any = None,
+    on_base: Any = False,
 ) -> WorkflowTestRun:
     """Store a test run. No activity entry (they are frequent): viewers are refreshed through task.updated."""
-    if not isinstance(passed, bool):
+    if not isinstance(passed, bool) or not isinstance(on_base, bool):
         raise _422("invalid_record")
     clean = {
         "command": _text(command, MAX_COMMAND), "passed": passed, "total": _count(total), "failed": _count(failed),
-        "skipped": _count(skipped), "failing": _failing(failing),
+        "skipped": _count(skipped), "failing": _failing(failing), "on_base": on_base,
     }
     stage, step = _where(run, wf)
     await _room(db, WorkflowTestRun, task, stage, step, MAX_TEST_RUNS_PER_STEP)
@@ -206,8 +207,8 @@ async def task_records(db: AsyncSession, task_id: uuid.UUID) -> RecordsOut:
         test_runs=[
             TestRunOut(
                 id=t.id, stage=t.stage, step=t.step, command=t.command, passed=t.passed, total=t.total,
-                failed=t.failed, skipped=t.skipped, failing=list(t.failing or []), author=authors[t.id],
-                created_at=t.created_at,
+                failed=t.failed, skipped=t.skipped, failing=list(t.failing or []), on_base=t.on_base,
+                author=authors[t.id], created_at=t.created_at,
             )
             for t in runs
         ],
@@ -244,7 +245,8 @@ def _decision_line(d: WorkflowDecision) -> str:
 def _test_run_line(t: WorkflowTestRun) -> str:
     counts = [f"{name} {value}" for name, value in (("total", t.total), ("failed", t.failed), ("skipped", t.skipped))
               if value is not None]
-    line = f"{_where_label(t)}: {'passed' if t.passed else 'FAILED'} — {t.command}"
+    where = " on the start commit" if t.on_base else ""
+    line = f"{_where_label(t)}: {'passed' if t.passed else 'FAILED'}{where} — {t.command}"
     if counts:
         line += f" ({', '.join(counts)})"
     if t.failing:

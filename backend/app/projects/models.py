@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, false
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, IdMixin, TimestampMixin
@@ -66,6 +66,8 @@ class Project(IdMixin, TimestampMixin, Base):
     # a "changes requested" review or a /fix comment on the task's pull request sends the task back to its agent
     send_back_on_changes_requested: Mapped[bool] = mapped_column(default=False, server_default=false())
     commit_docs_to_repo: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # MC-97: a test failing on the start commit, or a flaky one, doesn't stop the finish
+    tolerate_known_test_failures: Mapped[bool] = mapped_column(default=True, server_default=true())
     status: Mapped[ProjectStatus] = mapped_column(
         String(20), default=ProjectStatus.active, server_default=ProjectStatus.active.value
     )

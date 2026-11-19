@@ -430,7 +430,8 @@ def _project_answers_text(payload: dict) -> str:
 def resume_text(kind: str, payload: Any) -> str:
     """The short text sent when a session is resumed. Payload by kind:
     answer {choice_label?, text?}; rejection {comment, kind: "design"|"plan"};
-    nudge {text?} (or a str); findings: list of finding dicts."""
+    nudge {text?} (or a str); findings: list of finding dicts;
+    failures_accepted {by, names, failing_total} (MC-97: a person chose Finish anyway)."""
     if kind == "answer":
         parts = []
         if payload.get("choice_label"):
@@ -455,5 +456,18 @@ def resume_text(kind: str, payload: Any) -> str:
         return _bounded(
             "Review findings to address:\n", "findings", _findings_text(payload),
             "\nFix these, then complete the step again.",
+        )
+    if kind == "failures_accepted":
+        names = payload.get("names") or []
+        more = (payload.get("failing_total") or 0) - len(names)
+        listed = "\n".join(names) or "(you named no tests)"
+        if more > 0:
+            listed += f"\n…and {more} more"
+        return _bounded(
+            f"{payload.get('by') or 'A person'} chose Finish anyway: they accepted the failing tests you reported.\n",
+            "accepted_tests", listed,
+            "\nCarry out the finishing option now. In the pull request description, list these tests under \"Known "
+            "failing tests\" as accepted by that person. Then call report_finish with tests_passed=false and the same "
+            "failures.",
         )
     raise ValueError(f"unknown resume kind {kind!r}")

@@ -443,6 +443,33 @@ describe("ActivityThread workflow events", () => {
     expect(list[1]).not.toContain("(manual)");
   });
 
+  it("tells of failing tests at finish, known failures and an acceptance", () => {
+    const failures = [{ name: "a", kind: "new" }, { name: "b", kind: "base" }, { name: "c", kind: "flaky" }];
+    const list = rows([
+      ev("1", "finish.tests_failed", { failures, failing_total: 4, delivered: true, start_branch: "develop" }),
+      ev("2", "finish.known_failures", { failures: failures.slice(1), start_branch: "develop" }),
+      ev("3", "finish.failures_accepted", { failures: failures.slice(0, 2), failing_total: 2, via: "card" }, true),
+      ev("4", "finish.failures_accepted", { failures: [], failing_total: null, via: "card" }, true),
+      ev("5", "finish.failures_accepted",
+        { failures: ["t1", "t2", "t3", "t4", "t5", "t6", "t7"].map((name) => ({ name, kind: "new" })), failing_total: 7, via: "card" }, true),
+    ]).map((li) => li.textContent);
+    expect(list[0]).toContain("Tests failed at finish: 4 failing (1 new, 1 also fails on develop, 1 flaky, 1 not listed)");
+    expect(list[0]).not.toContain("The agent");
+    expect(list[1]).toContain("Finished with 2 known failing tests: 1 also fails on develop, 1 flaky");
+    expect(list[1]).not.toContain("The agent");
+    expect(list[2]).toContain("Ahmed Ali accepted 2 failing tests: a, b");
+    expect(list[2]).not.toContain("answering");
+    expect(list[3]).toContain("Ahmed Ali accepted the failing tests");
+    expect(list[4]).toContain("Ahmed Ali accepted 7 failing tests: t1, t2, t3, t4, t5 and 2 more");
+  });
+
+  it("says when the failing tests were accepted by answering the agent's question", () => {
+    const [row] = rows([
+      ev("1", "finish.failures_accepted", { failures: [{ name: "a", kind: "new" }], failing_total: 1, via: "answer" }, true),
+    ]);
+    expect(row.textContent).toContain("Ahmed Ali accepted 1 failing test: a (by answering the agent's question)");
+  });
+
   it("links document events to the document section", () => {
     rows([ev("2", "document.approved", { kind: "plan", version: 1 }, true)]);
     expect(screen.getByRole("link", { name: "plan v1" })).toHaveAttribute("href", "#document-plan-v1");

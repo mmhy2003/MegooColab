@@ -159,6 +159,15 @@ def test_default_history_ends_with_the_current_texts():
         assert len(set(DEFAULT_HISTORY[key])) == len(DEFAULT_HISTORY[key]), key
 
 
+def test_finish_text_sorts_failing_tests():
+    """The finish agent sorts failing tests (flaky, base, new) and reports them instead of stopping to ask."""
+    body = (methodology.DEFAULTS_DIR / "finish.md").read_text(encoding="utf-8")
+    for phrase in ("report_test_failures", "on_base=true", "git switch --detach", "Known failing tests", "flaky",
+                   "Finish anyway"):
+        assert phrase in body, phrase
+    assert "If anything fails, **stop**" not in body
+
+
 def _old_default(monkeypatch, key: str, text: str) -> None:
     """Pretend `text` shipped as an earlier default of `key`."""
     import hashlib

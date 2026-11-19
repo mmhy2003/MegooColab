@@ -42,7 +42,11 @@ const FIX = "Review findings to address:";
 const RE_REVIEW = "## Previous review findings";
 const FINAL_REVIEW = "# Review: final review of the whole change";
 const FINISH = "# Finish: verify and integrate the finished work";
+const ACCEPTED = "chose Finish anyway"; // the resume text after Finish anyway (context.resume_text)
 const STEP = (n: number) => `## Step ${n} of 2`;
+
+const FAILING = { name: "greeting.test:1", kind: "new" };
+const DIAGNOSIS = "The greeting test expects a farewell.";
 
 const GOOD_MOCKUP = `<!doctype html><html><body style="font-family:sans-serif">
 <h1>Greeting styles</h1>
@@ -183,9 +187,16 @@ const SCENARIO = [
     ),
   ),
   onPrompt(FINAL_REVIEW, { sleep_ms: 5_000 }, mcp("submit_review", { key: KEY, verdict: "approved", findings: [] })),
+  // MC-97: the finish run reports a new failing test instead of delivering; after Finish anyway, its resumed
+  // session (whose prompt is the resume text only) delivers with that failure
   onPrompt(
     FINISH,
-    mcp("report_finish", { key: KEY, outcome: "pr_opened", branch: BRANCH, pr_url: PR_URL, tests_passed: true }),
+    mcp("record_tests", { key: KEY, command: "make test", passed: false, failed: 1, failing: [FAILING.name] }),
+    mcp("report_test_failures", { key: KEY, failures: [FAILING], diagnosis: DIAGNOSIS }),
+  ),
+  onPrompt(
+    ACCEPTED,
+    mcp("report_finish", { key: KEY, outcome: "pr_opened", branch: BRANCH, pr_url: PR_URL, tests_passed: false, failures: [FAILING] }),
   ),
 ];
 
@@ -487,14 +498,20 @@ test("workflow end to end", async ({ browser }) => {
   launch(token);
   await expect(panel.getByText("Online", { exact: true }).or(panel.getByText("Busy", { exact: true }))).toBeVisible({ timeout: 15_000 });
 
-  // 9. In Review by itself, then Done, with the pull request
+  // 9. In Review by itself; the finish's failing test stops it on the card, Finish anyway; then Done, with the
+  // pull request
   await expect(column(page, "In Review").getByRole("button", { name: /WFL-1 Add a greeting/ })).toBeVisible({ timeout: 60_000 });
+  await expect(panel.getByText("Tests failed at finish: 1 failing (1 new)")).toBeVisible({ timeout: 60_000 });
+  await expect(panel.getByText(FAILING.name, { exact: true })).toBeVisible(); // also in the recorded run's line
+  await expect(panel.getByText(DIAGNOSIS)).toBeVisible();
+  await panel.getByRole("button", { name: "Finish anyway" }).click();
   const doneCard = column(page, "Done").getByRole("button", { name: /WFL-1 Add a greeting/ });
   await expect(doneCard).toBeVisible({ timeout: 60_000 });
   await expect(doneCard.getByRole("group", { name: "Stage: Done (6 of 6)" })).toBeVisible();
   await expect(panel.getByText("Finished", { exact: true })).toBeVisible();
   await expect(panel.getByRole("link", { name: "PR (not tracked)" })).toHaveAttribute("href", PR_URL); // no git connection
   await expect(panel.getByText(BRANCH)).toBeVisible();
+  await expect(panel.getByText(`Finished with 1 failing test accepted by ${ADMIN.name}`)).toBeVisible();
   await expect(drawer.getByText("Moved to In Review by the workflow")).toBeVisible();
   await expect(drawer.getByText("Moved to Done by the workflow")).toBeVisible();
   await expect(drawer.getByText("Subtasks (2/2)")).toBeVisible();
@@ -515,6 +532,7 @@ test("workflow end to end", async ({ browser }) => {
     "step_review:2 completed",
     "final_review completed",
     "finish completed",
+    "finish completed",
   ]);
 
   // .megoocolab/plan.md (the approved v2) and design.md were in the worktree during Build
@@ -527,6 +545,10 @@ test("workflow end to end", async ({ browser }) => {
   // step_fix resumed step 1's implement session; the re-review's second verdict was refused
   const fix = reportFor(reports, FIX);
   expect(fix.session_events).toEqual([step1.session_events![0].replace(/^new:/, "resume:")]);
+  // Finish anyway resumed the finish session that reported the failure
+  const finish = reportFor(reports, FINISH);
+  const accepted = reportFor(reports, ACCEPTED);
+  expect(accepted.session_events).toEqual([finish.session_events![0].replace(/^new:/, "resume:")]);
   const reReview = reportFor(reports, STEP_REVIEW, RE_REVIEW);
   const verdicts = reReview.steps.filter((s) => s.tool === "submit_review");
   expect(verdicts.map((s) => s.ok)).toEqual([true, false]);

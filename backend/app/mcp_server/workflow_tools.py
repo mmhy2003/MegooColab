@@ -68,6 +68,7 @@ TOOL_ROLES: dict[str, frozenset[RunRole]] = {
     "complete_step": frozenset({RunRole.implement, RunRole.step_fix}),
     "submit_review": frozenset({RunRole.step_review, RunRole.final_review}),
     "report_finish": frozenset({RunRole.finish}),
+    "report_test_failures": frozenset({RunRole.finish}),
     "report_pr_fix": frozenset({RunRole.pr_fix}),
     "submit_pr_review": frozenset({RunRole.pr_review}),
     "show_mockup": frozenset({RunRole.brainstorm}),  # also the session resumed to revise a design
@@ -77,7 +78,7 @@ TOOL_ROLES: dict[str, frozenset[RunRole]] = {
     "record_tests": frozenset({RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish, RunRole.pr_fix,
                               RunRole.freestyle}),
 }
-RUNNER_ONLY = frozenset({"submit_review", "report_finish", "report_pr_fix", "submit_pr_review"})  # connect-only workflows have no such runs
+RUNNER_ONLY = frozenset({"submit_review", "report_finish", "report_test_failures", "report_pr_fix", "submit_pr_review"})  # connect-only workflows have no such runs
 
 RUN_NEXT: dict[RunRole, str] = {
     RunRole.brainstorm: "Ask questions with ask_human, show screens with show_mockup, then submit_design.",
@@ -87,7 +88,8 @@ RUN_NEXT: dict[RunRole, str] = {
     RunRole.step_review: "Review step {step}, then call submit_review with your verdict and findings.",
     RunRole.final_review: "Review the whole change, then call submit_review with your verdict and findings.",
     RunRole.final_fix: "Fix the final review's findings and run the tests; your run ends when you are done.",
-    RunRole.finish: "Re-verify the tests, perform the finishing option ({option}), then call report_finish.",
+    RunRole.finish: "Re-verify the tests (sort any failures), then perform the finishing option ({option}) and call "
+    "report_finish, or call report_test_failures when a failure needs a person.",
     RunRole.pr_fix: "Fix what was asked on the pull request, run the tests, push to the same branch, then call "
     "report_pr_fix.",
     RunRole.pr_review: "Review the pull request on the host, post your review (merge it when you approve), then call "
@@ -288,17 +290,18 @@ def register_workflow_tools(mcp: MCPServer) -> None:
     @mcp.tool()
     async def record_tests(
         key: str, command: str, passed: Any, total: Any = None, failed: Any = None, skipped: Any = None,
-        failing: Any = None,
+        failing: Any = None, on_base: Any = False,
     ) -> dict[str, Any]:
         """Record a test run you just did: the command (at most 200 characters), `passed` (true or false), the
         optional counts `total`, `failed` and `skipped` (non-negative integers), and `failing`: up to 20 failing
-        test names (never output). Record every run you rely on before you claim the tests pass."""
+        test names (never output). `on_base`: true for a run on the commit the task branch started from (the
+        finish stage's check). Record every run you rely on before you claim the tests pass."""
         async with tool_session() as (db, user):
             task = await _task(db, user, key, "record_tests", write=True)
             run, wf = await _record_target(db, user, task)
             row = await records.record_tests(
                 db, task, wf, run=run, posted_by=user.id, command=command, passed=passed, total=total,
-                failed=failed, skipped=skipped, failing=failing,
+                failed=failed, skipped=skipped, failing=failing, on_base=on_base,
             )
             return {"id": str(row.id), "passed": row.passed}
 
@@ -355,18 +358,31 @@ def register_workflow_tools(mcp: MCPServer) -> None:
     @mcp.tool()
     async def report_finish(
         key: str, outcome: str, branch: str, tests_passed: bool, pr_url: str | None = None,
-        back_merge_branch: str | None = None, back_merge_pr_url: str | None = None,
+        back_merge_branch: str | None = None, back_merge_pr_url: str | None = None, failures: Any = None,
+        failing_total: Any = None,
     ) -> dict[str, Any]:
         """Report how you finished: `outcome` is merged_local, pr_opened or branch_kept (as the finishing option
         says), the branch, the pull request URL for pr_opened, and whether the tests pass. When your prompt names
         a "Back-merge into" branch (and the option is not keep_branch), also report the back-merge: its branch,
-        and for a pull request its URL."""
+        and for a pull request its URL. With tests_passed=false, `failures` lists the failing tests as for
+        report_test_failures."""
         async with tool_session() as (db, user):
             task = await _task(db, user, key, "report_finish", write=True)
             await finish.report_finish(db, await live_run(db, task), outcome, branch, pr_url, tests_passed,
-                                       back_merge_branch, back_merge_pr_url)
+                                       back_merge_branch, back_merge_pr_url, failures, failing_total)
             return {"outcome": outcome, "branch": branch, "tests_passed": tests_passed,
                     "back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url}
+
+    @mcp.tool()
+    async def report_test_failures(key: str, failures: Any, diagnosis: str, failing_total: Any = None) -> dict:
+        """Report the failing tests a person must decide on, instead of delivering. `failures`: 1 to 20 {name (at
+        most 300 characters), kind: new, base (also fails on the start commit) or flaky}; `diagnosis`: what failed
+        and why (at most 2,000 characters); `failing_total` when more tests fail than you list. Then end your
+        turn."""
+        async with tool_session() as (db, user):
+            task = await _task(db, user, key, "report_test_failures", write=True)
+            await finish.report_test_failures(db, await live_run(db, task), failures, diagnosis, failing_total)
+            return {"failures": len(failures), "failing_total": failing_total}
 
     @mcp.tool()
     async def report_pr_fix(key: str, summary: str, tests_passed: bool) -> dict[str, Any]:

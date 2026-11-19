@@ -72,6 +72,22 @@ class ProjectWaitOut(BaseModel):
     can_withdraw: bool
 
 
+class FinishFailureOut(BaseModel):
+    name: str
+    kind: Literal["new", "base", "flaky"]
+
+
+class FinishTestsOut(BaseModel):
+    """MC-97: the finish run's failing tests, as it reported them, and how the finish settled."""
+
+    failures: list[FinishFailureOut] = []
+    failing_total: int | None = None
+    diagnosis: str | None = None
+    delivered: bool = False
+    settled: Literal["known", "accepted"] | None = None
+    accepted_by: str | None = None  # the person's name
+
+
 class WorkflowOut(TaskWorkflowOut):
     # changes requested on the pull request (piece 3): rounds used, and what asked last
     pr_fix_rounds: int = 0
@@ -88,6 +104,7 @@ class WorkflowOut(TaskWorkflowOut):
     back_merge_pr_url: str | None = None
     back_merge_pull_request: PullRequestOut | None = None
     finish_outcome: str | None = None
+    finish_tests: FinishTestsOut | None = None  # MC-97: null until a finish reports failing tests
     branch_from: str | None = None
     start_branch: str | None = None
     back_merge_into: str | None = None
@@ -211,6 +228,7 @@ class TestRunOut(BaseModel):
     failed: int | None
     skipped: int | None
     failing: list[str]
+    on_base: bool = False
     author: str
     created_at: datetime
 
