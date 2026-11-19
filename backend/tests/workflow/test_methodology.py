@@ -29,6 +29,7 @@ async def test_every_default_mentions_its_tools(db):
     await methodology.seed_defaults(db)
     body = {k: (await methodology.current(db, k)).body_md for k in methodology.ALL_KEYS}
     assert "ask_human" in body["brainstorm"] and "submit_design" in body["brainstorm"]
+    assert "follow_ups" in body["brainstorm"] and "follow_ups" in body["design_revision"]
     assert "submit_plan" in body["plan"]
     assert "complete_step" in body["build_implement"]
     assert "submit_review" in body["build_step_review"]

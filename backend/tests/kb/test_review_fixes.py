@@ -15,7 +15,7 @@ from app.jobs.models import Job, JobStatus
 from app.kb import access, search, service
 from app.kb import context as kb_context
 from app.kb.models import KbChunk
-from app.workflow import context
+from app.workflow import context, methodology
 from app.workflow.models import RunRole
 from tests.factories import login, make_user
 from tests.kb.test_context import _doc, _world
@@ -157,7 +157,9 @@ async def test_kb_section_is_trimmed_before_the_thread(client, db, monkeypatch):
     task, _, org, _ = await _world(client, db)
     await _doc(client, db, org.id, "Webhook secrets", "Rotate webhook secrets. " * 300)
     kb_context.register()
-    monkeypatch.setattr(context, "MAX_PROMPT_CHARS", 9_000 + len(context.DOCS_NOTE) + 2)  # room for the fixed notes
+    brainstorm = (methodology.DEFAULTS_DIR / "brainstorm.md").read_text(encoding="utf-8")
+    # room for the methodology and the fixed notes, but not for the KB section on top of the description
+    monkeypatch.setattr(context, "MAX_PROMPT_CHARS", len(brainstorm) + 1_600 + len(context.DOCS_NOTE) + 2)
     task.description_md = "Webhook secrets expire. " * 200
     await db.commit()
     prompt, _ = await context.build_prompt(db, task, RunRole.brainstorm)
