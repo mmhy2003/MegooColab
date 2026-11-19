@@ -21,7 +21,9 @@ import { runReasonText } from "@/lib/agents";
 import { describeGitEvent, type GitLine } from "@/lib/gitActivity";
 import type { ImageRef } from "@/lib/images";
 import type { ActivityItem } from "@/lib/types";
-import { escalationReasonText, FINISHING_LABEL, STAGES, type FinishingOption } from "@/lib/workflow";
+import {
+  escalationReasonText, type FinishTests, finishedWithSummary, FINISHING_LABEL, finishTestsSummary, STAGES, type FinishingOption,
+} from "@/lib/workflow";
 
 type Names = { columnNames: Map<string, string>; userNames: Map<string, string>; agentNames?: Map<string, string> };
 
@@ -257,6 +259,18 @@ const OUTCOME_TEXT: Record<string, string> = {
 };
 const SEVERITY_ORDER = ["critical", "important", "minor"] as const;
 
+/** "accepted 7 failing tests: a, b, c, d, e and 2 more (by answering the agent's question)". */
+function acceptedText(data: Record<string, unknown>): string {
+  const names = ((data.failures ?? []) as FinishTests["failures"]).map((f) => f.name);
+  const n = Math.max(num(data.failing_total), names.length);
+  const shown = names.slice(0, 5);
+  const more = n - shown.length;
+  const what = names.length
+    ? `accepted ${n} failing test${n === 1 ? "" : "s"}: ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}`
+    : "accepted the failing tests";
+  return data.via === "answer" ? `${what} (by answering the agent's question)` : what;
+}
+
 function findingTotal(data: Record<string, unknown>): number {
   const counts = (data.counts ?? {}) as Record<string, unknown>;
   return SEVERITY_ORDER.reduce((n, sv) => n + num(counts[sv]), 0);
@@ -343,6 +357,18 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
       const branch = str(data.branch);
       return `Finish reported: ${outcome}${branch ? ` on ${branch}` : ""}`;
     }
+    case "finish.tests_failed":
+      return finishTestsSummary(
+        { failures: (data.failures ?? []) as FinishTests["failures"], failing_total: typeof data.failing_total === "number" ? data.failing_total : null },
+        str(data.start_branch) ?? null,
+      );
+    case "finish.known_failures":
+      return finishedWithSummary(
+        { failures: (data.failures ?? []) as FinishTests["failures"], failing_total: null, settled: "known", accepted_by: null },
+        str(data.start_branch) ?? null,
+      );
+    case "finish.failures_accepted":
+      return acceptedText(data);
     case "enforcement.violation":
       return `Enforcement violation during ${stageName(data.stage)}: the repository changed`;
     case "human_review.approved":
@@ -363,6 +389,8 @@ const STANDALONE = new Set([
   "decision.recorded",
   "review.result",
   "finish.reported",
+  "finish.tests_failed",
+  "finish.known_failures",
   "enforcement.violation",
   "workflow.stage",
   "workflow.no_column",
