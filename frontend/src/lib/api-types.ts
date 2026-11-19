@@ -5203,6 +5203,8 @@ export interface components {
             approve: boolean;
             /** Comment */
             comment?: string | null;
+            /** Follow Ups */
+            follow_ups?: components["schemas"]["FollowUpReviewIn"][] | null;
         };
         /** DocumentIn */
         DocumentIn: {
@@ -5235,6 +5237,11 @@ export interface components {
             decision_comment: string | null;
             /** Mockup Id */
             mockup_id?: string | null;
+            /**
+             * Follow Up Count
+             * @default 0
+             */
+            follow_up_count: number;
         };
         /** DocumentOut */
         DocumentOut: {
@@ -5253,12 +5260,28 @@ export interface components {
             decision_comment: string | null;
             /** Mockup Id */
             mockup_id?: string | null;
+            /**
+             * Follow Up Count
+             * @default 0
+             */
+            follow_up_count: number;
             /** Body Md */
             body_md: string;
             /** Steps */
             steps: components["schemas"]["DocumentStepOut"][] | null;
             /** Attached Mockup Ids */
             attached_mockup_ids: string[];
+            /**
+             * Follow Ups
+             * @default []
+             */
+            follow_ups: components["schemas"]["FollowUpOut"][];
+            /**
+             * Earlier Follow Ups
+             * @default []
+             */
+            earlier_follow_ups: components["schemas"]["app__workflow__schemas__FollowUpRef"][];
+            creates_in?: components["schemas"]["FollowUpPlace"] | null;
         };
         /** DocumentStepOut */
         DocumentStepOut: {
@@ -5601,15 +5624,47 @@ export interface components {
             /** Name */
             name: string;
         };
-        /** FollowUpRef */
-        FollowUpRef: {
+        /** FollowUpOut */
+        FollowUpOut: {
+            /** Title */
+            title: string;
+            /** Type */
+            type: string;
+            /** Description Md */
+            description_md: string;
+            /** Created */
+            created: boolean;
+            /** Task Key */
+            task_key: string | null;
+        };
+        /** FollowUpPlace */
+        FollowUpPlace: {
+            /** Column */
+            column: string;
+            epic: components["schemas"]["app__workflow__schemas__FollowUpRef"] | null;
+        };
+        /**
+         * FollowUpReviewIn
+         * @description One row of the reviewed follow-up list sent with a design approval (MC-81); checked by the service.
+         */
+        FollowUpReviewIn: {
             /**
-             * Id
-             * Format: uuid
+             * Title
+             * @default
              */
-            id: string;
-            /** Ref */
-            ref: string;
+            title: string;
+            /**
+             * Type
+             * @default task
+             */
+            type: string;
+            /**
+             * Description Md
+             * @default
+             */
+            description_md: string;
+            /** Create */
+            create: boolean;
         };
         /** ForgotIn */
         ForgotIn: {
@@ -7012,7 +7067,7 @@ export interface components {
             /** Attempts */
             attempts: number;
             from_task: components["schemas"]["TaskRef"] | null;
-            follow_up_of?: components["schemas"]["FollowUpRef"] | null;
+            follow_up_of?: components["schemas"]["app__a2a__schemas__FollowUpRef"] | null;
             asked_by: components["schemas"]["Who"];
             preference: components["schemas"]["Preference"] | null;
             /** Kb Document Id */
@@ -8771,6 +8826,16 @@ export interface components {
              */
             if_busy: "wait" | "another";
         };
+        /** FollowUpRef */
+        app__a2a__schemas__FollowUpRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ref */
+            ref: string;
+        };
         /** AskIn */
         app__memory__schemas__AskIn: {
             /** Question */
@@ -8789,6 +8854,13 @@ export interface components {
              * @default []
              */
             image_ids: string[];
+        };
+        /** FollowUpRef */
+        app__workflow__schemas__FollowUpRef: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
         };
     };
     responses: never;
