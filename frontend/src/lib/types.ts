@@ -18,6 +18,9 @@ export type WorkflowStatus = TaskWorkflow["status"];
 export type WorkflowNeeds = NonNullable<TaskWorkflow["needs"]>;
 export type DocumentInfo = S["DocumentInfo"];
 export type DocumentDetail = S["DocumentOut"];
+export type FollowUpOut = S["FollowUpOut"];
+// two backend schemas are named FollowUpRef, so the generator qualifies both with their module
+export type FollowUpRef = S["app__workflow__schemas__FollowUpRef"];
 export type DocKind = S["DocKind"];
 export type TaskType = Task["type"];
 export type Priority = Task["priority"];

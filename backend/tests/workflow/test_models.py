@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from app.core.db import SessionLocal
 from app.tasks.models import Task
 from app.workflow.models import DocKind, TaskWorkflow, WorkflowDocument
 from tests.factories import login, make_project, make_user
@@ -77,6 +78,18 @@ async def test_document_version_unique(client, db):
     await db.rollback()
     db.add(WorkflowDocument(task_id=uuid.UUID(t["id"]), kind=DocKind.plan, version=1, body_md="c"))
     await db.commit()
+
+
+async def test_document_follow_ups_default_empty(client, db):
+    await make_project(client, db, "PAY")
+    t = await _task(client)
+    db.add(WorkflowDocument(task_id=uuid.UUID(t["id"]), kind=DocKind.design, version=1, body_md="x"))
+    await db.commit()
+
+    async with SessionLocal() as s:
+        doc = (await s.execute(select(WorkflowDocument).where(WorkflowDocument.task_id == uuid.UUID(t["id"])))).scalar_one()
+        assert doc.follow_ups == []
+        assert doc.scope_note is None
 
 
 async def test_workflow_deleted_with_task(client, db):

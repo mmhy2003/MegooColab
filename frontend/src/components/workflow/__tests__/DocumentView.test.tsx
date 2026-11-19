@@ -13,7 +13,21 @@ const info = (version: number, status: string) => ({
   decision_comment: null,
 });
 
-function setup(opts: { decision?: Response; can_act?: boolean; disabled?: boolean; kind?: "design" | "plan"; linked?: boolean } = {}) {
+type FollowUp = { title: string; type: string; description_md: string; created: boolean; task_key: string | null };
+type Place = { column: string; epic: { key: string; title: string } | null };
+
+function setup(
+  opts: {
+    decision?: Response;
+    can_act?: boolean;
+    disabled?: boolean;
+    kind?: "design" | "plan";
+    linked?: boolean;
+    followUps?: FollowUp[];
+    earlier?: { key: string; title: string }[];
+    createsIn?: Place;
+  } = {},
+) {
   const kind = opts.kind ?? "design";
   const fetchMock = vi.fn(async (url: string) => {
     if (url.endsWith("/decision")) return (opts.decision ?? new Response("{}", { status: 200 })).clone();
@@ -34,6 +48,9 @@ function setup(opts: { decision?: Response; can_act?: boolean; disabled?: boolea
           steps: kind === "plan" ? [{ title: "Add model", detail: "d", subtask_id: null }] : null,
           attached_mockup_ids: v === 2 ? ["m1"] : [],
           mockup_id: v === 2 && opts.linked ? "m1" : null,
+          follow_ups: v === 2 ? (opts.followUps ?? []) : [],
+          earlier_follow_ups: v === 2 ? (opts.earlier ?? []) : [],
+          creates_in: v === 2 ? (opts.createsIn ?? { column: "To Do", epic: null }) : null,
         }),
         { status: 200 },
       );
@@ -160,6 +177,93 @@ describe("DocumentView", () => {
     setup({ can_act: false });
     await screen.findByRole("heading", { name: "Second design" });
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+});
+
+describe("DocumentView follow-up tasks", () => {
+  const proposed: FollowUp[] = [
+    { title: "Phase 2: export", type: "story", description_md: "Export the report.", created: false, task_key: null },
+    { title: "Phase 3: import", type: "task", description_md: "", created: false, task_key: null },
+  ];
+  const decisionBody = (fetchMock: ReturnType<typeof setup>) => {
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith("/decision")) as unknown as [string, { body: string }];
+    return JSON.parse(call[1].body);
+  };
+
+  it("sends the reviewed follow-ups with the approval", async () => {
+    const fetchMock = setup({ followUps: proposed });
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Create task 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Add a task" }));
+    fireEvent.change(screen.getByLabelText("Title of task 3"), { target: { value: " Docs " } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/decision"))).toBe(true));
+    expect(decisionBody(fetchMock)).toEqual({
+      approve: true,
+      comment: null,
+      follow_ups: [
+        { title: "Phase 2: export", type: "story", description_md: "Export the report.", create: true },
+        { title: "Phase 3: import", type: "task", description_md: "", create: false },
+        { title: "Docs", type: "task", description_md: "", create: true },
+      ],
+    });
+  });
+
+  it("blocks approval when a ticked task has no title", async () => {
+    const fetchMock = setup({ followUps: proposed });
+    fireEvent.click(await screen.findByRole("button", { name: "+ Add a task" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Give every ticked task a title.");
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/decision"))).toBe(false);
+  });
+
+  it("says what approving creates", async () => {
+    setup({ followUps: proposed });
+    expect(await screen.findByText("Approving creates 2 tasks in To Do, unassigned.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Create task 1" }));
+    expect(screen.getByText("Approving creates 1 task in To Do, unassigned.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Create task 2" }));
+    expect(screen.getByText("Approving creates no tasks.")).toBeInTheDocument();
+    cleanup();
+    setup({ followUps: proposed, createsIn: { column: "To Do", epic: { key: "PAY-3", title: "Payments" } } });
+    expect(await screen.findByText("Approving creates 2 tasks in To Do, in epic PAY-3, unassigned.")).toBeInTheDocument();
+  });
+
+  it("read-only for someone who cannot decide", async () => {
+    setup({ followUps: proposed, can_act: false });
+    expect(await screen.findByText(/Phase 2: export/)).toBeInTheDocument();
+    expect(screen.getByText(/Phase 3: import/)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Approving creates/)).not.toBeInTheDocument();
+  });
+
+  it("shows earlier tasks", async () => {
+    setup({ earlier: [{ key: "PAY-7", title: "Phase 2" }, { key: "PAY-8", title: "Phase 3" }] });
+    expect(await screen.findByText(/Already created from an earlier approved design:/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "PAY-7" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-7");
+    expect(screen.getByRole("link", { name: "PAY-8" })).toBeInTheDocument();
+  });
+
+  it("a rejection sends no follow-ups", async () => {
+    const fetchMock = setup({ followUps: proposed });
+    fireEvent.change(await screen.findByLabelText("Comment"), { target: { value: "split differently" } });
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/decision"))).toBe(true));
+    expect(decisionBody(fetchMock)).toEqual({ approve: false, comment: "split differently" });
+  });
+
+  it("shows None proposed to a decider when the list is empty", async () => {
+    setup();
+    expect(await screen.findByText("None proposed.")).toBeInTheDocument();
+    expect(screen.getByText("Approving creates no tasks.")).toBeInTheDocument();
+  });
+
+  it("a plan shows no follow-up block and sends no follow-ups", async () => {
+    const fetchMock = setup({ kind: "plan" });
+    await screen.findByText("Add model");
+    expect(screen.queryByRole("region", { name: "Follow-up tasks" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/decision"))).toBe(true));
+    expect(decisionBody(fetchMock)).toEqual({ approve: true, comment: null });
   });
 });
 
