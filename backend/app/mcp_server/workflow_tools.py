@@ -288,17 +288,18 @@ def register_workflow_tools(mcp: MCPServer) -> None:
     @mcp.tool()
     async def record_tests(
         key: str, command: str, passed: Any, total: Any = None, failed: Any = None, skipped: Any = None,
-        failing: Any = None,
+        failing: Any = None, on_base: Any = False,
     ) -> dict[str, Any]:
         """Record a test run you just did: the command (at most 200 characters), `passed` (true or false), the
         optional counts `total`, `failed` and `skipped` (non-negative integers), and `failing`: up to 20 failing
-        test names (never output). Record every run you rely on before you claim the tests pass."""
+        test names (never output). `on_base`: true for a run on the commit the task branch started from (the
+        finish stage's check). Record every run you rely on before you claim the tests pass."""
         async with tool_session() as (db, user):
             task = await _task(db, user, key, "record_tests", write=True)
             run, wf = await _record_target(db, user, task)
             row = await records.record_tests(
                 db, task, wf, run=run, posted_by=user.id, command=command, passed=passed, total=total,
-                failed=failed, skipped=skipped, failing=failing,
+                failed=failed, skipped=skipped, failing=failing, on_base=on_base,
             )
             return {"id": str(row.id), "passed": row.passed}
 

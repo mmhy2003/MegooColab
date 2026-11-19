@@ -4,6 +4,7 @@ from sqlalchemy import select, update
 
 from app.agent_runs.models import AgentRun
 from app.core.db import SessionLocal
+from app.workflow import records
 from app.workflow.models import WorkflowDecision, WorkflowTestRun
 from tests.mcp.test_workflow_tools import (
     ALLOWED,
@@ -70,6 +71,21 @@ async def test_record_tests_from_a_finish_run_has_no_step(db, tc_factory):
     assert (t["stage"], t["step"], t["passed"], t["author"]) == ("done", None, True, b.agent["name"])
 
 
+async def test_record_tests_on_base_is_stored_returned_and_marked(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _, token = await _building(db, tc, role="finish", step=None)
+    err, out = _tool(
+        tc, token, "record_tests", key=b.key, **{**TESTS, "passed": False}, failing=["test_a"], on_base=True)
+    assert not err, out
+    [row] = await _rows(WorkflowTestRun, b.task_id)
+    assert row.on_base is True
+    [t] = tc.get(f"/api/tasks/{b.key}/records").json()["test_runs"]
+    assert t["on_base"] is True
+    assert "FAILED on the start commit — uv run pytest" in records.test_runs_section([row])
+    assert not _tool(tc, token, "record_tests", key=b.key, **TESTS)[0]
+    assert [r.on_base for r in await _rows(WorkflowTestRun, b.task_id)] == [True, False]
+
+
 async def test_record_tools_roles(db, tc_factory):
     tc = tc_factory(lifespan=True)
     b, run, token = await _building(db, tc)
@@ -106,6 +122,7 @@ async def test_record_tests_validation(db, tc_factory):
         {"total": -1},
         {"failed": True},
         {"command": "  "},
+        {"on_base": "yes"},
     ):
         err, text = _tool(tc, token, "record_tests", key=b.key, **{**TESTS, **bad})
         assert err and "invalid_record" in text, (bad, text)

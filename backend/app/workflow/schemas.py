@@ -211,6 +211,7 @@ class TestRunOut(BaseModel):
     failed: int | None
     skipped: int | None
     failing: list[str]
+    on_base: bool = False
     author: str
     created_at: datetime
 
