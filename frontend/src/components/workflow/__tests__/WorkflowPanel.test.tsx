@@ -32,12 +32,12 @@ function wf(extra: Partial<Workflow> = {}): Workflow {
 
 function setup(
   workflow: Workflow,
-  opts: { runs?: unknown[]; agent?: ProjectAgent | null; post?: Response; unassigned?: boolean; disabled?: boolean; decisions?: unknown[] } = {},
+  opts: { runs?: unknown[]; agent?: ProjectAgent | null; post?: Response; unassigned?: boolean; disabled?: boolean; decisions?: unknown[]; testRuns?: unknown[] } = {},
 ) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method && init.method !== "GET" && opts.post) return opts.post.clone();
     if (url.endsWith("/records")) {
-      return new Response(JSON.stringify({ decisions: opts.decisions ?? [], test_runs: [], unverified_steps: [] }), { status: 200 });
+      return new Response(JSON.stringify({ decisions: opts.decisions ?? [], test_runs: opts.testRuns ?? [], unverified_steps: [] }), { status: 200 });
     }
     if (url.includes("/agent-runs")) return new Response(JSON.stringify(opts.runs ?? []), { status: 200 });
     return new Response(JSON.stringify(workflow), { status: 200 });
@@ -79,6 +79,37 @@ describe("WorkflowPanel", () => {
     setup(wf(), { agent: { ...agent, can_use: false } });
     await screen.findByText("Not started");
     expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
+  });
+
+  it("says a finish with known failing tests finished with them", async () => {
+    setup(wf({
+      stage: "done", status: "finished", start_branch: "develop",
+      finish_tests: {
+        failures: [{ name: "b.test", kind: "base" }, { name: "c.test", kind: "flaky" }],
+        delivered: true, settled: "known",
+      },
+    }));
+    expect(await screen.findByText("Finished with 2 known failing tests: 1 also fails on develop, 1 flaky")).toBeInTheDocument();
+    expect(screen.getByText("b.test")).toBeInTheDocument();
+  });
+
+  it("shows the finish's test runs on the Tests failed at finish card", async () => {
+    setup(
+      wf({
+        stage: "done", status: "waiting_human", needs: "escalation", escalation_reason: "finish_tests_failed", start_branch: "develop",
+        finish_tests: { failures: [{ name: "a.test", kind: "new" }], delivered: true },
+      }),
+      {
+        testRuns: [
+          { id: "r1", stage: "build", step: 1, command: "npm run build-step", passed: true, total: null, failed: null, skipped: null, failing: [], on_base: false, author: "Bot", created_at: "2026-11-20T09:00:00Z" },
+          { id: "r2", stage: "done", step: null, command: "npm test", passed: false, total: null, failed: 1, skipped: null, failing: ["a.test"], on_base: false, author: "Bot", created_at: "2026-11-20T10:00:00Z" },
+        ],
+      },
+    );
+    expect(await screen.findByText("Tests failed at finish: 1 failing (1 new)")).toBeInTheDocument();
+    expect(await screen.findByText("Test runs at finish (1)")).toBeInTheDocument();
+    expect(screen.getByText("✗ 1 failed: a.test — npm test")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Finish anyway" })).toBeInTheDocument();
   });
 
   it("escalation shows reason and three actions", async () => {
