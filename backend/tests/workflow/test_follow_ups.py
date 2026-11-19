@@ -4,10 +4,12 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from app.auth.models import User
 from app.core.db import SessionLocal
 from app.tasks.models import Task, TaskLink
 from app.workflow import follow_ups
 from app.workflow.follow_ups import backlink, clean_proposed, clean_reviewed
+from app.workflow.models import DocKind, DocStatus, WorkflowDocument
 from tests.agent_runs.test_dispatch import _task
 from tests.workflow.test_documents import _decide, _docs, _submit
 from tests.workflow.test_engine import _events, _finish, _runs, _started, _wf
@@ -225,3 +227,128 @@ async def test_invalid_reviewed_list_through_the_endpoint(db, tc_factory):
     [doc] = await _docs(b.task_id, "design")
     assert doc.status == "submitted"
     assert await _others(b.task_id) == []
+
+
+# ---- the scope note (step 5) -------------------------------------------------------------------------------------
+
+
+def test_scope_note_text():
+    assert follow_ups.scope_note([("PAY-13", "/projects/PAY/tasks/13")], "/d") == (
+        "Scope: phase 1 of 2 (per the [approved design](/d)). Phase 2 → [PAY-13](/projects/PAY/tasks/13)."
+    )
+    assert follow_ups.scope_note(
+        [("PAY-13", "/projects/PAY/tasks/13"), ("PAY-14", "/projects/PAY/tasks/14")], "/d"
+    ) == (
+        "Scope: phase 1 of 3 (per the [approved design](/d)). "
+        "Phases 2–3 → [PAY-13](/projects/PAY/tasks/13), [PAY-14](/projects/PAY/tasks/14)."
+    )
+
+
+def _link(t: Task) -> str:
+    return f"[PAY-{t.number}](/projects/PAY/tasks/{t.number})"
+
+
+async def _description(task_id) -> str:
+    async with SessionLocal() as s:
+        return (await s.get(Task, task_id)).description_md
+
+
+async def _description_changes(task_id) -> list:
+    return [e for e in await _events(task_id, "field_changed") if e.data == {"field": "description_md"}]
+
+
+async def _approved_with_note(db, tc):
+    """The first approval, through the endpoint, of a task whose description is "Original text"."""
+    b, _ = await _design_with(db, tc)
+    assert tc.patch(f"/api/tasks/{b.key}", json={"description_md": "Original text"}).status_code == 200
+    r = _approve(tc, b, 1, _ticked((PROPOSED[0], True), (PROPOSED[1], True)))
+    assert r.status_code == 200, r.text
+    return b
+
+
+async def _approve_v2(b) -> Task:
+    """A second approved design version on the same task, creating one more follow-up task."""
+    async with SessionLocal() as s:
+        task = await s.get(Task, b.task_id)
+        manager = await s.get(User, b.manager.id)
+        doc2 = WorkflowDocument(task_id=task.id, kind=DocKind.design, version=2, status=DocStatus.approved,
+                                body_md="# v2", follow_ups=[])
+        s.add(doc2)
+        await s.flush()
+        await follow_ups.create_on_approval(s, manager, task, doc2, [
+            {"title": "Phase 4: exports", "type": "task", "description_md": "", "create": True},
+        ])
+        await s.commit()
+    *_, new = await _others(b.task_id)
+    return new
+
+
+async def test_approval_appends_scope_note(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _approved_with_note(db, tc)
+    phase2, phase3 = await _others(b.task_id)
+    path = f"/projects/PAY/tasks/{b.key.split('-')[1]}"
+    note = (f"Scope: phase 1 of 3 (per the [approved design]({path}#document-design-v1)). "
+            f"Phases 2–3 → {_link(phase2)}, {_link(phase3)}.")
+    assert await _description(b.task_id) == f"Original text\n\n{note}"
+    [doc] = await _docs(b.task_id, "design")
+    assert doc.scope_note == note
+    changes = await _description_changes(b.task_id)
+    assert len(changes) == 2  # the patch above, then the note
+    assert {e.actor_user_id for e in changes} == {b.manager.id}
+
+
+async def test_nothing_ticked_leaves_description(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _design_with(db, tc)
+    before = await _description(b.task_id)
+    r = _approve(tc, b, 1, _ticked((PROPOSED[0], False), (PROPOSED[1], False)))
+    assert r.status_code == 200, r.text
+    assert await _description(b.task_id) == before
+    assert await _description_changes(b.task_id) == []
+    [doc] = await _docs(b.task_id, "design")
+    assert doc.scope_note is None
+
+
+async def test_second_approval_replaces_note_and_counts_earlier(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _approved_with_note(db, tc)
+    phase2, phase3 = await _others(b.task_id)
+    phase4 = await _approve_v2(b)
+
+    text = await _description(b.task_id)
+    assert text.startswith("Original text\n\n")
+    assert text.count("Scope:") == 1
+    assert "phase 1 of 4" in text and "Phases 2–4" in text
+    assert f"{_link(phase2)}, {_link(phase3)}, {_link(phase4)}." in text
+    assert "#document-design-v2" in text
+    async with SessionLocal() as s:
+        task = await s.get(Task, b.task_id)
+        doc2 = (await s.execute(select(WorkflowDocument).where(
+            WorkflowDocument.task_id == task.id, WorkflowDocument.version == 2))).scalar_one()
+        assert [t.id for t in await follow_ups.earlier(s, task, doc2)] == [phase2.id, phase3.id]
+        assert text.endswith(doc2.scope_note)
+
+
+async def test_edited_note_is_kept_and_new_one_appended(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _approved_with_note(db, tc)
+    edited = (await _description(b.task_id)).replace("Scope:", "Scope (edited):")
+    assert tc.patch(f"/api/tasks/{b.key}", json={"description_md": edited}).status_code == 200
+    await _approve_v2(b)
+
+    text = await _description(b.task_id)
+    assert text.startswith(f"{edited}\n\n")
+    assert text.count("Scope (edited):") == 1
+    assert text.count("Scope: phase 1 of 4") == 1
+
+
+async def test_deleted_follow_up_drops_out_of_earlier(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _approved_with_note(db, tc)
+    phase2, phase3 = await _others(b.task_id)
+    assert tc.delete(f"/api/tasks/PAY-{phase2.number}").status_code in (200, 204)
+    async with SessionLocal() as s:
+        task = await s.get(Task, b.task_id)
+        doc2 = WorkflowDocument(task_id=task.id, kind=DocKind.design, version=2, body_md="# v2")
+        assert [t.id for t in await follow_ups.earlier(s, task, doc2)] == [phase3.id]
