@@ -183,6 +183,13 @@ class WorkflowDocument(IdMixin, Base):
     )
     # designs: the task's newest mockup when the design was submitted (approving the design approves it)
     mockup_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_mockups.id", ondelete="SET NULL"))
+    # designs: follow-up tasks for later phases, [{title, type, description_md, task_id}]; task_id is set when
+    # approval creates the task (MC-81)
+    follow_ups: Mapped[list] = mapped_column(
+        MutableList.as_mutable(JSONB), default=list, server_default=text("'[]'::jsonb")
+    )
+    # designs: the scope note this version's approval wrote into the task's description (MC-81)
+    scope_note: Mapped[str | None] = mapped_column(Text)
     submitted_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
     decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
