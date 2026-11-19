@@ -269,7 +269,10 @@ async def test_finish_without_report_nudged_then_escalated(db, tc_factory):
     await _finish(b.manager.id, run, "completed")
     nudge = await _last(b.task_id)
     assert nudge.workflow_role == "finish"
-    assert nudge.prompt.rstrip().endswith("Re-verify the tests, perform the finishing option, then call report_finish.")
+    assert nudge.prompt.rstrip().endswith(
+        "Re-verify the tests, perform the finishing option, then call report_finish (or report_test_failures when a "
+        "failing test needs a person)."
+    )
     await _finish(b.manager.id, nudge, "completed")  # the nudge ends without a report too
     wf = await _wf(b.task_id)
     assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "escalation", "finish_incomplete")

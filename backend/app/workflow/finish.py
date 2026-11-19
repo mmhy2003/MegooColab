@@ -70,7 +70,10 @@ MAX_FAILURE_NAME = 300
 MAX_DIAGNOSIS = 2000
 
 BRANCH_PUSHED = "branch_pushed"
-FINISH_NUDGE = "Re-verify the tests, perform the finishing option, then call report_finish."
+FINISH_NUDGE = (
+    "Re-verify the tests, perform the finishing option, then call report_finish (or report_test_failures when a "
+    "failing test needs a person)."
+)
 OUTCOME_OF = {
     FinishingOption.merge_local: "merged_local",
     FinishingOption.pull_request: "pr_opened",

@@ -88,7 +88,8 @@ RUN_NEXT: dict[RunRole, str] = {
     RunRole.step_review: "Review step {step}, then call submit_review with your verdict and findings.",
     RunRole.final_review: "Review the whole change, then call submit_review with your verdict and findings.",
     RunRole.final_fix: "Fix the final review's findings and run the tests; your run ends when you are done.",
-    RunRole.finish: "Re-verify the tests, perform the finishing option ({option}), then call report_finish.",
+    RunRole.finish: "Re-verify the tests (sort any failures), then perform the finishing option ({option}) and call "
+    "report_finish, or call report_test_failures when a failure needs a person.",
     RunRole.pr_fix: "Fix what was asked on the pull request, run the tests, push to the same branch, then call "
     "report_pr_fix.",
     RunRole.pr_review: "Review the pull request on the host, post your review (merge it when you approve), then call "
