@@ -10,9 +10,13 @@ Review (entered from build.enter_review, round 1):
   final_fix has no completion tool: its run simply ends. A failed one falls under the normal retries.
 
 Done:
-  finish (fresh) states the effective finishing option and ends with report_finish.
-    reported and tests_passed -> human code review required: wait on human_code_review; else finished
-    otherwise                 -> one nudge, then escalation finish_incomplete
+  finish (fresh) states the effective finishing option and ends with report_finish (or report_test_failures).
+    reported with passing tests, or failing tests that are known (start commit, flaky) and tolerated, or covered
+    by an acceptance          -> human code review required: wait on human_code_review; else finished
+    reported otherwise        -> escalation finish_tests_failed (accept: Finish anyway; retry: a fresh finish)
+    report_test_failures      -> escalation finish_tests_failed, not delivered (Finish anyway resumes the session
+                                 to deliver)
+    no report                 -> one nudge, then escalation finish_incomplete
 
 `wf.review_round` is the final review's round (build.enter_review sets 1; the final_fix handler sets 2).
 """
@@ -478,6 +482,32 @@ async def _raise_card(db: AsyncSession, wf: TaskWorkflow, task: Task, *, deliver
     await engine.escalate(db, wf, "finish_tests_failed")
 
 
+async def _accept_tests_failed(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
+    """Escalation `accept` ("Finish anyway"): the person accepts the failing tests. Delivered: the finish moves on.
+    Not delivered: the reporting session resumes to deliver and list them (a fresh prompt when it has no session)."""
+    ft = wf.finish_tests or {"failures": [], "delivered": True}
+    delivered = ft.get("delivered", True)
+    await _accept_names(db, wf, task, user.id, via="card", settled="accepted" if delivered else None)
+    if delivered:
+        await _move_on(db, wf, task)
+        return
+    wf.nudged = False
+    last = await engine.latest_run(db, task.id)
+    session = last.session_ref if last is not None and last.workflow_role == RunRole.finish else None
+    await engine.enqueue(
+        db, wf, task, RunRole.finish, resume_kind="failures_accepted", requested_by=user.id,
+        payload={"by": user.name, "names": [f["name"] for f in ft.get("failures") or []],
+                 "failing_total": ft.get("failing_total")},
+        resume_session_ref=session,
+    )
+
+
+async def _retry_tests_failed(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
+    """Escalation `retry`: forget the report and its acceptance, and run the finish again from the start."""
+    wf.finish_tests = None
+    await engine.enqueue(db, wf, task, RunRole.finish, requested_by=user.id)
+
+
 # ---- human decisions (WF-6) -------------------------------------------------------------------
 
 
@@ -533,3 +563,5 @@ engine.ROLE_HANDLERS[RunRole.finish] = _handle_finish
 engine.ACCEPT_HANDLERS["final_review_not_clean"] = _accept_final_review
 engine.ACCEPT_HANDLERS["pr_closed"] = _accept_pr_closed
 engine.ACCEPT_HANDLERS["back_merge_pr_closed"] = _accept_pr_closed
+engine.ACCEPT_HANDLERS["finish_tests_failed"] = _accept_tests_failed
+engine.RETRY_HANDLERS["finish_tests_failed"] = _retry_tests_failed

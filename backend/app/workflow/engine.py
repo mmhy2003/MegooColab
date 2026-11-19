@@ -100,7 +100,7 @@ CONTINUE_TEXT = "Your previous run ended before it finished. Continue the same w
 # the heading a resume text gets when there is no session to resume and it joins the full prompt instead
 RESUME_HEADING = {
     "answer": "Answer", "rejection": "Rejection", "nudge": "Reminder", "findings": "Findings to address",
-    "project_answers": "Answers from other projects",
+    "project_answers": "Answers from other projects", "failures_accepted": "Failing tests accepted",
 }
 NUDGE_TEXT = {
     RunRole.plan: (
@@ -689,7 +689,8 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
         if submitted is not None:
             return Needs.design_approval if kind == DocKind.design else Needs.plan_approval
     if wf.stage == Stage.done and wf.finish_outcome and wf.status != WorkflowStatus.finished:
-        # the finish run reported (with passing tests, as _handle_finish requires): the PR waits for its approval
+        # the finish run reported with passing tests, or its failing tests were settled (known or accepted, which
+        # counts like passing tests): the PR waits for its approval
         task = await db.get(Task, wf.task_id)
         reported = await db.scalar(
             select(AgentRun.step_result)
@@ -702,7 +703,9 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
             .limit(1)
         )
         project = await db.get(Project, task.project_id)
-        if (reported or {}).get("tests_passed") is True and requires_human_review(project, wf):
+        if ((reported or {}).get("tests_passed") is True or (wf.finish_tests or {}).get("settled")) and (
+            requires_human_review(project, wf)
+        ):
             last = await latest_run(db, wf.task_id)
             reviewed = (
                 pr_review_mode(project, wf) == PrReview.agent and last is not None
@@ -771,8 +774,8 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
 # ---- escalations ----------------------------------------------------------------------
 
 AcceptHandler = Callable[[AsyncSession, TaskWorkflow, Task, User], Awaitable[None]]
-# reason -> what `accept` does. Accept applies only to review_rounds_exhausted, final_review_not_clean
-# (registered by the build and review stages) and enforcement_violation; any other reason gets 422.
+# reason -> what `accept` does. Registered by the stages that offer it (build, finish, git); any other reason gets
+# 422 cannot_accept_here.
 ACCEPT_HANDLERS: dict[str, AcceptHandler] = {}
 # reason -> what `retry` does, where repeating the latest run is not it (piece 4: an unavailable reviewer's review
 # starts again, rather than the Finish or fix run before it)

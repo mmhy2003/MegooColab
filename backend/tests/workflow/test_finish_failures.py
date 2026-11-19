@@ -330,3 +330,134 @@ async def test_no_report_still_nudges_then_finish_incomplete(db, tc_factory):
     assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "escalation", "finish_incomplete")
     assert wf.finish_tests is None
     assert await _events(b.task_id, "finish.tests_failed") == []
+
+
+# ---- Finish anyway and Retry on the card (step 7) --------------------------------------------------
+
+
+def _decide(tc, b, action):
+    r = tc.post(f"/api/tasks/{b.key}/workflow/escalation", json={"action": action})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+async def _accepted_audit(task_id) -> list[AuditLog]:
+    async with SessionLocal() as s:
+        return list((await s.execute(select(AuditLog).where(
+            AuditLog.action == "workflow.finish_failures_accepted", AuditLog.target_id == task_id))).scalars())
+
+
+async def _not_delivered_card(db, tc, *, session_id="sess-t"):
+    b, run = await _to_finish(db, tc)
+    await _test_failures(run, [NEW])
+    await _finish(b.manager.id, run, "completed", **({"session_id": session_id} if session_id else {}))
+    await _card(b.task_id, delivered=False)
+    return b, run
+
+
+async def test_finish_anyway_after_a_delivery_finishes(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    await _fail_report(run, [NEW, BASE])
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    await _card(b.task_id, delivered=True)
+    _decide(tc, b, "accept")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("finished", None, None)
+    ft = wf.finish_tests
+    assert (ft["accepted_by"], ft["accepted"], ft["settled"]) == (
+        str(b.manager.id), [NEW["name"], BASE["name"]], "accepted")
+    [ev] = await _events(b.task_id, "finish.failures_accepted")
+    assert ev.actor_user_id == b.manager.id
+    assert ev.data == {"failures": [NEW, BASE], "failing_total": None, "via": "card"}
+    [entry] = await _accepted_audit(b.task_id)
+    assert entry.actor_user_id == b.manager.id and entry.data["via"] == "card"
+    assert len(await _finish_runs(b.task_id)) == 1
+
+
+async def test_finish_anyway_with_required_review_waits_for_the_pr(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    _patch_project(tc, pr_review="human")
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    run = await _last(b.task_id)
+    await _fail_report(run, [NEW])
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    _decide(tc, b, "accept")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "human_code_review", None)
+    count = len(await _runs(b.task_id))
+    assert tc.post(f"/api/tasks/{b.key}/workflow/pause").json()["status"] == "paused"
+    r = tc.post(f"/api/tasks/{b.key}/workflow/resume")
+    assert r.status_code == 200, r.text
+    assert (r.json()["status"], r.json()["needs"]) == ("waiting_human", "human_code_review")
+    assert len(await _runs(b.task_id)) == count  # the settled finish does not run again
+
+
+async def test_finish_anyway_not_delivered_resumes_the_session(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _not_delivered_card(db, tc)
+    _decide(tc, b, "accept")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason, wf.nudged) == ("running", None, None, False)
+    assert (wf.finish_tests["accepted"], wf.finish_tests["settled"]) == ([NEW["name"]], None)
+    resumed = await _last(b.task_id)
+    assert resumed.id != run.id and resumed.workflow_role == "finish"
+    assert resumed.resume_session_ref == "sess-t"
+    assert b.manager.name in resumed.resume_prompt
+    assert '<untrusted source="accepted_tests">' in resumed.resume_prompt
+    assert NEW["name"] in resumed.resume_prompt
+    [ev] = await _events(b.task_id, "finish.failures_accepted")
+    assert ev.data["via"] == "card"
+    await _fail_report(resumed, [NEW])
+    await _finish(b.manager.id, resumed, "completed", session_id="sess-t")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.escalation_reason) == ("finished", None)
+    assert (wf.finish_tests["settled"], wf.finish_tests["accepted_by"]) == ("accepted", str(b.manager.id))
+    assert len(await _events(b.task_id, "finish.failures_accepted")) == 1
+
+
+async def test_a_test_outside_the_accepted_names_brings_the_card_back(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _not_delivered_card(db, tc)
+    _decide(tc, b, "accept")
+    resumed = await _last(b.task_id)
+    other = {"name": "e2e/other.spec.ts:7", "kind": "new"}
+    await _fail_report(resumed, [NEW, other])
+    await _finish(b.manager.id, resumed, "completed", session_id="sess-t")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "escalation", "finish_tests_failed")
+    assert (wf.finish_tests["delivered"], wf.finish_tests["settled"]) == (True, None)
+    assert "accepted_by" not in wf.finish_tests and "accepted" not in wf.finish_tests
+    assert [e.data["failures"] for e in await _events(b.task_id, "finish.tests_failed")][-1] == [NEW, other]
+
+
+async def test_finish_anyway_without_a_session_goes_into_a_fresh_prompt(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _not_delivered_card(db, tc, session_id=None)
+    _decide(tc, b, "accept")
+    resumed = await _last(b.task_id)
+    assert (resumed.resume_session_ref, resumed.resume_prompt) == (None, None)
+    head, _, tail = resumed.prompt.rpartition("\n\n## Failing tests accepted\n")
+    assert head
+    assert tail.startswith(f"{b.manager.name} chose Finish anyway")
+    assert NEW["name"] in tail and tail.rstrip().endswith("the same failures.")
+
+
+async def test_retry_clears_and_starts_a_fresh_finish(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _not_delivered_card(db, tc)
+    _decide(tc, b, "retry")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason, wf.nudged) == ("running", None, None, False)
+    assert wf.finish_tests is None
+    fresh = await _last(b.task_id)
+    assert fresh.id != run.id and fresh.workflow_role == "finish"
+    assert (fresh.resume_session_ref, fresh.resume_prompt) == (None, None)
+    assert await _events(b.task_id, "finish.failures_accepted") == []
+
+
+def test_accept_handlers_include_finish_tests_failed():
+    assert engine.ACCEPT_HANDLERS["finish_tests_failed"] is finish._accept_tests_failed
+    assert engine.RETRY_HANDLERS["finish_tests_failed"] is finish._retry_tests_failed
