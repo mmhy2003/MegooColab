@@ -55,6 +55,7 @@ ALL_WORKFLOW_TOOLS = {
     "show_mockup": {"html": "<p>x</p>", "title": "T"},
     "record_decision": {"decision": "d", "reason": "r", "cost_if_wrong": "c"},
     "record_tests": {"command": "pytest", "passed": True},
+    "report_test_failures": {"failures": [{"name": "t", "kind": "new"}], "diagnosis": "d"},
     "report_pr_fix": {"summary": "Added a back-off", "tests_passed": True},
     "submit_pr_review": {"verdict": "approved", "summary": "Looks good", "merged": True},
 }
@@ -65,6 +66,7 @@ ALLOWED = {
     "complete_step": {"implement", "step_fix"},
     "submit_review": {"step_review", "final_review"},
     "report_finish": {"finish"},
+    "report_test_failures": {"finish"},
     "show_mockup": {"brainstorm"},
     "record_decision": {"implement", "step_fix", "final_fix", "finish", "pr_fix", "freestyle"},
     "record_tests": {"implement", "step_fix", "final_fix", "finish", "pr_fix", "freestyle"},
@@ -260,6 +262,16 @@ async def test_run_token_stage_tools_reach_their_services(db, tc_factory):
     assert not err, out
     wf = await _wf(b.task_id)
     assert (wf.branch, wf.pr_url, wf.finish_outcome) == ("megoo/PAY-1", "https://git.test/pr/7", "pr_opened")
+    # failing tests: listed with the report, or reported instead of delivering
+    failing = [{"name": "e2e/a.spec.ts:3", "kind": "base"}]
+    err, out = _tool(tc, token, "report_finish", key=b.key, outcome="pr_opened", branch="megoo/PAY-1",
+                     pr_url="https://git.test/pr/7", tests_passed=False, failures=failing, failing_total=2)
+    assert not err, out
+    assert (await _wf(b.task_id)).finish_tests["failures"] == failing
+    err, out = _tool(tc, token, "report_test_failures", key=b.key, failures=failing, diagnosis="Overflows")
+    assert not err and out == {"failures": 1, "failing_total": None}, out
+    tests = (await _wf(b.task_id)).finish_tests
+    assert (tests["diagnosis"], tests["delivered"]) == ("Overflows", False)
 
 
 async def test_submit_design_with_follow_ups(db, tc_factory):
@@ -386,7 +398,7 @@ async def test_connect_only_flow_marks_unenforced_and_never_enqueues(db, tc_fact
     err, text = _tool(tc, token, "submit_plan", key=key, markdown="# Plan", steps=STEPS)
     assert err and "wrong_stage" in text
     assert await _wf(task_id) is None
-    for name in ("submit_review", "report_finish"):  # only runner-driven runs review and finish
+    for name in ("submit_review", "report_finish", "report_test_failures"):  # only runner-driven runs review and finish
         err, text = _tool(tc, token, name, key=key, **ALL_WORKFLOW_TOOLS[name])
         assert err and "not_allowed_in_role" in text, name
 
@@ -488,7 +500,7 @@ async def test_personal_token_refused_on_runner_driven_or_others_task(db, tc_fac
     token = _personal(tc)
     # the agent's task is driven by MegooColab: the human's own client cannot submit for their agent
     for name, args in {**ALL_WORKFLOW_TOOLS, "get_workflow": {}}.items():
-        if name in ("submit_review", "report_finish", "report_pr_fix", "submit_pr_review"):  # runner-only: refused by role, tested elsewhere
+        if name in ("submit_review", "report_finish", "report_test_failures", "report_pr_fix", "submit_pr_review"):  # runner-only: refused by role, tested elsewhere
             continue
         err, text = _tool(tc, token, name, key=b.key, **args)
         assert err and "runner_driven" in text, (name, text)

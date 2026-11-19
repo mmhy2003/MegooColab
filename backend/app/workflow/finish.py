@@ -58,6 +58,10 @@ from app.workflow.models import (
 
 MAX_BRANCH = 200
 MAX_PR_URL = 500
+KINDS = ("new", "base", "flaky")
+MAX_FAILURES = 20
+MAX_FAILURE_NAME = 300
+MAX_DIAGNOSIS = 2000
 
 BRANCH_PUSHED = "branch_pushed"
 FINISH_NUDGE = "Re-verify the tests, perform the finishing option, then call report_finish."
@@ -181,11 +185,12 @@ async def finish_workflow(db: AsyncSession, wf: TaskWorkflow, task: Task, actor_
 
 async def report_finish(
     db: AsyncSession, run: AgentRun, outcome: str, branch: str, pr_url: str | None, tests_passed: bool,
-    back_merge_branch: str | None = None, back_merge_pr_url: str | None = None,
+    back_merge_branch: str | None = None, back_merge_pr_url: str | None = None, failures=None, failing_total=None,
 ) -> None:
     """A finish run reports how it finished (MCP tool in Task 11). A later report from the same run replaces it.
     A production fix (the task's back_merge_into is set) also reports its back-merge: the branch, and for a pull
-    request its URL; keep_branch delivers nothing, so takes none. The caller commits."""
+    request its URL; keep_branch delivers nothing, so takes none. With failing tests it lists them (MC-97).
+    The caller commits."""
     wf, task = await build.lock_run_role(db, run, (RunRole.finish,))
     project = await db.get(Project, task.project_id)
     option = engine.finishing_option(project, wf)
@@ -197,6 +202,10 @@ async def report_finish(
     if not isinstance(tests_passed, bool) or not isinstance(branch, str) or (
         pr_url is not None and not isinstance(pr_url, str)
     ):
+        raise _422("invalid_finish_result")
+    clean = _clean_failures(failures, required=False)
+    total = _clean_total(failing_total, len(clean))
+    if tests_passed and (clean or total is not None):
         raise _422("invalid_finish_result")
     branch = strip_nul(branch)
     if len(branch) > MAX_BRANCH:
@@ -214,9 +223,14 @@ async def report_finish(
         pr_url = None
     back_merge_branch, back_merge_pr_url = _back_merge(task, option, outcome, back_merge_branch, back_merge_pr_url)
     run.step_result = {"outcome": outcome, "branch": branch, "pr_url": pr_url, "tests_passed": tests_passed,
-                       "back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url}
+                       "back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url,
+                       "failures": clean, "failing_total": total}
     wf.branch, wf.pr_url, wf.finish_outcome = branch or None, pr_url, outcome
     wf.back_merge_branch, wf.back_merge_pr_url = back_merge_branch, back_merge_pr_url
+    if tests_passed:
+        wf.finish_tests = None
+    else:
+        _store_failures(wf, clean, total, None, delivered=True)
     reported = {"outcome": outcome, "branch": branch, "pr_url": pr_url, "tests_passed": tests_passed}
     if back_merge_branch:  # a production fix's second delivery
         reported |= {"back_merge_branch": back_merge_branch, "back_merge_pr_url": back_merge_pr_url}
@@ -227,6 +241,71 @@ async def report_finish(
         await git.track_pr(db, task, pr_url)
     if back_merge_pr_url:
         await git.track_pr(db, task, back_merge_pr_url, kind=PR_BACK_MERGE)
+
+
+async def report_test_failures(
+    db: AsyncSession, run: AgentRun, failures, diagnosis, failing_total=None,
+) -> None:
+    """A finish run delivered nothing: it reports the failing tests a person must decide on (MC-97). It replaces
+    the run's earlier result, and a later report_finish replaces it in turn. The handler records the event. The
+    caller commits."""
+    wf, _ = await build.lock_run_role(db, run, (RunRole.finish,))
+    clean = _clean_failures(failures, required=True)
+    total = _clean_total(failing_total, len(clean))
+    text = _clean_diagnosis(diagnosis)
+    run.step_result = {"test_failures": clean, "failing_total": total, "diagnosis": text}
+    _store_failures(wf, clean, total, text, delivered=False)
+
+
+def _clean_failures(value, *, required: bool) -> list[dict]:
+    """The agent's failing tests: [{name, kind}], at most 20; refused when malformed (invalid_finish_result) or
+    oversize (too_large)."""
+    if value is None and not required:
+        return []
+    if not isinstance(value, list):
+        raise _422("invalid_finish_result")
+    if len(value) > MAX_FAILURES:
+        raise _422("too_large")
+    out = []
+    for entry in value:
+        name = entry.get("name") if isinstance(entry, dict) else None
+        kind = entry.get("kind") if isinstance(entry, dict) else None
+        if not isinstance(name, str) or kind not in KINDS:
+            raise _422("invalid_finish_result")
+        name = strip_nul(name).strip()
+        if not name:
+            raise _422("invalid_finish_result")
+        if len(name) > MAX_FAILURE_NAME:
+            raise _422("too_large")
+        out.append({"name": name, "kind": kind})
+    if required and not out:
+        raise _422("invalid_finish_result")
+    return out
+
+
+def _clean_total(value, listed: int) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < listed:
+        raise _422("invalid_finish_result")
+    return value
+
+
+def _clean_diagnosis(value) -> str:
+    if not isinstance(value, str) or not strip_nul(value).strip():
+        raise _422("invalid_finish_result")
+    value = strip_nul(value).strip()
+    if len(value) > MAX_DIAGNOSIS:
+        raise _422("too_large")
+    return value
+
+
+def _store_failures(wf, failures, failing_total, diagnosis, *, delivered: bool) -> None:
+    """A new report replaces the stored one. An acceptance is kept until the finish handler compares it with the report.
+    Always a new dict: the JSONB column does not track changes in place."""
+    kept = {k: v for k, v in (wf.finish_tests or {}).items() if k in ("accepted_by", "accepted_at", "accepted")}
+    wf.finish_tests = {"failures": failures, "failing_total": failing_total, "diagnosis": diagnosis,
+                       "delivered": delivered, "settled": None, **kept}
 
 
 def _pr_url(url: str, missing: str) -> str:
