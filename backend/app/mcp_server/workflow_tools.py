@@ -218,6 +218,7 @@ def register_workflow_tools(mcp: MCPServer) -> None:
             return {
                 "kind": str(doc.kind), "version": doc.version, "status": str(doc.status), "body_md": doc.body_md,
                 "steps": list(doc.steps) if doc.steps is not None else None,
+                "follow_ups": list(doc.follow_ups or []),
                 "decision_comment": doc.decision_comment,
                 "decided_by": str(doc.decided_by) if doc.decided_by else None,
             }
@@ -302,12 +303,21 @@ def register_workflow_tools(mcp: MCPServer) -> None:
             return {"id": str(row.id), "passed": row.passed}
 
     @mcp.tool()
-    async def submit_design(key: str, markdown: str) -> dict[str, Any]:
-        """Submit your design (markdown, at most 200,000 characters) for a human's approval."""
+    async def submit_design(
+        key: str, markdown: str, follow_ups: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        """Submit your design (markdown, at most 200,000 characters) for a human's approval. `follow_ups`: only
+        when the person agreed to split the work into phases, up to 10 tasks for the later phases, each {title,
+        type (story, task or bug), description_md}. Pass the full list with every version: leaving it out
+        proposes none. Nothing is created until a person approves the design, and they can change the list
+        first."""
         async with tool_session() as (db, user):
             task = await _task(db, user, key, "submit_design", write=True)
-            doc = await _submit(db, user, task, DocKind.design, markdown, None)
-            return {"kind": str(doc.kind), "version": doc.version, "status": str(doc.status)}
+            doc = await _submit(db, user, task, DocKind.design, markdown, None, follow_ups)
+            return {
+                "kind": str(doc.kind), "version": doc.version, "status": str(doc.status),
+                "follow_ups": len(doc.follow_ups),
+            }
 
     @mcp.tool()
     async def submit_plan(key: str, markdown: str, steps: list[dict[str, Any]]) -> dict[str, Any]:
@@ -403,9 +413,10 @@ async def _record_target(db: AsyncSession, user: User, task: Task) -> tuple[Agen
 
 
 async def _submit(
-    db: AsyncSession, user: User, task: Task, kind: DocKind, markdown: str, steps: list[dict] | None
+    db: AsyncSession, user: User, task: Task, kind: DocKind, markdown: str, steps: list[dict] | None,
+    follow_ups: list[dict] | None = None,
 ) -> WorkflowDocument:
     if current_run.get() is not None:
-        return await documents.submit(db, await live_run(db, task), task, kind, markdown, steps)
+        return await documents.submit(db, await live_run(db, task), task, kind, markdown, steps, follow_ups)
     wf = await engine.lock_connect_only(db, user, task)
-    return await documents.submit_connect_only(db, wf, task, kind, markdown, steps)
+    return await documents.submit_connect_only(db, wf, task, kind, markdown, steps, follow_ups)
