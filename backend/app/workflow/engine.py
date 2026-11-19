@@ -385,6 +385,14 @@ def requires_human_review(project: Project, wf: TaskWorkflow) -> bool:
     return pr_review_mode(project, wf) != PrReview.none
 
 
+def tolerates_known(project: Project, wf: TaskWorkflow) -> bool:
+    """MC-97: whether a finish goes on when its only failing tests are known ones (failing on the start commit, or
+    flaky). Frozen when the Done stage began; a row from before falls back to the project's setting."""
+    if wf.stage == Stage.done and wf.finish_tolerates_known is not None:
+        return wf.finish_tolerates_known
+    return project.tolerate_known_test_failures
+
+
 def pr_review_mode(project: Project, wf: TaskWorkflow) -> PrReview:
     """Who reviews the pull request: frozen when the Done stage began, else the project's setting. A row frozen
     before piece 4 has only the yes/no: yes was a person."""
@@ -449,8 +457,12 @@ async def enqueue(
     key_override = "design_revision" if role == RunRole.brainstorm and wf.stage == Stage.design else None
     extra = None
     if role == RunRole.finish:
-        option = finishing_option(await db.get(Project, task.project_id), wf)
-        extra = [f"## Finishing\nFinishing option: {option.value}\n{delivery_lines(task)}"]
+        project = await db.get(Project, task.project_id)
+        option = finishing_option(project, wf)
+        known = "tolerated" if tolerates_known(project, wf) else "not tolerated"
+        extra = [
+            f"## Finishing\nFinishing option: {option.value}\n{delivery_lines(task)}\nKnown failing tests: {known}"
+        ]
     if role == RunRole.pr_fix:
         from app.git import send_back  # local: the git modules import this one
 

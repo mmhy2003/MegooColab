@@ -5,9 +5,11 @@ from fastapi import HTTPException
 
 from app.agent_runs.models import AgentRun
 from app.core.db import SessionLocal
-from app.workflow import finish
+from app.workflow import engine, finish
 from tests.workflow.test_engine import _wf
-from tests.workflow.test_review_done import PR_URL, _report, _to_finish
+from tests.workflow.test_build import _last, _review
+from tests.workflow.test_engine import _finish
+from tests.workflow.test_review_done import PR_URL, _final_review, _patch_project, _report, _to_finish
 
 NEW = {"name": "e2e/a.spec.ts:3", "kind": "new"}
 BASE = {"name": "e2e/mobile.spec.ts:98", "kind": "base"}
@@ -101,3 +103,56 @@ async def test_report_test_failures_replaces_the_runs_result(db, tc_factory):
         "failures": [BASE], "failing_total": None, "diagnosis": "Only the mobile test.", "delivered": False,
         "settled": None,
     }
+
+
+async def test_the_known_failures_line_is_in_the_finish_prompt(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    _, run = await _to_finish(db, tc)
+    assert "Known failing tests: tolerated" in run.prompt
+
+
+async def test_the_setting_is_frozen_when_done_begins(db, tc_factory):
+    from app.projects.models import Project
+    from app.tasks.models import Task
+
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    _patch_project(tc, tolerate_known_test_failures=False)
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    run = await _last(b.task_id)
+    assert "Known failing tests: not tolerated" in run.prompt
+    assert (await _wf(b.task_id)).finish_tolerates_known is False
+    _patch_project(tc, tolerate_known_test_failures=True)
+    wf = await _wf(b.task_id)
+    async with SessionLocal() as s:
+        project = await s.get(Project, (await s.get(Task, b.task_id)).project_id)
+        assert project.tolerate_known_test_failures is True
+        assert engine.tolerates_known(project, wf) is False
+
+
+def test_a_row_from_before_falls_back_to_the_project():
+    """A Done-stage row frozen before the setting existed follows the project's setting."""
+    from app.projects.models import Project
+    from app.workflow.models import Stage, TaskWorkflow
+
+    project = Project(key="PAY", name="P", tolerate_known_test_failures=False)
+    assert engine.tolerates_known(project, TaskWorkflow(stage=Stage.done, finish_tolerates_known=None)) is False
+    assert engine.tolerates_known(project, TaskWorkflow(stage=Stage.done, finish_tolerates_known=True)) is True
+    assert engine.tolerates_known(project, TaskWorkflow(stage=Stage.review, finish_tolerates_known=True)) is False
+
+
+async def test_enter_done_clears_finish_tests(db, tc_factory):
+    from app.workflow.models import TaskWorkflow
+
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    async with SessionLocal() as s:
+        wf = await s.get(TaskWorkflow, b.task_id)
+        wf.finish_tests = {"failures": [NEW], "failing_total": None, "diagnosis": None, "delivered": True,
+                           "settled": None}
+        await s.commit()
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    wf = await _wf(b.task_id)
+    assert (wf.stage, wf.finish_tests) == ("done", None)

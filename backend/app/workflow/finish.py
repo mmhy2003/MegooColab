@@ -153,10 +153,13 @@ async def enter_done(db: AsyncSession, wf: TaskWorkflow, task: Task, *, requeste
     await engine.set_stage(db, wf, task, Stage.done)
     project = await db.get(Project, task.project_id)
     # Frozen for the whole Done stage, so a project setting changed meanwhile cannot change this run. The task's
-    # override is overwritten on purpose: set_finishing is refused from here on, so it has served its purpose.
+    # override is overwritten on purpose: set_finishing is refused from here on, so it has served its purpose. The
+    # known-failures setting (MC-97) is frozen too, and an earlier finish's failing tests are cleared.
     wf.finishing_override = engine.finishing_option(project, wf)
     wf.finish_pr_review = project.pr_review
     wf.finish_requires_human_review = project.pr_review != "none"
+    wf.finish_tolerates_known = project.tolerate_known_test_failures
+    wf.finish_tests = None
     wf.review_round = 0
     wf.nudged = False
     await engine.enqueue(db, wf, task, RunRole.finish, requested_by=requested_by)
@@ -353,28 +356,34 @@ async def _plain_git(db: AsyncSession, project_id: uuid.UUID) -> bool:
     return hosted is None
 
 
+async def _move_on(db: AsyncSession, wf: TaskWorkflow, task: Task) -> None:
+    """The finish is settled: wait for the pull request when its review or a back-merge requires it, else
+    finished."""
+    project = await db.get(Project, task.project_id)
+    # a production fix waits for both pull requests to merge, whether or not review is required
+    waits = engine.requires_human_review(project, wf) or bool(
+        wf.back_merge_pr_url and wf.finish_outcome == OUTCOME_OF[FinishingOption.pull_request]
+    )
+    if waits and engine.finishing_option(project, wf) == FinishingOption.pull_request:
+        from app.git import service as git  # local: git imports the workflow
+
+        agent_reviews = engine.pr_review_mode(project, wf) == PrReview.agent
+        await engine.wait_for(db, wf, Needs.human_code_review, notify=not agent_reviews)
+        # a tracked pull request merged (or closed) before this run ended moves on at once; else an agent reviews
+        # it when the project asks for one (piece 4)
+        if not await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):
+            from app.git import agent_review  # local: git imports the workflow
+
+            await agent_review.review_if_agent(db, wf, task)
+    else:
+        await finish_workflow(db, wf, task, None)
+
+
 async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
     if await _asked_or_answered(db, wf, task, run):
         return
     if (run.step_result or {}).get("tests_passed") is True:
-        project = await db.get(Project, task.project_id)
-        # a production fix waits for both pull requests to merge, whether or not review is required
-        waits = engine.requires_human_review(project, wf) or bool(
-            wf.back_merge_pr_url and wf.finish_outcome == OUTCOME_OF[FinishingOption.pull_request]
-        )
-        if waits and engine.finishing_option(project, wf) == FinishingOption.pull_request:
-            from app.git import service as git  # local: git imports the workflow
-
-            agent_reviews = engine.pr_review_mode(project, wf) == PrReview.agent
-            await engine.wait_for(db, wf, Needs.human_code_review, notify=not agent_reviews)
-            # a tracked pull request merged (or closed) before this run ended moves on at once; else an agent reviews
-            # it when the project asks for one (piece 4)
-            if not await git.settle_done(db, wf, task, await git.pull_requests_of_task(db, task.id)):
-                from app.git import agent_review  # local: git imports the workflow
-
-                await agent_review.review_if_agent(db, wf, task)
-        else:
-            await finish_workflow(db, wf, task, None)
+        await _move_on(db, wf, task)
         return
     if not wf.nudged:
         wf.nudged = True
