@@ -13,7 +13,7 @@ const mockup = (version: number) => ({
   created_at: `2026-10-27T10:0${version}:00Z`,
 });
 
-const doc = (version: number, status: string, mockup_id: string | null) => ({
+const doc = (version: number, status: string, mockup_id: string | null, follow_up_count = 0) => ({
   kind: "design",
   version,
   status,
@@ -21,6 +21,7 @@ const doc = (version: number, status: string, mockup_id: string | null) => ({
   decided_by: null,
   decision_comment: null,
   mockup_id,
+  follow_up_count,
 });
 
 type State = {
@@ -135,6 +136,27 @@ describe("MockupPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "v2" }));
     expect(screen.getByText("Older version")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve this version" })).toBeNull();
+  });
+
+  it("asks to review follow-ups instead of approving", async () => {
+    const target = document.createElement("div");
+    target.id = "document-design";
+    const scrollIntoView = vi.fn();
+    target.scrollIntoView = scrollIntoView;
+    document.body.appendChild(target);
+    try {
+      const { posts } = setup({
+        mockups: [mockup(1)],
+        workflow: { status: "waiting_human", needs: "design_approval" },
+        documents: [doc(1, "submitted", "m1", 2)],
+      });
+      fireEvent.click(await screen.findByRole("button", { name: "Review follow-up tasks (2)" }));
+      expect(screen.queryByRole("button", { name: "Approve this version" })).toBeNull();
+      expect(scrollIntoView).toHaveBeenCalled();
+      expect(posts()).toEqual([]);
+    } finally {
+      target.remove();
+    }
   });
 
   it("offers no approval to someone who cannot act", async () => {

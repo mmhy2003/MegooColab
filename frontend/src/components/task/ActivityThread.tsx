@@ -190,6 +190,8 @@ export function describeEvent(
       return `asked ${str(data.target_key) ?? "another project"} a question (Q${num(data.number)})`;
     case "question_answered":
       return `${str(data.target_key) ?? "Another project"} answered Q${num(data.number)}`;
+    case "follow_up_created":
+      return `created follow-up ${str(data.key) ?? "a task"}: ${str(data.title) ?? ""}`;
     default:
       return describeWorkflowEvent(kind, data) ?? describeAgentEvent(kind, data, byPerson) ?? kind;
   }
@@ -481,6 +483,14 @@ export function ActivityThread({
               )}
               {`: ${str(data.title) ?? ""}`}
               {data.type === "epic" && <span className="ml-1 rounded border border-violet px-1 text-violet">epic</span>}
+            </EventRow>
+          );
+        }
+        if (kind === "follow_up_created") {
+          return (
+            <EventRow key={item.id} at={item.at} lead={actor} text="created follow-up ">
+              <TaskKey value={str(data.key)} />
+              {`: ${str(data.title) ?? ""}`}
             </EventRow>
           );
         }

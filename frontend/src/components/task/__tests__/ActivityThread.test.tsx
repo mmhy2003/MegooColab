@@ -63,6 +63,14 @@ describe("ActivityThread", () => {
     expect(container.querySelector("b")).toBeNull();
   });
 
+  it("links a follow-up created on approval", () => {
+    const created: ActivityItem = { type: "event", id: "e11", at: "2026-10-22T10:10:00Z", actor, kind: "follow_up_created",
+      data: { key: "PAY-13", title: "Phase 2: refunds", task_id: "t13", type: "story", design_version: 2 } };
+    render(<ActivityThread items={[created]} columnNames={columnNames} userNames={userNames} />);
+    expect(screen.getByRole("listitem").textContent).toContain("Ahmed Ali created follow-up PAY-13: Phase 2: refunds");
+    expect(screen.getByRole("link", { name: "PAY-13" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-13");
+  });
+
   it("marks edited comments", () => {
     const edited: ActivityItem = { ...items[1], id: "c2", edited_at: "2026-10-22T11:00:00Z" };
     render(<ActivityThread items={[edited]} columnNames={columnNames} userNames={userNames} />);
