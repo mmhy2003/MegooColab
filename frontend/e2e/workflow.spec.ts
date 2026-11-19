@@ -27,7 +27,7 @@ import {
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
 const AGENT_NAME = `${ADMIN.name}'s Claude Code`;
 const KEY = "WFL-1";
-const PROBE_KEY = "WFL-4"; // after WFL-1's plan subtasks, WFL-2 and WFL-3
+const PROBE_KEY = "WFL-6"; // after WFL-1's follow-ups (WFL-2, WFL-3) and plan subtasks (WFL-4, WFL-5)
 const PR_URL = "https://example.test/pr/1";
 const BRANCH = "megoo/WFL-1-add-a-greeting";
 
@@ -110,7 +110,15 @@ const SCENARIO = [
       }),
     ),
   ),
-  onPrompt(ANSWERED, mcp("submit_design", { key: KEY, markdown: "# Greeting design\n\nGreet people with a friendly Hi there!" })),
+  onPrompt(ANSWERED, mcp("submit_design", {
+      key: KEY,
+      markdown: "# Greeting design\n\nGreet people with a friendly Hi there!",
+      follow_ups: [
+        { title: "Add a farewell", type: "story", description_md: "Say goodbye too." },
+        { title: "Translate the greeting", type: "task", description_md: "French and Spanish." },
+      ],
+    }),
+  ),
   onPrompt(
     PLAN,
     mcp("submit_plan", {
@@ -377,8 +385,37 @@ test("workflow end to end", async ({ browser }) => {
   expect(asked.session_events![0]).toMatch(/^new:fake-session-\d+$/);
   expect(resumed.session_events).toEqual([asked.session_events![0].replace(/^new:/, "resume:")]);
   expect(resumed.prompts![0]).toContain("Chosen: Friendly");
+  // MC-81: the design proposes two follow-up tasks; the person unticks one and adds another before approving
+  const followUps = designSection.getByRole("region", { name: "Follow-up tasks" });
+  await expect(followUps.getByLabel("Title of task 1")).toHaveValue("Add a farewell");
+  await followUps.getByLabel("Create task 2").uncheck();
+  await followUps.getByRole("button", { name: "+ Add a task" }).click();
+  await followUps.getByLabel("Title of task 3").fill("Greeting docs");
+  await expect(designSection.getByText("Approving creates 2 tasks in Backlog, unassigned.")).toBeVisible();
   await designSection.getByRole("button", { name: "Approve" }).click();
   await expect(drawer.getByText("approved the design v1")).toBeVisible();
+  await expect(drawer.getByText(/created follow-up WFL-2: Add a farewell/)).toBeVisible();
+  await expect(drawer.getByText(/created follow-up WFL-3: Greeting docs/)).toBeVisible();
+  type Sub = { key: string; title: string; type: string; parent_id: string | null };
+  type Created = Sub & { assignee_user_id: string | null; assignee_agent_id: string | null };
+  const afterDesign: Created[] = await (await page.request.get("/api/projects/WFL/tasks")).json();
+  const created = afterDesign
+    .filter((t) => t.key === "WFL-2" || t.key === "WFL-3")
+    .map((t) => [t.key, t.type, t.title, t.parent_id, t.assignee_user_id, t.assignee_agent_id]);
+  expect(created.sort()).toEqual([
+    ["WFL-2", "story", "Add a farewell", null, null, null],
+    ["WFL-3", "task", "Greeting docs", null, null, null],
+  ]);
+  expect(afterDesign.some((t) => t.title === "Translate the greeting")).toBe(false);
+  const origin: { description_md: string } = await (await page.request.get(`/api/tasks/${KEY}`)).json();
+  const scopeNote =
+    "Scope: phase 1 of 3 (per the [approved design](/projects/WFL/tasks/1#document-design-v1)). " +
+    "Phases 2–3 → [WFL-2](/projects/WFL/tasks/2), [WFL-3](/projects/WFL/tasks/3).";
+  expect(origin.description_md.slice(-scopeNote.length)).toBe(scopeNote);
+  const farewell: { description_md: string } = await (await page.request.get("/api/tasks/WFL-2")).json();
+  const backlink =
+    "Follow-up of [WFL-1](/projects/WFL/tasks/1), from its [approved design (v1)](/projects/WFL/tasks/1#document-design-v1).";
+  expect(farewell.description_md.slice(-backlink.length)).toBe(backlink);
   // WF-9: the approved design is filed in the project's Knowledge Base, written by the agent
   type Filed = { kb_documents: { kind: string; document_id: string }[] };
   const filedWf: Filed = await (await page.request.get(`/api/tasks/${KEY}/workflow`)).json();
@@ -404,13 +441,12 @@ test("workflow end to end", async ({ browser }) => {
   await expect(drawer.getByText("approved the plan v2")).toBeVisible();
   await expect(drawer.getByText("Subtasks (0/2)")).toBeVisible();
   await expect(drawer.getByText("Write the greeting").first()).toBeVisible();
-  type Sub = { key: string; title: string; type: string; parent_id: string | null };
   const all: (Sub & { id: string })[] = await (await page.request.get("/api/projects/WFL/tasks")).json();
   const parentId = all.find((t) => t.key === KEY)!.id;
   const subs = all.filter((t) => t.parent_id === parentId).map((t) => [t.key, t.type, t.title]);
   expect(subs.sort()).toEqual([
-    ["WFL-2", "subtask", "Step 1: Write the greeting"],
-    ["WFL-3", "subtask", "Step 2: Wire it up"],
+    ["WFL-4", "subtask", "Step 1: Write the greeting"],
+    ["WFL-5", "subtask", "Step 2: Wire it up"],
   ]);
   // Build starts with step 1, whose implement run holds for 4 s (see the scenario)
   await expect(card.getByText("1 of 2 steps")).toBeVisible({ timeout: 15_000 });
@@ -522,8 +558,8 @@ test("workflow end to end", async ({ browser }) => {
     headers: { "X-Megoo-Client": "web" },
   });
   expect(probeAssigned.ok()).toBeTruthy();
-  await drag(page, /WFL-4 Mockup sandbox probe/, "To Do", "In Progress");
-  const probeCard = column(page, "In Progress").getByRole("button", { name: /WFL-4 Mockup sandbox probe/ });
+  await drag(page, /WFL-6 Mockup sandbox probe/, "To Do", "In Progress");
+  const probeCard = column(page, "In Progress").getByRole("button", { name: /WFL-6 Mockup sandbox probe/ });
   await expect(probeCard.getByText("NEEDS YOU")).toBeVisible({ timeout: 30_000 });
   await probeCard.click();
   const probeDrawer = page.getByRole("dialog", { name: PROBE_KEY });
