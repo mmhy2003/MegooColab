@@ -31,13 +31,13 @@ async def _updates(client, db, monkeypatch, *, role: Role, app_version: str) -> 
 
 async def test_an_admin_is_told_of_a_newer_server(client, db, monkeypatch, stored):
     body = await _updates(client, db, monkeypatch, role=Role.admin, app_version="0.1.0")
-    assert body == {"app": {"current": "0.1.0", "latest": "0.2.0", "url": APP_URL},
+    assert body == {"app_version": "0.1.0", "app": {"current": "0.1.0", "latest": "0.2.0", "url": APP_URL},
                     "runner": {"latest": "0.1.1", "url": RUNNER_URL}}
 
 
 async def test_a_member_is_not_told_of_the_server(client, db, monkeypatch, stored):
     body = await _updates(client, db, monkeypatch, role=Role.member, app_version="0.1.0")
-    assert body == {"app": None, "runner": {"latest": "0.1.1", "url": RUNNER_URL}}
+    assert body == {"app_version": "0.1.0", "app": None, "runner": {"latest": "0.1.1", "url": RUNNER_URL}}
 
 
 @pytest.mark.parametrize("app_version", ["dev", "0.2.0", "0.3.0"])
@@ -49,7 +49,20 @@ async def test_no_pill_from_source_or_when_up_to_date(client, db, monkeypatch, s
 async def test_nothing_known_yet(client, db, monkeypatch):
     db.add(OrgSettings(id=ORG_SETTINGS_ID, name="Acme"))
     await db.commit()
-    assert await _updates(client, db, monkeypatch, role=Role.admin, app_version="0.1.0") == {"app": None, "runner": None}
+    assert await _updates(client, db, monkeypatch, role=Role.admin, app_version="0.1.0") == {
+        "app_version": "0.1.0", "app": None, "runner": None}
+
+
+@pytest.mark.parametrize("role", [Role.admin, Role.member])
+@pytest.mark.parametrize("app_version", ["dev", "0.2.0", "0.24.0-dev+abc"])
+async def test_everyone_gets_the_running_version(client, db, monkeypatch, stored, role, app_version):
+    body = await _updates(client, db, monkeypatch, role=role, app_version=app_version)
+    assert body["app_version"] == app_version
+
+
+async def test_the_version_comes_before_the_organization_is_set_up(client, db, monkeypatch):
+    assert await _updates(client, db, monkeypatch, role=Role.member, app_version="0.1.0") == {
+        "app_version": "0.1.0", "app": None, "runner": None}
 
 
 async def test_an_agent_carries_its_runners_version(client, db, monkeypatch):
