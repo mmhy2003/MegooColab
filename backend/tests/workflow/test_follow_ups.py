@@ -1,16 +1,21 @@
 """Follow-up tasks a design proposes (MC-81): what the agent submits and what the person approves."""
 
+import uuid
+
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.auth.models import User
+from app.chats.models import Chat
 from app.core.db import SessionLocal
 from app.tasks.models import Task, TaskLink
 from app.workflow import follow_ups
 from app.workflow.follow_ups import backlink, clean_proposed, clean_reviewed
 from app.workflow.models import DocKind, DocStatus, WorkflowDocument
 from tests.agent_runs.test_dispatch import _task
+from tests.chats.helpers import start, world
+from tests.chats.test_chat_workflow import _round, _waiting_for
 from tests.workflow.test_documents import _decide, _docs, _submit
 from tests.workflow.test_engine import _events, _finish, _runs, _started, _wf
 
@@ -352,3 +357,31 @@ async def test_deleted_follow_up_drops_out_of_earlier(db, tc_factory):
         task = await s.get(Task, b.task_id)
         doc2 = WorkflowDocument(task_id=task.id, kind=DocKind.design, version=2, body_md="# v2")
         assert [t.id for t in await follow_ups.earlier(s, task, doc2)] == [phase3.id]
+
+
+# ---- a chat round (step 6) -------------------------------------------------------------------------------------
+
+async def test_chat_round_follow_ups(client, db):
+    await world(client, db)
+    chat = await start(client)
+    rnd = await _round(db, chat)
+    await _waiting_for(db, rnd, DocKind.design)
+    await db.execute(update(WorkflowDocument).where(WorkflowDocument.task_id == rnd.id)
+                     .values(follow_ups=clean_proposed(PROPOSED[:1])))
+    await db.commit()
+    key = chat["rounds"][0]["key"]
+    r = await client.post(f"/api/tasks/{key}/documents/design/1/decision",
+                          json={"approve": True, "follow_ups": _ticked((PROPOSED[0], True))})
+    assert r.status_code == 200, r.text
+
+    [new] = [t for t in await _others(rnd.id) if t.chat_id is None]
+    assert (new.title, new.in_chat, new.parent_id) == ("Phase 2: refunds", False, None)
+    async with SessionLocal() as s:
+        assert (await s.execute(select(TaskLink).where(TaskLink.source_id == rnd.id))).first() is None
+    title = (await db.get(Chat, uuid.UUID(chat["id"]))).title
+    assert new.description_md.endswith(f"\n\nFrom chat: [{title}](/chats/{chat['id']})")
+    assert (await _description(rnd.id)).endswith(
+        f"Scope: phase 1 of 2 (per the [approved design](/chats/{chat['id']})). Phase 2 → {_link(new)}."
+    )
+    [event] = await _events(rnd.id, "follow_up_created")
+    assert event.data["task_id"] == str(new.id)

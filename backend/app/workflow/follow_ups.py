@@ -82,14 +82,24 @@ async def _epic_id(db, task: Task) -> uuid.UUID | None:
     return parent.id if parent is not None and parent.type == TaskType.epic else None
 
 
+async def _chat(db, task: Task):
+    """The chat a round belongs to, else None."""
+    from app.chats.models import Chat  # local: the chats modules import the workflow
+
+    return await db.get(Chat, task.chat_id) if task.in_chat and task.chat_id else None
+
+
 async def create_on_approval(db, user: User, task: Task, doc: WorkflowDocument, reviewed: list[dict]) -> None:
     """Create the ticked entries of the approved design, in order: unassigned, in the first before-work column,
-    in the task's epic, each linked to the task and recorded on it. The approved version keeps the reviewed list,
-    with the created tasks' ids, and the task's description gets the scope note. Runs inside decide's transaction:
-    a failure undoes the approval too."""
+    in the task's epic, each linked to the task and recorded on it. A chat round's tasks get no epic and no link,
+    and point back at the chat. The approved version keeps the reviewed list, with the created tasks' ids, and the
+    task's description gets the scope note. Runs inside decide's transaction: a failure undoes the approval too."""
     project = await db.get(Project, task.project_id)
-    epic_id = await _epic_id(db, task)
-    tail = backlink(project.key, task.number, doc.version)
+    chat = await _chat(db, task)
+    if chat is not None:  # a round is not on the board: its tasks are plain board tasks
+        epic_id, tail = None, f"From chat: [{chat.title}](/chats/{chat.id})"
+    else:
+        epic_id, tail = await _epic_id(db, task), backlink(project.key, task.number, doc.version)
     entries, created = [], []
     for item in reviewed:
         entry = {"title": item["title"], "type": item["type"], "description_md": item["description_md"],
@@ -100,7 +110,8 @@ async def create_on_approval(db, user: User, task: Task, doc: WorkflowDocument, 
                 description_md=f"{item['description_md'].rstrip()}\n\n{tail}".lstrip(), parent_id=epic_id,
             ))
             await task_changed(db, new, "task.created")  # live boards show it
-            db.add(TaskLink(source_id=task.id, target_id=new.id, kind=LinkKind.relates))
+            if chat is None:
+                db.add(TaskLink(source_id=task.id, target_id=new.id, kind=LinkKind.relates))
             await record_event(db, task, user.id, "follow_up_created", {
                 "key": f"{project.key}-{new.number}", "title": new.title, "task_id": str(new.id),
                 "type": str(new.type), "design_version": doc.version,
@@ -110,7 +121,7 @@ async def create_on_approval(db, user: User, task: Task, doc: WorkflowDocument, 
         entries.append(entry)
     doc.follow_ups = entries  # a new list: edits inside nested dicts are not tracked
     if created:
-        await _write_scope_note(db, user, project, task, doc, created)
+        await _write_scope_note(db, user, project, task, doc, created, chat)
 
 
 def scope_note(phases: list[tuple[str, str]], design_link: str) -> str:
@@ -137,10 +148,11 @@ async def earlier(db, task: Task, doc: WorkflowDocument) -> list[Task]:
     return [found[i] for i in ids if i in found]
 
 
-async def _write_scope_note(db, user, project, task, doc, created: list[Task]) -> None:
+async def _write_scope_note(db, user, project, task, doc, created: list[Task], chat) -> None:
     phases = [(f"{project.key}-{t.number}", task_path(project.key, t.number))
               for t in [*await earlier(db, task, doc), *created]]
-    design_link = f"{task_path(project.key, task.number)}#document-design-v{doc.version}"
+    design_link = (f"/chats/{chat.id}" if chat is not None
+                   else f"{task_path(project.key, task.number)}#document-design-v{doc.version}")
     note = scope_note(phases, design_link)
     previous = await db.scalar(
         select(WorkflowDocument.scope_note)
