@@ -263,15 +263,14 @@ async def test_finished_workflow_moves_card_to_done(db, tc_factory):
     assert len([r for r in await _runs(b.task_id) if r.workflow_role == "finish"]) == 1
 
 
-async def test_finish_without_report_or_failing_tests_nudged_then_escalated(db, tc_factory):
+async def test_finish_without_report_nudged_then_escalated(db, tc_factory):
     tc = tc_factory(lifespan=True)
     b, run = await _to_finish(db, tc)
     await _finish(b.manager.id, run, "completed")
     nudge = await _last(b.task_id)
     assert nudge.workflow_role == "finish"
     assert nudge.prompt.rstrip().endswith("Re-verify the tests, perform the finishing option, then call report_finish.")
-    await _report(nudge, tests_passed=False)  # failing tests do not finish the workflow
-    await _finish(b.manager.id, nudge, "completed")
+    await _finish(b.manager.id, nudge, "completed")  # the nudge ends without a report too
     wf = await _wf(b.task_id)
     assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "escalation", "finish_incomplete")
     assert len([r for r in await _runs(b.task_id) if r.workflow_role == "finish"]) == 2
@@ -591,8 +590,8 @@ async def test_answer_given_while_paused_in_review_is_delivered_on_resume(db, tc
     assert (wf.stage, wf.status, wf.current_step) == ("review", "running", None)
 
 
-async def test_resume_after_a_failing_finish_report_runs_finish_again(db, tc_factory):
-    """A report with failing tests is no PR to approve: resume re-runs the finish role."""
+async def test_a_failing_finish_report_shows_the_card_and_pause_resume_returns_to_it(db, tc_factory):
+    """A report with failing tests is no PR to approve: it raises the card, and a pause keeps it."""
     tc = tc_factory(lifespan=True)
     b, review = await _final_review(db, tc)
     _patch_project(tc, pr_review="human")
@@ -601,13 +600,15 @@ async def test_resume_after_a_failing_finish_report_runs_finish_again(db, tc_fac
     run = await _last(b.task_id)
     await _report(run, tests_passed=False)
     await _finish(b.manager.id, run, "completed")
-    nudge = await _last(b.task_id)
-    assert nudge.id != run.id and nudge.workflow_role == "finish"
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "escalation", "finish_tests_failed")
+    count = len(await _runs(b.task_id))
     assert tc.post(f"/api/tasks/{b.key}/workflow/pause").json()["status"] == "paused"
     r = tc.post(f"/api/tasks/{b.key}/workflow/resume")
-    assert (r.json()["status"], r.json()["needs"]) == ("running", None)
-    again = await _last(b.task_id)
-    assert again.id != nudge.id and again.workflow_role == "finish"
+    assert r.status_code == 200, r.text
+    assert (r.json()["status"], r.json()["needs"], r.json()["escalation_reason"]) == (
+        "waiting_human", "escalation", "finish_tests_failed")
+    assert len(await _runs(b.task_id)) == count  # the finish agent does not run again
 
 
 def test_the_review_mode_is_frozen_at_done():

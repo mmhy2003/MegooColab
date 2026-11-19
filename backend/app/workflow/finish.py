@@ -47,12 +47,14 @@ from app.workflow.models import (
     Driver,
     FinishingOption,
     Needs,
+    QuestionStatus,
     ReviewScope,
     RunRole,
     Stage,
     StepReview,
     TaskWorkflow,
     Verdict,
+    WorkflowQuestion,
     WorkflowStatus,
 )
 
@@ -382,10 +384,14 @@ async def _move_on(db: AsyncSession, wf: TaskWorkflow, task: Task) -> None:
 async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
     if await _asked_or_answered(db, wf, task, run):
         return
-    if (run.step_result or {}).get("tests_passed") is True:
+    result = run.step_result or {}
+    if result.get("tests_passed") is True:
         await _move_on(db, wf, task)
-        return
-    if not wf.nudged:
+    elif "tests_passed" in result:  # delivered with failing tests
+        await _settle_delivered(db, wf, task, run)
+    elif "test_failures" in result:  # report_test_failures: nothing delivered
+        await _raise_card(db, wf, task, delivered=False)
+    elif not wf.nudged:
         wf.nudged = True
         await engine.rerun(
             db, wf, task, last=run, requested_by=await engine.owner_id(db, run), resume_kind="nudge",
@@ -393,6 +399,83 @@ async def _handle_finish(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Ag
         )
     else:
         await engine.escalate(db, wf, "finish_incomplete")
+
+
+def _needs_person(ft: dict, tolerated: bool) -> list[dict]:
+    """The failures a person must decide on: the new ones, or all of them when known ones are not tolerated or
+    the list does not name every failing test."""
+    failures = ft.get("failures") or []
+    complete = ft.get("failing_total") is None or ft["failing_total"] <= len(failures)
+    if not tolerated or not complete:
+        return failures
+    return [f for f in failures if f["kind"] == "new"]
+
+
+def _covered(ft: dict, tolerated: bool) -> bool:
+    """Every failure that needs a person was accepted on the card in this Done round (no names: any acceptance)."""
+    if not ft.get("accepted_by"):
+        return False
+    return {f["name"] for f in _needs_person(ft, tolerated)} <= set(ft.get("accepted") or [])
+
+
+async def _settle_delivered(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
+    """The finish delivered with failing tests: it moves on when they are known and tolerated, or accepted;
+    else the card."""
+    ft = wf.finish_tests or {"failures": [], "delivered": True}
+    project = await db.get(Project, task.project_id)
+    tolerated = engine.tolerates_known(project, wf)
+    failures = ft.get("failures") or []
+    if failures and not _needs_person(ft, tolerated):
+        wf.finish_tests = {**ft, "settled": "known"}
+        await engine.record_workflow_event(db, task, None, "finish.known_failures",
+                                           {"failures": failures, "start_branch": task.start_branch})
+    elif _covered(ft, tolerated):
+        wf.finish_tests = {**ft, "settled": "accepted"}
+    elif (answerer := await _answered_in_session(db, task, run)) is not None:
+        await _accept_names(db, wf, task, answerer, via="answer", settled="accepted")
+    else:
+        await _raise_card(db, wf, task, delivered=True)
+        return
+    await _move_on(db, wf, task)
+
+
+async def _answered_in_session(db: AsyncSession, task: Task, run: AgentRun) -> uuid.UUID | None:
+    """The person who answered a question of the finish session this run resumed: their answer let it deliver."""
+    if not run.resume_session_ref:
+        return None
+    return await db.scalar(
+        select(WorkflowQuestion.answered_by)
+        .join(AgentRun, AgentRun.id == WorkflowQuestion.run_id)
+        .where(WorkflowQuestion.task_id == task.id, WorkflowQuestion.status == QuestionStatus.answered,
+               AgentRun.workflow_role == RunRole.finish, AgentRun.session_ref == run.resume_session_ref)
+        .order_by(WorkflowQuestion.answered_at.desc())
+        .limit(1)
+    )
+
+
+async def _accept_names(
+    db: AsyncSession, wf: TaskWorkflow, task: Task, user_id: uuid.UUID, *, via: str, settled: str | None
+) -> None:
+    """Record who accepted which failing tests: on the workflow, an event and an audit entry."""
+    ft = wf.finish_tests or {"failures": [], "delivered": True}
+    names = [f["name"] for f in ft.get("failures") or []]
+    wf.finish_tests = {**ft, "accepted_by": str(user_id), "accepted_at": datetime.now(UTC).isoformat(),
+                       "accepted": names, "settled": settled}
+    await engine.record_workflow_event(db, task, user_id, "finish.failures_accepted", {
+        "failures": ft.get("failures") or [], "failing_total": ft.get("failing_total"), "via": via})
+    await audit.record(db, "workflow.finish_failures_accepted", actor_id=user_id, target_type="task",
+                       target_id=task.id, data={"names": names, "failing_total": ft.get("failing_total"), "via": via})
+
+
+async def _raise_card(db: AsyncSession, wf: TaskWorkflow, task: Task, *, delivered: bool) -> None:
+    """The finish_tests_failed card: a person decides on the failing tests. An earlier acceptance is dropped."""
+    ft = {k: v for k, v in (wf.finish_tests or {"failures": []}).items()
+          if k not in ("accepted_by", "accepted_at", "accepted")}
+    wf.finish_tests = {**ft, "delivered": delivered, "settled": None}
+    await engine.record_workflow_event(db, task, None, "finish.tests_failed", {
+        "failures": ft.get("failures") or [], "failing_total": ft.get("failing_total"), "delivered": delivered,
+        "start_branch": task.start_branch})
+    await engine.escalate(db, wf, "finish_tests_failed")
 
 
 # ---- human decisions (WF-6) -------------------------------------------------------------------

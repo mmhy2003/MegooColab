@@ -2,14 +2,24 @@
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from app.agent_runs.models import AgentRun
+from app.audit.models import AuditLog
 from app.core.db import SessionLocal
+from app.tasks.models import Task
 from app.workflow import engine, finish
-from tests.workflow.test_engine import _wf
 from tests.workflow.test_build import _last, _review
-from tests.workflow.test_engine import _finish
-from tests.workflow.test_review_done import PR_URL, _final_review, _patch_project, _report, _to_finish
+from tests.workflow.test_engine import _events, _finish, _runs, _wf
+from tests.workflow.test_review_done import (
+    PR_URL,
+    _answer,
+    _ask,
+    _final_review,
+    _patch_project,
+    _report,
+    _to_finish,
+)
 
 NEW = {"name": "e2e/a.spec.ts:3", "kind": "new"}
 BASE = {"name": "e2e/mobile.spec.ts:98", "kind": "base"}
@@ -156,3 +166,167 @@ async def test_enter_done_clears_finish_tests(db, tc_factory):
     await _finish(b.manager.id, review, "completed")
     wf = await _wf(b.task_id)
     assert (wf.stage, wf.finish_tests) == ("done", None)
+
+
+# ---- what the finish handler does with failing tests (step 6) ------------------------------------
+
+
+async def _start_branch(task_id):
+    async with SessionLocal() as s:
+        return (await s.get(Task, task_id)).start_branch
+
+
+async def _finish_runs(task_id) -> list[AgentRun]:
+    return [r for r in await _runs(task_id) if r.workflow_role == "finish"]
+
+
+async def _card(task_id, *, delivered: bool):
+    wf = await _wf(task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "escalation", "finish_tests_failed")
+    assert (wf.finish_tests["delivered"], wf.finish_tests["settled"]) == (delivered, None)
+    [ev] = await _events(task_id, "finish.tests_failed")
+    assert ev.data["delivered"] is delivered and ev.actor_user_id is None
+    return wf, ev
+
+
+async def test_known_failures_finish_without_asking(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    await _fail_report(run, [BASE, FLAKY])
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("finished", None, None)
+    assert wf.finish_tests["settled"] == "known"
+    [ev] = await _events(b.task_id, "finish.known_failures")
+    assert ev.data == {"failures": [BASE, FLAKY], "start_branch": await _start_branch(b.task_id)}
+    assert await _events(b.task_id, "finish.tests_failed") == []
+    assert len(await _finish_runs(b.task_id)) == 1
+
+
+async def test_known_failures_wait_for_the_pr_when_review_is_required(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    _patch_project(tc, pr_review="human")
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    run = await _last(b.task_id)
+    await _fail_report(run, [BASE])
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "human_code_review", None)
+    assert wf.finish_tests["settled"] == "known"
+
+
+async def test_setting_off_puts_known_failures_on_the_card(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    _patch_project(tc, tolerate_known_test_failures=False)
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    run = await _last(b.task_id)
+    await _fail_report(run, [BASE, FLAKY])
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    _, ev = await _card(b.task_id, delivered=True)
+    assert ev.data["failures"] == [BASE, FLAKY]
+    assert await _events(b.task_id, "finish.known_failures") == []
+
+
+async def test_incomplete_list_is_never_tolerated(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    await _fail_report(run, [BASE], total=25)
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    _, ev = await _card(b.task_id, delivered=True)
+    assert (ev.data["failures"], ev.data["failing_total"]) == ([BASE], 25)
+
+
+async def test_new_failure_delivered_escalates_at_once(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    await _fail_report(run, [NEW, BASE])
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    _, ev = await _card(b.task_id, delivered=True)
+    assert ev.data == {"failures": [NEW, BASE], "failing_total": None, "delivered": True,
+                       "start_branch": await _start_branch(b.task_id)}
+    assert len(await _finish_runs(b.task_id)) == 1  # no nudge: it cannot change a delivered result
+    assert (await _wf(b.task_id)).nudged is False
+
+
+async def test_report_test_failures_escalates_not_delivered(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    await _test_failures(run, [NEW, FLAKY], total=3)
+    await _finish(b.manager.id, run, "completed", session_id="sess-t")
+    wf, ev = await _card(b.task_id, delivered=False)
+    assert wf.finish_tests["diagnosis"] == "It fails because the layout overflows."
+    assert (ev.data["failures"], ev.data["failing_total"]) == ([NEW, FLAKY], 3)
+    assert len(await _finish_runs(b.task_id)) == 1
+
+
+async def test_failing_report_without_names_escalates_card(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    await _report(run, tests_passed=False)
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    wf, ev = await _card(b.task_id, delivered=True)
+    assert wf.finish_tests["failures"] == [] and ev.data["failures"] == []
+    assert await _events(b.task_id, "finish.known_failures") == []
+
+
+async def test_answered_question_counts_as_acceptance(db, tc_factory):
+    """The task's "go ahead anyway": a person answered the finish session's question, so its delivery stands."""
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    qid = await _ask(b, run, "Two tests fail. Open the pull request anyway?")
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    assert (await _wf(b.task_id)).needs == "question"
+    await _answer(b, qid, "go ahead anyway")
+    resumed = await _last(b.task_id)
+    assert (resumed.workflow_role, resumed.resume_session_ref) == ("finish", "sess-f")
+    await _fail_report(resumed, [NEW])
+    await _finish(b.manager.id, resumed, "completed", session_id="sess-f")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.escalation_reason) == ("finished", None)
+    assert (wf.finish_tests["settled"], wf.finish_tests["accepted_by"], wf.finish_tests["accepted"]) == (
+        "accepted", str(b.manager.id), [NEW["name"]])
+    [ev] = await _events(b.task_id, "finish.failures_accepted")
+    assert ev.actor_user_id == b.manager.id
+    assert ev.data == {"failures": [NEW], "failing_total": None, "via": "answer"}
+    async with SessionLocal() as s:
+        [entry] = (await s.execute(
+            select(AuditLog).where(AuditLog.action == "workflow.finish_failures_accepted"))).scalars().all()
+        assert (entry.actor_user_id, entry.target_id) == (b.manager.id, b.task_id)
+        assert entry.data["via"] == "answer" and entry.data["names"] == [NEW["name"]]
+    assert await _events(b.task_id, "finish.tests_failed") == []
+
+
+async def test_an_answer_in_another_session_does_not_count(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    qid = await _ask(b, run)
+    await _finish(b.manager.id, run, "completed", session_id="sess-a")
+    await _answer(b, qid)
+    resumed = await _last(b.task_id)
+    assert resumed.resume_session_ref == "sess-a"
+    await _finish(b.manager.id, resumed, "completed", session_id="sess-a")  # no report: the nudge is fresh
+    nudge = await _last(b.task_id)
+    assert nudge.id != resumed.id and nudge.resume_session_ref is None
+    await _fail_report(nudge, [NEW])
+    await _finish(b.manager.id, nudge, "completed", session_id="sess-b")
+    wf, _ = await _card(b.task_id, delivered=True)
+    assert "accepted_by" not in wf.finish_tests
+    assert await _events(b.task_id, "finish.failures_accepted") == []
+
+
+async def test_no_report_still_nudges_then_finish_incomplete(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    nudge = await _last(b.task_id)
+    assert nudge.id != run.id and nudge.workflow_role == "finish"
+    assert nudge.prompt.rstrip().endswith(finish.FINISH_NUDGE)
+    await _finish(b.manager.id, nudge, "completed", session_id="sess-f")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason) == ("waiting_human", "escalation", "finish_incomplete")
+    assert wf.finish_tests is None
+    assert await _events(b.task_id, "finish.tests_failed") == []
