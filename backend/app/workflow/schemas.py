@@ -123,6 +123,7 @@ class DocumentInfo(BaseModel):
     decided_by: uuid.UUID | None
     decision_comment: str | None
     mockup_id: uuid.UUID | None = None  # designs: the mockup it was submitted with (approved with it)
+    follow_up_count: int = 0  # designs: how many follow-up tasks the version proposes
 
 
 class DocumentStepOut(BaseModel):
@@ -131,10 +132,31 @@ class DocumentStepOut(BaseModel):
     subtask_id: uuid.UUID | None
 
 
+class FollowUpOut(BaseModel):
+    title: str
+    type: str
+    description_md: str
+    created: bool
+    task_key: str | None  # None when not created, or created and deleted since
+
+
+class FollowUpRef(BaseModel):
+    key: str
+    title: str
+
+
+class FollowUpPlace(BaseModel):
+    column: str
+    epic: FollowUpRef | None
+
+
 class DocumentOut(DocumentInfo):
     body_md: str
     steps: list[DocumentStepOut] | None
     attached_mockup_ids: list[uuid.UUID]
+    follow_ups: list[FollowUpOut] = []
+    earlier_follow_ups: list[FollowUpRef] = []  # what earlier approved versions created
+    creates_in: FollowUpPlace | None = None  # a submitted design: where approving would create the tasks
 
 
 class FollowUpReviewIn(BaseModel):

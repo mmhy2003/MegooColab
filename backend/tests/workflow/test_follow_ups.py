@@ -10,7 +10,7 @@ from app.auth.models import User
 from app.chats.models import Chat
 from app.core.db import SessionLocal
 from app.tasks.models import Task, TaskLink
-from app.workflow import follow_ups
+from app.workflow import documents, follow_ups
 from app.workflow.follow_ups import backlink, clean_proposed, clean_reviewed
 from app.workflow.models import DocKind, DocStatus, WorkflowDocument
 from tests.agent_runs.test_dispatch import _task
@@ -385,3 +385,72 @@ async def test_chat_round_follow_ups(client, db):
     )
     [event] = await _events(rnd.id, "follow_up_created")
     assert event.data["task_id"] == str(new.id)
+
+
+# ---- the document API (step 7) ---------------------------------------------------------------------------------
+
+def _first_column(tc) -> str:
+    return min((c for c in tc.get("/api/projects/PAY/columns").json() if c["category"] == "before"),
+               key=lambda c: c["position"])["name"]
+
+
+async def test_document_out_while_submitted(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _design_with(db, tc)
+    [info] = [d for d in tc.get(f"/api/tasks/{b.key}/documents").json() if d["kind"] == "design"]
+    assert info["follow_up_count"] == 2
+
+    out = tc.get(f"/api/tasks/{b.key}/documents/design/1").json()
+    assert out["follow_ups"] == [{**e, "created": False, "task_key": None} for e in PROPOSED]
+    assert out["earlier_follow_ups"] == []
+    assert out["creates_in"] == {"column": _first_column(tc), "epic": None}
+
+    epic = _task(tc, b.agent, title="Payments", type="epic")
+    assert tc.patch(f"/api/tasks/{b.key}", json={"parent_id": epic["id"]}).status_code == 200
+    out = tc.get(f"/api/tasks/{b.key}/documents/design/1").json()
+    assert out["creates_in"]["epic"] == {"key": epic["key"], "title": "Payments"}
+
+
+async def test_document_out_after_approval(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _design_with(db, tc)
+    assert _approve(tc, b, 1, _ticked((PROPOSED[0], True), (PROPOSED[1], False))).status_code == 200
+    [phase2] = await _others(b.task_id)
+
+    out = tc.get(f"/api/tasks/{b.key}/documents/design/1").json()
+    assert out["follow_ups"] == [
+        {**PROPOSED[0], "created": True, "task_key": f"PAY-{phase2.number}"},
+        {**PROPOSED[1], "created": False, "task_key": None},
+    ]
+    assert out["creates_in"] is None
+
+    assert tc.delete(f"/api/tasks/PAY-{phase2.number}").status_code in (200, 204)
+    out = tc.get(f"/api/tasks/{b.key}/documents/design/1").json()
+    assert out["follow_ups"][0] == {**PROPOSED[0], "created": True, "task_key": None}
+
+
+async def test_earlier_follow_ups_listed(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _approved_with_note(db, tc)
+    phase2, phase3 = await _others(b.task_id)
+    async with SessionLocal() as s:
+        await documents.submit(s, None, await s.get(Task, b.task_id), "design", "# v2")
+        await s.commit()
+
+    out = tc.get(f"/api/tasks/{b.key}/documents/design/2").json()
+    assert out["earlier_follow_ups"] == [
+        {"key": f"PAY-{t.number}", "title": t.title} for t in (phase2, phase3)
+    ]
+    assert out["follow_ups"] == []
+
+
+async def test_plan_lists_no_follow_ups(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _approved_with_note(db, tc)
+    async with SessionLocal() as s:
+        await documents.submit(s, None, await s.get(Task, b.task_id), "plan", "# plan",
+                               steps=[{"title": "One", "detail": "Do it"}])
+        await s.commit()
+
+    out = tc.get(f"/api/tasks/{b.key}/documents/plan/1").json()
+    assert (out["follow_ups"], out["earlier_follow_ups"], out["creates_in"]) == ([], [], None)

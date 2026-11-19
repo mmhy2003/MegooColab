@@ -11,7 +11,7 @@ from app.core.text import strip_nul
 from app.projects.models import Project
 from app.tasks.models import LinkKind, Task, TaskLink, TaskType
 from app.tasks.schemas import TaskCreate, TaskUpdate
-from app.tasks.service import create_task, record_event, task_changed, update_task
+from app.tasks.service import create_task, first_before_column, record_event, task_changed, update_task
 from app.workflow.models import DocKind, DocStatus, WorkflowDocument
 
 MAX_FOLLOW_UPS = 10
@@ -146,6 +146,33 @@ async def earlier(db, task: Task, doc: WorkflowDocument) -> list[Task]:
         return []
     found = {t.id: t for t in (await db.execute(select(Task).where(Task.id.in_(ids)))).scalars()}
     return [found[i] for i in ids if i in found]
+
+
+async def entries_out(db, project_key: str, doc: WorkflowDocument) -> list[dict]:
+    """The version's follow-ups for the API: whether each was created, and its key while the task still exists."""
+    entries = doc.follow_ups or []
+    ids = [uuid.UUID(e["task_id"]) for e in entries if e.get("task_id")]
+    numbers = dict((await db.execute(select(Task.id, Task.number).where(Task.id.in_(ids)))).all()) if ids else {}
+    out = []
+    for e in entries:
+        number = numbers.get(uuid.UUID(e["task_id"])) if e.get("task_id") else None
+        out.append({"title": e["title"], "type": e["type"], "description_md": e["description_md"],
+                    "created": e.get("task_id") is not None,
+                    "task_key": f"{project_key}-{number}" if number is not None else None})
+    return out
+
+
+async def creates_in(db, task: Task, doc: WorkflowDocument) -> dict | None:
+    """A submitted design: the column and epic approving it would create its follow-up tasks in."""
+    if doc.kind != DocKind.design or doc.status != DocStatus.submitted:
+        return None
+    project = await db.get(Project, task.project_id)
+    column = await first_before_column(db, project)
+    epic = None
+    if await _chat(db, task) is None and (epic_id := await _epic_id(db, task)) is not None:
+        parent = await db.get(Task, epic_id)
+        epic = {"key": f"{project.key}-{parent.number}", "title": parent.title}
+    return {"column": column.name, "epic": epic}
 
 
 async def _write_scope_note(db, user, project, task, doc, created: list[Task], chat) -> None:
