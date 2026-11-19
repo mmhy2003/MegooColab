@@ -15,8 +15,8 @@ export function SoundSetting() {
   if (!supported) return null;
   return (
     <section aria-label="Sound" className="card mb-4 max-w-xl space-y-3 p-4 text-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-40 flex-1">
           <p className="font-semibold">{on ? "Sound is on in this browser" : "Sound is off in this browser"}</p>
           <p className="text-xs text-muted-foreground">
             {on
@@ -24,7 +24,7 @@ export function SoundSetting() {
               : "Turn it on to hear a short chime when a new notification arrives while MegooColab is open."}
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="ghost" onClick={playChime}>Play sound</Button>
           <Button variant={on ? "ghost" : "primary"} onClick={() => setOn(!on)}>
             {on ? "Turn off" : "Turn on"}
