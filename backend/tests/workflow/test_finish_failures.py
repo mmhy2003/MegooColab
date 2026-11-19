@@ -461,3 +461,24 @@ async def test_retry_clears_and_starts_a_fresh_finish(db, tc_factory):
 def test_accept_handlers_include_finish_tests_failed():
     assert engine.ACCEPT_HANDLERS["finish_tests_failed"] is finish._accept_tests_failed
     assert engine.RETRY_HANDLERS["finish_tests_failed"] is finish._retry_tests_failed
+
+
+# ---- The workflow API (step 8) ---------------------------------------------------------------------
+
+
+async def test_workflow_api_returns_finish_tests(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    assert tc.get(f"/api/tasks/{b.key}/workflow").json()["finish_tests"] is None
+    await _test_failures(run, [NEW, FLAKY], total=3)
+    await _finish(b.manager.id, run, "completed", session_id="sess-t")
+    assert tc.get(f"/api/tasks/{b.key}/workflow").json()["finish_tests"] == {
+        "failures": [NEW, FLAKY], "failing_total": 3, "diagnosis": "It fails because the layout overflows.",
+        "delivered": False, "settled": None, "accepted_by": None,
+    }
+    _decide(tc, b, "accept")
+    await _fail_report(await _last(b.task_id), [NEW])
+    await _finish(b.manager.id, await _last(b.task_id), "completed", session_id="sess-t")
+    ft = tc.get(f"/api/tasks/{b.key}/workflow").json()["finish_tests"]
+    assert (ft["failures"], ft["delivered"], ft["settled"], ft["accepted_by"]) == (
+        [NEW], True, "accepted", b.manager.name)
