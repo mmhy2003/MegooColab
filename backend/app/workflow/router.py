@@ -465,6 +465,7 @@ async def decide_document(
 ) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)
     await documents.decide(db, user, task, kind, version, body.approve, body.comment,
-                           [] if body.approve else body.image_ids)
+                           [] if body.approve else body.image_ids,
+                           follow_ups=None if body.follow_ups is None else [f.model_dump() for f in body.follow_ups])
     await engine.dispatch_queued(db)
     return await workflow_out(db, task, user)

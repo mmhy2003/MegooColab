@@ -19,7 +19,7 @@ from app.tasks.models import Task, TaskType
 from app.tasks.schemas import TaskCreate
 from app.tasks.service import create_task, first_before_column, task_changed
 from app.workflow import engine
-from app.workflow.follow_ups import clean_proposed
+from app.workflow.follow_ups import clean_proposed, clean_reviewed, create_on_approval
 from app.workflow.models import (
     DocKind,
     DocStatus,
@@ -167,7 +167,7 @@ async def submit_connect_only(
 
 async def decide(
     db, user: User, task: Task, kind: DocKind | str, version: int, approve: bool, comment: str | None,
-    images: Sequence[uuid.UUID] = (),
+    images: Sequence[uuid.UUID] = (), follow_ups: list[dict] | None = None,
 ) -> None:
     """A human approves or rejects the document (WF-6 roles). The first decision wins (409 already_decided)."""
     kind = DocKind(kind)
@@ -178,6 +178,8 @@ async def decide(
         raise _422("too_large")
     if not approve and not comment:
         raise _422("comment_required")
+    # checked before anything is written; a rejection or a plan ignores the list
+    reviewed = clean_reviewed(follow_ups) if approve and kind == DocKind.design and follow_ups is not None else None
     doc = (
         await db.execute(
             select(WorkflowDocument)
@@ -196,6 +198,8 @@ async def decide(
         raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")
     if wf is None or wf.status != WorkflowStatus.waiting_human or wf.needs != NEEDS_OF[kind]:
         raise HTTPException(status.HTTP_409_CONFLICT, "not_waiting_for_decision")
+    if approve and kind == DocKind.design and doc.follow_ups and reviewed is None:
+        raise _422("follow_ups_required")  # a page that never showed the list
 
     doc.status = DocStatus.approved if approve else DocStatus.rejected
     doc.decided_by = user.id
@@ -223,6 +227,8 @@ async def decide(
             requested_by=user.id,
         )
     elif kind == DocKind.design:
+        if reviewed is not None:
+            await create_on_approval(db, user, task, doc, reviewed)
         await engine.set_stage(db, wf, task, Stage.plan)  # the plan session is fresh
         await engine.hand_to_agent(db, wf, task, RunRole.plan, requested_by=user.id)
     else:

@@ -137,10 +137,19 @@ class DocumentOut(DocumentInfo):
     attached_mockup_ids: list[uuid.UUID]
 
 
+class FollowUpReviewIn(BaseModel):
+    """One row of the reviewed follow-up list sent with a design approval (MC-81); checked by the service."""
+    title: NoNulStr = ""
+    type: str = "task"
+    description_md: NoNulStr = ""
+    create: bool
+
+
 class DocumentDecisionIn(BaseModel):
     image_ids: list[uuid.UUID] = Field(default=[], max_length=6)  # unsent images (POST /api/images) a change request sends
     approve: bool
     comment: NoNulStr | None = None
+    follow_ups: list[FollowUpReviewIn] | None = None  # a design approval: the whole reviewed list, in order
 
 
 class Finding(BaseModel):
