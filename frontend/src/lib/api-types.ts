@@ -5591,6 +5591,40 @@ export interface components {
             /** Summary */
             summary: string;
         };
+        /** FinishFailureOut */
+        FinishFailureOut: {
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "new" | "base" | "flaky";
+        };
+        /**
+         * FinishTestsOut
+         * @description MC-97: the finish run's failing tests, as it reported them, and how the finish settled.
+         */
+        FinishTestsOut: {
+            /**
+             * Failures
+             * @default []
+             */
+            failures: components["schemas"]["FinishFailureOut"][];
+            /** Failing Total */
+            failing_total?: number | null;
+            /** Diagnosis */
+            diagnosis?: string | null;
+            /**
+             * Delivered
+             * @default false
+             */
+            delivered: boolean;
+            /** Settled */
+            settled?: ("known" | "accepted") | null;
+            /** Accepted By */
+            accepted_by?: string | null;
+        };
         /** FinishingIn */
         FinishingIn: {
             option: components["schemas"]["FinishingOption"] | null;
@@ -6838,6 +6872,8 @@ export interface components {
             pr_reviewer_agent_id: string | null;
             /** Send Back On Changes Requested */
             send_back_on_changes_requested: boolean;
+            /** Tolerate Known Test Failures */
+            tolerate_known_test_failures: boolean;
             /** Commit Docs To Repo */
             commit_docs_to_repo: boolean;
             /** Team Ids */
@@ -6863,6 +6899,8 @@ export interface components {
             pr_reviewer_agent_id?: string | null;
             /** Send Back On Changes Requested */
             send_back_on_changes_requested?: boolean | null;
+            /** Tolerate Known Test Failures */
+            tolerate_known_test_failures?: boolean | null;
             /** Commit Docs To Repo */
             commit_docs_to_repo?: boolean | null;
             /** Team Ids */
@@ -8267,6 +8305,11 @@ export interface components {
             skipped: number | null;
             /** Failing */
             failing: string[];
+            /**
+             * On Base
+             * @default false
+             */
+            on_base: boolean;
             /** Author */
             author: string;
             /**
@@ -8751,6 +8794,7 @@ export interface components {
             back_merge_pull_request?: components["schemas"]["PullRequestOut"] | null;
             /** Finish Outcome */
             finish_outcome?: string | null;
+            finish_tests?: components["schemas"]["FinishTestsOut"] | null;
             /** Branch From */
             branch_from?: string | null;
             /** Start Branch */
