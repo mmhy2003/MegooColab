@@ -233,7 +233,7 @@ async def test_run_token_stage_tools_reach_their_services(db, tc_factory):
     b, run = await _started(db, tc)
     token = await _run_token(run)
     err, out = _tool(tc, token, "submit_design", key=b.key, markdown="# Design")
-    assert not err and out == {"kind": "design", "version": 1, "status": "submitted"}
+    assert not err and out == {"kind": "design", "version": 1, "status": "submitted", "follow_ups": 0}
 
     await _set_role(run, "implement", step=2)
     err, text = _tool(tc, token, "complete_step", key=b.key, step=1, summary="x", tests_passed=True)
@@ -260,6 +260,37 @@ async def test_run_token_stage_tools_reach_their_services(db, tc_factory):
     assert not err, out
     wf = await _wf(b.task_id)
     assert (wf.branch, wf.pr_url, wf.finish_outcome) == ("megoo/PAY-1", "https://git.test/pr/7", "pr_opened")
+
+
+async def test_submit_design_with_follow_ups(db, tc_factory):
+    """MC-81: the brainstorm run proposes follow-up tasks with its design; nothing is created yet."""
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    token = await _run_token(run)
+    follow_ups = [
+        {"title": "Phase 2: export", "type": "story", "description_md": "Export the report."},
+        {"title": "Phase 3: cleanup", "type": "task", "description_md": ""},
+    ]
+    err, out = _tool(tc, token, "submit_design", key=b.key, markdown="# Design", follow_ups=follow_ups)
+    assert not err and out["follow_ups"] == 2, out
+    err, doc = _tool(tc, token, "get_document", key=b.key, kind="design")
+    assert not err, doc
+    assert doc["follow_ups"] == [{**f, "task_id": None} for f in follow_ups]
+
+    epic = [{"title": "Phase 2", "type": "epic", "description_md": ""}]
+    err, text = _tool(tc, token, "submit_design", key=b.key, markdown="# Design", follow_ups=epic)
+    assert err and "invalid_follow_ups" in text
+
+
+async def test_workflow_run_still_cannot_create_tasks(db, tc_factory):
+    """MC-81 adds no create_task permission: a brainstorm run proposes follow-ups, it never creates them."""
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    token = await _run_token(run)
+    before = await _count(Task)
+    err, text = _tool(tc, token, "create_task", project_key="PAY", title="X")
+    assert err and "not_allowed_in_role" in text
+    assert await _count(Task) == before
 
 
 async def test_run_token_rejected_after_run_finished(db, tc_factory):

@@ -77,7 +77,7 @@ describe("DocumentView", () => {
         }
         if (url.endsWith("/mockups")) return json([]);
         if (url.endsWith("/documents/design/1")) {
-          return json({ kind: "design", version: 1, status: "approved", body_md: "# D", steps: null, attached_mockup_ids: [] });
+          return json({ kind: "design", version: 1, status: "approved", body_md: "# D", steps: null, attached_mockup_ids: [], follow_ups: [], earlier_follow_ups: [], creates_in: null });
         }
         return json([{ kind: "design", version: 1, status: "approved", created_at: "2026-10-26T10:00:00Z" }]);
       }),

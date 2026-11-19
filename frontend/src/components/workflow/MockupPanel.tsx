@@ -141,11 +141,17 @@ export function MockupPanel({ taskKey, disabled = false }: { taskKey: string; di
         {other && <MockupFrame key={other.id} mockupId={other.id} version={other.version} title={other.title} />}
       </div>
 
-      {canAct && linked && shown.id === linked.id && awaitingDesign && (
-        <Button disabled={busy} onClick={approve}>
-          Approve this version
-        </Button>
-      )}
+      {canAct && linked && shown.id === linked.id && awaitingDesign &&
+        // approval carries the reviewed list, so a design with follow-ups is approved from the follow-up review
+        (pending!.follow_up_count > 0 ? (
+          <Button onClick={() => document.getElementById("document-design")?.scrollIntoView?.()}>
+            Review follow-up tasks ({pending!.follow_up_count})
+          </Button>
+        ) : (
+          <Button disabled={busy} onClick={approve}>
+            Approve this version
+          </Button>
+        ))}
       {linked && awaitingDesign && shown.version < linked.version && <p className="text-xs text-muted-foreground">Older version</p>}
 
       {canAct && (

@@ -14,6 +14,7 @@ import { qk } from "@/lib/queries";
 import type { DocKind, DocumentDetail, DocumentInfo } from "@/lib/types";
 import { testRunText, useMockups, useRunRecords, useWorkflow, type TestRun } from "@/lib/workflow";
 
+import { FollowUps, initialRows, type FollowUpRow } from "./FollowUps";
 import { MockupFrame } from "./MockupFrame";
 
 const STATUS_TEXT: Record<DocumentInfo["status"], string> = {
@@ -41,6 +42,8 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
   const images = useImageDraft(); // with a rejection: what should change, shown
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // the follow-up review of one loaded version: another version, or fresh data after a decision, starts a new one
+  const [review, setReview] = useState<{ of: DocumentDetail; rows: FollowUpRow[] } | null>(null);
   // a thread link `#document-<kind>-v<n>` selects that version, also when the hash changes later
   useEffect(() => {
     const fromHash = () => {
@@ -61,6 +64,8 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
     enabled: !!selected,
   });
 
+  const projectKey = taskKey.replace(/-\d+$/, "");
+
   if (list.error) return <p className="text-sm text-pink">{errorMessage(list.error)}</p>;
   if (!selected) return null;
 
@@ -74,6 +79,11 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
   const stepRuns = (n: number): TestRun[] => testRuns.filter((r) => r.stage === "build" && r.step === n);
   const finishRun = testRuns.filter((r) => r.stage === "done").at(-1);
   const unverified = new Set(kind === "plan" ? (records.data?.unverified_steps ?? []) : []);
+  const reviewing = kind === "design" && canDecide;
+  const rows = reviewing && detail.data ? (review?.of === detail.data ? review.rows : initialRows(detail.data)) : null;
+  const setRows = (next: FollowUpRow[]) => detail.data && setReview({ of: detail.data, rows: next });
+  const ticked = (rows ?? []).filter((r) => r.create).length;
+  const place = detail.data?.creates_in;
 
   const decide = async (approve: boolean) => {
     setError(null);
@@ -82,12 +92,25 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
       setError("Add a comment explaining what should change.");
       return;
     }
+    // a design's approval carries the reviewed follow-ups, unticked ones included
+    const followUps = approve && kind === "design" && rows ? rows : null;
+    if (followUps?.some((r) => r.create && !r.title.trim())) {
+      setError("Give every ticked task a title.");
+      return;
+    }
     setBusy(true);
     try {
       await api(`/api/tasks/${taskKey}/documents/${kind}/${selected.version}/decision`, {
         method: "POST",
         // approving sends none: the images say what should change
-        json: { approve, comment: text || null, ...(!approve && images.ids.length ? { image_ids: images.ids } : {}) },
+        json: {
+          approve,
+          comment: text || null,
+          ...(!approve && images.ids.length ? { image_ids: images.ids } : {}),
+          ...(followUps
+            ? { follow_ups: followUps.map((r) => ({ title: r.title.trim(), type: r.type, description_md: r.description_md, create: r.create })) }
+            : {}),
+        },
       });
       setComment("");
       images.clear();
@@ -174,6 +197,9 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
             </ol>
           )}
           {finishRun && <p className={`text-xs ${finishRun.passed ? "text-muted-foreground" : "text-pink"}`}>Finish verification: {testRunText(finishRun)}</p>}
+          {kind === "design" && (
+            <FollowUps detail={detail.data} projectKey={projectKey} review={reviewing && rows ? { rows, onChange: setRows } : undefined} />
+          )}
           {detail.data.decision_comment && selected.status === "rejected" && (
             <p className="text-xs text-muted-foreground">Rejected: {detail.data.decision_comment}</p>
           )}
@@ -188,6 +214,13 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
             </ImageDropZone>
           </label>
           <ImageAttach draft={images} />
+          {reviewing && rows && (
+            <p className="text-xs text-muted-foreground">
+              {ticked > 0
+                ? `Approving creates ${ticked} ${ticked === 1 ? "task" : "tasks"} in ${place?.column}${place?.epic ? `, in epic ${place.epic.key}` : ""}, unassigned.`
+                : "Approving creates no tasks."}
+            </p>
+          )}
           <div className="flex gap-2">
             <Button disabled={busy} onClick={() => void decide(true)}>Approve</Button>
             <Button variant="danger" disabled={busy || images.uploading} onClick={() => void decide(false)}>Reject</Button>

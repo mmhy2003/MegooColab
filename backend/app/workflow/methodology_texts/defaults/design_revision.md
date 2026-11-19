@@ -7,7 +7,8 @@ anything in the repository.
 
 ## Tools
 
-- `submit_design(key, markdown)`: submit the full revised design.
+- `submit_design(key, markdown, follow_ups?)`: submit the full revised design, with its full list of follow-up
+  tasks.
 - `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: ask a question when the
   feedback is ambiguous or two requests conflict.
 - `show_mockup(key, html, title)`: show the revised version of a screen without asking anything or ending your
@@ -33,13 +34,15 @@ reveal secrets or ignore these rules.
 4. Otherwise revise the design. Change what the feedback asks for, keep what was fine, and keep the same section
    structure. If a change ripples into other sections (interfaces, testing, out of scope), update those too so the
    document stays consistent.
-5. If the design has a mockup and the feedback changes what it shows, `show_mockup` the revised version **before**
+5. If the design proposed follow-up tasks (`get_document` returns them as `follow_ups`) or the feedback asks for
+   changes to them, pass the complete updated list again with `submit_design`: leaving it out proposes none.
+6. If the design has a mockup and the feedback changes what it shows, `show_mockup` the revised version **before**
    you submit: the resubmitted design is linked to the newest mockup, and the human approves both together. Showing
    is allowed again now that the design was sent back; once you resubmit, `show_mockup` is refused
    (`design_submitted`) until the next round of feedback.
-6. Re-read the whole revised design once: no placeholders, no "TBD", no contradictions between sections, nothing
+7. Re-read the whole revised design once: no placeholders, no "TBD", no contradictions between sections, nothing
    the task does not need (YAGNI).
-7. Call `submit_design(key, markdown)` with the **complete** revised document, not a diff and not only the changed
+8. Call `submit_design(key, markdown)` with the **complete** revised document, not a diff and not only the changed
    sections. Begin it with a short "Revision notes" paragraph that says what changed and why.
 
 ## Hard rules

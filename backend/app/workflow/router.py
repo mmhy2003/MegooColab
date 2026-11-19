@@ -18,7 +18,7 @@ from app.projects.access import get_project_for
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.tasks.service import get_task_for, pull_requests_of
-from app.workflow import documents, engine, finish, methodology, questions, records
+from app.workflow import documents, engine, finish, follow_ups, methodology, questions, records
 from app.workflow.models import (
     DocKind,
     DocStatus,
@@ -425,7 +425,7 @@ async def view_mockup(mockup_id: uuid.UUID, user: AuthedUser, db: DbSession) -> 
 def _doc_info(d: WorkflowDocument) -> DocumentInfo:
     return DocumentInfo(
         kind=d.kind, version=d.version, status=d.status, created_at=d.created_at, decided_by=d.decided_by,
-        decision_comment=d.decision_comment, mockup_id=d.mockup_id,
+        decision_comment=d.decision_comment, mockup_id=d.mockup_id, follow_up_count=len(d.follow_ups or []),
     )
 
 
@@ -444,7 +444,7 @@ async def list_documents(key: str, user: AuthedUser, db: DbSession) -> list[Docu
 
 @router.get("/api/tasks/{key}/documents/{kind}/{version}")
 async def get_document(key: str, kind: DocKind, version: int, user: AuthedUser, db: DbSession) -> DocumentOut:
-    task, _ = await get_task_for(db, user, key)
+    task, project = await get_task_for(db, user, key)
     d = (
         await db.execute(
             select(WorkflowDocument).where(
@@ -454,8 +454,12 @@ async def get_document(key: str, kind: DocKind, version: int, user: AuthedUser, 
     ).scalar_one_or_none()
     if d is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "document_not_found")
+    earlier = await follow_ups.earlier(db, task, d) if d.kind == DocKind.design else []
     return DocumentOut(
-        **_doc_info(d).model_dump(), body_md=d.body_md, steps=d.steps, attached_mockup_ids=d.attached_mockup_ids or []
+        **_doc_info(d).model_dump(), body_md=d.body_md, steps=d.steps, attached_mockup_ids=d.attached_mockup_ids or [],
+        follow_ups=await follow_ups.entries_out(db, project.key, d),
+        earlier_follow_ups=[{"key": f"{project.key}-{t.number}", "title": t.title} for t in earlier],
+        creates_in=await follow_ups.creates_in(db, task, d),
     )
 
 
@@ -465,6 +469,7 @@ async def decide_document(
 ) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)
     await documents.decide(db, user, task, kind, version, body.approve, body.comment,
-                           [] if body.approve else body.image_ids)
+                           [] if body.approve else body.image_ids,
+                           follow_ups=None if body.follow_ups is None else [f.model_dump() for f in body.follow_ups])
     await engine.dispatch_queued(db)
     return await workflow_out(db, task, user)

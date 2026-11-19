@@ -30,10 +30,12 @@ DEFAULT_HISTORY: dict[str, list[str]] = {
         "9b8f73e6adbc875b1b23294505ec303a8943ff7b91d7479451d6253a0ca5a393",
         "00277fef22ee863a94b51f13ee72976968543c59c6334b4cbffc1b092276381e",
         "b20571982b08dfd817ef39072b2de6b88d80242bafce8f506147dc0bacef10a4",
+        "c357f68b3c86e3e3a235d3ebd6a0e2fca21f055ff838da518671d1750491b7e1",
     ],
     "design_revision": [
         "7b6bfa9f3eb82fdf3e709413ceb6f029ae88e91372eaa0462e06e1d0872db8fe",
         "d9808506b33c95dc9e61e879db98128db3d589ef06013de90f0f883ab6fcb663",
+        "2033bae5b41b87aadfaf76d652bcbd0bddb722cc8555466db989fb3e9874ff0a",
     ],
     "plan": [
         "ee12eca000a1c412b2ff2d7d411acc22ee451d33151daa9fadd1a3a96b1ead8a",

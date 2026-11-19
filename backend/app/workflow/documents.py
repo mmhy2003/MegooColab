@@ -19,6 +19,7 @@ from app.tasks.models import Task, TaskType
 from app.tasks.schemas import TaskCreate
 from app.tasks.service import create_task, first_before_column, task_changed
 from app.workflow import engine
+from app.workflow.follow_ups import clean_proposed, clean_reviewed, create_on_approval
 from app.workflow.models import (
     DocKind,
     DocStatus,
@@ -92,7 +93,8 @@ async def _newest_mockup(db, task_id: uuid.UUID) -> uuid.UUID | None:
 
 
 async def submit(
-    db, run: AgentRun | None, task: Task, kind: DocKind | str, body_md: str, steps: list[dict] | None = None
+    db, run: AgentRun | None, task: Task, kind: DocKind | str, body_md: str, steps: list[dict] | None = None,
+    follow_ups: list[dict] | None = None,
 ) -> WorkflowDocument:
     """Record the next version of the task's design or plan; older submitted versions are superseded. The caller
     commits. The workflow lock is taken first, as in questions.answer."""
@@ -107,10 +109,14 @@ async def submit(
         if steps is None:
             raise _422("steps_required")
         clean = _clean_steps(steps)
+        if follow_ups:
+            raise _422("follow_ups_forbidden")
+        clean_follow_ups = []
     else:
         if steps is not None:
             raise _422("steps_forbidden")
         clean = None
+        clean_follow_ups = clean_proposed(follow_ups)
     version = (
         await db.scalar(
             select(func.max(WorkflowDocument.version)).where(
@@ -129,7 +135,7 @@ async def submit(
         .values(status=DocStatus.superseded)
     )
     doc = WorkflowDocument(
-        task_id=task.id, kind=kind, version=version, body_md=body_md, steps=clean,
+        task_id=task.id, kind=kind, version=version, body_md=body_md, steps=clean, follow_ups=clean_follow_ups,
         status=DocStatus.submitted, submitted_run_id=run.id if run else None,
         attached_mockup_ids=await _attached_mockups(db, task.id) if kind == DocKind.design else [],
         mockup_id=await _newest_mockup(db, task.id) if kind == DocKind.design else None,
@@ -141,7 +147,8 @@ async def submit(
 
 
 async def submit_connect_only(
-    db, wf: TaskWorkflow, task: Task, kind: DocKind | str, body_md: str, steps: list[dict] | None = None
+    db, wf: TaskWorkflow, task: Task, kind: DocKind | str, body_md: str, steps: list[dict] | None = None,
+    follow_ups: list[dict] | None = None,
 ) -> WorkflowDocument:
     """AGT-32: a connect-only agent submits its design (Brainstorm or Design) or plan (Plan) while the workflow
     runs with no open question. The stage is checked here, as `submit` does not; the workflow then waits for
@@ -151,7 +158,7 @@ async def submit_connect_only(
     await engine.require_connect_only_running(db, wf)
     if wf.stage not in SUBMIT_STAGES[kind]:
         raise HTTPException(status.HTTP_409_CONFLICT, "wrong_stage")
-    doc = await submit(db, None, task, kind, body_md, steps)
+    doc = await submit(db, None, task, kind, body_md, steps, follow_ups)
     if kind == DocKind.design:
         await engine.set_stage(db, wf, task, Stage.design)
     await engine.wait_for(db, wf, NEEDS_OF[kind])
@@ -160,7 +167,7 @@ async def submit_connect_only(
 
 async def decide(
     db, user: User, task: Task, kind: DocKind | str, version: int, approve: bool, comment: str | None,
-    images: Sequence[uuid.UUID] = (),
+    images: Sequence[uuid.UUID] = (), follow_ups: list[dict] | None = None,
 ) -> None:
     """A human approves or rejects the document (WF-6 roles). The first decision wins (409 already_decided)."""
     kind = DocKind(kind)
@@ -171,6 +178,8 @@ async def decide(
         raise _422("too_large")
     if not approve and not comment:
         raise _422("comment_required")
+    # checked before anything is written; a rejection or a plan ignores the list
+    reviewed = clean_reviewed(follow_ups) if approve and kind == DocKind.design and follow_ups is not None else None
     doc = (
         await db.execute(
             select(WorkflowDocument)
@@ -189,6 +198,8 @@ async def decide(
         raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")
     if wf is None or wf.status != WorkflowStatus.waiting_human or wf.needs != NEEDS_OF[kind]:
         raise HTTPException(status.HTTP_409_CONFLICT, "not_waiting_for_decision")
+    if approve and kind == DocKind.design and doc.follow_ups and reviewed is None:
+        raise _422("follow_ups_required")  # a page that never showed the list
 
     doc.status = DocStatus.approved if approve else DocStatus.rejected
     doc.decided_by = user.id
@@ -216,6 +227,8 @@ async def decide(
             requested_by=user.id,
         )
     elif kind == DocKind.design:
+        if reviewed is not None:
+            await create_on_approval(db, user, task, doc, reviewed)
         await engine.set_stage(db, wf, task, Stage.plan)  # the plan session is fresh
         await engine.hand_to_agent(db, wf, task, RunRole.plan, requested_by=user.id)
     else:
