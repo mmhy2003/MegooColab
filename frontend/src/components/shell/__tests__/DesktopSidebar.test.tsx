@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DesktopSidebar, SIDEBAR_KEY } from "@/components/shell/DesktopSidebar";
+import { LABEL_HIDDEN } from "@/components/shell/Sidebar";
 import type { User } from "@/lib/types";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/projects" }));
@@ -14,7 +15,7 @@ function aside() {
   return screen.getByRole("complementary");
 }
 
-// the Dashboard entry asks for its badge count
+// the Dashboard entry asks for its badge count; the footer asks for the running version
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
@@ -22,7 +23,20 @@ function wrap(ui: ReactNode) {
 
 beforeEach(() => {
   localStorage.clear();
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ needs_you: 0 }), { status: 200 })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async (url: RequestInfo | URL) =>
+        new Response(
+          JSON.stringify(
+            String(url).includes("/api/updates")
+              ? { app_version: "0.23.1", app: null, runner: null }
+              : { needs_you: 0 },
+          ),
+          { status: 200 },
+        ),
+    ),
+  );
 });
 afterEach(() => {
   cleanup();
@@ -67,5 +81,31 @@ describe("DesktopSidebar", () => {
     expect(aside()).toHaveAttribute("data-collapsed", "true");
     getItem.mockRestore();
     setItem.mockRestore();
+  });
+
+  it("shows the version at the foot, after the Collapse button", async () => {
+    wrap(<DesktopSidebar user={admin} />);
+    const v = await screen.findByRole("link", { name: /MegooColab 0\.23\.1/ });
+    expect(aside()).toContainElement(v);
+    expect(v).toHaveTextContent("v0.23.1");
+    const collapse = screen.getByRole("button", { name: "Collapse sidebar" });
+    expect(collapse.compareDocumentPosition(v) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(v.className).toContain("ml-auto");
+    expect(v.className).not.toContain("opacity-0");
+  });
+
+  it("hides the version on the closed rail, like the labels", async () => {
+    localStorage.setItem(SIDEBAR_KEY, "collapsed");
+    wrap(<DesktopSidebar user={admin} />);
+    const v = await screen.findByRole("link", { name: /MegooColab 0\.23\.1/ });
+    expect(LABEL_HIDDEN).toContain("opacity-0");
+    expect(LABEL_HIDDEN).toContain("group-hover/side:opacity-100");
+    expect(v.className).toContain(LABEL_HIDDEN);
+  });
+
+  it("a click on the version does not fold the sidebar", async () => {
+    wrap(<DesktopSidebar user={admin} />);
+    fireEvent.click(await screen.findByRole("link", { name: /MegooColab 0\.23\.1/ }));
+    expect(aside()).toHaveAttribute("data-collapsed", "false");
   });
 });

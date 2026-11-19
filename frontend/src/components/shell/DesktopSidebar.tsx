@@ -3,6 +3,7 @@
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import { useState } from "react";
 
+import { AppVersion } from "@/components/shell/AppVersion";
 import { LABEL_HIDDEN, Sidebar } from "@/components/shell/Sidebar";
 import { Hint } from "@/components/ui/Hint";
 import type { User } from "@/lib/types";
@@ -55,17 +56,22 @@ export function DesktopSidebar({ user }: { user: User }) {
         <div className="min-h-0 flex-1 overflow-hidden">
           <Sidebar user={user} collapsed={collapsed} />
         </div>
-        <Hint label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
-          <button
-            type="button"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            onClick={toggle}
-            className="m-2 flex items-center gap-2 rounded px-3 py-2 text-sm whitespace-nowrap text-muted-foreground hover:bg-surface hover:text-cyan"
-          >
-            <Icon size={16} aria-hidden className="shrink-0" />
-            <span className={collapsed ? LABEL_HIDDEN : ""}>{collapsed ? "Expand" : "Collapse"}</span>
-          </button>
-        </Hint>
+        {/* the Collapse button keeps its width; the version sits at the right of the same row and, like every label,
+            hides on the closed rail (tabbing onto its link opens the rail) */}
+        <div className="m-2 flex items-center">
+          <Hint label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+            <button
+              type="button"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={toggle}
+              className="flex items-center gap-2 rounded px-3 py-2 text-sm whitespace-nowrap text-muted-foreground hover:bg-surface hover:text-cyan"
+            >
+              <Icon size={16} aria-hidden className="shrink-0" />
+              <span className={collapsed ? LABEL_HIDDEN : ""}>{collapsed ? "Expand" : "Collapse"}</span>
+            </button>
+          </Hint>
+          <AppVersion className={`ml-auto pr-3 ${collapsed ? LABEL_HIDDEN : ""}`} />
+        </div>
       </div>
     </aside>
   );

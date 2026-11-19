@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentsTab } from "@/components/agents/AgentsTab";
+import { run } from "@/components/dashboard/__tests__/fixture";
 import type { AccessToken, Agent, Project } from "@/lib/types";
 
 let search = "";
@@ -20,7 +21,7 @@ const agent = (over: Partial<Agent>): Agent =>
   ({
     id: "a1", name: "Mo's Claude Code", program: "claude_code", answer_mode: "manual", max_concurrent_runs: 1,
     running: 0, status: "online", problems: [], bindings: [], owner: OWNER, model: null, effort: null,
-    known_models: [], machine: null, runner: null, ...over,
+    known_models: [], machine: null, runner: null, runs: [], ...over,
   }) as Agent;
 
 const AGENTS = [
@@ -148,6 +149,33 @@ describe("AgentsTab", () => {
     await waitFor(() => expect(sent("PATCH")).toBeDefined());
     expect(sent("PATCH")!.body).toEqual({ model: "claude-haiku-4-5", stage_models: { design: { model: "opus" } } });
     expect(await screen.findByText("Haiku 4.5 has no Max effort, so Plan's effort went back to As above.")).toBeInTheDocument();
+  });
+
+  it("the card lists every run the agent is working on", () => {
+    search = `agent=a1`;
+    show([
+      agent({
+        running: 2, max_concurrent_runs: 3,
+        runs: [
+          run(),
+          run({ run_id: "r2", kind: "chat", title: "Pricing ideas", task_key: null, chat_id: "c1", link: "/chats/c1", stage: null }),
+        ],
+      }),
+    ]);
+    const card = screen.getByRole("region", { name: AGENTS[0].name });
+    expect(within(card).getByRole("heading", { level: 3, name: "Working on" })).toBeInTheDocument();
+    expect(within(within(card).getByRole("list", { name: "Working on" })).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(card).getByRole("link", { name: "PAY-14" })).toBeInTheDocument();
+    expect(within(card).getByRole("link", { name: /Pricing ideas/ })).toBeInTheDocument();
+    expect(within(card).getByText("Fix the login")).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "+1 more" })).not.toBeInTheDocument();
+  });
+
+  it("hides Working on while the agent runs nothing", () => {
+    search = `agent=a1`;
+    show();
+    const card = screen.getByRole("region", { name: AGENTS[0].name });
+    expect(within(card).queryByRole("heading", { name: "Working on" })).not.toBeInTheDocument();
   });
 
   it("points to the Runner tab when there are no machines", () => {

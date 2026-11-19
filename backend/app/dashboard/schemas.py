@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.agent_runs.schemas import RunningItem
 from app.agents.schemas import RunnerInfo
 from app.workflow.models import Stage
 
@@ -51,20 +52,6 @@ class MyTask(BaseModel):
     due_date: date
     due: Literal["overdue", "today", "week"]
     link: str
-
-
-class RunningItem(BaseModel):
-    run_id: uuid.UUID
-    agent_name: str
-    started_at: datetime | None
-    task_key: str | None
-    stage: Stage | None
-    step: int | None
-    steps_total: int | None
-    review_round: int | None
-    question_from: str | None  # answering runs: the asking task's project key
-    link: str
-    chat_id: uuid.UUID | None = None
 
 
 class QueuedItem(BaseModel):

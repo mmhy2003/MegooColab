@@ -13,16 +13,16 @@ router = APIRouter(tags=["updates"])
 
 @router.get("/api/updates")
 async def get_updates(user: AuthedUser, db: DbSession) -> UpdatesOut:
-    """The latest releases, as the update check last found them. The server's own update is for admins only:
-    they are the ones who can install it."""
+    """The running version, for everyone signed in, and the latest releases as the update check last found them.
+    The server's own update is for admins only: they are the ones who can install it."""
+    current = get_settings().app_version
     org = await db.get(OrgSettings, ORG_SETTINGS_ID)
     if org is None:
-        return UpdatesOut()
-    current = get_settings().app_version
+        return UpdatesOut(app_version=current)
     app = None
     if user.role == Role.admin and org.latest_app_url and is_newer(org.latest_app_version, current):
         app = AppUpdate(current=current, latest=org.latest_app_version, url=org.latest_app_url)
     runner = None
     if org.latest_runner_version and org.latest_runner_url:
         runner = RunnerRelease(latest=org.latest_runner_version, url=org.latest_runner_url)
-    return UpdatesOut(app=app, runner=runner)
+    return UpdatesOut(app_version=current, app=app, runner=runner)

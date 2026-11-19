@@ -165,7 +165,7 @@ async def test_admin_agents_overview_admin_only(client, client_factory, db):
     rows = (await ac.get("/api/admin/agents")).json()
     assert len(rows) == 1
     assert rows[0]["owner"]["id"] == str(owner.id)
-    assert rows[0]["status"] == "offline" and rows[0]["current_run"] is None
+    assert rows[0]["status"] == "offline" and rows[0]["runs"] == [] and "current_run" not in rows[0]
 
 
 async def test_can_use_agent_rule(client, db):

@@ -3867,8 +3867,8 @@ export interface paths {
         };
         /**
          * Get Updates
-         * @description The latest releases, as the update check last found them. The server's own update is for admins only:
-         *     they are the ones who can install it.
+         * @description The running version, for everyone signed in, and the latest releases as the update check last found them.
+         *     The server's own update is for admins only: they are the ones who can install it.
          */
         get: operations["get_updates_api_updates_get"];
         put?: never;
@@ -4089,7 +4089,10 @@ export interface components {
                 [key: string]: string;
             };
         };
-        /** AdminAgentOut */
+        /**
+         * AdminAgentOut
+         * @description An agent on Admin → Agents (every agent in the workspace).
+         */
         AdminAgentOut: {
             /**
              * Id
@@ -4110,6 +4113,11 @@ export interface components {
              * @default 0
              */
             running: number;
+            /**
+             * Runs
+             * @default []
+             */
+            runs: components["schemas"]["RunningItem"][];
             /**
              * Problems
              * @default []
@@ -4135,10 +4143,6 @@ export interface components {
             stage_models: {
                 [key: string]: components["schemas"]["StageChoice"];
             };
-            /** Current Run */
-            current_run?: {
-                [key: string]: unknown;
-            } | null;
         };
         /** AdminSettingsIn */
         AdminSettingsIn: {
@@ -4305,6 +4309,11 @@ export interface components {
              * @default 0
              */
             running: number;
+            /**
+             * Runs
+             * @default []
+             */
+            runs: components["schemas"]["RunningItem"][];
             /**
              * Problems
              * @default []
@@ -6681,6 +6690,11 @@ export interface components {
              */
             running: number;
             /**
+             * Runs
+             * @default []
+             */
+            runs: components["schemas"]["RunningItem"][];
+            /**
              * Problems
              * @default []
              */
@@ -7364,7 +7378,10 @@ export interface components {
             /** Url */
             url: string;
         };
-        /** RunningItem */
+        /**
+         * RunningItem
+         * @description A run at work now, as the Dashboard's Running now and the Agents pages list it.
+         */
         RunningItem: {
             /**
              * Run Id
@@ -7375,8 +7392,17 @@ export interface components {
             agent_name: string;
             /** Started At */
             started_at: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "task" | "chat" | "question" | "cron" | "draft";
+            /** Title */
+            title?: string | null;
             /** Task Key */
             task_key: string | null;
+            /** Question Key */
+            question_key?: string | null;
             stage: components["schemas"]["Stage"] | null;
             /** Step */
             step: number | null;
@@ -7387,7 +7413,7 @@ export interface components {
             /** Question From */
             question_from: string | null;
             /** Link */
-            link: string;
+            link: string | null;
             /** Chat Id */
             chat_id?: string | null;
         };
@@ -8470,6 +8496,8 @@ export interface components {
         };
         /** UpdatesOut */
         UpdatesOut: {
+            /** App Version */
+            app_version: string;
             app?: components["schemas"]["AppUpdate"] | null;
             runner?: components["schemas"]["RunnerRelease"] | null;
         };

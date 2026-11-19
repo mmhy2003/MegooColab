@@ -11,6 +11,7 @@ import { ProjectBindings } from "@/components/agents/ProjectBindings";
 import { RunnerUpdateArrow } from "@/components/agents/RunnerUpdateArrow";
 import { RunsField, runsLabel } from "@/components/agents/RunsField";
 import { StageModelsField } from "@/components/agents/StageModelsField";
+import { WorkingOn } from "@/components/runs/WorkingOn";
 import { Badge } from "@/components/ui/Badge";
 import { ListDetail, ListRow, pickChosen, useChosenParam } from "@/components/ui/ListDetail";
 import { api } from "@/lib/api";
@@ -69,6 +70,12 @@ function AgentDetails({
         <AgentMenu agent={agent} onChanged={() => void onChanged()} onDeleted={onDeleted} onError={setError} />
       </div>
       {error && <p role="alert" className="text-sm text-pink">{error}</p>}
+      {(agent.runs ?? []).length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-xs tracking-wider text-muted-foreground uppercase">Working on</h3>
+          <WorkingOn runs={agent.runs ?? []} titles />
+        </div>
+      )}
       <div className="space-y-2">
         <h3 className="text-xs tracking-wider text-muted-foreground uppercase">Settings</h3>
         <div className="grid gap-3 md:grid-cols-2">

@@ -13,5 +13,6 @@ class RunnerRelease(BaseModel):
 
 
 class UpdatesOut(BaseModel):
+    app_version: str  # the version this server runs ("dev" from source); for everyone signed in
     app: AppUpdate | None = None  # admins only, and only when the server is older than the latest release
     runner: RunnerRelease | None = None  # each agent's runner version is compared with it by the frontend
