@@ -26,10 +26,10 @@ from tests.workflow.test_engine import (
 STEPS = [{"title": f"Do {n}", "detail": f"detail {n}"} for n in (1, 2, 3)]
 
 
-async def _submit(b, run, kind="design", body="# Doc", steps=None):
+async def _submit(b, run, kind="design", body="# Doc", steps=None, follow_ups=None):
     async with SessionLocal() as s:
         task = await s.get(Task, b.task_id)
-        doc = await documents.submit(s, run, task, kind, body, steps)
+        doc = await documents.submit(s, run, task, kind, body, steps, follow_ups=follow_ups)
         await s.commit()
         return doc.version
 
@@ -236,6 +236,33 @@ async def test_plan_requires_steps_and_design_forbids_them(db, tc_factory):
     assert await code("design", body="x" * 200_001) == "too_large"
     assert await code("design", body="\x00") == "empty_document"
     assert await _docs(b.task_id) == []
+
+
+async def test_design_stores_follow_ups_and_plan_refuses_them(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    follow_ups = [
+        {"title": " Phase 2 ", "type": "story", "description_md": "The rest"},
+        {"title": "Phase 3"},
+    ]
+    await _submit(b, run, follow_ups=follow_ups)
+    await _submit(b, run)  # a revision that leaves the list out proposes none
+    v1, v2 = await _docs(b.task_id, "design")
+    assert v1.follow_ups == [
+        {"title": "Phase 2", "type": "story", "description_md": "The rest", "task_id": None},
+        {"title": "Phase 3", "type": "task", "description_md": "", "task_id": None},
+    ]
+    assert v2.follow_ups == []
+
+    with pytest.raises(HTTPException) as e:
+        async with SessionLocal() as s:
+            await documents.submit(
+                s, run, await s.get(Task, b.task_id), "plan", "x", STEPS, follow_ups=[{"title": "t"}]
+            )
+    assert (e.value.status_code, e.value.detail) == (422, "follow_ups_forbidden")
+    await _submit(b, run, "plan", steps=STEPS, follow_ups=[])
+    (plan,) = await _docs(b.task_id, "plan")
+    assert plan.follow_ups == []
 
 
 async def test_decision_guards(db, tc_factory):
