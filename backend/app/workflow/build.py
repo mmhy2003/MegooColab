@@ -14,6 +14,7 @@ Bookkeeping on the workflow:
   - `sessions["base:<n>"]` is the HEAD step n started from: the git_before of its first implement run that
     reported one. It is a cache (a reassignment clears `sessions`; it is then read from the runs again) for the
     `step.no_commit` warning.
+  - `build.no_baseline`: step 1's first review is queued with no test baseline (MC-99).
 """
 
 import uuid
@@ -237,6 +238,16 @@ async def _warn_if_no_commit(db: AsyncSession, wf: TaskWorkflow, task: Task, run
         await engine.record_workflow_event(db, task, None, "step.no_commit", {"step": run.step})
 
 
+async def _warn_if_no_baseline(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
+    """MC-99: step 1 goes to its first review with no test baseline recorded: a warning, not a block."""
+    if run.step != 1 or wf.review_round != 0 or wf.build_records_baseline is not True:
+        return
+    from app.workflow import records  # local: records imports the engine
+
+    if await records.baseline_run(db, wf) is None:
+        await engine.record_workflow_event(db, task, None, "build.no_baseline", {})
+
+
 async def _queue_review(db: AsyncSession, wf: TaskWorkflow, task: Task, n: int, requested_by: uuid.UUID) -> None:
     wf.review_round += 1
     wf.nudged = False
@@ -256,6 +267,7 @@ async def _handle_work(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Agen
             await engine.send_back_to_commit(db, wf, task, run)
             return
         await _warn_if_no_commit(db, wf, task, run)
+        await _warn_if_no_baseline(db, wf, task, run)
         await _queue_review(db, wf, task, run.step, owner_id)
         return
     pending = await questions.undelivered_answer(db, task.id, run.id)
