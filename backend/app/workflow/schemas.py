@@ -72,9 +72,17 @@ class ProjectWaitOut(BaseModel):
     can_withdraw: bool
 
 
+class KnownBugOut(BaseModel):
+    """MC-100: the open bug task of a known failing test."""
+
+    key: str
+    title: str
+
+
 class FinishFailureOut(BaseModel):
     name: str
     kind: Literal["new", "base", "flaky"]
+    bug: KnownBugOut | None = None  # base and flaky rows: the project's open bug for the test
 
 
 class FinishTestsOut(BaseModel):
@@ -121,6 +129,11 @@ class WorkflowOut(TaskWorkflowOut):
 
 class EscalationDecisionIn(BaseModel):
     action: Literal["retry", "accept", "pause", "fix"]
+
+
+class KnownFailureBugIn(BaseModel):
+    """MC-100: a known failing test of the finish report, as listed."""
+    name: NoNulStr = Field(min_length=1, max_length=300)
 
 
 class HumanReviewIn(BaseModel):

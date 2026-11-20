@@ -71,6 +71,15 @@ describe("ActivityThread", () => {
     expect(screen.getByRole("link", { name: "PAY-13" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-13");
   });
 
+  it("links a bug task created for a failing test", () => {
+    const created: ActivityItem = { type: "event", id: "e12", at: "2026-11-20T10:10:00Z", actor, kind: "finish.bug_created",
+      data: { key: "PAY-14", title: "Failing test: <b>x</b>", task_id: "t14", name: "<b>x</b>", kind: "base" } };
+    render(<ActivityThread items={[created]} columnNames={columnNames} userNames={userNames} />);
+    expect(screen.getByRole("listitem").textContent).toContain("Ahmed Ali created bug PAY-14 for the failing test <b>x</b>");
+    expect(screen.getByRole("link", { name: "PAY-14" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-14");
+    expect(document.body.querySelector("b")).toBeNull();
+  });
+
   it("marks edited comments", () => {
     const edited: ActivityItem = { ...items[1], id: "c2", edited_at: "2026-10-22T11:00:00Z" };
     render(<ActivityThread items={[edited]} columnNames={columnNames} userNames={userNames} />);

@@ -1,5 +1,5 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FinishFailures } from "@/components/workflow/FinishFailures";
 import { type FinishTests, finishTestsSummary, type TestRun } from "@/lib/workflow";
@@ -91,5 +91,51 @@ describe("FinishFailures", () => {
       />,
     );
     expect(screen.getByText("Finished with 2 known failing tests: 1 also fails on develop, 1 flaky")).toBeInTheDocument();
+  });
+});
+
+describe("FinishFailures bug tasks", () => {
+  const items = () => within(screen.getByRole("list", { name: "Failing tests" })).getAllByRole("listitem");
+
+  it("offers Create bug task on base and flaky rows, not on new ones", () => {
+    const spy = vi.fn();
+    render(<FinishFailures tests={tests()} startBranch="develop" onCreateBug={spy} />);
+    const [newRow, baseRow, flakyRow] = items();
+    expect(within(newRow).queryByRole("button", { name: "Create bug task" })).toBeNull();
+    expect(within(flakyRow).getByRole("button", { name: "Create bug task" })).toBeInTheDocument();
+    fireEvent.click(within(baseRow).getByRole("button", { name: "Create bug task" }));
+    expect(spy).toHaveBeenCalledWith("e2e/b.spec.ts:2");
+  });
+
+  it("shows no button without onCreateBug", () => {
+    render(<FinishFailures tests={tests()} startBranch="develop" />);
+    expect(screen.queryByRole("button", { name: "Create bug task" })).toBeNull();
+  });
+
+  it("links the open bug instead", () => {
+    const t = tests();
+    t.failures[1] = { ...t.failures[1], bug: { key: "PAY-131", title: "Failing test: e2e/b.spec.ts:2" } };
+    render(<FinishFailures tests={t} startBranch="develop" onCreateBug={() => {}} />);
+    const link = screen.getByRole("link", { name: "Bug: PAY-131" });
+    expect(link).toHaveAttribute("href", "/projects/PAY/board?task=PAY-131");
+    expect(link).toHaveAttribute("title", "Failing test: e2e/b.spec.ts:2");
+    expect(screen.getAllByRole("button", { name: "Create bug task" })).toHaveLength(1);
+  });
+
+  it("says this task when the task is the bug", () => {
+    const t = tests();
+    t.failures[2] = { ...t.failures[2], bug: { key: "PAY-1", title: "x" } };
+    render(<FinishFailures tests={t} startBranch="develop" taskKey="PAY-1" onCreateBug={() => {}} />);
+    const flakyRow = items()[2];
+    expect(within(flakyRow).getByText("Bug: this task")).toBeInTheDocument();
+    expect(within(flakyRow).queryByRole("link")).toBeNull();
+    expect(within(flakyRow).queryByRole("button")).toBeNull();
+  });
+
+  it("disables the button while busy", () => {
+    render(<FinishFailures tests={tests()} startBranch="develop" onCreateBug={() => {}} busy />);
+    const buttons = screen.getAllByRole("button", { name: "Create bug task" });
+    expect(buttons).toHaveLength(2);
+    for (const b of buttons) expect(b).toBeDisabled();
   });
 });

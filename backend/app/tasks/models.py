@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     false,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -62,6 +63,12 @@ class Task(IdMixin, TimestampMixin, Base):
             "NOT (assignee_user_id IS NOT NULL AND assignee_agent_id IS NOT NULL)",
             name="ck_tasks_single_assignee",
         ),
+        Index(
+            "ix_tasks_project_failing_test",
+            "project_id",
+            "failing_test",
+            postgresql_where=text("failing_test IS NOT NULL"),
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
@@ -102,6 +109,8 @@ class Task(IdMixin, TimestampMixin, Base):
     chat_round: Mapped[int | None]
     in_chat: Mapped[bool] = mapped_column(default=False, server_default=false())
     chat_board: Mapped[str | None] = mapped_column(String(10))  # "added" | "declined" once decided
+    # MC-100: a bug task made for a failing test: the test's match key (app.workflow.known_bugs.test_key), set only there
+    failing_test: Mapped[str | None] = mapped_column(String(300))
 
 
 class LinkKind(StrEnum):

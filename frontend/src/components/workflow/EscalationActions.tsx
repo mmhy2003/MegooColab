@@ -23,14 +23,17 @@ function unconfirmedWhy(wf: Workflow): string | null {
 /** A workflow stopped on an escalation: why, and Retry, Accept (Mark merged for an unconfirmed merge, Finish anyway for
  * tests that failed at finish) and Pause for those who decide; the others are told who does. Tests that failed at
  * finish are listed with their kinds, the diagnosis and the finish's test runs (`runs`); while nothing was delivered
- * and a fix round is left, Fix round comes first and Retry turns quiet, and once both are used the card says so. On a
+ * and a fix round is left, Fix round comes first and Retry turns quiet, and once both are used the card says so. With
+ * `onCreateBug` (the workflow panel, for those who can edit), a base or flaky test offers Create bug task (MC-100). On a
  * task's workflow panel and in a chat. */
-export function EscalationActions({ wf, canDecide, busy, onDecide, runs }: {
+export function EscalationActions({ wf, canDecide, busy, onDecide, runs, taskKey, onCreateBug }: {
   wf: Workflow;
   canDecide: boolean;
   busy: boolean;
   onDecide: (action: EscalationAction) => void;
   runs?: TestRun[];
+  taskKey?: string;
+  onCreateBug?: (name: string) => void;
 }) {
   const why = unconfirmedWhy(wf);
   const failed = wf.escalation_reason === "finish_tests_failed";
@@ -40,7 +43,9 @@ export function EscalationActions({ wf, canDecide, busy, onDecide, runs }: {
     // data-waiting: the "waiting on you" button jumps here (JumpButtons)
     <div data-waiting={canDecide ? "escalation" : undefined} className="space-y-2 rounded border border-pink/60 p-2">
       {failed && wf.finish_tests ? (
-        <FinishFailures tests={wf.finish_tests} startBranch={wf.start_branch ?? null} runs={runs} />
+        <FinishFailures
+          tests={wf.finish_tests} startBranch={wf.start_branch ?? null} runs={runs} taskKey={taskKey} onCreateBug={onCreateBug} busy={busy}
+        />
       ) : (
         <p>{escalationReasonText(wf.escalation_reason)}</p>
       )}
