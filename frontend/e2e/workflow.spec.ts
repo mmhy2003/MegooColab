@@ -49,6 +49,9 @@ const STEP = (n: number) => `## Step ${n} of 2`;
 
 const FAILING = { name: "greeting.test:1", kind: "new" };
 const DIAGNOSIS = "The greeting test expects a farewell.";
+// MC-99: step 1's test baseline and the new failure its run adds (not FAILING.name: the finish checks that exact text)
+const BASELINE_FAILING = "legacy.test:1";
+const NEW_FAILING = "greeting.test:2";
 
 const GOOD_MOCKUP = `<!doctype html><html><body style="font-family:sans-serif">
 <h1>Greeting styles</h1>
@@ -152,10 +155,12 @@ const SCENARIO = [
     onPrompt(
       STEP(1),
       { sleep_ms: 4_000 }, // holds Build at "1 of 2 steps" for the test to see
+      mcp("record_tests", { key: KEY, command: "make test", passed: false, total: 3, failed: 1, failing: [BASELINE_FAILING], baseline: true }),
       { report_file: { path: ".megoocolab/plan.md" } },
       { report_file: { path: ".megoocolab/design.md" } },
       { write: { path: "step1.txt", content: "Hi there!\n" } },
       { commit: { message: "step 1: the greeting", all: true } },
+      mcp("record_tests", { key: KEY, command: "make test", passed: false, total: 4, failed: 2, failing: [BASELINE_FAILING, NEW_FAILING] }),
       mcp("complete_step", { key: KEY, step: 1, summary: "Greeting written", tests_passed: true, test_command: "make test" }),
       say("Step 1 is done"), // the run's summary
     ),
@@ -494,6 +499,13 @@ test("workflow end to end", async ({ browser }) => {
   await expect(findings.getByRole("listitem")).toHaveText("step1.txt:1The greeting has no farewell");
   await expect(drawer.getByText("changed step1.txt (+1 −1)")).toBeVisible({ timeout: 30_000 }); // the fix
   await expect(drawer.getByText("Review of step 1 (round 2): approved")).toBeVisible({ timeout: 30_000 });
+  // MC-99: step 1's baseline and its run's new failure, on the plan
+  const baselineBox = planSection.getByRole("region", { name: "Test baseline" });
+  await expect(baselineBox.getByText("Test baseline (before step 1) · 1 already failing — make test")).toBeVisible({ timeout: 30_000 });
+  await expect(planSection.getByText("✗ 2 failed, 1 new — make test")).toBeVisible();
+  await expect(planSection.getByText("also fails in the baseline", { exact: true })).toBeVisible();
+  await expect(planSection.getByText("new", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("finished without a test baseline")).toHaveCount(0);
   await expect(card.getByText("2 of 2 steps")).toBeVisible({ timeout: 15_000 });
 
   // 8. the runner goes away during step 2's implement run: that run fails, the same step waits for the runner
