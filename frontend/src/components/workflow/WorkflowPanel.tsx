@@ -97,6 +97,8 @@ export function WorkflowPanel({
     }
   };
   const post = (path: string, json?: unknown) => run(() => api(`/api/tasks/${taskKey}/workflow/${path}`, { method: "POST", json }));
+  // MC-100: anyone who can edit the project's tasks may ask for a bug task; read-only people see the links only
+  const onCreateBug = disabled ? undefined : (name: string) => void post("known-failures/bug", { name });
 
   const agentDriven = !!agent && (wf.driver !== "manual" || wf.status === "idle");
   const canUse = !!agent?.can_use && !disabled;
@@ -159,10 +161,14 @@ export function WorkflowPanel({
           busy={busy}
           onDecide={(action) => void post("escalation", { action })}
           runs={doneRuns}
+          taskKey={taskKey}
+          onCreateBug={onCreateBug}
         />
       )}
       {!escalating && wf.finish_tests?.settled && (
-        <FinishFailures tests={wf.finish_tests} startBranch={wf.start_branch ?? null} runs={doneRuns} />
+        <FinishFailures
+          tests={wf.finish_tests} startBranch={wf.start_branch ?? null} runs={doneRuns} taskKey={taskKey} onCreateBug={onCreateBug} busy={busy}
+        />
       )}
 
       {status === "waiting_human" && wf.needs === "project_answer" && (
@@ -230,7 +236,9 @@ export function WorkflowPanel({
                 ? `${agent?.name ?? "the agent"} is fixing the tests that failed at finish`
                 : "A reviewer is checking the fix")}
           </p>
-          <FinishFailures tests={finishFix} startBranch={wf.start_branch ?? null} showDiagnosis={false} />
+          <FinishFailures
+            tests={finishFix} startBranch={wf.start_branch ?? null} showDiagnosis={false} taskKey={taskKey} onCreateBug={onCreateBug} busy={busy}
+          />
         </div>
       )}
 

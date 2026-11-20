@@ -116,3 +116,19 @@ describe("EscalationActions", () => {
     expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Retry", "Accept", "Pause"]);
   });
 });
+
+describe("EscalationActions: bug tasks for known failing tests", () => {
+  const withBase = () => wf({ finish_tests: finishTests({ failures: [{ name: "a.test", kind: "new" }, { name: "b.test", kind: "base" }] }) });
+
+  it("offers Create bug task on a base row and passes on the test's name", () => {
+    const onCreateBug = vi.fn();
+    render(<EscalationActions wf={withBase()} canDecide busy={false} onDecide={() => {}} taskKey="PAY-1" onCreateBug={onCreateBug} />);
+    fireEvent.click(screen.getByRole("button", { name: "Create bug task" }));
+    expect(onCreateBug).toHaveBeenCalledWith("b.test");
+  });
+
+  it("offers nothing without onCreateBug, as in a chat", () => {
+    render(<EscalationActions wf={withBase()} canDecide busy={false} onDecide={() => {}} />);
+    expect(screen.queryByRole("button", { name: "Create bug task" })).toBeNull();
+  });
+});
