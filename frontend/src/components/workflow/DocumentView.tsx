@@ -16,6 +16,8 @@ import { testRunText, useMockups, useRunRecords, useWorkflow, type TestRun } fro
 
 import { FollowUps, initialRows, type FollowUpRow } from "./FollowUps";
 import { MockupFrame } from "./MockupFrame";
+import { StepTestRun } from "./StepTestRun";
+import { TestBaseline } from "./TestBaseline";
 
 const STATUS_TEXT: Record<DocumentInfo["status"], string> = {
   submitted: "waiting for a decision",
@@ -76,7 +78,8 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
   const buildStates = selected.status === "approved" ? workflow.data?.steps : undefined;
   // recorded test runs belong to the plan being built: shown on the approved plan's steps only
   const testRuns = kind === "plan" && selected.status === "approved" ? (records.data?.test_runs ?? []) : [];
-  const stepRuns = (n: number): TestRun[] => testRuns.filter((r) => r.stage === "build" && r.step === n);
+  const baselineRun = testRuns.filter((r) => r.baseline).at(-1);
+  const stepRuns = (n: number): TestRun[] => testRuns.filter((r) => r.stage === "build" && r.step === n && !r.baseline);
   const finishRun = testRuns.filter((r) => r.stage === "done").at(-1);
   const unverified = new Set(kind === "plan" ? (records.data?.unverified_steps ?? []) : []);
   const reviewing = kind === "design" && canDecide;
@@ -167,6 +170,7 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
             </p>
           )}
           <Markdown>{detail.data.body_md}</Markdown>
+          {baselineRun && <TestBaseline run={baselineRun} />}
           {detail.data.steps && detail.data.steps.length > 0 && (
             <ol className="ml-5 list-decimal space-y-1.5">
               {detail.data.steps.map((s, i) => {
@@ -179,7 +183,7 @@ export function DocumentView({ taskKey, kind, disabled = false }: { taskKey: str
                     <span className="font-semibold">{s.title}</span>
                     {state && <span className="text-xs text-muted-foreground"> · {STEP_STATE_TEXT[state]}</span>}
                     {s.detail && <p className="text-xs text-muted-foreground">{s.detail}</p>}
-                    {latest && <p className={`text-xs ${latest.passed ? "text-muted-foreground" : "text-pink"}`}>{testRunText(latest)}</p>}
+                    {latest && <StepTestRun run={latest} />}
                     {unverified.has(i + 1) && <p className="text-xs text-pink">No test run recorded</p>}
                     {earlier.length > 0 && (
                       <details className="text-xs text-muted-foreground">

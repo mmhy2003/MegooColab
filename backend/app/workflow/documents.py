@@ -23,6 +23,7 @@ from app.workflow.follow_ups import clean_proposed, clean_reviewed, create_on_ap
 from app.workflow.models import (
     DocKind,
     DocStatus,
+    Driver,
     Mockup,
     Needs,
     RunRole,
@@ -255,6 +256,8 @@ async def _start_build(db, user: User, wf, task: Task, doc: WorkflowDocument) ->
         await task_changed(db, subtask, "task.created")  # live boards show the new subtask
         steps.append({**step, "subtask_id": str(subtask.id)})
     doc.steps = steps  # a new list: edits inside nested dicts are not tracked
+    if wf.driver == Driver.runner:  # frozen for the whole Build (MC-99); connect-only workflows keep None
+        wf.build_records_baseline = project.record_test_baseline
     await engine.set_stage(db, wf, task, Stage.build)
     engine.set_step(wf, 1)
     await engine.hand_to_agent(db, wf, task, RunRole.implement, step=1, requested_by=user.id)

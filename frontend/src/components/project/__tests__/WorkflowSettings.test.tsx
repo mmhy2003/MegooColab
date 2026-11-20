@@ -15,6 +15,7 @@ const project = {
   commit_docs_to_repo: false,
   send_back_on_changes_requested: false,
   tolerate_known_test_failures: true,
+  record_test_baseline: true,
 } as Project;
 
 function setup(canEdit: boolean, reply: Response = new Response("{}", { status: 200 }), shown: Project = project) {
@@ -61,6 +62,7 @@ describe("Workflow settings", () => {
       commit_docs_to_repo: false,
       send_back_on_changes_requested: false,
       tolerate_known_test_failures: true,
+      record_test_baseline: true,
     });
   });
 
@@ -94,6 +96,25 @@ describe("Workflow settings", () => {
     const block = screen.getByText("Finish when the only failing tests are known ones").parentElement as HTMLElement;
     expect(within(block).getByText("On")).toBeInTheDocument();
     expect(within(block).getByText(/On: at finish, a test that also fails on the branch the task started from/)).toBeInTheDocument();
+  });
+
+  it("the test baseline checkbox saves and explains itself", async () => {
+    const fetchMock = setup(true);
+    const box = screen.getByLabelText("Record a test baseline when Build starts");
+    expect(box).toBeChecked();
+    expect(screen.getByText(/Off: no baseline, and every step needs a fully green run\./)).toBeInTheDocument();
+    fireEvent.click(box);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Saved.")).toBeInTheDocument();
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({ record_test_baseline: false });
+  });
+
+  it("the read-only view shows the test baseline setting", () => {
+    setup(false);
+    const block = screen.getByText("Record a test baseline when Build starts").parentElement as HTMLElement;
+    expect(within(block).getByText("On")).toBeInTheDocument();
+    expect(within(block).getByText(/On: before step 1 changes anything, the agent runs the full test suite once/)).toBeInTheDocument();
   });
 
   it("pull request review: each choice explains itself, and Agent asks who reviews", async () => {

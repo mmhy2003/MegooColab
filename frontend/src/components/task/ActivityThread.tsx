@@ -334,6 +334,8 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
     }
     case "step.no_commit":
       return `Step ${num(data.step)} finished without a commit`;
+    case "build.no_baseline":
+      return "Step 1 finished without a test baseline: new failures won't be marked during Build";
     case "workflow.uncommitted": {
       const who =
         data.role === "final_fix"
@@ -393,6 +395,7 @@ const STANDALONE = new Set([
   "step.completed",
   "step.approved",
   "step.no_commit",
+  "build.no_baseline",
   "workflow.uncommitted",
   "mockup.shown",
   "decision.recorded",

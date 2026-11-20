@@ -829,3 +829,63 @@ async def test_get_workflow_keeps_the_final_fix_text_outside_a_fix_round(db, tc_
     assert not err, out
     assert out["next"] == "Fix the final review's findings and run the tests; your run ends when you are done."
     assert out["instructions"] == (await methodology.current(db, "review_fix")).body_md
+
+
+# ---- record_tests answers which failing tests are new (MC-99) ------------------------------------------------------
+
+FAILED = {"command": "uv run pytest", "passed": False}
+
+
+async def _baseline_step_1(db, tc):
+    """An implement run at step 1 of Build, with the frozen baseline setting on."""
+    b, run = await _started(db, tc)
+    token = await _run_token(run, workflow_role="implement", step=1, stage="build")
+    async with SessionLocal() as s:
+        await s.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == b.task_id).values(build_records_baseline=True))
+        await s.commit()
+    return b, token
+
+
+def _recorded(tc, token, key, **args) -> dict:
+    err, out = _tool(tc, token, "record_tests", key=key, **args)
+    assert not err, out
+    return out
+
+
+async def test_record_tests_answer_without_a_baseline_is_unchanged(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, token = await _baseline_step_1(db, tc)
+    out = _recorded(tc, token, b.key, **FAILED, failed=1, failing=["a"])
+    assert set(out) == {"id", "passed"} and out["passed"] is False
+
+
+async def test_record_tests_answer_for_a_baseline(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, token = await _baseline_step_1(db, tc)
+    out = _recorded(tc, token, b.key, **FAILED, failed=1, failing=["a"], baseline=True)
+    assert (set(out), out["baseline"]) == ({"id", "passed", "baseline"}, True)
+
+
+async def test_record_tests_answer_names_new_failures(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, token = await _baseline_step_1(db, tc)
+    _recorded(tc, token, b.key, **FAILED, failed=1, failing=["a"], baseline=True)
+    out = _recorded(tc, token, b.key, **FAILED, failed=2, failing=["a", "b"])
+    assert (out["new_failing"], out["baseline_failing"]) == (["b"], 1)
+    assert "unlisted_failing" not in out
+    assert out["note"] == "1 failing test is new: it did not fail in the baseline. Fix it before you complete the step."
+    out = _recorded(tc, token, b.key, **FAILED, failed=1, failing=["a"])
+    assert (out["new_failing"], out["baseline_failing"]) == ([], 1)
+    assert out["note"] == (
+        "Every failing test also fails in the baseline: none is new. The step's tests count as passing.")
+
+
+async def test_record_tests_answer_with_an_incomplete_baseline(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, token = await _baseline_step_1(db, tc)
+    names = [f"test_{n}" for n in range(100)]
+    _recorded(tc, token, b.key, **FAILED, failed=340, failing=names, baseline=True)
+    out = _recorded(tc, token, b.key, **FAILED, failed=1, failing=["zzz"])
+    assert (out["unlisted_failing"], out["new_failing"], out["baseline_failing"]) == (["zzz"], [], 0)
+    assert out["note"].startswith(
+        "The baseline lists only 100 of its 340 failing tests, so 1 failing test can't be compared.")

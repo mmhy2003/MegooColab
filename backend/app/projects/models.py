@@ -68,6 +68,8 @@ class Project(IdMixin, TimestampMixin, Base):
     commit_docs_to_repo: Mapped[bool] = mapped_column(default=False, server_default=false())
     # MC-97: a test failing on the start commit, or a flaky one, doesn't stop the finish
     tolerate_known_test_failures: Mapped[bool] = mapped_column(default=True, server_default=true())
+    # MC-99: step 1 records a test baseline; new failures are marked during Build
+    record_test_baseline: Mapped[bool] = mapped_column(default=True, server_default=true())
     status: Mapped[ProjectStatus] = mapped_column(
         String(20), default=ProjectStatus.active, server_default=ProjectStatus.active.value
     )

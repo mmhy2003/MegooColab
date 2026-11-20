@@ -168,6 +168,25 @@ def test_finish_text_sorts_failing_tests():
     assert "If anything fails, **stop**" not in body
 
 
+def test_baseline_texts():
+    """The build and review texts use the task's test baseline (MC-99); the finish texts keep their own check."""
+    def text(key: str) -> str:
+        return (methodology.DEFAULTS_DIR / f"{key}.md").read_text(encoding="utf-8")
+
+    expected = {
+        "build_implement": ("## The test baseline", "baseline=true", "baseline?", "new_failing",
+                            "Never fix, skip or weaken a baseline test"),
+        "build_step_fix": ("## The test baseline", "baseline?", "Never fix, skip or weaken a baseline test"),
+        "build_step_review": ("## Compared with the test baseline", "is not a finding"),
+        "review_final": ("## Test baseline",),
+    }
+    for key, phrases in expected.items():
+        for phrase in phrases:
+            assert phrase in text(key), (key, phrase)
+    for key in ("finish", "finish_fix", "finish_fix_review"):
+        assert "baseline=true" not in text(key), key
+
+
 def _old_default(monkeypatch, key: str, text: str) -> None:
     """Pretend `text` shipped as an earlier default of `key`."""
     import hashlib

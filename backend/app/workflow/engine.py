@@ -483,6 +483,8 @@ async def enqueue(
         records as run_records,  # local: records imports this module
     )
 
+    if not round_review:  # a fix round at finish (MC-98) is not compared
+        extra = [*(extra or []), *await run_records.baseline_sections(db, wf, role, step)]
     prompt, meth = await build_prompt(
         db, task, role, step=step, findings=findings, key_override=key_override,
         previous_findings=None if round_review else await _previous_findings(db, wf, role, step),

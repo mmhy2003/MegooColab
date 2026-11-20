@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { finishedWithSummary, finishTestsSummary, testRunText, type TestRun } from "@/lib/workflow";
+import { finishedWithSummary, finishTestsSummary, MARK_LABEL, testRunText, type TestRun } from "@/lib/workflow";
 
 const run = (extra: Partial<TestRun>): TestRun => ({
   id: "t1",
@@ -13,6 +13,9 @@ const run = (extra: Partial<TestRun>): TestRun => ({
   skipped: null,
   failing: [],
   on_base: false,
+  baseline: false,
+  marks: null,
+  known_only: false,
   author: "Bot",
   created_at: "2026-10-27T10:00:00Z",
   ...extra,
@@ -33,6 +36,24 @@ describe("testRunText", () => {
     expect(testRunText(run({ passed: false, failed: 1, failing: ["a"], on_base: true }))).toBe(
       "✗ 1 failed: a — uv run pytest (on the start commit)",
     );
+  });
+
+  it("counts the failures that are new against the baseline", () => {
+    expect(testRunText(run({ passed: false, failed: 3, failing: ["a", "b", "c"], marks: ["new", "baseline", "baseline"] }))).toBe(
+      "✗ 3 failed (1 new): a, b, c — uv run pytest",
+    );
+  });
+
+  it("adds no new count when no failure is new", () => {
+    expect(testRunText(run({ passed: false, failed: 2, failing: ["a", "b"], marks: ["baseline", "unlisted"] }))).toBe(
+      "✗ 2 failed: a, b — uv run pytest",
+    );
+  });
+});
+
+describe("MARK_LABEL", () => {
+  it("words each mark of a failing test", () => {
+    expect(MARK_LABEL).toEqual({ new: "new", baseline: "also fails in the baseline", unlisted: "not in the baseline's list" });
   });
 });
 

@@ -1,11 +1,13 @@
 """Decision and test-run records (Plan 8 Task 2): what an agent decided on its own, and what its tests said."""
 
+import uuid
+
 from sqlalchemy import select, update
 
 from app.agent_runs.models import AgentRun
 from app.core.db import SessionLocal
 from app.workflow import records
-from app.workflow.models import WorkflowDecision, WorkflowTestRun
+from app.workflow.models import TaskWorkflow, WorkflowDecision, WorkflowTestRun
 from tests.mcp.test_workflow_tools import (
     ALLOWED,
     _connect_only_building,
@@ -31,6 +33,12 @@ async def _rows(model, task_id) -> list:
     async with SessionLocal() as s:
         rows = await s.execute(select(model).where(model.task_id == task_id).order_by(model.created_at, model.id))
         return list(rows.scalars())
+
+
+async def _baseline_on(task_id, value=True) -> None:
+    async with SessionLocal() as s:
+        await s.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == task_id).values(build_records_baseline=value))
+        await s.commit()
 
 
 async def _building(db, tc, role="implement", step=2):
@@ -84,6 +92,57 @@ async def test_record_tests_on_base_is_stored_returned_and_marked(db, tc_factory
     assert "FAILED on the start commit — uv run pytest" in records.test_runs_section([row])
     assert not _tool(tc, token, "record_tests", key=b.key, **TESTS)[0]
     assert [r.on_base for r in await _rows(WorkflowTestRun, b.task_id)] == [True, False]
+
+
+BASELINE = {**TESTS, "passed": False, "failed": 100, "baseline": True}
+
+
+async def test_record_tests_stores_a_baseline(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _, token = await _building(db, tc, step=1)
+    await _baseline_on(b.task_id)
+    names = [f"test_{n}" for n in range(100)]
+    err, out = _tool(tc, token, "record_tests", key=b.key, **BASELINE, failing=names)
+    assert not err, out
+    [row] = await _rows(WorkflowTestRun, b.task_id)
+    assert (row.baseline, row.failing) == (True, names)
+    err, text = _tool(tc, token, "record_tests", key=b.key, **BASELINE, failing=[*names, "test_100"])
+    assert err and "invalid_record" in text
+    err, text = _tool(tc, token, "record_tests", key=b.key, **{**TESTS, "passed": False}, failing=names[:21])
+    assert err and "invalid_record" in text
+    assert len(await _rows(WorkflowTestRun, b.task_id)) == 1
+
+
+async def test_a_baseline_is_refused_outside_step_1s_implement_run(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run, token = await _building(db, tc, step=1)
+    await _baseline_on(b.task_id)
+    for role, step, stage in (("implement", 2, "build"), ("step_fix", 1, "build"), ("finish", None, "done")):
+        await _as(run, role, step, stage)
+        err, text = _tool(tc, token, "record_tests", key=b.key, **BASELINE)
+        assert err and "baseline_not_allowed" in text, (role, step, text)
+    await _as(run, "implement", 1, "build")
+    for frozen in (False, None):
+        await _baseline_on(b.task_id, frozen)
+        err, text = _tool(tc, token, "record_tests", key=b.key, **BASELINE)
+        assert err and "baseline_not_allowed" in text, (frozen, text)
+    assert await _rows(WorkflowTestRun, b.task_id) == []
+    key, personal = await _connect_only_building(tc, b.manager)
+    task_id = uuid.UUID(tc.get(f"/api/tasks/{key}").json()["id"])
+    await _baseline_on(task_id)
+    err, text = _tool(tc, personal, "record_tests", key=key, **BASELINE)
+    assert err and "baseline_not_allowed" in text
+    assert await _rows(WorkflowTestRun, task_id) == []
+
+
+async def test_baseline_validation(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _, token = await _building(db, tc, step=1)
+    await _baseline_on(b.task_id)
+    for bad in ({"baseline": "yes"}, {"on_base": True}, {"failed": None}):
+        err, text = _tool(tc, token, "record_tests", key=b.key, **{**BASELINE, **bad})
+        assert err and "invalid_record" in text, (bad, text)
+    assert await _rows(WorkflowTestRun, b.task_id) == []
 
 
 async def test_record_tools_roles(db, tc_factory):
@@ -236,3 +295,108 @@ async def test_a_run_recorded_while_the_claim_waited_for_the_lock_counts(db, tc_
         await claim.commit()
     async with SessionLocal() as s:
         assert await records.unverified_steps(s, b.task_id) == []
+
+
+# ---- the comparison with the baseline (MC-99) ------------------------------------------------------------------
+
+
+def _run(failing, failed=None, **kw) -> WorkflowTestRun:
+    fields = {"stage": "build", "step": 2, "command": "pytest", "passed": False, "on_base": False, "baseline": False,
+              "failed": failed, "failing": failing, **kw}
+    return WorkflowTestRun(**fields)
+
+
+def test_compare():
+    green = _run([], passed=True, baseline=True, failed=0)
+    complete = _run(["a", "b"], 2, baseline=True)
+    incomplete = _run(["a"], 340, baseline=True)
+    c = records.compare(_run(["a", "c"], 2), green)
+    assert (c.marks, c.known_only, c.complete) == (["new", "new"], False, True)
+    c = records.compare(_run(["a", "c"], 2), complete)
+    assert (c.marks, c.known_only, c.complete) == (["baseline", "new"], False, True)
+    c = records.compare(_run(["a", "c"]), incomplete)
+    assert (c.marks, c.known_only, c.complete) == (["baseline", "unlisted"], False, False)
+    assert records.compare(_run(["a", "b"], 2), complete).known_only is True
+    assert records.compare(_run(["a", "b"]), complete).known_only is True
+    assert records.compare(_run(["a", "b"], 25), complete).known_only is False
+    for run, baseline in (
+        (complete, complete),
+        (_run(["a"], 1, passed=True), complete),
+        (_run(["a"], 1, on_base=True), complete),
+        (_run(["a"], 1, stage="done", step=None), complete),
+        (_run([], 1), complete),
+        (_run(["a"], 1), None),
+    ):
+        assert records.compare(run, baseline) is None, run.__dict__
+
+
+async def test_the_newest_baseline_counts(db, tc_factory):
+    from datetime import timedelta
+
+    tc = tc_factory(lifespan=True)
+    b, run, _ = await _building(db, tc, step=1)
+    async with SessionLocal() as s:
+        wf = await s.get(TaskWorkflow, b.task_id)
+        row = {"task_id": b.task_id, "run_id": run.id, "stage": "build", "step": 1, "command": "pytest",
+               "passed": False, "failed": 1, "baseline": True}
+        old = WorkflowTestRun(**row, failing=["old"], created_at=wf.started_at - timedelta(hours=1))
+        s.add(old)
+        await s.commit()
+        assert await records.baseline_run(s, wf) is None
+        s.add(WorkflowTestRun(**row, failing=["first"], created_at=wf.started_at + timedelta(seconds=1)))
+        s.add(WorkflowTestRun(**row, failing=["second"], created_at=wf.started_at + timedelta(seconds=2)))
+        await s.commit()
+        assert (await records.baseline_run(s, wf)).failing == ["second"]
+
+
+async def test_records_api_marks_runs(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _, token = await _building(db, tc, step=1)
+    await _baseline_on(b.task_id)
+    failed = {**TESTS, "passed": False, "failed": 2}
+    assert not _tool(tc, token, "record_tests", key=b.key, **failed, failing=["a", "b"], baseline=True)[0]
+    assert not _tool(tc, token, "record_tests", key=b.key, **failed, failing=["a", "c"])[0]
+    assert not _tool(tc, token, "record_tests", key=b.key, **failed, failing=["b", "a"])[0]
+    assert not _tool(tc, token, "record_tests", key=b.key, **TESTS)[0]
+    base, mixed, known, green = tc.get(f"/api/tasks/{b.key}/records").json()["test_runs"]
+    assert (base["baseline"], base["marks"], base["known_only"]) == (True, None, False)
+    assert (mixed["baseline"], mixed["marks"], mixed["known_only"]) == (False, ["baseline", "new"], False)
+    assert (known["marks"], known["known_only"]) == (["baseline", "baseline"], True)
+    assert (green["baseline"], green["marks"], green["known_only"]) == (False, None, False)
+
+
+async def test_unverified_steps_with_a_baseline(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _, token = await _building(db, tc, step=1)
+    await _baseline_on(b.task_id)
+
+    def claim():
+        assert not _tool(tc, token, "complete_step", key=b.key, step=1, summary="done", tests_passed=True)[0]
+
+    def unverified():
+        return tc.get(f"/api/tasks/{b.key}/records").json()["unverified_steps"]
+
+    assert not _tool(tc, token, "record_tests", key=b.key, **TESTS, baseline=True)[0]
+    claim()
+    assert unverified() == [1]  # a green baseline row alone verifies nothing
+    failed = {**TESTS, "passed": False, "failed": 1, "failing": ["a"]}
+    assert not _tool(tc, token, "record_tests", key=b.key, **failed, baseline=True)[0]
+    claim()
+    assert unverified() == [1]  # nor does a failing one
+    assert not _tool(tc, token, "record_tests", key=b.key, **failed)[0]
+    claim()
+    assert unverified() == []  # a known-only run counts as passing
+
+
+async def test_review_records_leave_the_baseline_out(db, tc_factory):
+    from app.workflow.models import RunRole
+
+    tc = tc_factory(lifespan=True)
+    b, _, token = await _building(db, tc, step=1)
+    await _baseline_on(b.task_id)
+    assert not _tool(tc, token, "record_tests", key=b.key, **TESTS, baseline=True)[0]
+    assert not _tool(tc, token, "record_tests", key=b.key, **TESTS)[0]
+    async with SessionLocal() as s:
+        for role in (RunRole.step_review, RunRole.final_review):
+            _, runs = await records.review_records(s, b.task_id, role, 1)
+            assert [r.baseline for r in runs] == [False], role

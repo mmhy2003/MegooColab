@@ -9,8 +9,9 @@ excluded from git; never edit them and never commit them.
 
 - `complete_step(key, step, summary, tests_passed, test_command?)`: report that the step is done.
   `step` is the step number from your prompt, `summary` is up to 2,000 characters about what you did,
-  `tests_passed` is true only if you ran the tests yourself and they passed, and `test_command` (up to 200
-  characters) is the command you ran.
+  `tests_passed` is true only if you ran the tests yourself and they passed, or the only failing tests are in the
+  test baseline and `record_tests` told you none is new, and `test_command` (up to 200 characters) is the command
+  you ran.
 - `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: ask one question when you are
   genuinely blocked.
 - `get_workflow(key)`, `get_document(key, kind, version?)`: read the workflow state and documents.
@@ -21,8 +22,8 @@ excluded from git; never edit them and never commit them.
 - `find_answer(project_key, question)` and `ask_project(project_key, question, context?)`: when you need to know
   how another project's code works, look for an existing answer first, then ask that project.
 - `kb_write(...)`: record lasting knowledge you discovered (not task notes) in the Knowledge Base.
-- `record_tests(key, command, passed, total?, failed?, skipped?, failing?)`: record a test run you just did
-  (see "Evidence before claims").
+- `record_tests(key, command, passed, total?, failed?, skipped?, failing?, baseline?)`: record a test run you just
+  did (see "Evidence before claims" and "The test baseline").
 - `record_decision(key, decision, reason, cost_if_wrong, plan_said?)`: record a decision you made on your own
   (see "Record your decisions and what you learn").
 
@@ -72,8 +73,9 @@ ask (see "When you are blocked"). Asking before starting is always fine. Bad wor
    history. Leave the worktree clean.
 6. Self-review before reporting: did I implement everything in the step, and only that? Are names accurate? Do the
    tests check behaviour? Fix what you find before you commit, so the step is a single commit.
-7. Call `complete_step(key, step, summary, tests_passed=true, test_command)` only after the step's tests pass, you
-   have seen them pass and you have recorded that run. If you cannot make the tests pass, do not call
+7. Call `complete_step(key, step, summary, tests_passed=true, test_command)` only after the step's tests pass (or
+   fail only in tests of the baseline, see "The test baseline"), you have seen them pass and you have recorded that
+   run. If you cannot make the tests pass, do not call
    `complete_step`: call `ask_human` with the failing command and the relevant output, then end your turn.
 
 ## When something fails
@@ -98,13 +100,37 @@ Never say the tests pass, a bug is fixed or the work is done without fresh evide
 
 1. Run the command that proves it (the tests, the linter, the build), now and in full.
 2. Read the whole output: the exit code, the counts, every failure and warning.
-3. Record it with `record_tests(key, command, passed, total?, failed?, skipped?, failing?)`: the command, whether it
-   passed, the counts, and the names (never the output) of up to 20 failing tests. Record every run you rely on,
-   failing ones included.
+3. Record it with `record_tests(key, command, passed, total?, failed?, skipped?, failing?, baseline?)`: the command,
+   whether it passed, the counts, and the names (never the output) of up to 20 failing tests, the ones that are not
+   in the baseline first. Record every run you rely on, failing ones included.
 4. Only then make the claim.
 
 "Should pass", "probably fixed" and "it passed earlier" are not evidence. A step that claims passing tests without a
 recorded passing run is flagged to the reviewer.
+
+## The test baseline
+
+A project can record a test baseline for each task: the full suite, run once on the untouched task branch before
+step 1 changes anything. It tells a test that was already failing from one this task broke.
+
+- **Recording it (step 1 only).** When your prompt's "## Test baseline" section says no baseline is recorded yet,
+  first check that the worktree is clean and the task branch has no commits of its own (`git status`, `git log`).
+  If so, run the full suite before you change anything and record it with `record_tests(..., baseline=true)`: the
+  counts, `failed` when it failed, and up to 100 failing test names. A failing linter, type check or build counts
+  as one failing test named after its command. Otherwise skip it and carry on: never stash or undo work to get a
+  baseline. A suite that can't run at all is not a baseline: ask a person (see "When you are blocked"). If the
+  baseline ran in a broken environment (a service not started), fix that and record it again: the newest counts.
+- **Using it.** When a baseline exists, your prompt lists its failing tests, and `record_tests` tells you at once
+  which failing tests of your run are new (`new_failing` and a `note`).
+- A new failure is yours: fix it before `complete_step`. Never fix, skip or weaken a baseline test that the step
+  doesn't touch.
+- Write each test's name exactly as the baseline does, so it can be matched.
+- In your own runs, name the tests that are not in the baseline first (a run names at most 20).
+- A test that passed in the baseline and now fails may be flaky: run it again and record that run.
+- When `record_tests` says every failing test also fails in the baseline, the step's tests count as passing: call
+  `complete_step` with `tests_passed=true` and say in the summary which baseline tests still fail.
+- When the baseline lists fewer tests than failed, a failing test outside its list can't be compared: treat it as
+  yours unless you can show otherwise.
 
 ## Record your decisions and what you learn
 

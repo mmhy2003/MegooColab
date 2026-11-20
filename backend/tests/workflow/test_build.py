@@ -11,7 +11,7 @@ from app.auth.models import Role, User
 from app.core.db import SessionLocal
 from app.projects.models import BoardColumn
 from app.tasks.models import Task
-from app.workflow import build, engine, questions
+from app.workflow import build, engine, questions, records
 from app.workflow.models import StepReview, TaskWorkflow, WorkflowQuestion
 from tests.agent_runs.test_dispatch import _task
 from tests.agent_runs.test_run_guards import _next_of
@@ -168,6 +168,55 @@ async def test_changes_requested_fix_resumes_implement_session_then_rereview(db,
     assert [tuple(r) for r in rounds] == [(1, "changes_requested"), (2, "approved")]
     await _finish(b.manager.id, rereview, "completed")
     assert (await _wf(b.task_id)).current_step == 2
+
+
+async def test_step_1_without_a_baseline_is_warned_once(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _building(db, tc)
+    assert (await _wf(b.task_id)).build_records_baseline is True
+    await _complete(run)
+    await _finish(b.manager.id, run, "completed", session_id="impl-1", **_git(SHA_A, SHA_B))
+    [warn] = await _events(b.task_id, "build.no_baseline")
+    assert warn.data == {}
+
+    review = await _last(b.task_id)
+    await _review(review, "changes_requested", [FINDING])
+    await _finish(b.manager.id, review, "completed")
+    fix = await _last(b.task_id)
+    assert fix.workflow_role == "step_fix"
+    await _complete(fix)
+    await _finish(b.manager.id, fix, "completed", session_id="impl-1b", **_git(SHA_A, SHA_B))
+    rereview = await _last(b.task_id)
+    assert (rereview.workflow_role, rereview.step) == ("step_review", 1)
+    assert len(await _events(b.task_id, "build.no_baseline")) == 1  # only the first review of step 1
+
+    await _review(rereview, "approved")
+    await _finish(b.manager.id, rereview, "completed")
+    step2 = await _last(b.task_id)
+    assert (step2.workflow_role, step2.step) == ("implement", 2)
+    await _pass_step(b, step2)
+    assert len(await _events(b.task_id, "build.no_baseline")) == 1
+
+
+@pytest.mark.parametrize("case", ["baseline", "setting_off"])
+async def test_no_baseline_warning_with_a_baseline_or_the_setting_off(db, tc_factory, case):
+    tc = tc_factory(lifespan=True)
+    b, run = await _building(db, tc)
+    async with SessionLocal() as s:
+        if case == "baseline":
+            task = await s.get(Task, b.task_id)
+            await records.record_tests(
+                s, task, await s.get(TaskWorkflow, b.task_id), run=await s.get(AgentRun, run.id), posted_by=None,
+                command="pytest -q", passed=True, total=10, failed=0, baseline=True,
+            )
+        else:
+            await s.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == b.task_id).values(
+                build_records_baseline=False))
+        await s.commit()
+    await _complete(run)
+    await _finish(b.manager.id, run, "completed", session_id="impl-1", **_git(SHA_A, SHA_B))
+    assert (await _last(b.task_id)).workflow_role == "step_review"
+    assert await _events(b.task_id, "build.no_baseline") == []
 
 
 async def test_three_review_rounds_then_escalation_and_accept_advances(db, tc_factory):
