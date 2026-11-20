@@ -185,7 +185,7 @@ async def test_flaky_title_and_command_line(client, db):
 
 
 async def test_no_duplicates(client, db):
-    await make_project(client, db, "PAY")
+    pay, _, _ = await make_project(client, db, "PAY")
     t = await _task(client)
     await _finished(t, [NEW, BASE, FLAKY])
     for _ in range(2):
@@ -209,7 +209,7 @@ async def test_no_duplicates(client, db):
     assert r.status_code == 200, r.text
     bugs = await _bugs()
     assert len(bugs) == 2
-    assert {b.project_id for b in bugs} == {bugs[0].project_id, uuid.UUID(shop["id"])}
+    assert {b.project_id for b in bugs} == {uuid.UUID(pay["id"]), uuid.UUID(shop["id"])}
 
 
 async def test_offered_again_after_done_or_delete(client, db):
