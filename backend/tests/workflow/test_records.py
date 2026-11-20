@@ -1,11 +1,13 @@
 """Decision and test-run records (Plan 8 Task 2): what an agent decided on its own, and what its tests said."""
 
+import uuid
+
 from sqlalchemy import select, update
 
 from app.agent_runs.models import AgentRun
 from app.core.db import SessionLocal
 from app.workflow import records
-from app.workflow.models import WorkflowDecision, WorkflowTestRun
+from app.workflow.models import TaskWorkflow, WorkflowDecision, WorkflowTestRun
 from tests.mcp.test_workflow_tools import (
     ALLOWED,
     _connect_only_building,
@@ -31,6 +33,12 @@ async def _rows(model, task_id) -> list:
     async with SessionLocal() as s:
         rows = await s.execute(select(model).where(model.task_id == task_id).order_by(model.created_at, model.id))
         return list(rows.scalars())
+
+
+async def _baseline_on(task_id, value=True) -> None:
+    async with SessionLocal() as s:
+        await s.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == task_id).values(build_records_baseline=value))
+        await s.commit()
 
 
 async def _building(db, tc, role="implement", step=2):
@@ -84,6 +92,57 @@ async def test_record_tests_on_base_is_stored_returned_and_marked(db, tc_factory
     assert "FAILED on the start commit — uv run pytest" in records.test_runs_section([row])
     assert not _tool(tc, token, "record_tests", key=b.key, **TESTS)[0]
     assert [r.on_base for r in await _rows(WorkflowTestRun, b.task_id)] == [True, False]
+
+
+BASELINE = {**TESTS, "passed": False, "failed": 100, "baseline": True}
+
+
+async def test_record_tests_stores_a_baseline(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _, token = await _building(db, tc, step=1)
+    await _baseline_on(b.task_id)
+    names = [f"test_{n}" for n in range(100)]
+    err, out = _tool(tc, token, "record_tests", key=b.key, **BASELINE, failing=names)
+    assert not err, out
+    [row] = await _rows(WorkflowTestRun, b.task_id)
+    assert (row.baseline, row.failing) == (True, names)
+    err, text = _tool(tc, token, "record_tests", key=b.key, **BASELINE, failing=[*names, "test_100"])
+    assert err and "invalid_record" in text
+    err, text = _tool(tc, token, "record_tests", key=b.key, **{**TESTS, "passed": False}, failing=names[:21])
+    assert err and "invalid_record" in text
+    assert len(await _rows(WorkflowTestRun, b.task_id)) == 1
+
+
+async def test_a_baseline_is_refused_outside_step_1s_implement_run(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run, token = await _building(db, tc, step=1)
+    await _baseline_on(b.task_id)
+    for role, step, stage in (("implement", 2, "build"), ("step_fix", 1, "build"), ("finish", None, "done")):
+        await _as(run, role, step, stage)
+        err, text = _tool(tc, token, "record_tests", key=b.key, **BASELINE)
+        assert err and "baseline_not_allowed" in text, (role, step, text)
+    await _as(run, "implement", 1, "build")
+    for frozen in (False, None):
+        await _baseline_on(b.task_id, frozen)
+        err, text = _tool(tc, token, "record_tests", key=b.key, **BASELINE)
+        assert err and "baseline_not_allowed" in text, (frozen, text)
+    assert await _rows(WorkflowTestRun, b.task_id) == []
+    key, personal = await _connect_only_building(tc, b.manager)
+    task_id = uuid.UUID(tc.get(f"/api/tasks/{key}").json()["id"])
+    await _baseline_on(task_id)
+    err, text = _tool(tc, personal, "record_tests", key=key, **BASELINE)
+    assert err and "baseline_not_allowed" in text
+    assert await _rows(WorkflowTestRun, task_id) == []
+
+
+async def test_baseline_validation(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _, token = await _building(db, tc, step=1)
+    await _baseline_on(b.task_id)
+    for bad in ({"baseline": "yes"}, {"on_base": True}, {"failed": None}):
+        err, text = _tool(tc, token, "record_tests", key=b.key, **{**BASELINE, **bad})
+        assert err and "invalid_record" in text, (bad, text)
+    assert await _rows(WorkflowTestRun, b.task_id) == []
 
 
 async def test_record_tools_roles(db, tc_factory):

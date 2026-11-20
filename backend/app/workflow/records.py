@@ -33,6 +33,7 @@ MAX_TEXT = 1000
 MAX_COST = 500
 MAX_COMMAND = 200
 MAX_FAILING = 20
+MAX_BASELINE_FAILING = 100  # the baseline is what every later run is compared with (MC-99)
 MAX_FAILING_NAME = 300
 MAX_DECISIONS_PER_STEP = 30
 MAX_TEST_RUNS_PER_STEP = 50
@@ -66,12 +67,20 @@ def _count(value: Any) -> int | None:
     return value
 
 
-def _failing(value: Any) -> list[str]:
+def _failing(value: Any, limit: int = MAX_FAILING) -> list[str]:
     if value is None:
         return []
-    if not isinstance(value, list) or len(value) > MAX_FAILING:
+    if not isinstance(value, list) or len(value) > limit:
         raise _422("invalid_record")
     return [_text(name, MAX_FAILING_NAME) for name in value]
+
+
+def _may_record_baseline(run: AgentRun | None, wf: TaskWorkflow) -> bool:
+    """Only step 1's implement run, on a workflow that froze the setting on when Build began."""
+    return (
+        run is not None and run.workflow_role is not None and RunRole(run.workflow_role) == RunRole.implement
+        and run.step == 1 and wf.build_records_baseline is True
+    )
 
 
 def _where(run: AgentRun | None, wf: TaskWorkflow) -> tuple[Stage, int | None]:
@@ -118,15 +127,20 @@ async def record_decision(
 async def record_tests(
     db: AsyncSession, task: Task, wf: TaskWorkflow, *, run: AgentRun | None, posted_by: uuid.UUID | None,
     command: Any, passed: Any, total: Any = None, failed: Any = None, skipped: Any = None, failing: Any = None,
-    on_base: Any = False,
+    on_base: Any = False, baseline: Any = False,
 ) -> WorkflowTestRun:
     """Store a test run. No activity entry (they are frequent): viewers are refreshed through task.updated."""
-    if not isinstance(passed, bool) or not isinstance(on_base, bool):
+    if not isinstance(passed, bool) or not isinstance(on_base, bool) or not isinstance(baseline, bool):
+        raise _422("invalid_record")
+    if baseline and (on_base or (not passed and failed is None)):
         raise _422("invalid_record")
     clean = {
         "command": _text(command, MAX_COMMAND), "passed": passed, "total": _count(total), "failed": _count(failed),
-        "skipped": _count(skipped), "failing": _failing(failing), "on_base": on_base,
+        "skipped": _count(skipped), "failing": _failing(failing, MAX_BASELINE_FAILING if baseline else MAX_FAILING),
+        "on_base": on_base, "baseline": baseline,
     }
+    if baseline and not _may_record_baseline(run, wf):
+        raise _422("baseline_not_allowed")
     stage, step = _where(run, wf)
     await _room(db, WorkflowTestRun, task, stage, step, MAX_TEST_RUNS_PER_STEP)
     row = WorkflowTestRun(
