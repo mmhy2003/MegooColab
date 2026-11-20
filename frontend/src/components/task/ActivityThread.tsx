@@ -251,7 +251,7 @@ function stageName(v: unknown): string {
 }
 
 const PAUSE_REASON: Record<string, string> = { owner_deactivated: "the agent's owner was deactivated" };
-const DECISION_TEXT: Record<string, string> = { retry: "chose to retry", accept: "accepted the result", pause: "chose to pause" };
+const DECISION_TEXT: Record<string, string> = { retry: "chose to retry", accept: "accepted the result", pause: "chose to pause", fix: "chose a fix round" };
 const OUTCOME_TEXT: Record<string, string> = {
   merge_local: "merged locally",
   pull_request: "opened a pull request",
@@ -348,9 +348,12 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
     case "review.result": {
       const counts = (data.counts ?? {}) as Record<string, unknown>;
       const parts = SEVERITY_ORDER.filter((sv) => num(counts[sv]) > 0).map((sv) => `${num(counts[sv])} ${sv}`);
-      const what = data.scope === "final" ? "Final review" : `Review of step ${num(data.step)}`;
+      const what =
+        typeof data.fix_round === "number"
+          ? `Review of fix round ${data.fix_round}`
+          : `${data.scope === "final" ? "Final review" : `Review of step ${num(data.step)}`} (round ${num(data.round)})`;
       const verdict = data.verdict === "approved" ? "approved" : "changes requested";
-      return `${what} (round ${num(data.round)}): ${verdict}${parts.length ? ` — ${parts.join(", ")}` : ""}`;
+      return `${what}: ${verdict}${parts.length ? ` — ${parts.join(", ")}` : ""}`;
     }
     case "finish.reported": {
       const outcome = OUTCOME_TEXT[str(data.outcome) ?? ""] ?? "finished";
@@ -369,6 +372,12 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
       );
     case "finish.failures_accepted":
       return acceptedText(data);
+    case "finish.fix_started": {
+      const n = Math.max(num(data.failing_total), ((data.failures ?? []) as unknown[]).length);
+      return `Fix round ${num(data.round)} of ${num(data.of)} started for ${n} failing test${n === 1 ? "" : "s"}`;
+    }
+    case "finish.fix_no_commit":
+      return `Fix round ${num(data.round)} changed no code: the finish runs again`;
     case "enforcement.violation":
       return `Enforcement violation during ${stageName(data.stage)}: the repository changed`;
     case "human_review.approved":
@@ -391,6 +400,8 @@ const STANDALONE = new Set([
   "finish.reported",
   "finish.tests_failed",
   "finish.known_failures",
+  "finish.fix_started",
+  "finish.fix_no_commit",
   "enforcement.violation",
   "workflow.stage",
   "workflow.no_column",

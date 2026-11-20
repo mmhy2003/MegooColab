@@ -24,7 +24,7 @@ const STAGE_CARDS: { id: MethodologyStage; label: string; keys: string[] }[] = [
   { id: "design", label: "Design", keys: ["design_revision"] },
   { id: "plan", label: "Plan", keys: ["plan"] },
   { id: "build", label: "Build", keys: ["build_implement", "build_step_review", "build_step_fix"] },
-  { id: "review", label: "Review", keys: ["review_final", "review_fix"] },
+  { id: "review", label: "Review", keys: ["review_final", "review_fix", "finish_fix", "finish_fix_review"] },
   { id: "done", label: "Done", keys: ["finish", "pr_fix", "pr_review"] },
   { id: "chats", label: "Chats", keys: ["freestyle"] },
   { id: "kb", label: "Knowledge base", keys: ["kb_draft"] },
