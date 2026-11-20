@@ -116,7 +116,7 @@ class WorkflowOut(TaskWorkflowOut):
 
 
 class EscalationDecisionIn(BaseModel):
-    action: Literal["retry", "accept", "pause"]
+    action: Literal["retry", "accept", "pause", "fix"]
 
 
 class HumanReviewIn(BaseModel):

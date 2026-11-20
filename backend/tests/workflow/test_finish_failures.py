@@ -461,6 +461,100 @@ async def test_retry_clears_and_starts_a_fresh_finish(db, tc_factory):
 def test_accept_handlers_include_finish_tests_failed():
     assert engine.ACCEPT_HANDLERS["finish_tests_failed"] is finish._accept_tests_failed
     assert engine.RETRY_HANDLERS["finish_tests_failed"] is finish._retry_tests_failed
+    assert engine.FIX_HANDLERS == {"finish_tests_failed": finish._fix_tests_failed}
+
+
+# ---- Fix round on the card (MC-98) -----------------------------------------------------------------
+
+
+async def _audit(task_id, action) -> list[AuditLog]:
+    async with SessionLocal() as s:
+        return list((await s.execute(select(AuditLog).where(
+            AuditLog.action == action, AuditLog.target_id == task_id))).scalars())
+
+
+async def _set_fix_rounds(task_id, n):
+    from app.workflow.models import TaskWorkflow
+
+    async with SessionLocal() as s:
+        (await s.get(TaskWorkflow, task_id)).finish_fix_rounds = n
+        await s.commit()
+
+
+def _refused(tc, b, action="fix"):
+    r = tc.post(f"/api/tasks/{b.key}/workflow/escalation", json={"action": action})
+    assert r.status_code == 422, r.text
+    return r.json()["detail"]
+
+
+async def test_fix_round_starts_a_fresh_fix_run(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _not_delivered_card(db, tc)
+    _decide(tc, b, "fix")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason, wf.stage) == ("running", None, None, "review")
+    assert (wf.finish_fix_rounds, wf.review_round) == (1, 3)
+    ft = wf.finish_tests
+    assert (ft["fix_round"], ft["failures"], ft["diagnosis"]) == (
+        1, [NEW], "It fails because the layout overflows.")
+    assert not any(k.startswith("accepted") for k in ft)
+    [decided] = await _events(b.task_id, "escalation.decided")
+    assert decided.data == {"action": "fix", "reason": "finish_tests_failed"}
+    [started] = await _events(b.task_id, "finish.fix_started")
+    assert started.data == {"round": 1, "of": 2, "failures": [NEW], "failing_total": None}
+    assert [e.data for e in await _events(b.task_id, "workflow.stage")][-1] == {"from": "done", "to": "review"}
+    [entry] = await _audit(b.task_id, "workflow.fix")
+    assert entry.actor_user_id == b.manager.id
+    fix = await _last(b.task_id)
+    assert fix.id != run.id and (fix.workflow_role, fix.resume_session_ref) == ("final_fix", None)
+    assert fix.prompt.startswith("# Review: fix the tests that failed at finish")
+    assert "## Tests that failed at finish" in fix.prompt and "Fix round 1 of 2" in fix.prompt
+    assert '<untrusted source="finish_failures">' in fix.prompt
+    assert NEW["name"] in fix.prompt and "It fails because the layout overflows." in fix.prompt
+    assert "## Recorded test runs" in fix.prompt
+    assert "## Review findings" not in fix.prompt
+
+
+async def test_fix_is_refused_after_a_delivery(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    await _fail_report(run, [NEW])
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    await _card(b.task_id, delivered=True)
+    assert _refused(tc, b) == "cannot_fix_here"
+    assert await _events(b.task_id, "escalation.decided") == []
+    assert await _audit(b.task_id, "workflow.fix") == []
+    await _card(b.task_id, delivered=True)
+
+
+async def test_fix_is_refused_for_another_reason(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _to_finish(db, tc)
+    await _finish(b.manager.id, run, "completed", session_id="sess-f")
+    await _finish(b.manager.id, await _last(b.task_id), "completed", session_id="sess-f")
+    assert (await _wf(b.task_id)).escalation_reason == "finish_incomplete"
+    assert _refused(tc, b) == "cannot_fix_here"
+    assert await _events(b.task_id, "escalation.decided") == []
+
+
+async def test_fix_rounds_are_limited(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _not_delivered_card(db, tc)
+    await _set_fix_rounds(b.task_id, 2)
+    assert _refused(tc, b) == "fix_rounds_exhausted"
+    assert await _events(b.task_id, "escalation.decided") == []
+    assert await _events(b.task_id, "finish.fix_started") == []
+    assert await _audit(b.task_id, "workflow.fix") == []
+    wf, _ = await _card(b.task_id, delivered=False)
+    assert wf.finish_fix_rounds == 2 and "fix_round" not in wf.finish_tests
+
+
+async def test_retry_keeps_the_fix_rounds(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _not_delivered_card(db, tc)
+    await _set_fix_rounds(b.task_id, 1)
+    _decide(tc, b, "retry")
+    assert (await _wf(b.task_id)).finish_fix_rounds == 1
 
 
 # ---- The workflow API (step 8) ---------------------------------------------------------------------

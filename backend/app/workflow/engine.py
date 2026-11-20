@@ -456,6 +456,10 @@ async def enqueue(
     findings = await _latest_findings(db, task.id, role, step) if role in FIX_ROLES else None
     key_override = "design_revision" if role == RunRole.brainstorm and wf.stage == Stage.design else None
     extra = None
+    fix_n = finish.fix_round(wf)  # a fix round on the tests that failed at finish (MC-98)
+    if fix_n is not None and role == RunRole.final_fix:
+        key_override, findings = "finish_fix", None
+        extra = [await finish.fix_section(db, wf, task)]
     if role == RunRole.finish:
         project = await db.get(Project, task.project_id)
         option = finishing_option(project, wf)
@@ -780,6 +784,9 @@ ACCEPT_HANDLERS: dict[str, AcceptHandler] = {}
 # reason -> what `retry` does, where repeating the latest run is not it (piece 4: an unavailable reviewer's review
 # starts again, rather than the Finish or fix run before it)
 RETRY_HANDLERS: dict[str, AcceptHandler] = {}
+# reason -> what `fix` does (MC-98: a fix round on the tests that failed at finish); any other reason gets
+# 422 cannot_fix_here
+FIX_HANDLERS: dict[str, AcceptHandler] = {}
 
 
 async def _accept_violation(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
@@ -801,6 +808,8 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
     reason = wf.escalation_reason
     if action == "accept" and reason not in ACCEPT_HANDLERS:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "cannot_accept_here")
+    if action == "fix" and reason not in FIX_HANDLERS:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "cannot_fix_here")
     await record_workflow_event(db, task, user.id, "escalation.decided", {"action": action, "reason": reason})
     await audit.record(
         db, f"workflow.{action}", actor_id=user.id, target_type="task", target_id=task.id, data={"reason": reason}
@@ -820,7 +829,12 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
             await RETRY_HANDLERS[reason](db, wf, task, user)
         else:
             await rerun(db, wf, task, requested_by=user.id)
-    else:
+    elif action == "fix":
+        wf.failures = 0
+        wf.nudged = False
+        wf.status = WorkflowStatus.running
+        await FIX_HANDLERS[reason](db, wf, task, user)
+    else:  # accept
         wf.status = WorkflowStatus.running
         await ACCEPT_HANDLERS[reason](db, wf, task, user)
     return wf

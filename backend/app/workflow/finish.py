@@ -8,12 +8,16 @@ Review (entered from build.enter_review, round 1):
                           (`accept` enters Done)
     no verdict         -> one nudge, then escalation review_incomplete
   final_fix has no completion tool: its run simply ends. A failed one falls under the normal retries.
+  A fix round on the tests that failed at finish (MC-98, the `fix` action on finish_tests_failed) comes back from
+  Done to Review: final_fix (fresh) with the finish_fix text, then final_review with the finish_fix_review text,
+  review_round 2 + the round; finish_tests carries the running round (`fix_round`).
 
 Done:
   finish (fresh) states the effective finishing option and ends with report_finish (or report_test_failures).
     reported with passing tests, or failing tests that are known (start commit, flaky) and tolerated, or covered
     by an acceptance          -> human code review required: wait on human_code_review; else finished
-    reported otherwise        -> escalation finish_tests_failed (accept: Finish anyway; retry: a fresh finish)
+    reported otherwise        -> escalation finish_tests_failed (accept: Finish anyway; retry: a fresh finish;
+                                 fix: a fix round (MC-98), while nothing was delivered)
     report_test_failures      -> escalation finish_tests_failed, not delivered (Finish anyway resumes the session
                                  to deliver)
     no report                 -> one nudge, then escalation finish_incomplete
@@ -21,6 +25,7 @@ Done:
 `wf.review_round` is the final review's round (build.enter_review sets 1; the final_fix handler sets 2).
 """
 
+import re
 import uuid
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
@@ -46,6 +51,7 @@ from app.projects.models import (
 )
 from app.tasks.models import Task
 from app.workflow import build, engine, questions
+from app.workflow.context import wrap_untrusted
 from app.workflow.models import (
     MERGE_WAITS,
     Driver,
@@ -60,6 +66,7 @@ from app.workflow.models import (
     Verdict,
     WorkflowQuestion,
     WorkflowStatus,
+    WorkflowTestRun,
 )
 
 MAX_BRANCH = 200
@@ -68,6 +75,8 @@ KINDS = ("new", "base", "flaky")
 MAX_FAILURES = 20
 MAX_FAILURE_NAME = 300
 MAX_DIAGNOSIS = 2000
+MAX_FINISH_FIX_ROUNDS = 2
+_SHA = re.compile(r"[0-9a-f]{7,64}")
 
 BRANCH_PUSHED = "branch_pushed"
 FINISH_NUDGE = (
@@ -86,6 +95,61 @@ def _422(code: str) -> HTTPException:
 
 
 # ---- Review ----------------------------------------------------------------------------------
+
+
+def fix_round(wf: TaskWorkflow) -> int | None:
+    """The running fix round's number (MC-98): the stage is Review and finish_tests carries it; else None."""
+    if wf.stage != Stage.review:
+        return None
+    return (wf.finish_tests or {}).get("fix_round")
+
+
+def _failures_block(ft: dict) -> str:
+    """The failing tests (name and kind), "and N more", and the finish agent's diagnosis: agent-written, so
+    one untrusted block."""
+    failures = ft.get("failures") or []
+    lines = [f"- {f['name']} ({f['kind']})" for f in failures]
+    more = (ft.get("failing_total") or 0) - len(failures)
+    if more > 0:
+        lines.append(f"and {more} more")
+    text = "\n".join(lines) or "(the finish named no tests)"
+    if ft.get("diagnosis"):
+        text += f"\n\nDiagnosis:\n{ft['diagnosis']}"
+    return wrap_untrusted("finish_failures", text)
+
+
+async def fix_section(db: AsyncSession, wf: TaskWorkflow, task: Task) -> str:
+    """The fix run's section: the round, the start branch, the failures and diagnosis, the Done stage's test runs."""
+    from app.workflow import records  # local: records imports the engine, which imports this module
+
+    ft = wf.finish_tests or {}
+    rows = list((await db.execute(
+        select(WorkflowTestRun)
+        .where(WorkflowTestRun.task_id == task.id, WorkflowTestRun.stage == Stage.done)
+        .order_by(WorkflowTestRun.created_at, WorkflowTestRun.id)
+    )).scalars())
+    return (
+        f"## Tests that failed at finish\nFix round {ft.get('fix_round')} of {MAX_FINISH_FIX_ROUNDS}\n"
+        f"Start branch: {task.start_branch or engine.UNKNOWN_START}\n{_failures_block(ft)}\n\n"
+        + records.test_runs_section(rows)
+    )
+
+
+def fix_review_section(wf: TaskWorkflow) -> str:
+    """The review run's section: the round, the failures and diagnosis, and where the fix's commits start."""
+    ft = wf.finish_tests or {}
+    base = ft.get("fix_base")
+    where = (
+        f"The fix is every commit after `{base}`: review `git diff {base}..HEAD`."
+        if isinstance(base, str) and _SHA.fullmatch(base)
+        else "The commit the fix started from is unknown: find the commits made after the final review with "
+             "`git log`, and review only those."
+    )
+    return (
+        f"## The fix to review\nFix round {ft.get('fix_round')} of {MAX_FINISH_FIX_ROUNDS}\n"
+        f"{_failures_block(ft)}\n\n{where}"
+    )
+
 
 
 async def _handle_final_review(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
@@ -514,6 +578,27 @@ async def _retry_tests_failed(db: AsyncSession, wf: TaskWorkflow, task: Task, us
 # ---- human decisions (WF-6) -------------------------------------------------------------------
 
 
+async def _fix_tests_failed(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
+    """Escalation `fix` (MC-98): a fresh final_fix on the failing tests, in the Review stage; its review and a
+    fresh finish follow. Only while nothing was delivered, at most MAX_FINISH_FIX_ROUNDS per task."""
+    ft = wf.finish_tests or {}
+    if ft.get("delivered", True):
+        raise _422("cannot_fix_here")
+    used = wf.finish_fix_rounds or 0
+    if used >= MAX_FINISH_FIX_ROUNDS:
+        raise _422("fix_rounds_exhausted")
+    n = used + 1
+    wf.finish_fix_rounds = n
+    kept = {k: v for k, v in ft.items() if k not in ("accepted_by", "accepted_at", "accepted", "fix_base")}
+    wf.finish_tests = {**kept, "fix_round": n}
+    await engine.record_workflow_event(db, task, None, "finish.fix_started", {
+        "round": n, "of": MAX_FINISH_FIX_ROUNDS, "failures": ft.get("failures") or [],
+        "failing_total": ft.get("failing_total")})
+    await engine.set_stage(db, wf, task, Stage.review)
+    wf.review_round = 2 + n  # the final review's rounds 1 and 2 came before: each final review has its own round
+    await engine.enqueue(db, wf, task, RunRole.final_fix, requested_by=user.id)
+
+
 async def approve_human_review(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     """A human clicked "PR approved" (or Mark merged, while an agent's merge is being confirmed): the workflow
     finishes. The first approval wins."""
@@ -568,3 +653,4 @@ engine.ACCEPT_HANDLERS["pr_closed"] = _accept_pr_closed
 engine.ACCEPT_HANDLERS["back_merge_pr_closed"] = _accept_pr_closed
 engine.ACCEPT_HANDLERS["finish_tests_failed"] = _accept_tests_failed
 engine.RETRY_HANDLERS["finish_tests_failed"] = _retry_tests_failed
+engine.FIX_HANDLERS["finish_tests_failed"] = _fix_tests_failed
