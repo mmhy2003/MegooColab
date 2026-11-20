@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DocumentView } from "@/components/workflow/DocumentView";
@@ -277,8 +277,12 @@ describe("DocumentView recorded test runs", () => {
     const records = {
       decisions: [],
       test_runs: [
+        testRun("base", 1, false, { total: 5, failed: 1, failing: ["test_old"], baseline: true, created_at: "2026-10-27T10:00:00Z" }),
         testRun("a", 1, false, { total: 5, failed: 1, failing: ["test_x"], created_at: "2026-10-27T10:01:00Z" }),
         testRun("b", 1, true, { total: 5, failed: 0, created_at: "2026-10-27T10:02:00Z" }),
+        testRun("d", 2, false, {
+          total: 6, failed: 2, failing: ["test_old", "test_y"], marks: ["baseline", "new"], created_at: "2026-10-27T10:02:30Z",
+        }),
         testRun("c", null, true, { total: 12, failed: 0, created_at: "2026-10-27T10:03:00Z" }),
       ],
       unverified_steps: [2],
@@ -317,6 +321,27 @@ describe("DocumentView recorded test runs", () => {
     expect(await screen.findByText("✓ 5 passed — uv run pytest")).toBeInTheDocument();
     expect(screen.getByText("Earlier runs (1)")).toBeInTheDocument();
     expect(screen.getByText("✗ 1 failed: test_x — uv run pytest")).toBeInTheDocument();
+  });
+
+  it("shows the test baseline above the steps, and not among step 1's runs", async () => {
+    setupPlan();
+    const box = await screen.findByRole("region", { name: "Test baseline" });
+    expect(within(box).getByText("Test baseline (before step 1) · 1 already failing — uv run pytest")).toBeInTheDocument();
+    expect(within(box).getByText("test_old")).toBeInTheDocument();
+    const step1 = screen.getByText("Add model", { selector: "span" }).closest("li") as HTMLElement;
+    expect(box.nextElementSibling).toBe(step1.closest("ol"));
+    expect(within(step1).getByText("✓ 5 passed — uv run pytest")).toBeInTheDocument();
+    expect(within(step1).getByText("Earlier runs (1)")).toBeInTheDocument();
+    expect(within(step1).queryByText(/test_old/)).not.toBeInTheDocument();
+  });
+
+  it("marks a step run's new failures", async () => {
+    setupPlan();
+    const line = await screen.findByText("✗ 2 failed, 1 new — uv run pytest");
+    const step2 = line.closest("li") as HTMLElement;
+    expect(step2).toHaveTextContent("Add API");
+    expect(within(step2).getByText("new", { exact: true })).toBeInTheDocument();
+    expect(within(step2).getByText("also fails in the baseline", { exact: true })).toBeInTheDocument();
   });
 
   it("warns on a step that claims passing tests without a recorded run", async () => {
