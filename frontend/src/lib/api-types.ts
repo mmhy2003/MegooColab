@@ -6876,6 +6876,8 @@ export interface components {
             send_back_on_changes_requested: boolean;
             /** Tolerate Known Test Failures */
             tolerate_known_test_failures: boolean;
+            /** Record Test Baseline */
+            record_test_baseline: boolean;
             /** Commit Docs To Repo */
             commit_docs_to_repo: boolean;
             /** Team Ids */
@@ -6903,6 +6905,8 @@ export interface components {
             send_back_on_changes_requested?: boolean | null;
             /** Tolerate Known Test Failures */
             tolerate_known_test_failures?: boolean | null;
+            /** Record Test Baseline */
+            record_test_baseline?: boolean | null;
             /** Commit Docs To Repo */
             commit_docs_to_repo?: boolean | null;
             /** Team Ids */
@@ -8312,6 +8316,18 @@ export interface components {
              * @default false
              */
             on_base: boolean;
+            /**
+             * Baseline
+             * @default false
+             */
+            baseline: boolean;
+            /** Marks */
+            marks?: ("new" | "baseline" | "unlisted")[] | null;
+            /**
+             * Known Only
+             * @default false
+             */
+            known_only: boolean;
             /** Author */
             author: string;
             /**

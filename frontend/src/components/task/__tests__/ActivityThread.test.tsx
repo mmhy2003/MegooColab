@@ -405,6 +405,12 @@ describe("ActivityThread workflow events", () => {
     expect(list[2]).toContain("Decision during Done: Merged into develop");
   });
 
+  it("warns when step 1 finished without a test baseline", () => {
+    const [row] = rows([ev("1", "build.no_baseline", {})]);
+    expect(row.textContent).toContain("Step 1 finished without a test baseline: new failures won't be marked during Build");
+    expect(row.textContent).not.toContain("The agent");
+  });
+
   it("renders an enforcement violation in pink, with text", () => {
     const [row] = rows([ev("v1", "enforcement.violation", { stage: "brainstorm", role: "brainstorm" })]);
     expect(row.textContent).toContain("Enforcement violation during Brainstorm: the repository changed");

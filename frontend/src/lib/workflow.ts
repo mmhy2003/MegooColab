@@ -53,6 +53,12 @@ export function useMockups(key: string) {
 
 export type Decision = components["schemas"]["DecisionOut"];
 export type TestRun = components["schemas"]["TestRunOut"];
+export type TestMark = "new" | "baseline" | "unlisted";
+export const MARK_LABEL: Record<TestMark, string> = {
+  new: "new",
+  baseline: "also fails in the baseline",
+  unlisted: "not in the baseline's list",
+};
 export type RunRecords = components["schemas"]["RecordsOut"];
 
 /** What the agent decided on its own and the test runs it recorded (Plan 8). */
@@ -65,7 +71,8 @@ export function testRunText(run: TestRun): string {
   const tail = ` — ${run.command}${run.on_base ? " (on the start commit)" : ""}`;
   if (!run.passed) {
     const names = run.failing.length ? `: ${run.failing.join(", ")}` : "";
-    return `✗ ${run.failed != null ? `${run.failed} failed` : "failed"}${names}${tail}`;
+    const fresh = (run.marks ?? []).filter((m) => m === "new").length;
+    return `✗ ${run.failed != null ? `${run.failed} failed` : "failed"}${fresh ? ` (${fresh} new)` : ""}${names}${tail}`;
   }
   if (run.total == null) return `✓ passed${tail}`;
   const passed = run.total - (run.failed ?? 0) - (run.skipped ?? 0);
@@ -201,6 +208,13 @@ export const SEND_BACK_HELP =
 export const TOLERATE_KNOWN_HELP =
   "On: at finish, a test that also fails on the branch the task started from, or that passes when run again " +
   "(flaky), doesn't stop the task; the pull request lists it. Off: any failing test stops the finish and asks you.";
+
+export const RECORD_BASELINE_LABEL = "Record a test baseline when Build starts";
+export const RECORD_BASELINE_HELP =
+  "On: before step 1 changes anything, the agent runs the full test suite once and records which tests already " +
+  "fail. During Build, a failing test that isn't in that baseline is marked new for the agent, the step reviewer " +
+  "and you, and a test that was already failing doesn't hold a step up. This costs one more full run per task. " +
+  "Off: no baseline, and every step needs a fully green run.";
 
 export const DOCS_HELP =
   "On: the approved design and plan are added to the task's branch as files (docs/superpowers/specs/KEY-design.md " +
