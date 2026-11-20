@@ -15,6 +15,8 @@ const KEYS: [string, string][] = [
   ["build_step_fix", "build"],
   ["review_final", "review"],
   ["review_fix", "review"],
+  ["finish_fix", "review"],
+  ["finish_fix_review", "review"],
   ["finish", "done"],
   ["pr_fix", "done"],
   ["pr_review", "done"],
@@ -100,6 +102,10 @@ describe("MethodologyEditor", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Build" }));
     expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual([
       "build_implement", "build_step_review", "build_step_fix",
+    ]);
+    fireEvent.click(screen.getByRole("tab", { name: "Review" }));
+    expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual([
+      "review_final", "review_fix", "finish_fix", "finish_fix_review",
     ]);
     fireEvent.click(screen.getByRole("tab", { name: "Done" }));
     expect(screen.getAllByRole("region").map((r) => r.getAttribute("aria-label"))).toEqual(["finish", "pr_fix", "pr_review"]);

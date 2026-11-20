@@ -12,7 +12,7 @@ from app.core.db import SessionLocal
 from app.projects.models import BoardColumn
 from app.tasks.models import Task
 from app.workflow import build, engine, questions
-from app.workflow.models import StepReview, WorkflowQuestion
+from app.workflow.models import StepReview, TaskWorkflow, WorkflowQuestion
 from tests.agent_runs.test_dispatch import _task
 from tests.agent_runs.test_run_guards import _next_of
 from tests.factories import make_user
@@ -335,6 +335,26 @@ async def test_last_step_approved_enters_review_stage_and_moves_card(db, tc_fact
     [moved] = [e for e in await _events(b.task_id, "status_changed") if e.data.get("by") == "workflow"]
     assert moved.data["to_category"] == "review"
     assert [await _category(t.column_id) for t in await _subtasks(b.task_id)] == ["done"] * 3
+
+
+async def test_a_new_workflow_has_no_finish_fix_rounds(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _building(db, tc)
+    assert (await _wf(b.task_id)).finish_fix_rounds == 0
+
+
+async def test_enter_review_resets_the_finish_fix_rounds(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _building(db, tc)
+    for _ in STEPS[:-1]:
+        run = await _pass_step(b, run)
+    async with SessionLocal() as s:
+        await s.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == b.task_id).values(finish_fix_rounds=2))
+        await s.commit()
+    run = await _pass_step(b, run)
+    assert run.workflow_role == "final_review"
+    wf = await _wf(b.task_id)
+    assert (wf.stage, wf.finish_fix_rounds) == ("review", 0)
 
 
 async def test_pending_answer_from_step_1_not_delivered_after_step_moves_to_2(db, tc_factory):

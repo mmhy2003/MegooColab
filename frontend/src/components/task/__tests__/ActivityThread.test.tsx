@@ -470,6 +470,35 @@ describe("ActivityThread workflow events", () => {
     expect(row.textContent).toContain("Ahmed Ali accepted 1 failing test: a (by answering the agent's question)");
   });
 
+  it("tells of a fix round at finish: the choice, its start, its review and a run without a commit", () => {
+    const two = [{ name: "a", kind: "new" }, { name: "b", kind: "base" }];
+    const twenty = Array.from({ length: 20 }, (_, i) => ({ name: `t${i}`, kind: "new" }));
+    const list = rows([
+      ev("1", "escalation.decided", { action: "fix", reason: "finish_tests_failed" }, true),
+      ev("2", "finish.fix_started", { round: 1, of: 2, failures: two, failing_total: null }),
+      ev("3", "finish.fix_started", { round: 2, of: 2, failures: two.slice(0, 1), failing_total: null }),
+      ev("4", "finish.fix_started", { round: 1, of: 2, failures: twenty, failing_total: 25 }),
+      ev("5", "review.result", { scope: "final", round: 3, verdict: "approved", counts: { critical: 0, important: 0, minor: 1 }, fix_round: 1 }),
+      ev("6", "review.result", { scope: "final", round: 3, verdict: "changes_requested", counts: { critical: 0, important: 1, minor: 0 }, fix_round: 1 }),
+      ev("7", "review.result", { scope: "final", round: 1, verdict: "approved", counts: { critical: 0, important: 0, minor: 0 } }),
+      ev("8", "finish.fix_no_commit", { round: 1 }),
+      ev("9", "workflow.escalated", { reason: "finish_fix_not_clean" }),
+    ]).map((li) => li.textContent);
+    expect(list[0]).toContain("Ahmed Ali chose a fix round");
+    expect(list[1]).toContain("Fix round 1 of 2 started for 2 failing tests");
+    expect(list[1]).not.toContain("The agent");
+    expect(list[2]).toContain("Fix round 2 of 2 started for 1 failing test");
+    expect(list[2]).not.toContain("1 failing tests");
+    expect(list[3]).toContain("Fix round 1 of 2 started for 25 failing tests");
+    expect(list[4]).toContain("Review of fix round 1: approved — 1 minor");
+    expect(list[4]).not.toContain("(round");
+    expect(list[5]).toContain("Review of fix round 1: changes requested — 1 important");
+    expect(list[6]).toContain("Final review (round 1): approved");
+    expect(list[7]).toContain("Fix round 1 changed no code: the finish runs again");
+    expect(list[7]).not.toContain("The agent");
+    expect(list[8]).toContain("The workflow needs a decision. The review of the fix round still had findings.");
+  });
+
   it("links document events to the document section", () => {
     rows([ev("2", "document.approved", { kind: "plan", version: 1 }, true)]);
     expect(screen.getByRole("link", { name: "plan v1" })).toHaveAttribute("href", "#document-plan-v1");

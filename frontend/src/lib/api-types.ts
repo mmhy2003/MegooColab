@@ -5552,7 +5552,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "retry" | "accept" | "pause";
+            action: "retry" | "accept" | "pause" | "fix";
         };
         /** Facets */
         Facets: {
@@ -5624,6 +5624,8 @@ export interface components {
             settled?: ("known" | "accepted") | null;
             /** Accepted By */
             accepted_by?: string | null;
+            /** Fix Round */
+            fix_round?: number | null;
         };
         /** FinishingIn */
         FinishingIn: {
@@ -8766,6 +8768,16 @@ export interface components {
             pr_fix_trigger?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Finish Fix Rounds
+             * @default 0
+             */
+            finish_fix_rounds: number;
+            /**
+             * Finish Fix Max
+             * @default 2
+             */
+            finish_fix_max: number;
             finishing_option: components["schemas"]["FinishingOption"];
             /**
              * Takes Images

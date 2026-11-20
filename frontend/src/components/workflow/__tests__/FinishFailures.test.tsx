@@ -2,7 +2,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { FinishFailures } from "@/components/workflow/FinishFailures";
-import type { FinishTests, TestRun } from "@/lib/workflow";
+import { type FinishTests, finishTestsSummary, type TestRun } from "@/lib/workflow";
 
 const tests = (extra: Partial<FinishTests> = {}): FinishTests => ({
   failures: [
@@ -56,6 +56,15 @@ describe("FinishFailures", () => {
     expect(screen.getByText("Diagnosis")).toBeInTheDocument();
     expect(screen.getByText("<b>x</b>")).toBeInTheDocument();
     expect(document.body.querySelector("b")).toBeNull();
+  });
+
+  it("leaves the diagnosis out with showDiagnosis={false}, the summary and the tests stay", () => {
+    const t = tests({ diagnosis: "D", delivered: false });
+    render(<FinishFailures tests={t} startBranch="develop" showDiagnosis={false} />);
+    expect(screen.queryByText("Diagnosis")).toBeNull();
+    expect(screen.queryByText("D")).toBeNull();
+    expect(screen.getByText(finishTestsSummary(t, "develop"))).toBeInTheDocument();
+    expect(screen.getByText("e2e/a.spec.ts:1")).toBeInTheDocument();
   });
 
   it("lists the test runs at finish", () => {

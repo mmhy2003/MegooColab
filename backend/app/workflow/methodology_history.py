@@ -75,6 +75,12 @@ DEFAULT_HISTORY: dict[str, list[str]] = {
         "c456582d385e92c9f3183bae3794e1181e413f721dfcd800a11f7abb229a1758",
         "9effeeb0d717ec0812ba3d98dca4c017d67f0f628b69736cf0806c603b43fb94",
     ],
+    "finish_fix": [
+        "3dca6fe6c9381ac9aacf3fbc65fd44a3915f9ae18f920199e2400e9472f66c28",
+    ],
+    "finish_fix_review": [
+        "00a698ab88aa2d0a625162891769c0b87fe8553dc7b609fbf1546262979a01fe",
+    ],
     "finish": [
         "962d9a01582b0122e02cc13d84dda6f036f338a6c239b96e242e042ce46ccbe7",
         "1e6fcac079b77b9161d9a5f84f968f69afc6c94878baa43416e151a78537fed6",

@@ -177,11 +177,17 @@ async def submit_review(db: AsyncSession, run: AgentRun, verdict: str, findings:
     )
     db.add(review)
     await db.flush()
-    await engine.record_workflow_event(db, task, None, "review.result", {
+    data = {
         "scope": scope.value, "step": review.step, "round": review.round, "verdict": verdict.value,
         "counts": {sev: sum(f["severity"] == sev for f in clean) for sev in SEVERITIES},
         "review_id": str(review.id),
-    })
+    }
+    if scope == ReviewScope.final:
+        from app.workflow import finish  # local: finish imports this module
+
+        if (n := finish.fix_round(wf)) is not None:  # the review of a fix round's fix (MC-98)
+            data["fix_round"] = n
+    await engine.record_workflow_event(db, task, None, "review.result", data)
     # local: memory imports the workflow models
     from app.memory.sources import queue_extract
 
@@ -331,6 +337,7 @@ async def enter_review(db: AsyncSession, wf: TaskWorkflow, task: Task, *, reques
     await engine.move_to_category(db, task, ColumnCategory.review)
     engine.set_step(wf, None)  # Review and Done runs have no step
     wf.review_round = 1  # the final review's first round
+    wf.finish_fix_rounds = 0  # a whole-branch review starts a new cycle of fix rounds (MC-98)
     await engine.enqueue(db, wf, task, RunRole.final_review, requested_by=requested_by)
 
 

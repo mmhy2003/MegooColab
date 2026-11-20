@@ -149,8 +149,11 @@ class TaskWorkflow(Base):
     # frozen with them (MC-97): known failing tests (start commit, flaky) don't stop the finish. None before Done
     finish_tolerates_known: Mapped[bool | None]
     # the finish run's failing tests (MC-97): {failures, failing_total, diagnosis, delivered, settled, accepted_by,
-    # accepted_at, accepted}; None until a finish reports failing tests, cleared when Done begins and on Retry
+    # accepted_at, accepted, fix_round (the running fix round, MC-98), fix_base (the commit its fix started from)};
+    # None until a finish reports failing tests, cleared when Done begins and on Retry
     finish_tests: Mapped[dict | None] = mapped_column(JSONB)
+    # fix rounds on the tests that failed at finish (MC-98), used since the whole-branch review began
+    finish_fix_rounds: Mapped[int] = mapped_column(default=0, server_default="0")
     # changes requested on the pull request (piece 3): fix rounds used on `pr_fix_pr_url`, and what asked last
     pr_fix_rounds: Mapped[int] = mapped_column(default=0, server_default="0")
     pr_fix_pr_url: Mapped[str | None] = mapped_column(String(1000))

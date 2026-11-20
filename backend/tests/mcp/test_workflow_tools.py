@@ -33,6 +33,7 @@ from app.workflow.models import (
 from tests.agent_runs.test_dispatch import _task
 from tests.runner.test_protocol_v2 import MCP_HEADERS
 from tests.runner.test_runner_ws import _login
+from tests.workflow.test_build import _last
 from tests.workflow.test_documents import STEPS, _design_waiting
 from tests.workflow.test_engine import (
     _admin_client,
@@ -42,6 +43,8 @@ from tests.workflow.test_engine import (
     _started,
     _wf,
 )
+from tests.workflow.test_finish_failures import COMMITTED, _fix_round
+from tests.workflow.test_review_done import _fix_run
 
 ASKED = "Question posted. End your turn now; the answer arrives as your next message."
 ALL_WORKFLOW_TOOLS = {
@@ -799,3 +802,30 @@ async def test_get_document_carries_the_decision_comment_and_who_decided(db, tc_
     err, out = _tool(tc, token, "get_document", key=b.key, kind="design", version=1)
     assert not err, out
     assert (out["status"], out["decision_comment"], out["decided_by"]) == ("rejected", "Simpler", str(b.manager.id))
+
+
+async def test_get_workflow_gives_the_finish_fix_rounds_texts(db, tc_factory):
+    """MC-98: the fix round's final_fix and final_review runs get their own next line and methodology text."""
+    tc = tc_factory(lifespan=True)
+    b, fix = await _fix_round(db, tc)
+    err, out = _tool(tc, await _run_token(fix), "get_workflow", key=b.key)
+    assert not err, out
+    assert (out["role"], out["stage"]) == ("final_fix", "review")
+    assert out["next"] == "Fix the tests that failed at finish and run the full suite; your run ends when you are done."
+    assert out["instructions"] == (await methodology.current(db, "finish_fix")).body_md
+    await _finish(b.manager.id, fix, "completed", **COMMITTED)
+    review = await _last(b.task_id)
+    assert review.workflow_role == "final_review"
+    err, out = _tool(tc, await _run_token(review), "get_workflow", key=b.key)
+    assert not err, out
+    assert out["next"] == "Review the fix, then call submit_review with your verdict and findings."
+    assert out["instructions"] == (await methodology.current(db, "finish_fix_review")).body_md
+
+
+async def test_get_workflow_keeps_the_final_fix_text_outside_a_fix_round(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, fix = await _fix_run(db, tc)
+    err, out = _tool(tc, await _run_token(fix), "get_workflow", key=b.key)
+    assert not err, out
+    assert out["next"] == "Fix the final review's findings and run the tests; your run ends when you are done."
+    assert out["instructions"] == (await methodology.current(db, "review_fix")).body_md
