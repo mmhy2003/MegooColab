@@ -123,3 +123,36 @@ describe("escalations of failing tests at finish", () => {
     expect(ACCEPTABLE_REASONS).toContain("finish_tests_failed");
   });
 });
+
+describe("the fix round at finish (MC-98)", () => {
+  const offer = async (extra: Record<string, unknown> = {}) => {
+    const { fixRoundOffered } = await import("@/lib/workflow");
+    return fixRoundOffered({
+      escalation_reason: "finish_tests_failed",
+      finish_tests: { failures: [], failing_total: null, diagnosis: null, delivered: false, settled: null, accepted_by: null },
+      finish_fix_rounds: 0,
+      finish_fix_max: 2,
+      ...extra,
+    } as Parameters<typeof fixRoundOffered>[0]);
+  };
+
+  it("is offered while nothing was delivered and a round is left", async () => {
+    expect(await offer()).toBe(true);
+    expect(await offer({ finish_fix_rounds: 1 })).toBe(true);
+    expect(await offer({ finish_fix_rounds: undefined, finish_fix_max: undefined })).toBe(true);
+  });
+
+  it("is not offered once delivered, with both rounds used, for another reason or without a report", async () => {
+    expect(await offer({ finish_tests: { failures: [], failing_total: null, diagnosis: null, delivered: true, settled: null, accepted_by: null } })).toBe(false);
+    expect(await offer({ finish_fix_rounds: 2 })).toBe(false);
+    expect(await offer({ finish_fix_rounds: 2, finish_fix_max: undefined })).toBe(false);
+    expect(await offer({ escalation_reason: "final_review_not_clean" })).toBe(false);
+    expect(await offer({ finish_tests: null })).toBe(false);
+  });
+
+  it("explains a review of the fix that still had findings, and lets it be accepted", async () => {
+    const { escalationReasonText, ACCEPTABLE_REASONS } = await import("@/lib/workflow");
+    expect(escalationReasonText("finish_fix_not_clean")).toBe("The review of the fix round still had findings.");
+    expect(ACCEPTABLE_REASONS).toContain("finish_fix_not_clean");
+  });
+});

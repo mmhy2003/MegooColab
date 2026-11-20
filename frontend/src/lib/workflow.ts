@@ -90,6 +90,7 @@ export const ESCALATION_REASON_TEXT: Record<string, string> = {
   final_review_not_clean: "The final review still had findings after one fix round.",
   finish_incomplete: "The agent ended its run without finishing the work.",
   finish_tests_failed: "Tests failed at finish.",
+  finish_fix_not_clean: "The review of the fix round still had findings.",
   engine_error: "MegooColab hit an internal error handling the last run.",
   pr_fix_rounds_exhausted: "Changes were requested again after 3 fix rounds.",
   pr_fix_incomplete: "The fix run ended without pushing a fix with passing tests.",
@@ -107,7 +108,15 @@ export function escalationReasonText(code: string | null): string {
 /** "Accept" is offered only where treating the work as passed makes sense. */
 export const ACCEPTABLE_REASONS = ["review_rounds_exhausted", "final_review_not_clean", "enforcement_violation", "pr_closed",
   "back_merge_pr_closed", "pr_fix_rounds_exhausted", "pr_fix_incomplete", "agent_merge_failed", "agent_review_incomplete",
-  "agent_review_unavailable", "merge_not_confirmed", "finish_tests_failed"];
+  "agent_review_unavailable", "merge_not_confirmed", "finish_tests_failed", "finish_fix_not_clean"];
+
+/** MC-98: the card offers a fix round while nothing was delivered and a round is left. */
+export function fixRoundOffered(
+  wf: Pick<Workflow, "escalation_reason" | "finish_tests" | "finish_fix_rounds" | "finish_fix_max">,
+): boolean {
+  return wf.escalation_reason === "finish_tests_failed" && wf.finish_tests?.delivered === false &&
+    (wf.finish_fix_rounds ?? 0) < (wf.finish_fix_max ?? 2);
+}
 
 export type FinishTests = NonNullable<Workflow["finish_tests"]>;
 export type FailureKind = FinishTests["failures"][number]["kind"];

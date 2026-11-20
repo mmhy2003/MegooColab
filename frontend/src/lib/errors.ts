@@ -130,6 +130,8 @@ const MESSAGES: Record<string, string> = {
   workflow_past_finishing: "It's too late to change how this work finishes.",
   workflow_not_runner_driven: "This workflow isn't driven by MegooColab.",
   cannot_accept_here: "You can't accept this here. Choose retry or pause instead.",
+  cannot_fix_here: "A fix round isn't possible here. Choose another action.",
+  fix_rounds_exhausted: "Both fix rounds are used. Choose another action.",
   question_open: "The agent's question is still waiting for an answer.",
   question_not_found: "That question no longer exists.",
   document_not_found: "That document no longer exists.",

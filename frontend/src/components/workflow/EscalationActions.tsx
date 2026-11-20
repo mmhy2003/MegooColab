@@ -3,11 +3,11 @@
 import { Button } from "@/components/ui/Button";
 import { HOST_NAME, pullRequestProblem } from "@/lib/git";
 import type { Workflow } from "@/lib/types";
-import { ACCEPTABLE_REASONS, escalationReasonText, type TestRun } from "@/lib/workflow";
+import { ACCEPTABLE_REASONS, escalationReasonText, fixRoundOffered, type TestRun } from "@/lib/workflow";
 
 import { FinishFailures } from "./FinishFailures";
 
-export type EscalationAction = "retry" | "accept" | "pause";
+export type EscalationAction = "retry" | "accept" | "pause" | "fix";
 
 /** Why an unconfirmed merge is unconfirmed: nothing reads it any more, what MegooColab can't read, else what the host
  * still shows. */
@@ -22,8 +22,9 @@ function unconfirmedWhy(wf: Workflow): string | null {
 
 /** A workflow stopped on an escalation: why, and Retry, Accept (Mark merged for an unconfirmed merge, Finish anyway for
  * tests that failed at finish) and Pause for those who decide; the others are told who does. Tests that failed at
- * finish are listed with their kinds, the diagnosis and the finish's test runs (`runs`). On a task's workflow panel and
- * in a chat. */
+ * finish are listed with their kinds, the diagnosis and the finish's test runs (`runs`); while nothing was delivered
+ * and a fix round is left, Fix round comes first and Retry turns quiet, and once both are used the card says so. On a
+ * task's workflow panel and in a chat. */
 export function EscalationActions({ wf, canDecide, busy, onDecide, runs }: {
   wf: Workflow;
   canDecide: boolean;
@@ -33,6 +34,8 @@ export function EscalationActions({ wf, canDecide, busy, onDecide, runs }: {
 }) {
   const why = unconfirmedWhy(wf);
   const failed = wf.escalation_reason === "finish_tests_failed";
+  const fix = fixRoundOffered(wf);
+  const used = failed && wf.finish_tests?.delivered === false && !fix;
   return (
     // data-waiting: the "waiting on you" button jumps here (JumpButtons)
     <div data-waiting={canDecide ? "escalation" : undefined} className="space-y-2 rounded border border-pink/60 p-2">
@@ -49,9 +52,17 @@ export function EscalationActions({ wf, canDecide, busy, onDecide, runs }: {
             : "Finish anyway records that you accepted these tests and finishes the task."}
         </p>
       )}
+      {fix && canDecide && (
+        <p className="text-xs text-muted-foreground">
+          Fix round: the agent fixes these tests in a fresh run, a reviewer checks the fix, then the finish runs again.
+          Round {(wf.finish_fix_rounds ?? 0) + 1} of {wf.finish_fix_max ?? 2}.
+        </p>
+      )}
+      {used && <p className="text-xs text-muted-foreground">Both fix rounds are used.</p>}
       {canDecide ? (
         <div className="flex flex-wrap gap-2">
-          <Button disabled={busy} onClick={() => onDecide("retry")}>Retry</Button>
+          {fix && <Button disabled={busy} onClick={() => onDecide("fix")}>Fix round</Button>}
+          <Button variant={fix ? "ghost" : "primary"} disabled={busy} onClick={() => onDecide("retry")}>Retry</Button>
           {wf.escalation_reason && ACCEPTABLE_REASONS.includes(wf.escalation_reason) && (
             <Button variant="ghost" disabled={busy} onClick={() => onDecide("accept")}>
               {wf.escalation_reason === "merge_not_confirmed" ? "Mark merged" : failed ? "Finish anyway" : "Accept"}
