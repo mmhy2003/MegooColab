@@ -194,6 +194,8 @@ export function describeEvent(
       return `${str(data.target_key) ?? "Another project"} answered Q${num(data.number)}`;
     case "follow_up_created":
       return `created follow-up ${str(data.key) ?? "a task"}: ${str(data.title) ?? ""}`;
+    case "finish.bug_created":
+      return `created bug ${str(data.key) ?? "a task"} for the failing test ${str(data.name) ?? ""}`;
     default:
       return describeWorkflowEvent(kind, data) ?? describeAgentEvent(kind, data, byPerson) ?? kind;
   }
@@ -533,6 +535,15 @@ export function ActivityThread({
             <EventRow key={item.id} at={item.at} lead={actor} text="created follow-up ">
               <TaskKey value={str(data.key)} />
               {`: ${str(data.title) ?? ""}`}
+            </EventRow>
+          );
+        }
+        if (kind === "finish.bug_created") {
+          return (
+            <EventRow key={item.id} at={item.at} lead={actor} text="created bug ">
+              <TaskKey value={str(data.key)} />
+              {" for the failing test "}
+              <code className="break-all">{str(data.name) ?? ""}</code>
             </EventRow>
           );
         }
