@@ -399,6 +399,44 @@ describe("WorkflowPanel: sent back by a review on the pull request", () => {
   });
 });
 
+describe("WorkflowPanel: a fix round on the tests that failed at finish", () => {
+  const ada = { ...agent, name: "Ada" } as ProjectAgent;
+  const round = (extra: Partial<Workflow> = {}) =>
+    wf({
+      stage: "review", status: "running", start_branch: "develop", finish_fix_max: 2,
+      finish_tests: { failures: [{ name: "a.test", kind: "new" }], delivered: false, fix_round: 1, diagnosis: "D" },
+      ...extra,
+    } as Partial<Workflow>);
+  const roleRun = (role: string) => ({ id: "r1", status: "running", workflow_role: role, policy: "workspace", step: null });
+
+  it("says the agent is fixing the tests, with the round, the failing tests and no diagnosis", async () => {
+    setup(round(), { agent: ada, runs: [roleRun("final_fix")] });
+    expect(await screen.findByText("Fix round 1 of 2 · Ada is fixing the tests that failed at finish")).toBeInTheDocument();
+    expect(screen.getByText("a.test")).toBeInTheDocument();
+    expect(screen.queryByText("D")).toBeNull();
+  });
+
+  it("says a reviewer checks the fix while its review runs", async () => {
+    setup(round(), { agent: ada, runs: [roleRun("final_review")] });
+    expect(await screen.findByText("Fix round 1 of 2 · A reviewer is checking the fix")).toBeInTheDocument();
+  });
+
+  it("shows no such box without a running round", async () => {
+    const noRound = round({
+      finish_tests: { failures: [{ name: "a.test", kind: "new" }], delivered: false, fix_round: null, diagnosis: "D" },
+    } as Partial<Workflow>);
+    setup(noRound, { agent: ada, runs: [roleRun("final_fix")] });
+    await screen.findAllByText(/Review/);
+    await screen.findByText(/Latest run/);
+    expect(screen.queryByText(/^Fix round/)).toBeNull();
+    cleanup();
+    setup(round({ status: "paused" }), { agent: ada, runs: [roleRun("final_fix")] });
+    await screen.findByRole("button", { name: "Resume" });
+    await screen.findByText(/Latest run/);
+    expect(screen.queryByText(/^Fix round/)).toBeNull();
+  });
+});
+
 describe("WorkflowPanel: an agent reviewing the pull request", () => {
   it("names the reviewer and the pull request while its review run goes", async () => {
     const run = { id: "r9", status: "running", workflow_role: "pr_review", policy: "read_only", step: null,

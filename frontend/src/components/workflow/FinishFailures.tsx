@@ -5,12 +5,14 @@ import {
 } from "@/lib/workflow";
 
 /** The finish run's failing tests (MC-97): a summary, each test with its kind, the agent's diagnosis and the test runs
- * it recorded at finish. On the "Tests failed at finish" card and, once the finish settled, in the workflow panel.
+ * it recorded at finish. On the "Tests failed at finish" card and, once the finish settled, in the workflow panel;
+ * the panel's box for a running fix round (MC-98) leaves the diagnosis out with `showDiagnosis={false}`.
  * Test names and the diagnosis are agent-written: shown as plain text only. */
-export function FinishFailures({ tests, startBranch, runs = [] }: {
+export function FinishFailures({ tests, startBranch, runs = [], showDiagnosis = true }: {
   tests: FinishTests;
   startBranch: string | null;
   runs?: TestRun[];
+  showDiagnosis?: boolean;
 }) {
   const failures = tests.failures ?? [];
   const more = (tests.failing_total ?? 0) - failures.length;
@@ -28,7 +30,7 @@ export function FinishFailures({ tests, startBranch, runs = [] }: {
           {more > 0 && <li>and {more} more</li>}
         </ul>
       )}
-      {tests.diagnosis && (
+      {showDiagnosis && tests.diagnosis && (
         <>
           <p className="text-xs text-muted-foreground">Diagnosis</p>
           <p className="whitespace-pre-wrap text-xs">{tests.diagnosis}</p>

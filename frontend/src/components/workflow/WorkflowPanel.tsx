@@ -107,6 +107,9 @@ export function WorkflowPanel({
   // a review on the pull request sent the task back: its agent's fix run is what is running (piece 3); a retried
   // fix keeps the Done stage, and an old request never speaks for another run
   const fixTrigger = status === "running" && latest?.workflow_role === "pr_fix" ? wf.pr_fix_trigger : null;
+  // a fix round on the tests that failed at finish (MC-98): the fix, then its review, in the Review stage
+  const finishFix = status === "running" && wf.finish_tests?.fix_round != null &&
+    (latest?.workflow_role === "final_fix" || latest?.workflow_role === "final_review") ? wf.finish_tests : null;
   // an agent reviews the pull request (piece 4): its review run is what is running
   const reviewing = status === "running" && latest?.workflow_role === "pr_review" && (latest.status === "running" || latest.status === "queued");
   const pr = wf.pull_request;
@@ -216,6 +219,18 @@ export function WorkflowPanel({
               Don&apos;t send back
             </Button>
           )}
+        </div>
+      )}
+
+      {finishFix && (
+        <div className="space-y-2 rounded border border-amber/60 p-2">
+          <p>
+            {`Fix round ${finishFix.fix_round} of ${wf.finish_fix_max ?? 2} · ` +
+              (latest?.workflow_role === "final_fix"
+                ? `${agent?.name ?? "the agent"} is fixing the tests that failed at finish`
+                : "A reviewer is checking the fix")}
+          </p>
+          <FinishFailures tests={finishFix} startBranch={wf.start_branch ?? null} showDiagnosis={false} />
         </div>
       )}
 
