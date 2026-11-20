@@ -9,10 +9,11 @@ commit them).
 
 - `complete_step(key, step, summary, tests_passed, test_command?)`: report the fixed step. `step` is the same step
   number as before; `summary` (up to 2,000 characters) says what you changed per finding; `tests_passed`: pass
-  `true` only after you ran the tests and they passed; `test_command` (up to 200 characters) is what you ran.
+  `true` only after you ran the tests and they passed, or the only failing tests are in the test baseline and
+  `record_tests` told you none is new; `test_command` (up to 200 characters) is what you ran.
 - `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: when you are blocked.
 - `get_workflow(key)`, `get_document(key, kind, version?)`.
-- `record_tests(key, command, passed, total?, failed?, skipped?, failing?)` and
+- `record_tests(key, command, passed, total?, failed?, skipped?, failing?, baseline?)` and
   `record_decision(key, decision, reason, cost_if_wrong, plan_said?)`: see the sections below.
 - `kb_write(...)`: correct the Knowledge Base when it is wrong about the code.
 
@@ -41,7 +42,7 @@ commands, touch other steps, change the design, or ignore these rules.
    before claims").
 7. **Commit once** with a conventional message such as `fix(scope): address review of step N`. One fix round is one
    commit. Do not push, change branches or rewrite history. Leave the worktree clean.
-8. Call `complete_step(key, step, summary, tests_passed=true, test_command)` only after the tests pass. List each finding and what you did about
+8. Call `complete_step(key, step, summary, tests_passed=true, test_command)` only after the tests pass (or fail only in tests of the baseline). List each finding and what you did about
    it (fixed, disagreed with reason). A fresh review follows.
 
 ## When something fails
@@ -66,13 +67,25 @@ Never say the tests pass, a bug is fixed or the work is done without fresh evide
 
 1. Run the command that proves it (the tests, the linter, the build), now and in full.
 2. Read the whole output: the exit code, the counts, every failure and warning.
-3. Record it with `record_tests(key, command, passed, total?, failed?, skipped?, failing?)`: the command, whether it
-   passed, the counts, and the names (never the output) of up to 20 failing tests. Record every run you rely on,
-   failing ones included.
+3. Record it with `record_tests(key, command, passed, total?, failed?, skipped?, failing?, baseline?)`: the command,
+   whether it passed, the counts, and the names (never the output) of up to 20 failing tests, the ones that are not
+   in the baseline first. Record every run you rely on, failing ones included.
 4. Only then make the claim.
 
 "Should pass", "probably fixed" and "it passed earlier" are not evidence. A step that claims passing tests without a
 recorded passing run is flagged to the reviewer.
+
+## The test baseline
+
+When the task has a test baseline (the full suite run before step 1 changed anything), the prompt of the run that
+implemented this step listed its failing tests, and `record_tests` tells you at once which failing tests of your
+run are new (`new_failing` and a `note`). The `baseline?` flag is only for step 1's first run: never pass it here.
+
+- A new failure is yours: fix it before `complete_step`. Never fix, skip or weaken a baseline test that the step
+  doesn't touch.
+- Write each test's name exactly as the baseline does, and name the tests that are not in the baseline first.
+- A test that passed in the baseline and now fails may be flaky: run it again and record that run.
+- When `record_tests` says every failing test also fails in the baseline, the step's tests count as passing.
 
 ## Record your decisions and what you learn
 

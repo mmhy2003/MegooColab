@@ -72,10 +72,38 @@ class ProjectWaitOut(BaseModel):
     can_withdraw: bool
 
 
+class KnownBugOut(BaseModel):
+    """MC-100: the open bug task of a known failing test."""
+
+    key: str
+    title: str
+
+
+class FinishFailureOut(BaseModel):
+    name: str
+    kind: Literal["new", "base", "flaky"]
+    bug: KnownBugOut | None = None  # base and flaky rows: the project's open bug for the test
+
+
+class FinishTestsOut(BaseModel):
+    """MC-97: the finish run's failing tests, as it reported them, and how the finish settled."""
+
+    failures: list[FinishFailureOut] = []
+    failing_total: int | None = None
+    diagnosis: str | None = None
+    delivered: bool = False
+    settled: Literal["known", "accepted"] | None = None
+    accepted_by: str | None = None  # the person's name
+    fix_round: int | None = None  # MC-98: the running fix round
+
+
 class WorkflowOut(TaskWorkflowOut):
     # changes requested on the pull request (piece 3): rounds used, and what asked last
     pr_fix_rounds: int = 0
     pr_fix_trigger: dict | None = None
+    # fix rounds on the tests that failed at finish (MC-98): used, and allowed
+    finish_fix_rounds: int = 0
+    finish_fix_max: int = 2
     finishing_option: FinishingOption  # the effective option
     takes_images: bool = False  # messages to its agent may carry images (app.images.support)
     finishing_forced: bool = False  # human code review forces a pull request
@@ -88,6 +116,7 @@ class WorkflowOut(TaskWorkflowOut):
     back_merge_pr_url: str | None = None
     back_merge_pull_request: PullRequestOut | None = None
     finish_outcome: str | None = None
+    finish_tests: FinishTestsOut | None = None  # MC-97: null until a finish reports failing tests
     branch_from: str | None = None
     start_branch: str | None = None
     back_merge_into: str | None = None
@@ -99,7 +128,12 @@ class WorkflowOut(TaskWorkflowOut):
 
 
 class EscalationDecisionIn(BaseModel):
-    action: Literal["retry", "accept", "pause"]
+    action: Literal["retry", "accept", "pause", "fix"]
+
+
+class KnownFailureBugIn(BaseModel):
+    """MC-100: a known failing test of the finish report, as listed."""
+    name: NoNulStr = Field(min_length=1, max_length=300)
 
 
 class HumanReviewIn(BaseModel):
@@ -211,6 +245,10 @@ class TestRunOut(BaseModel):
     failed: int | None
     skipped: int | None
     failing: list[str]
+    on_base: bool = False
+    baseline: bool = False
+    marks: list[Literal["new", "baseline", "unlisted"]] | None = None  # one per name in `failing`; None: not compared
+    known_only: bool = False
     author: str
     created_at: datetime
 

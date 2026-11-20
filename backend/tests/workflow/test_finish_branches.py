@@ -149,7 +149,7 @@ def test_finish_text_back_merge_section():
     text = " ".join(text.split())  # the text wraps lines
     assert "never push to a different branch or remote than the task branch's own (or" in text
     assert text.count("do the Back-merge first") == 2  # merge_local and pull_request
-    assert "Call `report_finish` exactly once, after the option (and any back-merge)" in text
+    assert "Call `report_finish` at most once per run, and only after the option (and any back-merge)" in text
 
 
 def test_finish_text_back_merge_gaps_closed():

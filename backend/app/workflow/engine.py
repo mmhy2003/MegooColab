@@ -100,7 +100,7 @@ CONTINUE_TEXT = "Your previous run ended before it finished. Continue the same w
 # the heading a resume text gets when there is no session to resume and it joins the full prompt instead
 RESUME_HEADING = {
     "answer": "Answer", "rejection": "Rejection", "nudge": "Reminder", "findings": "Findings to address",
-    "project_answers": "Answers from other projects",
+    "project_answers": "Answers from other projects", "failures_accepted": "Failing tests accepted",
 }
 NUDGE_TEXT = {
     RunRole.plan: (
@@ -385,6 +385,14 @@ def requires_human_review(project: Project, wf: TaskWorkflow) -> bool:
     return pr_review_mode(project, wf) != PrReview.none
 
 
+def tolerates_known(project: Project, wf: TaskWorkflow) -> bool:
+    """MC-97: whether a finish goes on when its only failing tests are known ones (failing on the start commit, or
+    flaky). Frozen when the Done stage began; a row from before falls back to the project's setting."""
+    if wf.stage == Stage.done and wf.finish_tolerates_known is not None:
+        return wf.finish_tolerates_known
+    return project.tolerate_known_test_failures
+
+
 def pr_review_mode(project: Project, wf: TaskWorkflow) -> PrReview:
     """Who reviews the pull request: frozen when the Done stage began, else the project's setting. A row frozen
     before piece 4 has only the yes/no: yes was a person."""
@@ -448,9 +456,21 @@ async def enqueue(
     findings = await _latest_findings(db, task.id, role, step) if role in FIX_ROLES else None
     key_override = "design_revision" if role == RunRole.brainstorm and wf.stage == Stage.design else None
     extra = None
+    fix_n = finish.fix_round(wf)  # a fix round on the tests that failed at finish (MC-98)
+    if fix_n is not None and role == RunRole.final_fix:
+        key_override, findings = "finish_fix", None
+        extra = [await finish.fix_section(db, wf, task)]
+    round_review = fix_n is not None and role == RunRole.final_review  # only the fix: no earlier findings, reports
+    if round_review:
+        key_override = "finish_fix_review"
+        extra = [finish.fix_review_section(wf)]
     if role == RunRole.finish:
-        option = finishing_option(await db.get(Project, task.project_id), wf)
-        extra = [f"## Finishing\nFinishing option: {option.value}\n{delivery_lines(task)}"]
+        project = await db.get(Project, task.project_id)
+        option = finishing_option(project, wf)
+        known = "tolerated" if tolerates_known(project, wf) else "not tolerated"
+        extra = [
+            f"## Finishing\nFinishing option: {option.value}\n{delivery_lines(task)}\nKnown failing tests: {known}"
+        ]
     if role == RunRole.pr_fix:
         from app.git import send_back  # local: the git modules import this one
 
@@ -463,10 +483,13 @@ async def enqueue(
         records as run_records,  # local: records imports this module
     )
 
+    if not round_review:  # a fix round at finish (MC-98) is not compared
+        extra = [*(extra or []), *await run_records.baseline_sections(db, wf, role, step)]
     prompt, meth = await build_prompt(
         db, task, role, step=step, findings=findings, key_override=key_override,
-        previous_findings=await _previous_findings(db, wf, role, step), extra_sections=extra,
-        reports=await _implementer_reports(db, task.id, role, step),
+        previous_findings=None if round_review else await _previous_findings(db, wf, role, step),
+        extra_sections=extra,
+        reports=None if round_review else await _implementer_reports(db, task.id, role, step),
         records=await run_records.review_records(db, task.id, role, step),
     )
     key = session_key(role, step)
@@ -677,7 +700,8 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
         if submitted is not None:
             return Needs.design_approval if kind == DocKind.design else Needs.plan_approval
     if wf.stage == Stage.done and wf.finish_outcome and wf.status != WorkflowStatus.finished:
-        # the finish run reported (with passing tests, as _handle_finish requires): the PR waits for its approval
+        # the finish run reported with passing tests, or its failing tests were settled (known or accepted, which
+        # counts like passing tests): the PR waits for its approval
         task = await db.get(Task, wf.task_id)
         reported = await db.scalar(
             select(AgentRun.step_result)
@@ -690,7 +714,9 @@ async def _pending_need(db: AsyncSession, wf: TaskWorkflow) -> Needs | None:
             .limit(1)
         )
         project = await db.get(Project, task.project_id)
-        if (reported or {}).get("tests_passed") is True and requires_human_review(project, wf):
+        if ((reported or {}).get("tests_passed") is True or (wf.finish_tests or {}).get("settled")) and (
+            requires_human_review(project, wf)
+        ):
             last = await latest_run(db, wf.task_id)
             reviewed = (
                 pr_review_mode(project, wf) == PrReview.agent and last is not None
@@ -759,12 +785,15 @@ async def resume(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
 # ---- escalations ----------------------------------------------------------------------
 
 AcceptHandler = Callable[[AsyncSession, TaskWorkflow, Task, User], Awaitable[None]]
-# reason -> what `accept` does. Accept applies only to review_rounds_exhausted, final_review_not_clean
-# (registered by the build and review stages) and enforcement_violation; any other reason gets 422.
+# reason -> what `accept` does. Registered by the stages that offer it (build, finish, git); any other reason gets
+# 422 cannot_accept_here.
 ACCEPT_HANDLERS: dict[str, AcceptHandler] = {}
 # reason -> what `retry` does, where repeating the latest run is not it (piece 4: an unavailable reviewer's review
 # starts again, rather than the Finish or fix run before it)
 RETRY_HANDLERS: dict[str, AcceptHandler] = {}
+# reason -> what `fix` does (MC-98: a fix round on the tests that failed at finish); any other reason gets
+# 422 cannot_fix_here
+FIX_HANDLERS: dict[str, AcceptHandler] = {}
 
 
 async def _accept_violation(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
@@ -786,6 +815,8 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
     reason = wf.escalation_reason
     if action == "accept" and reason not in ACCEPT_HANDLERS:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "cannot_accept_here")
+    if action == "fix" and reason not in FIX_HANDLERS:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "cannot_fix_here")
     await record_workflow_event(db, task, user.id, "escalation.decided", {"action": action, "reason": reason})
     await audit.record(
         db, f"workflow.{action}", actor_id=user.id, target_type="task", target_id=task.id, data={"reason": reason}
@@ -805,7 +836,12 @@ async def decide_escalation(db: AsyncSession, user: User, task: Task, action: st
             await RETRY_HANDLERS[reason](db, wf, task, user)
         else:
             await rerun(db, wf, task, requested_by=user.id)
-    else:
+    elif action == "fix":
+        wf.failures = 0
+        wf.nudged = False
+        wf.status = WorkflowStatus.running
+        await FIX_HANDLERS[reason](db, wf, task, user)
+    else:  # accept
         wf.status = WorkflowStatus.running
         await ACCEPT_HANDLERS[reason](db, wf, task, user)
     return wf

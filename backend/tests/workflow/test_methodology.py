@@ -4,7 +4,7 @@ from app.audit.models import AuditLog
 from app.auth.models import Role
 from app.core.db import SessionLocal
 from app.workflow import methodology
-from app.workflow.models import MethodologyVersion
+from app.workflow.models import MethodologyVersion, Stage
 from tests.factories import login, make_user
 
 
@@ -12,12 +12,12 @@ async def _count(db) -> int:
     return (await db.execute(select(func.count()).select_from(MethodologyVersion))).scalar_one()
 
 
-async def test_seed_creates_v1_for_all_fourteen_keys_once(db):
+async def test_seed_creates_v1_for_all_sixteen_keys_once(db):
     await methodology.seed_defaults(db)
     await db.commit()
     await methodology.seed_defaults(db)
     await db.commit()
-    assert await _count(db) == 14
+    assert await _count(db) == 16
     versions = set((await db.execute(select(MethodologyVersion.version))).scalars())
     assert versions == {1}
     assert sorted(methodology.ALL_KEYS) == sorted(
@@ -54,7 +54,7 @@ async def test_admin_edit_creates_new_version_and_audits(client, db):
     assert r.json()["version"] == 2 and r.json()["body_md"] == "new plan text"
     assert (await methodology.current(db, "plan")).version == 2
     listed = {i["key"]: i for i in (await client.get("/api/methodology")).json()}
-    assert len(listed) == 14 and listed["plan"]["version"] == 2 and listed["plan"]["stage"] == "plan"
+    assert len(listed) == 16 and listed["plan"]["version"] == 2 and listed["plan"]["stage"] == "plan"
     versions = (await client.get("/api/methodology/plan/versions")).json()
     assert [v["version"] for v in versions] == [2, 1]
     old = await client.get("/api/methodology/plan/versions/1")
@@ -66,7 +66,7 @@ async def test_admin_edit_creates_new_version_and_audits(client, db):
 
 async def test_reviewers_cannot_ask_human_everyone_else_can(db):
     await methodology.seed_defaults(db)
-    reviewers = {"build_step_review", "review_final", "pr_review"}  # a reviewer judges what is there
+    reviewers = {"build_step_review", "review_final", "finish_fix_review", "pr_review"}  # a reviewer judges what is there
     for key in methodology.STAGE_OF:  # a workflow's texts (a draft's writer asks the person in its reply)
         text = (await methodology.current(db, key)).body_md
         assert ("ask_human" in text) is (key not in reviewers), key
@@ -106,7 +106,7 @@ async def test_lifespan_seeds_defaults(app, db, monkeypatch):
     monkeypatch.setattr("app.main.hub.ready.wait", _noop)
     async with app.router.lifespan_context(app):
         pass
-    assert await _count(db) == 14
+    assert await _count(db) == 16
 
 
 async def _noop(*a, **k):
@@ -120,7 +120,7 @@ async def test_member_cannot_edit_403(client, db):
     await login(client, member)
     assert (await client.get("/api/methodology")).status_code == 200
     assert (await client.put("/api/methodology/plan", json={"body_md": "x"})).status_code == 403
-    assert await _count(db) == 14
+    assert await _count(db) == 16
 
 
 async def test_unknown_key_404(client, db):
@@ -157,6 +157,34 @@ def test_default_history_ends_with_the_current_texts():
         text = (methodology.DEFAULTS_DIR / f"{key}.md").read_text(encoding="utf-8")
         assert DEFAULT_HISTORY[key][-1] == hashlib.sha256(text.encode("utf-8")).hexdigest(), key
         assert len(set(DEFAULT_HISTORY[key])) == len(DEFAULT_HISTORY[key]), key
+
+
+def test_finish_text_sorts_failing_tests():
+    """The finish agent sorts failing tests (flaky, base, new) and reports them instead of stopping to ask."""
+    body = (methodology.DEFAULTS_DIR / "finish.md").read_text(encoding="utf-8")
+    for phrase in ("report_test_failures", "on_base=true", "git switch --detach", "Known failing tests", "flaky",
+                   "Finish anyway"):
+        assert phrase in body, phrase
+    assert "If anything fails, **stop**" not in body
+
+
+def test_baseline_texts():
+    """The build and review texts use the task's test baseline (MC-99); the finish texts keep their own check."""
+    def text(key: str) -> str:
+        return (methodology.DEFAULTS_DIR / f"{key}.md").read_text(encoding="utf-8")
+
+    expected = {
+        "build_implement": ("## The test baseline", "baseline=true", "baseline?", "new_failing",
+                            "Never fix, skip or weaken a baseline test"),
+        "build_step_fix": ("## The test baseline", "baseline?", "Never fix, skip or weaken a baseline test"),
+        "build_step_review": ("## Compared with the test baseline", "is not a finding"),
+        "review_final": ("## Test baseline",),
+    }
+    for key, phrases in expected.items():
+        for phrase in phrases:
+            assert phrase in text(key), (key, phrase)
+    for key in ("finish", "finish_fix", "finish_fix_review"):
+        assert "baseline=true" not in text(key), key
 
 
 def _old_default(monkeypatch, key: str, text: str) -> None:
@@ -204,17 +232,31 @@ async def test_defaults_teach_the_disciplines(db):
     body = {r.key: r.body_md for r in await methodology.current_all(db)}
     for key in ("brainstorm", "design_revision"):
         assert "show_mockup" in body[key] and "design_submitted" in body[key], key
-    for key in ("build_implement", "build_step_fix", "review_fix", "finish"):
+    for key in ("build_implement", "build_step_fix", "review_fix", "finish_fix", "finish"):
         text = body[key]
         assert "record_tests" in text and "## When something fails" in text, key
         assert "root cause" in text and "three" in text, key  # three failed fixes: stop and ask
         assert "Evidence before claims" in text, key
-    for key in ("build_implement", "build_step_fix", "review_fix"):
+    for key in ("build_implement", "build_step_fix", "review_fix", "finish_fix"):
         assert "record_decision" in body[key] and "kb_write" in body[key], key
     assert "| Excuse |" in body["build_implement"]  # the TDD excuses table
     # final review fix: finish diagnoses a failure but never changes code after the final review
     assert "quick, clear fix" not in body["finish"]
     assert "Do not change any code in this stage" in body["finish"]
-    for key in ("build_step_review", "review_final"):
+    for key in ("build_step_review", "review_final", "finish_fix_review"):
         assert "Decisions the agent recorded" in body[key] and "Recorded test runs" in body[key], key
         assert "record_tests" not in body[key] and "record_decision" not in body[key], key
+
+
+def test_finish_fix_texts():
+    """A fix round on the tests that failed at finish (MC-98) has its own fix and review texts in the Review stage."""
+    assert methodology.KEYS[Stage.review] == ["review_final", "review_fix", "finish_fix", "finish_fix_review"]
+    fix = (methodology.DEFAULTS_DIR / "finish_fix.md").read_text(encoding="utf-8")
+    assert fix.startswith("# Review: fix the tests that failed at finish\n")
+    for phrase in ("Tests that failed at finish", "Never skip, delete or weaken a test", "never rebase", "ask_human",
+                   "Do not call `complete_step`"):
+        assert phrase in fix, phrase
+    review = (methodology.DEFAULTS_DIR / "finish_fix_review.md").read_text(encoding="utf-8")
+    assert review.startswith("# Review: review the fix for the tests that failed at finish\n")
+    for phrase in ("The fix to review", "git diff", "critical", "submit_review"):
+        assert phrase in review, phrase

@@ -27,7 +27,7 @@ import {
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
 const AGENT_NAME = `${ADMIN.name}'s Claude Code`;
 const KEY = "WFL-1";
-const PROBE_KEY = "WFL-6"; // after WFL-1's follow-ups (WFL-2, WFL-3) and plan subtasks (WFL-4, WFL-5)
+const PROBE_KEY = "WFL-7"; // after WFL-1's follow-ups (WFL-2, WFL-3), plan subtasks (WFL-4, WFL-5) and bug (WFL-6)
 const PR_URL = "https://example.test/pr/1";
 const BRANCH = "megoo/WFL-1-add-a-greeting";
 
@@ -42,7 +42,18 @@ const FIX = "Review findings to address:";
 const RE_REVIEW = "## Previous review findings";
 const FINAL_REVIEW = "# Review: final review of the whole change";
 const FINISH = "# Finish: verify and integrate the finished work";
+const FINISH_FIX = "# Review: fix the tests that failed at finish"; // methodology_texts/defaults/finish_fix.md
+const FINISH_FIX_REVIEW = "# Review: review the fix for the tests that failed at finish";
+const ACCEPTED = "chose Finish anyway"; // the resume text after Finish anyway (context.resume_text)
 const STEP = (n: number) => `## Step ${n} of 2`;
+
+const FAILING = { name: "greeting.test:1", kind: "new" };
+// MC-100: a test that also fails on the start commit, reported with the accepted finish; its position is Playwright's
+const KNOWN = { name: "e2e/legacy.spec.ts:7:3 › legacy layout", kind: "base" };
+const DIAGNOSIS = "The greeting test expects a farewell.";
+// MC-99: step 1's test baseline and the new failure its run adds (not FAILING.name: the finish checks that exact text)
+const BASELINE_FAILING = "legacy.test:1";
+const NEW_FAILING = "greeting.test:2";
 
 const GOOD_MOCKUP = `<!doctype html><html><body style="font-family:sans-serif">
 <h1>Greeting styles</h1>
@@ -146,10 +157,12 @@ const SCENARIO = [
     onPrompt(
       STEP(1),
       { sleep_ms: 4_000 }, // holds Build at "1 of 2 steps" for the test to see
+      mcp("record_tests", { key: KEY, command: "make test", passed: false, total: 3, failed: 1, failing: [BASELINE_FAILING], baseline: true }),
       { report_file: { path: ".megoocolab/plan.md" } },
       { report_file: { path: ".megoocolab/design.md" } },
       { write: { path: "step1.txt", content: "Hi there!\n" } },
       { commit: { message: "step 1: the greeting", all: true } },
+      mcp("record_tests", { key: KEY, command: "make test", passed: false, total: 4, failed: 2, failing: [BASELINE_FAILING, NEW_FAILING] }),
       mcp("complete_step", { key: KEY, step: 1, summary: "Greeting written", tests_passed: true, test_command: "make test" }),
       say("Step 1 is done"), // the run's summary
     ),
@@ -183,9 +196,25 @@ const SCENARIO = [
     ),
   ),
   onPrompt(FINAL_REVIEW, { sleep_ms: 5_000 }, mcp("submit_review", { key: KEY, verdict: "approved", findings: [] })),
+  // MC-98: Fix round on the first card: the fix commits, its review approves, and the finish runs again
+  onPrompt(
+    FINISH_FIX,
+    { write: { path: "step1.txt", content: "Hi there, and bye!\nFixed greeting test\n" } },
+    { commit: { message: "fix(greeting): the greeting test expects a farewell", all: true } },
+    mcp("record_tests", { key: KEY, command: "make test", passed: true, total: 1, failed: 0 }),
+  ),
+  onPrompt(FINISH_FIX_REVIEW, mcp("submit_review", { key: KEY, verdict: "approved", findings: [] })),
+  // MC-97: the finish run reports a new failing test instead of delivering (both times: the finish after the fix
+  // round gets the same prompt); after Finish anyway, its resumed session (whose prompt is the resume text only)
+  // delivers with that failure
   onPrompt(
     FINISH,
-    mcp("report_finish", { key: KEY, outcome: "pr_opened", branch: BRANCH, pr_url: PR_URL, tests_passed: true }),
+    mcp("record_tests", { key: KEY, command: "make test", passed: false, failed: 1, failing: [FAILING.name] }),
+    mcp("report_test_failures", { key: KEY, failures: [FAILING], diagnosis: DIAGNOSIS }),
+  ),
+  onPrompt(
+    ACCEPTED,
+    mcp("report_finish", { key: KEY, outcome: "pr_opened", branch: BRANCH, pr_url: PR_URL, tests_passed: false, failures: [FAILING, KNOWN] }),
   ),
 ];
 
@@ -472,6 +501,13 @@ test("workflow end to end", async ({ browser }) => {
   await expect(findings.getByRole("listitem")).toHaveText("step1.txt:1The greeting has no farewell");
   await expect(drawer.getByText("changed step1.txt (+1 −1)")).toBeVisible({ timeout: 30_000 }); // the fix
   await expect(drawer.getByText("Review of step 1 (round 2): approved")).toBeVisible({ timeout: 30_000 });
+  // MC-99: step 1's baseline and its run's new failure, on the plan
+  const baselineBox = planSection.getByRole("region", { name: "Test baseline" });
+  await expect(baselineBox.getByText("Test baseline (before step 1) · 1 already failing — make test")).toBeVisible({ timeout: 30_000 });
+  await expect(planSection.getByText("✗ 2 failed, 1 new — make test")).toBeVisible();
+  await expect(planSection.getByText("also fails in the baseline", { exact: true })).toBeVisible();
+  await expect(planSection.getByText("new", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("finished without a test baseline")).toHaveCount(0);
   await expect(card.getByText("2 of 2 steps")).toBeVisible({ timeout: 15_000 });
 
   // 8. the runner goes away during step 2's implement run: that run fails, the same step waits for the runner
@@ -487,17 +523,48 @@ test("workflow end to end", async ({ browser }) => {
   launch(token);
   await expect(panel.getByText("Online", { exact: true }).or(panel.getByText("Busy", { exact: true }))).toBeVisible({ timeout: 15_000 });
 
-  // 9. In Review by itself, then Done, with the pull request
-  await expect(column(page, "In Review").getByRole("button", { name: /WFL-1 Add a greeting/ })).toBeVisible({ timeout: 60_000 });
+  // 9. In Review by itself; the finish's failing test stops it on the card; a fix round, whose review approves,
+  // and the finish fails again; Finish anyway; then Done, with the pull request
+  const reviewCard = column(page, "In Review").getByRole("button", { name: /WFL-1 Add a greeting/ });
+  await expect(reviewCard).toBeVisible({ timeout: 60_000 });
+  await expect(panel.getByText("Tests failed at finish: 1 failing (1 new)")).toBeVisible({ timeout: 60_000 });
+  await expect(panel.getByText(FAILING.name, { exact: true })).toBeVisible(); // also in the recorded run's line
+  await expect(panel.getByText(DIAGNOSIS)).toBeVisible();
+  const cardButtons = panel.locator("[data-waiting=escalation]").getByRole("button");
+  await expect(cardButtons).toHaveText(["Fix round", "Retry", "Finish anyway", "Pause"]);
+  await expect(panel.getByText(/Round 1 of 2\.$/)).toBeVisible();
+  await panel.getByRole("button", { name: "Fix round" }).click();
+  await expect(drawer.getByText("Fix round 1 of 2 started for 1 failing test")).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByText(/Round 2 of 2\.$/)).toBeVisible({ timeout: 60_000 });
+  await expect(panel.getByText("Tests failed at finish: 1 failing (1 new)")).toBeVisible();
+  await expect(drawer.getByText("Review of fix round 1: approved")).toBeVisible();
+  await expect(reviewCard).toBeVisible(); // the card stayed in In Review through the round
+  await panel.getByRole("button", { name: "Finish anyway" }).click();
   const doneCard = column(page, "Done").getByRole("button", { name: /WFL-1 Add a greeting/ });
   await expect(doneCard).toBeVisible({ timeout: 60_000 });
   await expect(doneCard.getByRole("group", { name: "Stage: Done (6 of 6)" })).toBeVisible();
   await expect(panel.getByText("Finished", { exact: true })).toBeVisible();
   await expect(panel.getByRole("link", { name: "PR (not tracked)" })).toHaveAttribute("href", PR_URL); // no git connection
   await expect(panel.getByText(BRANCH)).toBeVisible();
+  await expect(panel.getByText(`Finished with 2 failing tests accepted by ${ADMIN.name}`)).toBeVisible();
+  // MC-100: the known failure offers a bug task; the click creates it and the row links to it
+  await expect(panel.getByText(KNOWN.name, { exact: true })).toBeVisible();
+  await panel.getByRole("button", { name: "Create bug task" }).click(); // the only one: FAILING is new
+  await expect(panel.getByRole("link", { name: /^Bug: WFL-\d+$/ })).toBeVisible({ timeout: 15_000 });
+  await expect(panel.getByRole("button", { name: "Create bug task" })).toHaveCount(0);
+  await expect(drawer.getByText(/created bug WFL-\d+ for the failing test/)).toBeVisible();
+  await expect(column(page, "Backlog").getByText(`Failing test: ${KNOWN.name}`)).toBeVisible(); // the first column
+  const tasks: { title: string; type: string }[] = await (await page.request.get("/api/projects/WFL/tasks")).json();
+  expect(tasks.filter((t) => t.title === `Failing test: ${KNOWN.name}` && t.type === "bug")).toHaveLength(1);
   await expect(drawer.getByText("Moved to In Review by the workflow")).toBeVisible();
   await expect(drawer.getByText("Moved to Done by the workflow")).toBeVisible();
   await expect(drawer.getByText("Subtasks (2/2)")).toBeVisible();
+  // the fix round's runs pushed step 2's line out of the thread's first page
+  const earlier = drawer.getByRole("button", { name: "Load earlier activity" });
+  await expect(async () => {
+    if ((await earlier.count()) > 0) await earlier.click();
+    await expect(earlier).toHaveCount(0, { timeout: 1_000 });
+  }).toPass({ timeout: 30_000 });
   await expect(drawer.getByText("changed step2.txt (+1 −0)")).toHaveCount(1); // the killed attempt wrote nothing
 
   // every run, in order: the runner restart re-ran step 2's implement once and nothing before it
@@ -515,6 +582,10 @@ test("workflow end to end", async ({ browser }) => {
     "step_review:2 completed",
     "final_review completed",
     "finish completed",
+    "final_fix completed",
+    "final_review completed",
+    "finish completed",
+    "finish completed",
   ]);
 
   // .megoocolab/plan.md (the approved v2) and design.md were in the worktree during Build
@@ -527,15 +598,26 @@ test("workflow end to end", async ({ browser }) => {
   // step_fix resumed step 1's implement session; the re-review's second verdict was refused
   const fix = reportFor(reports, FIX);
   expect(fix.session_events).toEqual([step1.session_events![0].replace(/^new:/, "resume:")]);
+  // Finish anyway resumed the session of the second finish, the one after the fix round
+  const finishes = readReports(reports).filter((r) => (r.prompts ?? []).some((p) => p.includes(FINISH))); // oldest first
+  expect(finishes).toHaveLength(2);
+  const accepted = reportFor(reports, ACCEPTED);
+  expect(accepted.session_events).toEqual([finishes[1].session_events![0].replace(/^new:/, "resume:")]);
+  // the fix run got the round, the failing test and the diagnosis; its review, the fix's diff
+  const finishFix = reportFor(reports, FINISH_FIX);
+  expect(finishFix.prompts![0]).toContain("Fix round 1 of 2");
+  expect(finishFix.prompts![0]).toContain(DIAGNOSIS);
+  expect(reportFor(reports, FINISH_FIX_REVIEW).prompts![0]).toContain("git diff ");
   const reReview = reportFor(reports, STEP_REVIEW, RE_REVIEW);
   const verdicts = reReview.steps.filter((s) => s.tool === "submit_review");
   expect(verdicts.map((s) => s.ok)).toEqual([true, false]);
   expect(verdicts[1].error ?? verdicts[1].result).toContain("already_submitted");
 
   // the work is in the worktree on the task branch; the developer's checkout is untouched
-  expect(readFileSync(join(worktree, "step1.txt"), "utf8")).toBe("Hi there, and bye!\n");
+  expect(readFileSync(join(worktree, "step1.txt"), "utf8")).toBe("Hi there, and bye!\nFixed greeting test\n");
   expect(readFileSync(join(worktree, "step2.txt"), "utf8")).toBe("uses step1\n");
   expect(git(worktree, "log", "--format=%s", `${repoHead}..HEAD`).split("\n")).toEqual([
+    "fix(greeting): the greeting test expects a farewell",
     "step 2: wire it up",
     "step 1: address review",
     "step 1: the greeting",
@@ -558,8 +640,8 @@ test("workflow end to end", async ({ browser }) => {
     headers: { "X-Megoo-Client": "web" },
   });
   expect(probeAssigned.ok()).toBeTruthy();
-  await drag(page, /WFL-6 Mockup sandbox probe/, "To Do", "In Progress");
-  const probeCard = column(page, "In Progress").getByRole("button", { name: /WFL-6 Mockup sandbox probe/ });
+  await drag(page, /WFL-7 Mockup sandbox probe/, "To Do", "In Progress");
+  const probeCard = column(page, "In Progress").getByRole("button", { name: /WFL-7 Mockup sandbox probe/ });
   await expect(probeCard.getByText("NEEDS YOU")).toBeVisible({ timeout: 30_000 });
   await probeCard.click();
   const probeDrawer = page.getByRole("dialog", { name: PROBE_KEY });

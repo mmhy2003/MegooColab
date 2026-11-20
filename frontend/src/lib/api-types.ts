@@ -1996,6 +1996,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{key}/workflow/known-failures/bug": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Known Failure Bug
+         * @description MC-100: a bug task for a known failing test of the finish, unless the project has an open one already.
+         */
+        post: operations["create_known_failure_bug_api_tasks__key__workflow_known_failures_bug_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{key}/workflow/human-review": {
         parameters: {
             query?: never;
@@ -5552,7 +5572,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "retry" | "accept" | "pause";
+            action: "retry" | "accept" | "pause" | "fix";
         };
         /** Facets */
         Facets: {
@@ -5590,6 +5610,43 @@ export interface components {
             line: number | null;
             /** Summary */
             summary: string;
+        };
+        /** FinishFailureOut */
+        FinishFailureOut: {
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "new" | "base" | "flaky";
+            bug?: components["schemas"]["KnownBugOut"] | null;
+        };
+        /**
+         * FinishTestsOut
+         * @description MC-97: the finish run's failing tests, as it reported them, and how the finish settled.
+         */
+        FinishTestsOut: {
+            /**
+             * Failures
+             * @default []
+             */
+            failures: components["schemas"]["FinishFailureOut"][];
+            /** Failing Total */
+            failing_total?: number | null;
+            /** Diagnosis */
+            diagnosis?: string | null;
+            /**
+             * Delivered
+             * @default false
+             */
+            delivered: boolean;
+            /** Settled */
+            settled?: ("known" | "accepted") | null;
+            /** Accepted By */
+            accepted_by?: string | null;
+            /** Fix Round */
+            fix_round?: number | null;
         };
         /** FinishingIn */
         FinishingIn: {
@@ -6073,6 +6130,24 @@ export interface components {
          * @enum {string}
          */
         Kind: "needs_you" | "assigned" | "mentioned" | "agent_offline" | "question_waiting" | "agent_replied" | "task_done" | "team_task_done";
+        /**
+         * KnownBugOut
+         * @description MC-100: the open bug task of a known failing test.
+         */
+        KnownBugOut: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * KnownFailureBugIn
+         * @description MC-100: a known failing test of the finish report, as listed.
+         */
+        KnownFailureBugIn: {
+            /** Name */
+            name: string;
+        };
         /** LabelIn */
         LabelIn: {
             /** Name */
@@ -6838,6 +6913,10 @@ export interface components {
             pr_reviewer_agent_id: string | null;
             /** Send Back On Changes Requested */
             send_back_on_changes_requested: boolean;
+            /** Tolerate Known Test Failures */
+            tolerate_known_test_failures: boolean;
+            /** Record Test Baseline */
+            record_test_baseline: boolean;
             /** Commit Docs To Repo */
             commit_docs_to_repo: boolean;
             /** Team Ids */
@@ -6863,6 +6942,10 @@ export interface components {
             pr_reviewer_agent_id?: string | null;
             /** Send Back On Changes Requested */
             send_back_on_changes_requested?: boolean | null;
+            /** Tolerate Known Test Failures */
+            tolerate_known_test_failures?: boolean | null;
+            /** Record Test Baseline */
+            record_test_baseline?: boolean | null;
             /** Commit Docs To Repo */
             commit_docs_to_repo?: boolean | null;
             /** Team Ids */
@@ -8267,6 +8350,23 @@ export interface components {
             skipped: number | null;
             /** Failing */
             failing: string[];
+            /**
+             * On Base
+             * @default false
+             */
+            on_base: boolean;
+            /**
+             * Baseline
+             * @default false
+             */
+            baseline: boolean;
+            /** Marks */
+            marks?: ("new" | "baseline" | "unlisted")[] | null;
+            /**
+             * Known Only
+             * @default false
+             */
+            known_only: boolean;
             /** Author */
             author: string;
             /**
@@ -8723,6 +8823,16 @@ export interface components {
             pr_fix_trigger?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Finish Fix Rounds
+             * @default 0
+             */
+            finish_fix_rounds: number;
+            /**
+             * Finish Fix Max
+             * @default 2
+             */
+            finish_fix_max: number;
             finishing_option: components["schemas"]["FinishingOption"];
             /**
              * Takes Images
@@ -8751,6 +8861,7 @@ export interface components {
             back_merge_pull_request?: components["schemas"]["PullRequestOut"] | null;
             /** Finish Outcome */
             finish_outcome?: string | null;
+            finish_tests?: components["schemas"]["FinishTestsOut"] | null;
             /** Branch From */
             branch_from?: string | null;
             /** Start Branch */
@@ -13313,6 +13424,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["EscalationDecisionIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkflowOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_known_failure_bug_api_tasks__key__workflow_known_failures_bug_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnownFailureBugIn"];
             };
         };
         responses: {

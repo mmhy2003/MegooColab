@@ -11,6 +11,7 @@ import { ProjectWaitBanner } from "@/components/questions/ProjectWaitBanner";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { EscalationActions } from "@/components/workflow/EscalationActions";
+import { FinishFailures } from "@/components/workflow/FinishFailures";
 import { api, ApiError } from "@/lib/api";
 import { runReasonText, useAgentRuns } from "@/lib/agents";
 import { errorMessage } from "@/lib/errors";
@@ -67,6 +68,7 @@ export function WorkflowPanel({
 
   const wf = workflow.data;
   const decisionCount = records.data?.decisions?.length ?? 0;
+  const doneRuns = (records.data?.test_runs ?? []).filter((r) => r.stage === "done");
   if (workflow.error) return <p className="text-sm text-pink">{errorMessage(workflow.error)}</p>;
   if (!wf) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
@@ -95,6 +97,8 @@ export function WorkflowPanel({
     }
   };
   const post = (path: string, json?: unknown) => run(() => api(`/api/tasks/${taskKey}/workflow/${path}`, { method: "POST", json }));
+  // MC-100: anyone who can edit the project's tasks may ask for a bug task; read-only people see the links only
+  const onCreateBug = disabled ? undefined : (name: string) => void post("known-failures/bug", { name });
 
   const agentDriven = !!agent && (wf.driver !== "manual" || wf.status === "idle");
   const canUse = !!agent?.can_use && !disabled;
@@ -105,6 +109,9 @@ export function WorkflowPanel({
   // a review on the pull request sent the task back: its agent's fix run is what is running (piece 3); a retried
   // fix keeps the Done stage, and an old request never speaks for another run
   const fixTrigger = status === "running" && latest?.workflow_role === "pr_fix" ? wf.pr_fix_trigger : null;
+  // a fix round on the tests that failed at finish (MC-98): the fix, then its review, in the Review stage
+  const finishFix = status === "running" && wf.finish_tests?.fix_round != null &&
+    (latest?.workflow_role === "final_fix" || latest?.workflow_role === "final_review") ? wf.finish_tests : null;
   // an agent reviews the pull request (piece 4): its review run is what is running
   const reviewing = status === "running" && latest?.workflow_role === "pr_review" && (latest.status === "running" || latest.status === "queued");
   const pr = wf.pull_request;
@@ -148,7 +155,20 @@ export function WorkflowPanel({
       {!(status === "idle" && !agent) && <p className="text-xs text-muted-foreground">{ENFORCEMENT_TEXT[wf.enforcement]}</p>}
 
       {escalating && (
-        <EscalationActions wf={wf} canDecide={canDecide} busy={busy} onDecide={(action) => void post("escalation", { action })} />
+        <EscalationActions
+          wf={wf}
+          canDecide={canDecide}
+          busy={busy}
+          onDecide={(action) => void post("escalation", { action })}
+          runs={doneRuns}
+          taskKey={taskKey}
+          onCreateBug={onCreateBug}
+        />
+      )}
+      {!escalating && wf.finish_tests?.settled && (
+        <FinishFailures
+          tests={wf.finish_tests} startBranch={wf.start_branch ?? null} runs={doneRuns} taskKey={taskKey} onCreateBug={onCreateBug} busy={busy}
+        />
       )}
 
       {status === "waiting_human" && wf.needs === "project_answer" && (
@@ -205,6 +225,20 @@ export function WorkflowPanel({
               Don&apos;t send back
             </Button>
           )}
+        </div>
+      )}
+
+      {finishFix && (
+        <div className="space-y-2 rounded border border-amber/60 p-2">
+          <p>
+            {`Fix round ${finishFix.fix_round} of ${wf.finish_fix_max ?? 2} · ` +
+              (latest?.workflow_role === "final_fix"
+                ? `${agent?.name ?? "the agent"} is fixing the tests that failed at finish`
+                : "A reviewer is checking the fix")}
+          </p>
+          <FinishFailures
+            tests={finishFix} startBranch={wf.start_branch ?? null} showDiagnosis={false} taskKey={taskKey} onCreateBug={onCreateBug} busy={busy}
+          />
         </div>
       )}
 

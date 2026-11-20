@@ -14,6 +14,7 @@ Bookkeeping on the workflow:
   - `sessions["base:<n>"]` is the HEAD step n started from: the git_before of its first implement run that
     reported one. It is a cache (a reassignment clears `sessions`; it is then read from the runs again) for the
     `step.no_commit` warning.
+  - `build.no_baseline`: step 1's first review is queued with no test baseline (MC-99).
 """
 
 import uuid
@@ -177,11 +178,17 @@ async def submit_review(db: AsyncSession, run: AgentRun, verdict: str, findings:
     )
     db.add(review)
     await db.flush()
-    await engine.record_workflow_event(db, task, None, "review.result", {
+    data = {
         "scope": scope.value, "step": review.step, "round": review.round, "verdict": verdict.value,
         "counts": {sev: sum(f["severity"] == sev for f in clean) for sev in SEVERITIES},
         "review_id": str(review.id),
-    })
+    }
+    if scope == ReviewScope.final:
+        from app.workflow import finish  # local: finish imports this module
+
+        if (n := finish.fix_round(wf)) is not None:  # the review of a fix round's fix (MC-98)
+            data["fix_round"] = n
+    await engine.record_workflow_event(db, task, None, "review.result", data)
     # local: memory imports the workflow models
     from app.memory.sources import queue_extract
 
@@ -231,6 +238,16 @@ async def _warn_if_no_commit(db: AsyncSession, wf: TaskWorkflow, task: Task, run
         await engine.record_workflow_event(db, task, None, "step.no_commit", {"step": run.step})
 
 
+async def _warn_if_no_baseline(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
+    """MC-99: step 1 goes to its first review with no test baseline recorded: a warning, not a block."""
+    if run.step != 1 or wf.review_round != 0 or wf.build_records_baseline is not True:
+        return
+    from app.workflow import records  # local: records imports the engine
+
+    if await records.baseline_run(db, wf) is None:
+        await engine.record_workflow_event(db, task, None, "build.no_baseline", {})
+
+
 async def _queue_review(db: AsyncSession, wf: TaskWorkflow, task: Task, n: int, requested_by: uuid.UUID) -> None:
     wf.review_round += 1
     wf.nudged = False
@@ -250,6 +267,7 @@ async def _handle_work(db: AsyncSession, wf: TaskWorkflow, task: Task, run: Agen
             await engine.send_back_to_commit(db, wf, task, run)
             return
         await _warn_if_no_commit(db, wf, task, run)
+        await _warn_if_no_baseline(db, wf, task, run)
         await _queue_review(db, wf, task, run.step, owner_id)
         return
     pending = await questions.undelivered_answer(db, task.id, run.id)
@@ -331,6 +349,7 @@ async def enter_review(db: AsyncSession, wf: TaskWorkflow, task: Task, *, reques
     await engine.move_to_category(db, task, ColumnCategory.review)
     engine.set_step(wf, None)  # Review and Done runs have no step
     wf.review_round = 1  # the final review's first round
+    wf.finish_fix_rounds = 0  # a whole-branch review starts a new cycle of fix rounds (MC-98)
     await engine.enqueue(db, wf, task, RunRole.final_review, requested_by=requested_by)
 
 

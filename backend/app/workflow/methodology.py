@@ -1,4 +1,4 @@
-"""Methodology library (WF-10): the nine versioned instruction texts sent to agents."""
+"""Methodology library (WF-10): the sixteen versioned instruction texts sent to agents."""
 
 import hashlib
 from pathlib import Path
@@ -14,7 +14,7 @@ KEYS: dict[Stage, list[str]] = {
     Stage.design: ["design_revision"],
     Stage.plan: ["plan"],
     Stage.build: ["build_implement", "build_step_review", "build_step_fix"],
-    Stage.review: ["review_final", "review_fix"],
+    Stage.review: ["review_final", "review_fix", "finish_fix", "finish_fix_review"],
     Stage.done: ["finish", "pr_fix", "pr_review"],
 }
 # texts for runs outside a task's workflow, by the group the methodology editor shows them under

@@ -53,6 +53,12 @@ export function useMockups(key: string) {
 
 export type Decision = components["schemas"]["DecisionOut"];
 export type TestRun = components["schemas"]["TestRunOut"];
+export type TestMark = "new" | "baseline" | "unlisted";
+export const MARK_LABEL: Record<TestMark, string> = {
+  new: "new",
+  baseline: "also fails in the baseline",
+  unlisted: "not in the baseline's list",
+};
 export type RunRecords = components["schemas"]["RecordsOut"];
 
 /** What the agent decided on its own and the test runs it recorded (Plan 8). */
@@ -62,10 +68,11 @@ export function useRunRecords(key: string) {
 
 /** One line for a recorded test run: "✓ 142 passed, 1 skipped — cmd" or "✗ 3 failed: a, b, c — cmd". */
 export function testRunText(run: TestRun): string {
-  const tail = ` — ${run.command}`;
+  const tail = ` — ${run.command}${run.on_base ? " (on the start commit)" : ""}`;
   if (!run.passed) {
     const names = run.failing.length ? `: ${run.failing.join(", ")}` : "";
-    return `✗ ${run.failed != null ? `${run.failed} failed` : "failed"}${names}${tail}`;
+    const fresh = (run.marks ?? []).filter((m) => m === "new").length;
+    return `✗ ${run.failed != null ? `${run.failed} failed` : "failed"}${fresh ? ` (${fresh} new)` : ""}${names}${tail}`;
   }
   if (run.total == null) return `✓ passed${tail}`;
   const passed = run.total - (run.failed ?? 0) - (run.skipped ?? 0);
@@ -89,6 +96,8 @@ export const ESCALATION_REASON_TEXT: Record<string, string> = {
   review_rounds_exhausted: "The step still had review findings after 3 review rounds.",
   final_review_not_clean: "The final review still had findings after one fix round.",
   finish_incomplete: "The agent ended its run without finishing the work.",
+  finish_tests_failed: "Tests failed at finish.",
+  finish_fix_not_clean: "The review of the fix round still had findings.",
   engine_error: "MegooColab hit an internal error handling the last run.",
   pr_fix_rounds_exhausted: "Changes were requested again after 3 fix rounds.",
   pr_fix_incomplete: "The fix run ended without pushing a fix with passing tests.",
@@ -106,7 +115,51 @@ export function escalationReasonText(code: string | null): string {
 /** "Accept" is offered only where treating the work as passed makes sense. */
 export const ACCEPTABLE_REASONS = ["review_rounds_exhausted", "final_review_not_clean", "enforcement_violation", "pr_closed",
   "back_merge_pr_closed", "pr_fix_rounds_exhausted", "pr_fix_incomplete", "agent_merge_failed", "agent_review_incomplete",
-  "agent_review_unavailable", "merge_not_confirmed"];
+  "agent_review_unavailable", "merge_not_confirmed", "finish_tests_failed", "finish_fix_not_clean"];
+
+/** MC-98: the card offers a fix round while nothing was delivered and a round is left. */
+export function fixRoundOffered(
+  wf: Pick<Workflow, "escalation_reason" | "finish_tests" | "finish_fix_rounds" | "finish_fix_max">,
+): boolean {
+  return wf.escalation_reason === "finish_tests_failed" && wf.finish_tests?.delivered === false &&
+    (wf.finish_fix_rounds ?? 0) < (wf.finish_fix_max ?? 2);
+}
+
+export type FinishTests = NonNullable<Workflow["finish_tests"]>;
+export type FailureKind = FinishTests["failures"][number]["kind"];
+
+export function failureKindLabel(kind: FailureKind, startBranch: string | null): string {
+  if (kind === "base") return `also fails on ${startBranch ?? "the start branch"}`;
+  return kind; // "new" | "flaky"
+}
+
+const KIND_ORDER: FailureKind[] = ["new", "base", "flaky"];
+function kindCounts(failures: FinishTests["failures"], startBranch: string | null): string[] {
+  return KIND_ORDER.map((k) => [k, failures.filter((f) => f.kind === k).length] as const)
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `${n} ${failureKindLabel(k, startBranch)}`);
+}
+
+/** The card's first line: "Tests failed at finish: 3 failing (1 new, 1 also fails on develop, 1 flaky)". */
+export function finishTestsSummary(t: Pick<FinishTests, "failures" | "failing_total">, startBranch: string | null): string {
+  const failures = t.failures ?? [];
+  if (!failures.length && !t.failing_total) return "The agent reported that the tests did not pass.";
+  const total = Math.max(t.failing_total ?? 0, failures.length);
+  const parts = kindCounts(failures, startBranch);
+  if (total > failures.length) parts.push(`${total - failures.length} not listed`);
+  return `Tests failed at finish: ${total} failing (${parts.join(", ")})`;
+}
+
+/** After the finish: "Finished with 2 known failing tests: …" or "Finished with 3 failing tests accepted by Ann". */
+export function finishedWithSummary(
+  t: Pick<FinishTests, "failures" | "failing_total" | "settled" | "accepted_by">,
+  startBranch: string | null,
+): string {
+  const n = Math.max(t.failing_total ?? 0, t.failures?.length ?? 0);
+  const tests = `${n} ${t.settled === "known" ? "known " : ""}failing test${n === 1 ? "" : "s"}`;
+  if (t.settled === "known") return `Finished with ${tests}: ${kindCounts(t.failures ?? [], startBranch).join(", ")}`;
+  return `Finished with ${n ? tests : "failing tests"} accepted by ${t.accepted_by ?? "a person"}`;
+}
 
 export const FINISHING_LABEL: Record<FinishingOption, string> = {
   merge_local: "Merge locally",
@@ -152,6 +205,17 @@ export const SEND_BACK_HELP =
   "the code and pushes to the same pull request. At most 3 rounds, then it asks you. On GitLab, use a /fix comment.";
 
 /** The commit-the-documents setting, on and off. */
+export const TOLERATE_KNOWN_HELP =
+  "On: at finish, a test that also fails on the branch the task started from, or that passes when run again " +
+  "(flaky), doesn't stop the task; the pull request lists it. Off: any failing test stops the finish and asks you.";
+
+export const RECORD_BASELINE_LABEL = "Record a test baseline when Build starts";
+export const RECORD_BASELINE_HELP =
+  "On: before step 1 changes anything, the agent runs the full test suite once and records which tests already " +
+  "fail. During Build, a failing test that isn't in that baseline is marked new for the agent, the step reviewer " +
+  "and you, and a test that was already failing doesn't hold a step up. This costs one more full run per task. " +
+  "Off: no baseline, and every step needs a fully green run.";
+
 export const DOCS_HELP =
   "On: the approved design and plan are added to the task's branch as files (docs/superpowers/specs/KEY-design.md " +
   "and docs/superpowers/plans/KEY-plan.md), so they travel with the code into the merge or the pull request. Off: " +

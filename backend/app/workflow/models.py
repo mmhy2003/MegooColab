@@ -9,6 +9,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
     text,
 )
@@ -145,6 +146,16 @@ class TaskWorkflow(Base):
     finish_requires_human_review: Mapped[bool | None]
     # frozen with it: who reviews the pull request (piece 4: none, human or agent)
     finish_pr_review: Mapped[str | None] = mapped_column(String(10))
+    # frozen with them (MC-97): known failing tests (start commit, flaky) don't stop the finish. None before Done
+    finish_tolerates_known: Mapped[bool | None]
+    # frozen when Build begins (MC-99): step 1 records a test baseline. None before that, and for connect-only
+    build_records_baseline: Mapped[bool | None]
+    # the finish run's failing tests (MC-97): {failures, failing_total, diagnosis, delivered, settled, accepted_by,
+    # accepted_at, accepted, fix_round (the running fix round, MC-98), fix_base (the commit its fix started from)};
+    # None until a finish reports failing tests, cleared when Done begins and on Retry
+    finish_tests: Mapped[dict | None] = mapped_column(JSONB)
+    # fix rounds on the tests that failed at finish (MC-98), used since the whole-branch review began
+    finish_fix_rounds: Mapped[int] = mapped_column(default=0, server_default="0")
     # changes requested on the pull request (piece 3): fix rounds used on `pr_fix_pr_url`, and what asked last
     pr_fix_rounds: Mapped[int] = mapped_column(default=0, server_default="0")
     pr_fix_pr_url: Mapped[str | None] = mapped_column(String(1000))
@@ -288,6 +299,10 @@ class WorkflowTestRun(IdMixin, Base):
     failed: Mapped[int | None]
     skipped: Mapped[int | None]
     failing: Mapped[list] = mapped_column(MutableList.as_mutable(JSONB), default=list)
+    # run on the commit the task branch started from
+    on_base: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # the task's test baseline: the full suite before step 1 changed anything (MC-99)
+    baseline: Mapped[bool] = mapped_column(default=False, server_default=false())
     created_at: Mapped[datetime] = _created_at()
 
 

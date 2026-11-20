@@ -71,6 +71,15 @@ describe("ActivityThread", () => {
     expect(screen.getByRole("link", { name: "PAY-13" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-13");
   });
 
+  it("links a bug task created for a failing test", () => {
+    const created: ActivityItem = { type: "event", id: "e12", at: "2026-11-20T10:10:00Z", actor, kind: "finish.bug_created",
+      data: { key: "PAY-14", title: "Failing test: <b>x</b>", task_id: "t14", name: "<b>x</b>", kind: "base" } };
+    render(<ActivityThread items={[created]} columnNames={columnNames} userNames={userNames} />);
+    expect(screen.getByRole("listitem").textContent).toContain("Ahmed Ali created bug PAY-14 for the failing test <b>x</b>");
+    expect(screen.getByRole("link", { name: "PAY-14" })).toHaveAttribute("href", "/projects/PAY/board?task=PAY-14");
+    expect(document.body.querySelector("b")).toBeNull();
+  });
+
   it("marks edited comments", () => {
     const edited: ActivityItem = { ...items[1], id: "c2", edited_at: "2026-10-22T11:00:00Z" };
     render(<ActivityThread items={[edited]} columnNames={columnNames} userNames={userNames} />);
@@ -405,6 +414,12 @@ describe("ActivityThread workflow events", () => {
     expect(list[2]).toContain("Decision during Done: Merged into develop");
   });
 
+  it("warns when step 1 finished without a test baseline", () => {
+    const [row] = rows([ev("1", "build.no_baseline", {})]);
+    expect(row.textContent).toContain("Step 1 finished without a test baseline: new failures won't be marked during Build");
+    expect(row.textContent).not.toContain("The agent");
+  });
+
   it("renders an enforcement violation in pink, with text", () => {
     const [row] = rows([ev("v1", "enforcement.violation", { stage: "brainstorm", role: "brainstorm" })]);
     expect(row.textContent).toContain("Enforcement violation during Brainstorm: the repository changed");
@@ -441,6 +456,62 @@ describe("ActivityThread workflow events", () => {
     expect(list[0]).toContain("The board has no review column, so the card stayed where it was");
     expect(list[1]).toContain("Ahmed Ali paused the workflow");
     expect(list[1]).not.toContain("(manual)");
+  });
+
+  it("tells of failing tests at finish, known failures and an acceptance", () => {
+    const failures = [{ name: "a", kind: "new" }, { name: "b", kind: "base" }, { name: "c", kind: "flaky" }];
+    const list = rows([
+      ev("1", "finish.tests_failed", { failures, failing_total: 4, delivered: true, start_branch: "develop" }),
+      ev("2", "finish.known_failures", { failures: failures.slice(1), start_branch: "develop" }),
+      ev("3", "finish.failures_accepted", { failures: failures.slice(0, 2), failing_total: 2, via: "card" }, true),
+      ev("4", "finish.failures_accepted", { failures: [], failing_total: null, via: "card" }, true),
+      ev("5", "finish.failures_accepted",
+        { failures: ["t1", "t2", "t3", "t4", "t5", "t6", "t7"].map((name) => ({ name, kind: "new" })), failing_total: 7, via: "card" }, true),
+    ]).map((li) => li.textContent);
+    expect(list[0]).toContain("Tests failed at finish: 4 failing (1 new, 1 also fails on develop, 1 flaky, 1 not listed)");
+    expect(list[0]).not.toContain("The agent");
+    expect(list[1]).toContain("Finished with 2 known failing tests: 1 also fails on develop, 1 flaky");
+    expect(list[1]).not.toContain("The agent");
+    expect(list[2]).toContain("Ahmed Ali accepted 2 failing tests: a, b");
+    expect(list[2]).not.toContain("answering");
+    expect(list[3]).toContain("Ahmed Ali accepted the failing tests");
+    expect(list[4]).toContain("Ahmed Ali accepted 7 failing tests: t1, t2, t3, t4, t5 and 2 more");
+  });
+
+  it("says when the failing tests were accepted by answering the agent's question", () => {
+    const [row] = rows([
+      ev("1", "finish.failures_accepted", { failures: [{ name: "a", kind: "new" }], failing_total: 1, via: "answer" }, true),
+    ]);
+    expect(row.textContent).toContain("Ahmed Ali accepted 1 failing test: a (by answering the agent's question)");
+  });
+
+  it("tells of a fix round at finish: the choice, its start, its review and a run without a commit", () => {
+    const two = [{ name: "a", kind: "new" }, { name: "b", kind: "base" }];
+    const twenty = Array.from({ length: 20 }, (_, i) => ({ name: `t${i}`, kind: "new" }));
+    const list = rows([
+      ev("1", "escalation.decided", { action: "fix", reason: "finish_tests_failed" }, true),
+      ev("2", "finish.fix_started", { round: 1, of: 2, failures: two, failing_total: null }),
+      ev("3", "finish.fix_started", { round: 2, of: 2, failures: two.slice(0, 1), failing_total: null }),
+      ev("4", "finish.fix_started", { round: 1, of: 2, failures: twenty, failing_total: 25 }),
+      ev("5", "review.result", { scope: "final", round: 3, verdict: "approved", counts: { critical: 0, important: 0, minor: 1 }, fix_round: 1 }),
+      ev("6", "review.result", { scope: "final", round: 3, verdict: "changes_requested", counts: { critical: 0, important: 1, minor: 0 }, fix_round: 1 }),
+      ev("7", "review.result", { scope: "final", round: 1, verdict: "approved", counts: { critical: 0, important: 0, minor: 0 } }),
+      ev("8", "finish.fix_no_commit", { round: 1 }),
+      ev("9", "workflow.escalated", { reason: "finish_fix_not_clean" }),
+    ]).map((li) => li.textContent);
+    expect(list[0]).toContain("Ahmed Ali chose a fix round");
+    expect(list[1]).toContain("Fix round 1 of 2 started for 2 failing tests");
+    expect(list[1]).not.toContain("The agent");
+    expect(list[2]).toContain("Fix round 2 of 2 started for 1 failing test");
+    expect(list[2]).not.toContain("1 failing tests");
+    expect(list[3]).toContain("Fix round 1 of 2 started for 25 failing tests");
+    expect(list[4]).toContain("Review of fix round 1: approved — 1 minor");
+    expect(list[4]).not.toContain("(round");
+    expect(list[5]).toContain("Review of fix round 1: changes requested — 1 important");
+    expect(list[6]).toContain("Final review (round 1): approved");
+    expect(list[7]).toContain("Fix round 1 changed no code: the finish runs again");
+    expect(list[7]).not.toContain("The agent");
+    expect(list[8]).toContain("The workflow needs a decision. The review of the fix round still had findings.");
   });
 
   it("links document events to the document section", () => {

@@ -32,12 +32,12 @@ function wf(extra: Partial<Workflow> = {}): Workflow {
 
 function setup(
   workflow: Workflow,
-  opts: { runs?: unknown[]; agent?: ProjectAgent | null; post?: Response; unassigned?: boolean; disabled?: boolean; decisions?: unknown[] } = {},
+  opts: { runs?: unknown[]; agent?: ProjectAgent | null; post?: Response; unassigned?: boolean; disabled?: boolean; decisions?: unknown[]; testRuns?: unknown[] } = {},
 ) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method && init.method !== "GET" && opts.post) return opts.post.clone();
     if (url.endsWith("/records")) {
-      return new Response(JSON.stringify({ decisions: opts.decisions ?? [], test_runs: [], unverified_steps: [] }), { status: 200 });
+      return new Response(JSON.stringify({ decisions: opts.decisions ?? [], test_runs: opts.testRuns ?? [], unverified_steps: [] }), { status: 200 });
     }
     if (url.includes("/agent-runs")) return new Response(JSON.stringify(opts.runs ?? []), { status: 200 });
     return new Response(JSON.stringify(workflow), { status: 200 });
@@ -79,6 +79,73 @@ describe("WorkflowPanel", () => {
     setup(wf(), { agent: { ...agent, can_use: false } });
     await screen.findByText("Not started");
     expect(screen.queryByRole("button", { name: "Start" })).not.toBeInTheDocument();
+  });
+
+  it("says a finish with known failing tests finished with them", async () => {
+    setup(wf({
+      stage: "done", status: "finished", start_branch: "develop",
+      finish_tests: {
+        failures: [{ name: "b.test", kind: "base" }, { name: "c.test", kind: "flaky" }],
+        delivered: true, settled: "known",
+      },
+    }));
+    expect(await screen.findByText("Finished with 2 known failing tests: 1 also fails on develop, 1 flaky")).toBeInTheDocument();
+    expect(screen.getByText("b.test")).toBeInTheDocument();
+  });
+
+  it("a click on Create bug task posts the test's name", async () => {
+    const w = wf({
+      stage: "done", status: "finished", start_branch: "develop",
+      finish_tests: {
+        failures: [{ name: "b.test", kind: "base" }, { name: "c.test", kind: "flaky" }],
+        delivered: true, settled: "known",
+      },
+    });
+    const fetchMock = setup(w, { post: new Response(JSON.stringify(w), { status: 200 }) });
+    fireEvent.click((await screen.findAllByRole("button", { name: "Create bug task" }))[0]);
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u, i]) => String(u).endsWith("/api/tasks/PAY-1/workflow/known-failures/bug") && i?.method === "POST");
+      expect(JSON.parse(String(call?.[1]?.body))).toEqual({ name: "b.test" });
+    });
+  });
+
+  it("read-only people see the link and no button", async () => {
+    setup(wf({
+      stage: "done", status: "finished", start_branch: "develop",
+      finish_tests: {
+        failures: [{ name: "b.test", kind: "base", bug: { key: "PAY-9", title: "t" } }, { name: "c.test", kind: "flaky" }],
+        delivered: true, settled: "known",
+      },
+    } as Partial<Workflow>), { disabled: true });
+    expect(await screen.findByRole("link", { name: "Bug: PAY-9" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create bug task" })).toBeNull();
+  });
+
+  it("the Tests failed at finish card offers it on base rows", async () => {
+    setup(wf({
+      stage: "done", status: "waiting_human", needs: "escalation", escalation_reason: "finish_tests_failed", start_branch: "develop",
+      finish_tests: { failures: [{ name: "a.test", kind: "new" }, { name: "b.test", kind: "base" }], delivered: true },
+    }));
+    expect(await screen.findAllByRole("button", { name: "Create bug task" })).toHaveLength(1);
+  });
+
+  it("shows the finish's test runs on the Tests failed at finish card", async () => {
+    setup(
+      wf({
+        stage: "done", status: "waiting_human", needs: "escalation", escalation_reason: "finish_tests_failed", start_branch: "develop",
+        finish_tests: { failures: [{ name: "a.test", kind: "new" }], delivered: true },
+      }),
+      {
+        testRuns: [
+          { id: "r1", stage: "build", step: 1, command: "npm run build-step", passed: true, total: null, failed: null, skipped: null, failing: [], on_base: false, author: "Bot", created_at: "2026-11-20T09:00:00Z" },
+          { id: "r2", stage: "done", step: null, command: "npm test", passed: false, total: null, failed: 1, skipped: null, failing: ["a.test"], on_base: false, author: "Bot", created_at: "2026-11-20T10:00:00Z" },
+        ],
+      },
+    );
+    expect(await screen.findByText("Tests failed at finish: 1 failing (1 new)")).toBeInTheDocument();
+    expect(await screen.findByText("Test runs at finish (1)")).toBeInTheDocument();
+    expect(screen.getByText("✗ 1 failed: a.test — npm test")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Finish anyway" })).toBeInTheDocument();
   });
 
   it("escalation shows reason and three actions", async () => {
@@ -365,6 +432,52 @@ describe("WorkflowPanel: sent back by a review on the pull request", () => {
     setup(wf({ status: "running", stage: "build" }));
     await screen.findAllByText(/Build/);
     expect(screen.queryByRole("button", { name: "Don't send back" })).toBeNull();
+  });
+});
+
+describe("WorkflowPanel: a fix round on the tests that failed at finish", () => {
+  const ada = { ...agent, name: "Ada" } as ProjectAgent;
+  const round = (extra: Partial<Workflow> = {}) =>
+    wf({
+      stage: "review", status: "running", start_branch: "develop", finish_fix_max: 2,
+      finish_tests: { failures: [{ name: "a.test", kind: "new" }], delivered: false, fix_round: 1, diagnosis: "D" },
+      ...extra,
+    } as Partial<Workflow>);
+  const roleRun = (role: string) => ({ id: "r1", status: "running", workflow_role: role, policy: "workspace", step: null });
+
+  it("says the agent is fixing the tests, with the round, the failing tests and no diagnosis", async () => {
+    setup(round(), { agent: ada, runs: [roleRun("final_fix")] });
+    expect(await screen.findByText("Fix round 1 of 2 · Ada is fixing the tests that failed at finish")).toBeInTheDocument();
+    expect(screen.getByText("a.test")).toBeInTheDocument();
+    expect(screen.queryByText("D")).toBeNull();
+  });
+
+  it("the fix round box offers it", async () => {
+    setup(round({
+      finish_tests: { failures: [{ name: "a.test", kind: "new" }, { name: "b.test", kind: "base" }], delivered: false, fix_round: 1, diagnosis: "D" },
+    } as Partial<Workflow>), { agent: ada, runs: [roleRun("final_fix")] });
+    await screen.findByText("Fix round 1 of 2 · Ada is fixing the tests that failed at finish");
+    expect(screen.getAllByRole("button", { name: "Create bug task" })).toHaveLength(1);
+  });
+
+  it("says a reviewer checks the fix while its review runs", async () => {
+    setup(round(), { agent: ada, runs: [roleRun("final_review")] });
+    expect(await screen.findByText("Fix round 1 of 2 · A reviewer is checking the fix")).toBeInTheDocument();
+  });
+
+  it("shows no such box without a running round", async () => {
+    const noRound = round({
+      finish_tests: { failures: [{ name: "a.test", kind: "new" }], delivered: false, fix_round: null, diagnosis: "D" },
+    } as Partial<Workflow>);
+    setup(noRound, { agent: ada, runs: [roleRun("final_fix")] });
+    await screen.findAllByText(/Review/);
+    await screen.findByText(/Latest run/);
+    expect(screen.queryByText(/^Fix round/)).toBeNull();
+    cleanup();
+    setup(round({ status: "paused" }), { agent: ada, runs: [roleRun("final_fix")] });
+    await screen.findByRole("button", { name: "Resume" });
+    await screen.findByText(/Latest run/);
+    expect(screen.queryByText(/^Fix round/)).toBeNull();
   });
 });
 

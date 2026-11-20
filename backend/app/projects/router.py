@@ -134,6 +134,10 @@ async def update_project(ref: str, body: ProjectPatch, user: AuthedUser, db: DbS
         project.commit_docs_to_repo = body.commit_docs_to_repo
     if body.send_back_on_changes_requested is not None:
         project.send_back_on_changes_requested = body.send_back_on_changes_requested
+    if body.tolerate_known_test_failures is not None:
+        project.tolerate_known_test_failures = body.tolerate_known_test_failures
+    if body.record_test_baseline is not None:
+        project.record_test_baseline = body.record_test_baseline
     if body.team_ids is not None:
         new_ids = set(body.team_ids)
         added = new_ids - await service.project_team_ids(db, project.id)

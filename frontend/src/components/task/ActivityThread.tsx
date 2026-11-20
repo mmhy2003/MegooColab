@@ -21,7 +21,9 @@ import { runReasonText } from "@/lib/agents";
 import { describeGitEvent, type GitLine } from "@/lib/gitActivity";
 import type { ImageRef } from "@/lib/images";
 import type { ActivityItem } from "@/lib/types";
-import { escalationReasonText, FINISHING_LABEL, STAGES, type FinishingOption } from "@/lib/workflow";
+import {
+  escalationReasonText, type FinishTests, finishedWithSummary, FINISHING_LABEL, finishTestsSummary, STAGES, type FinishingOption,
+} from "@/lib/workflow";
 
 type Names = { columnNames: Map<string, string>; userNames: Map<string, string>; agentNames?: Map<string, string> };
 
@@ -192,6 +194,8 @@ export function describeEvent(
       return `${str(data.target_key) ?? "Another project"} answered Q${num(data.number)}`;
     case "follow_up_created":
       return `created follow-up ${str(data.key) ?? "a task"}: ${str(data.title) ?? ""}`;
+    case "finish.bug_created":
+      return `created bug ${str(data.key) ?? "a task"} for the failing test ${str(data.name) ?? ""}`;
     default:
       return describeWorkflowEvent(kind, data) ?? describeAgentEvent(kind, data, byPerson) ?? kind;
   }
@@ -249,13 +253,25 @@ function stageName(v: unknown): string {
 }
 
 const PAUSE_REASON: Record<string, string> = { owner_deactivated: "the agent's owner was deactivated" };
-const DECISION_TEXT: Record<string, string> = { retry: "chose to retry", accept: "accepted the result", pause: "chose to pause" };
+const DECISION_TEXT: Record<string, string> = { retry: "chose to retry", accept: "accepted the result", pause: "chose to pause", fix: "chose a fix round" };
 const OUTCOME_TEXT: Record<string, string> = {
   merge_local: "merged locally",
   pull_request: "opened a pull request",
   keep_branch: "kept the branch",
 };
 const SEVERITY_ORDER = ["critical", "important", "minor"] as const;
+
+/** "accepted 7 failing tests: a, b, c, d, e and 2 more (by answering the agent's question)". */
+function acceptedText(data: Record<string, unknown>): string {
+  const names = ((data.failures ?? []) as FinishTests["failures"]).map((f) => f.name);
+  const n = Math.max(num(data.failing_total), names.length);
+  const shown = names.slice(0, 5);
+  const more = n - shown.length;
+  const what = names.length
+    ? `accepted ${n} failing test${n === 1 ? "" : "s"}: ${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}`
+    : "accepted the failing tests";
+  return data.via === "answer" ? `${what} (by answering the agent's question)` : what;
+}
 
 function findingTotal(data: Record<string, unknown>): number {
   const counts = (data.counts ?? {}) as Record<string, unknown>;
@@ -320,6 +336,8 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
     }
     case "step.no_commit":
       return `Step ${num(data.step)} finished without a commit`;
+    case "build.no_baseline":
+      return "Step 1 finished without a test baseline: new failures won't be marked during Build";
     case "workflow.uncommitted": {
       const who =
         data.role === "final_fix"
@@ -334,15 +352,36 @@ function describeWorkflowEvent(kind: string, data: Record<string, unknown>): str
     case "review.result": {
       const counts = (data.counts ?? {}) as Record<string, unknown>;
       const parts = SEVERITY_ORDER.filter((sv) => num(counts[sv]) > 0).map((sv) => `${num(counts[sv])} ${sv}`);
-      const what = data.scope === "final" ? "Final review" : `Review of step ${num(data.step)}`;
+      const what =
+        typeof data.fix_round === "number"
+          ? `Review of fix round ${data.fix_round}`
+          : `${data.scope === "final" ? "Final review" : `Review of step ${num(data.step)}`} (round ${num(data.round)})`;
       const verdict = data.verdict === "approved" ? "approved" : "changes requested";
-      return `${what} (round ${num(data.round)}): ${verdict}${parts.length ? ` — ${parts.join(", ")}` : ""}`;
+      return `${what}: ${verdict}${parts.length ? ` — ${parts.join(", ")}` : ""}`;
     }
     case "finish.reported": {
       const outcome = OUTCOME_TEXT[str(data.outcome) ?? ""] ?? "finished";
       const branch = str(data.branch);
       return `Finish reported: ${outcome}${branch ? ` on ${branch}` : ""}`;
     }
+    case "finish.tests_failed":
+      return finishTestsSummary(
+        { failures: (data.failures ?? []) as FinishTests["failures"], failing_total: typeof data.failing_total === "number" ? data.failing_total : null },
+        str(data.start_branch) ?? null,
+      );
+    case "finish.known_failures":
+      return finishedWithSummary(
+        { failures: (data.failures ?? []) as FinishTests["failures"], failing_total: null, settled: "known", accepted_by: null },
+        str(data.start_branch) ?? null,
+      );
+    case "finish.failures_accepted":
+      return acceptedText(data);
+    case "finish.fix_started": {
+      const n = Math.max(num(data.failing_total), ((data.failures ?? []) as unknown[]).length);
+      return `Fix round ${num(data.round)} of ${num(data.of)} started for ${n} failing test${n === 1 ? "" : "s"}`;
+    }
+    case "finish.fix_no_commit":
+      return `Fix round ${num(data.round)} changed no code: the finish runs again`;
     case "enforcement.violation":
       return `Enforcement violation during ${stageName(data.stage)}: the repository changed`;
     case "human_review.approved":
@@ -358,11 +397,16 @@ const STANDALONE = new Set([
   "step.completed",
   "step.approved",
   "step.no_commit",
+  "build.no_baseline",
   "workflow.uncommitted",
   "mockup.shown",
   "decision.recorded",
   "review.result",
   "finish.reported",
+  "finish.tests_failed",
+  "finish.known_failures",
+  "finish.fix_started",
+  "finish.fix_no_commit",
   "enforcement.violation",
   "workflow.stage",
   "workflow.no_column",
@@ -491,6 +535,15 @@ export function ActivityThread({
             <EventRow key={item.id} at={item.at} lead={actor} text="created follow-up ">
               <TaskKey value={str(data.key)} />
               {`: ${str(data.title) ?? ""}`}
+            </EventRow>
+          );
+        }
+        if (kind === "finish.bug_created") {
+          return (
+            <EventRow key={item.id} at={item.at} lead={actor} text="created bug ">
+              <TaskKey value={str(data.key)} />
+              {" for the failing test "}
+              <code className="break-all">{str(data.name) ?? ""}</code>
             </EventRow>
           );
         }

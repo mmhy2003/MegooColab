@@ -33,6 +33,7 @@ from app.workflow.models import (
 from tests.agent_runs.test_dispatch import _task
 from tests.runner.test_protocol_v2 import MCP_HEADERS
 from tests.runner.test_runner_ws import _login
+from tests.workflow.test_build import _last
 from tests.workflow.test_documents import STEPS, _design_waiting
 from tests.workflow.test_engine import (
     _admin_client,
@@ -42,6 +43,8 @@ from tests.workflow.test_engine import (
     _started,
     _wf,
 )
+from tests.workflow.test_finish_failures import COMMITTED, _fix_round
+from tests.workflow.test_review_done import _fix_run
 
 ASKED = "Question posted. End your turn now; the answer arrives as your next message."
 ALL_WORKFLOW_TOOLS = {
@@ -55,6 +58,7 @@ ALL_WORKFLOW_TOOLS = {
     "show_mockup": {"html": "<p>x</p>", "title": "T"},
     "record_decision": {"decision": "d", "reason": "r", "cost_if_wrong": "c"},
     "record_tests": {"command": "pytest", "passed": True},
+    "report_test_failures": {"failures": [{"name": "t", "kind": "new"}], "diagnosis": "d"},
     "report_pr_fix": {"summary": "Added a back-off", "tests_passed": True},
     "submit_pr_review": {"verdict": "approved", "summary": "Looks good", "merged": True},
 }
@@ -65,6 +69,7 @@ ALLOWED = {
     "complete_step": {"implement", "step_fix"},
     "submit_review": {"step_review", "final_review"},
     "report_finish": {"finish"},
+    "report_test_failures": {"finish"},
     "show_mockup": {"brainstorm"},
     "record_decision": {"implement", "step_fix", "final_fix", "finish", "pr_fix", "freestyle"},
     "record_tests": {"implement", "step_fix", "final_fix", "finish", "pr_fix", "freestyle"},
@@ -260,6 +265,16 @@ async def test_run_token_stage_tools_reach_their_services(db, tc_factory):
     assert not err, out
     wf = await _wf(b.task_id)
     assert (wf.branch, wf.pr_url, wf.finish_outcome) == ("megoo/PAY-1", "https://git.test/pr/7", "pr_opened")
+    # failing tests: listed with the report, or reported instead of delivering
+    failing = [{"name": "e2e/a.spec.ts:3", "kind": "base"}]
+    err, out = _tool(tc, token, "report_finish", key=b.key, outcome="pr_opened", branch="megoo/PAY-1",
+                     pr_url="https://git.test/pr/7", tests_passed=False, failures=failing, failing_total=2)
+    assert not err, out
+    assert (await _wf(b.task_id)).finish_tests["failures"] == failing
+    err, out = _tool(tc, token, "report_test_failures", key=b.key, failures=failing, diagnosis="Overflows")
+    assert not err and out == {"failures": 1, "failing_total": None}, out
+    tests = (await _wf(b.task_id)).finish_tests
+    assert (tests["diagnosis"], tests["delivered"]) == ("Overflows", False)
 
 
 async def test_submit_design_with_follow_ups(db, tc_factory):
@@ -386,7 +401,7 @@ async def test_connect_only_flow_marks_unenforced_and_never_enqueues(db, tc_fact
     err, text = _tool(tc, token, "submit_plan", key=key, markdown="# Plan", steps=STEPS)
     assert err and "wrong_stage" in text
     assert await _wf(task_id) is None
-    for name in ("submit_review", "report_finish"):  # only runner-driven runs review and finish
+    for name in ("submit_review", "report_finish", "report_test_failures"):  # only runner-driven runs review and finish
         err, text = _tool(tc, token, name, key=key, **ALL_WORKFLOW_TOOLS[name])
         assert err and "not_allowed_in_role" in text, name
 
@@ -488,7 +503,7 @@ async def test_personal_token_refused_on_runner_driven_or_others_task(db, tc_fac
     token = _personal(tc)
     # the agent's task is driven by MegooColab: the human's own client cannot submit for their agent
     for name, args in {**ALL_WORKFLOW_TOOLS, "get_workflow": {}}.items():
-        if name in ("submit_review", "report_finish", "report_pr_fix", "submit_pr_review"):  # runner-only: refused by role, tested elsewhere
+        if name in ("submit_review", "report_finish", "report_test_failures", "report_pr_fix", "submit_pr_review"):  # runner-only: refused by role, tested elsewhere
             continue
         err, text = _tool(tc, token, name, key=b.key, **args)
         assert err and "runner_driven" in text, (name, text)
@@ -787,3 +802,90 @@ async def test_get_document_carries_the_decision_comment_and_who_decided(db, tc_
     err, out = _tool(tc, token, "get_document", key=b.key, kind="design", version=1)
     assert not err, out
     assert (out["status"], out["decision_comment"], out["decided_by"]) == ("rejected", "Simpler", str(b.manager.id))
+
+
+async def test_get_workflow_gives_the_finish_fix_rounds_texts(db, tc_factory):
+    """MC-98: the fix round's final_fix and final_review runs get their own next line and methodology text."""
+    tc = tc_factory(lifespan=True)
+    b, fix = await _fix_round(db, tc)
+    err, out = _tool(tc, await _run_token(fix), "get_workflow", key=b.key)
+    assert not err, out
+    assert (out["role"], out["stage"]) == ("final_fix", "review")
+    assert out["next"] == "Fix the tests that failed at finish and run the full suite; your run ends when you are done."
+    assert out["instructions"] == (await methodology.current(db, "finish_fix")).body_md
+    await _finish(b.manager.id, fix, "completed", **COMMITTED)
+    review = await _last(b.task_id)
+    assert review.workflow_role == "final_review"
+    err, out = _tool(tc, await _run_token(review), "get_workflow", key=b.key)
+    assert not err, out
+    assert out["next"] == "Review the fix, then call submit_review with your verdict and findings."
+    assert out["instructions"] == (await methodology.current(db, "finish_fix_review")).body_md
+
+
+async def test_get_workflow_keeps_the_final_fix_text_outside_a_fix_round(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, fix = await _fix_run(db, tc)
+    err, out = _tool(tc, await _run_token(fix), "get_workflow", key=b.key)
+    assert not err, out
+    assert out["next"] == "Fix the final review's findings and run the tests; your run ends when you are done."
+    assert out["instructions"] == (await methodology.current(db, "review_fix")).body_md
+
+
+# ---- record_tests answers which failing tests are new (MC-99) ------------------------------------------------------
+
+FAILED = {"command": "uv run pytest", "passed": False}
+
+
+async def _baseline_step_1(db, tc):
+    """An implement run at step 1 of Build, with the frozen baseline setting on."""
+    b, run = await _started(db, tc)
+    token = await _run_token(run, workflow_role="implement", step=1, stage="build")
+    async with SessionLocal() as s:
+        await s.execute(update(TaskWorkflow).where(TaskWorkflow.task_id == b.task_id).values(build_records_baseline=True))
+        await s.commit()
+    return b, token
+
+
+def _recorded(tc, token, key, **args) -> dict:
+    err, out = _tool(tc, token, "record_tests", key=key, **args)
+    assert not err, out
+    return out
+
+
+async def test_record_tests_answer_without_a_baseline_is_unchanged(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, token = await _baseline_step_1(db, tc)
+    out = _recorded(tc, token, b.key, **FAILED, failed=1, failing=["a"])
+    assert set(out) == {"id", "passed"} and out["passed"] is False
+
+
+async def test_record_tests_answer_for_a_baseline(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, token = await _baseline_step_1(db, tc)
+    out = _recorded(tc, token, b.key, **FAILED, failed=1, failing=["a"], baseline=True)
+    assert (set(out), out["baseline"]) == ({"id", "passed", "baseline"}, True)
+
+
+async def test_record_tests_answer_names_new_failures(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, token = await _baseline_step_1(db, tc)
+    _recorded(tc, token, b.key, **FAILED, failed=1, failing=["a"], baseline=True)
+    out = _recorded(tc, token, b.key, **FAILED, failed=2, failing=["a", "b"])
+    assert (out["new_failing"], out["baseline_failing"]) == (["b"], 1)
+    assert "unlisted_failing" not in out
+    assert out["note"] == "1 failing test is new: it did not fail in the baseline. Fix it before you complete the step."
+    out = _recorded(tc, token, b.key, **FAILED, failed=1, failing=["a"])
+    assert (out["new_failing"], out["baseline_failing"]) == ([], 1)
+    assert out["note"] == (
+        "Every failing test also fails in the baseline: none is new. The step's tests count as passing.")
+
+
+async def test_record_tests_answer_with_an_incomplete_baseline(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, token = await _baseline_step_1(db, tc)
+    names = [f"test_{n}" for n in range(100)]
+    _recorded(tc, token, b.key, **FAILED, failed=340, failing=names, baseline=True)
+    out = _recorded(tc, token, b.key, **FAILED, failed=1, failing=["zzz"])
+    assert (out["unlisted_failing"], out["new_failing"], out["baseline_failing"]) == (["zzz"], [], 0)
+    assert out["note"].startswith(
+        "The baseline lists only 100 of its 340 failing tests, so 1 failing test can't be compared.")

@@ -293,6 +293,10 @@ async def test_failed_run_retried_then_escalates_after_three(db, tc_factory):
     # the human decides: accept is not allowed here, retry runs the role again with a fresh failure count
     r = tc.post(f"/api/tasks/{b.key}/workflow/escalation", json={"action": "accept"})
     assert r.status_code == 422 and r.json()["detail"] == "cannot_accept_here"
+    r = tc.post(f"/api/tasks/{b.key}/workflow/escalation", json={"action": "fix"})
+    assert r.status_code == 422 and r.json()["detail"] == "cannot_fix_here"
+    r = tc.post(f"/api/tasks/{b.key}/workflow/escalation", json={"action": "nope"})
+    assert r.status_code == 422 and isinstance(r.json()["detail"], list)  # refused by validation
     r = tc.post(f"/api/tasks/{b.key}/workflow/escalation", json={"action": "retry"})
     assert r.status_code == 200 and r.json()["status"] == "running"
     wf = await _wf(b.task_id)
