@@ -20,7 +20,7 @@ from app.core.events import Event, publish
 from app.core.text import strip_nul
 from app.tasks.models import Task, TaskEvent
 from app.workflow import engine
-from app.workflow.context import _CLOSE, REPORTS_CHARS, _escape
+from app.workflow.context import _CLOSE, REPORTS_CHARS, _escape, wrap_untrusted
 from app.workflow.models import (
     RunRole,
     Stage,
@@ -300,13 +300,15 @@ def _decision_line(d: WorkflowDecision) -> str:
     return f"{_where_label(d)}: Decision: {d.decision}{said}; Reason: {d.reason}; Cost if wrong: {d.cost_if_wrong}"
 
 
-def _test_run_line(t: WorkflowTestRun) -> str:
+def _counts(t: WorkflowTestRun) -> str:
     counts = [f"{name} {value}" for name, value in (("total", t.total), ("failed", t.failed), ("skipped", t.skipped))
               if value is not None]
+    return f" ({', '.join(counts)})" if counts else ""
+
+
+def _test_run_line(t: WorkflowTestRun) -> str:
     where = " on the start commit" if t.on_base else ""
-    line = f"{_where_label(t)}: {'passed' if t.passed else 'FAILED'}{where} — {t.command}"
-    if counts:
-        line += f" ({', '.join(counts)})"
+    line = f"{_where_label(t)}: {'passed' if t.passed else 'FAILED'}{where} — {t.command}{_counts(t)}"
     if t.failing:
         line += f"; failing: {', '.join(t.failing)}"
     return line
@@ -354,6 +356,88 @@ def test_runs_section(rows: list[WorkflowTestRun]) -> str:
     rest = [i for i in _newest_first(rows) if i not in set(first)]
     return _section("## Recorded test runs", "test_runs", [_test_run_line(t) for t in rows], first + rest,
                     "test runs", "(No test runs were recorded: treat any claim of passing tests as unverified.)")
+
+
+# ---- the test baseline in the agents' prompts (MC-99) --------------------------------------------------------
+
+NO_BASELINE_SECTION = (
+    "## Test baseline\n"
+    "No baseline is recorded for this task yet. Before you change anything, run the project's full test suite and "
+    "record that run with `record_tests(..., baseline=true)`. Do this only if the worktree is clean and the task "
+    "branch has no commits of its own yet (`git status`, `git log`); otherwise skip it and carry on. See \"The test "
+    "baseline\"."
+)
+BASELINE_ROLES = (RunRole.implement, RunRole.step_fix, RunRole.step_review, RunRole.final_review)
+BASELINE_INTRO = "Recorded before step 1, on the untouched task branch."
+
+
+def baseline_section(b: WorkflowTestRun) -> str:
+    """The baseline for an agent: MegooColab's statement, then the agent's command and names as untrusted."""
+    head = f"{'passed' if b.passed else 'FAILED'} — {b.command}{_counts(b)}"
+    if b.passed:
+        return _section(f"## Test baseline\n{BASELINE_INTRO} No test was failing: every failing test is new.",
+                        "test_baseline", [head], [0], "lines", "")
+    names = list(b.failing or [])
+    n = b.failed if b.failed is not None else len(names)
+    lines = [head, *names]
+    text = _section(
+        f"## Test baseline\n{BASELINE_INTRO} {n} {'test was' if n == 1 else 'tests were'} already failing:",
+        "test_baseline", lines, list(range(len(lines))), "failing test names", "",
+    )
+    if not baseline_complete(b):
+        text += (f"\n(The baseline lists {len(names)} of its {n} failing tests: a failing test outside this list can't "
+                 "be called new.)")
+    return text
+
+
+def comparison_section(run: WorkflowTestRun, b: WorkflowTestRun) -> str | None:
+    """The step review's view of the step's latest run. The marks are never written next to a name: MegooColab
+    states the counts and lists the new (or unlisted) names in a block of their own."""
+    c = compare(run, b)
+    if c is None:
+        return None
+    names = list(run.failing)
+    n = max(run.failed or 0, len(names))
+    tests = "test" if n == 1 else "tests"
+    head = "## Compared with the test baseline\n"
+    if c.known_only:
+        also = "it also fails" if n == 1 else "both also fail" if n == 2 else "all also fail"
+        return head + f"The step's latest recorded run has {n} failing {tests}, and {also} in the baseline. None is new."
+    new = [x for x, m in zip(names, c.marks, strict=True) if m == "new"]
+    unlisted = [x for x, m in zip(names, c.marks, strict=True) if m == "unlisted"]
+    known = c.marks.count("baseline")
+    first = f"{len(new)} new" if c.complete else f"{len(unlisted)} not in the baseline's list"
+    text = head + (f"The step's latest recorded run has {n} failing {tests}: {first}, {known} that also "
+                   f"{'fails' if known == 1 else 'fail'} in the baseline.")
+    if n > len(names):
+        text += f" It names {len(names)} of them."
+    if new:
+        text += "\nNew (not failing in the baseline):\n" + wrap_untrusted("new_failures", "\n".join(new))
+    if unlisted:
+        text += "\nNot in the baseline's list:\n" + wrap_untrusted("unlisted_failures", "\n".join(unlisted))
+    return text
+
+
+async def baseline_sections(db: AsyncSession, wf: TaskWorkflow, role: RunRole, step: int | None) -> list[str]:
+    """What engine.enqueue adds for the Build roles and the final review (MC-99). Never for the finish."""
+    if role not in BASELINE_ROLES:
+        return []
+    b = await baseline_run(db, wf)
+    if b is None:
+        if role == RunRole.implement and step == 1 and wf.build_records_baseline is True:
+            return [NO_BASELINE_SECTION]
+        return []
+    out = [baseline_section(b)]
+    if role == RunRole.step_review:
+        latest = await db.scalar(
+            select(WorkflowTestRun)
+            .where(WorkflowTestRun.task_id == wf.task_id, WorkflowTestRun.stage == Stage.build,
+                   WorkflowTestRun.step == step, WorkflowTestRun.baseline.is_(False))
+            .order_by(WorkflowTestRun.created_at.desc(), WorkflowTestRun.id.desc()).limit(1)
+        )
+        if latest is not None and (section := comparison_section(latest, b)):
+            out.append(section)
+    return out
 
 
 def decision_lines(rows: list[WorkflowDecision]) -> list[str]:
