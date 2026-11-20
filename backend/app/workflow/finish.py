@@ -10,7 +10,11 @@ Review (entered from build.enter_review, round 1):
   final_fix has no completion tool: its run simply ends. A failed one falls under the normal retries.
   A fix round on the tests that failed at finish (MC-98, the `fix` action on finish_tests_failed) comes back from
   Done to Review: final_fix (fresh) with the finish_fix text, then final_review with the finish_fix_review text,
-  review_round 2 + the round; finish_tests carries the running round (`fix_round`).
+  review_round 2 + the round; finish_tests carries the running round (`fix_round`) and the fix's base commit
+  (`fix_base`). A fix without a commit skips the review. The review:
+    approved           -> Done (not filed to the Knowledge Base: the "Final review" stays the whole-branch one)
+    changes_requested  -> escalation finish_fix_not_clean (`accept` enters Done)
+    no verdict         -> one nudge, then escalation review_incomplete
 
 Done:
   finish (fresh) states the effective finishing option and ends with report_finish (or report_test_failures).
@@ -31,7 +35,7 @@ from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent_runs.models import AgentRun
@@ -166,11 +170,15 @@ async def _handle_final_review(db: AsyncSession, wf: TaskWorkflow, task: Task, r
         else:
             await engine.escalate(db, wf, "review_incomplete")
         return
+    in_round = fix_round(wf) is not None
     if review.verdict == Verdict.approved:
-        owner = await db.get(User, requester_id)
-        await filing.file_final_review(db, task, review, summary=f"Final review round {review.round}: approved",
-                                       actor=owner)
+        if not in_round:  # the task's "Final review" document stays the whole-branch review
+            owner = await db.get(User, requester_id)
+            await filing.file_final_review(db, task, review, summary=f"Final review round {review.round}: approved",
+                                           actor=owner)
         await enter_done(db, wf, task, requested_by=requester_id)
+    elif in_round:
+        await engine.escalate(db, wf, "finish_fix_not_clean")
     elif review.round < 2:
         wf.nudged = False
         await engine.enqueue(db, wf, task, RunRole.final_fix, requested_by=requester_id)
@@ -191,16 +199,49 @@ async def _asked_or_answered(db: AsyncSession, wf: TaskWorkflow, task: Task, run
     return False
 
 
+async def _fix_base(db: AsyncSession, wf: TaskWorkflow) -> str | None:
+    """The commit a fix round started from: git_before.head of the round's first final_fix run that reported one
+    (the first after the newest finish run), kept in finish_tests (as build._step_base keeps a step's)."""
+    ft = wf.finish_tests or {}
+    if ft.get("fix_base"):
+        return ft["fix_base"]
+    last_finish = (
+        select(func.max(AgentRun.created_at))
+        .where(AgentRun.task_id == wf.task_id, AgentRun.workflow_role == RunRole.finish)
+        .scalar_subquery()
+    )
+    head = await db.scalar(
+        select(AgentRun.git_before["head"].astext)
+        .where(AgentRun.task_id == wf.task_id, AgentRun.workflow_role == RunRole.final_fix,
+               AgentRun.git_before.is_not(None), AgentRun.created_at > last_finish)
+        .order_by(AgentRun.created_at, AgentRun.id)
+        .limit(1)
+    )
+    if head:
+        wf.finish_tests = {**ft, "fix_base": head}
+    return head
+
+
 async def _handle_final_fix(db: AsyncSession, wf: TaskWorkflow, task: Task, run: AgentRun) -> None:
-    """The fix round ended: the scoped re-review (round 2) follows, once its work is committed."""
+    """The fix ended: the scoped re-review (round 2) follows, once its work is committed. In a fix round on the
+    tests that failed at finish (MC-98), a run that changed no code goes straight back to the finish."""
     if await _asked_or_answered(db, wf, task, run):
         return
     if engine.left_uncommitted(run):  # the read-only re-review could neither commit it nor approve it
         await engine.send_back_to_commit(db, wf, task, run)
         return
-    wf.review_round = 2
+    owner = await engine.owner_id(db, run)
     wf.nudged = False
-    await engine.enqueue(db, wf, task, RunRole.final_review, requested_by=await engine.owner_id(db, run))
+    n = fix_round(wf)
+    if n is None:
+        wf.review_round = 2
+    else:  # _fix_tests_failed set the round's review_round
+        base, head = await _fix_base(db, wf), (run.git_after or {}).get("head")
+        if base and head and head == base:
+            await engine.record_workflow_event(db, task, None, "finish.fix_no_commit", {"round": n})
+            await enter_done(db, wf, task, requested_by=owner)
+            return
+    await engine.enqueue(db, wf, task, RunRole.final_review, requested_by=owner)
 
 
 async def _accept_final_review(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
@@ -599,6 +640,11 @@ async def _fix_tests_failed(db: AsyncSession, wf: TaskWorkflow, task: Task, user
     await engine.enqueue(db, wf, task, RunRole.final_fix, requested_by=user.id)
 
 
+async def _accept_fix_not_clean(db: AsyncSession, wf: TaskWorkflow, task: Task, user: User) -> None:
+    """Escalation `accept` after the fix round's review still had findings: the finish runs again with the fix."""
+    await enter_done(db, wf, task, requested_by=user.id)
+
+
 async def approve_human_review(db: AsyncSession, user: User, task: Task) -> TaskWorkflow:
     """A human clicked "PR approved" (or Mark merged, while an agent's merge is being confirmed): the workflow
     finishes. The first approval wins."""
@@ -652,5 +698,6 @@ engine.ACCEPT_HANDLERS["final_review_not_clean"] = _accept_final_review
 engine.ACCEPT_HANDLERS["pr_closed"] = _accept_pr_closed
 engine.ACCEPT_HANDLERS["back_merge_pr_closed"] = _accept_pr_closed
 engine.ACCEPT_HANDLERS["finish_tests_failed"] = _accept_tests_failed
+engine.ACCEPT_HANDLERS["finish_fix_not_clean"] = _accept_fix_not_clean
 engine.RETRY_HANDLERS["finish_tests_failed"] = _retry_tests_failed
 engine.FIX_HANDLERS["finish_tests_failed"] = _fix_tests_failed

@@ -10,7 +10,7 @@ from app.core.db import SessionLocal
 from app.tasks.models import Task
 from app.workflow import engine, finish
 from tests.workflow.test_build import _last, _review
-from tests.workflow.test_engine import _events, _finish, _runs, _wf
+from tests.workflow.test_engine import SHA_A, SHA_B, _events, _finish, _runs, _wf
 from tests.workflow.test_review_done import (
     PR_URL,
     _answer,
@@ -555,6 +555,228 @@ async def test_retry_keeps_the_fix_rounds(db, tc_factory):
     await _set_fix_rounds(b.task_id, 1)
     _decide(tc, b, "retry")
     assert (await _wf(b.task_id)).finish_fix_rounds == 1
+
+
+# ---- The fix run's end and the review of the fix (MC-98) --------------------------------------------
+
+COMMITTED = {"git_before": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": False},
+             "git_after": {"head": SHA_B, "branch": "megoo/PAY-1", "dirty": False, "uncommitted": False}}
+NO_COMMIT = {"git_before": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": False},
+             "git_after": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": False, "uncommitted": False}}
+UNCOMMITTED = {"git_before": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": False},
+               "git_after": {"head": SHA_A, "branch": "megoo/PAY-1", "dirty": True, "uncommitted": True}}
+
+
+async def _fix_round(db, tc):
+    """The not-delivered card, then Fix round: the fresh final_fix run."""
+    b, _ = await _not_delivered_card(db, tc)
+    _decide(tc, b, "fix")
+    fix = await _last(b.task_id)
+    assert fix.workflow_role == "final_fix"
+    return b, fix
+
+
+async def _fix_review(db, tc):
+    """A fix round whose fix committed: the review of the fix."""
+    b, fix = await _fix_round(db, tc)
+    await _finish(b.manager.id, fix, "completed", **COMMITTED)
+    review = await _last(b.task_id)
+    assert review.workflow_role == "final_review"
+    return b, review
+
+
+def _no_filing(monkeypatch) -> list:
+    filed = []
+
+    async def record(db, task, review, *, summary, actor):
+        filed.append(summary)
+
+    monkeypatch.setattr("app.kb.filing.file_final_review", record)
+    return filed
+
+
+async def test_the_fix_is_reviewed(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _fix_review(db, tc)
+    assert (review.resume_session_ref, review.policy) == (None, "read_only")
+    assert review.prompt.startswith("# Review: review the fix for the tests that failed at finish")
+    assert "## The fix to review" in review.prompt and "Fix round 1 of 2" in review.prompt
+    assert f"git diff {SHA_A}..HEAD" in review.prompt
+    assert NEW["name"] in review.prompt and "It fails because the layout overflows." in review.prompt
+    assert "## Decisions the agent recorded" in review.prompt and "## Recorded test runs" in review.prompt
+    assert "## Previous review findings" not in review.prompt
+    assert "## Implementer's report" not in review.prompt
+    wf = await _wf(b.task_id)
+    assert (wf.finish_tests["fix_base"], wf.review_round, wf.stage) == (SHA_A, 3, "review")
+
+
+async def test_an_approved_fix_runs_the_finish_again(db, tc_factory, monkeypatch):
+    from app.workflow.models import StepReview
+
+    filed = _no_filing(monkeypatch)
+    tc = tc_factory(lifespan=True)
+    b, review = await _fix_review(db, tc)
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    wf = await _wf(b.task_id)
+    assert (wf.stage, wf.status, wf.finish_tests, wf.finish_fix_rounds) == ("done", "running", None, 1)
+    fresh = await _last(b.task_id)
+    assert (fresh.workflow_role, fresh.resume_session_ref) == ("finish", None)
+    assert len(await _finish_runs(b.task_id)) == 2
+    result = [e for e in await _events(b.task_id, "review.result") if e.data["scope"] == "final"][-1]
+    assert (result.data["round"], result.data["fix_round"], result.data["verdict"]) == (3, 1, "approved")
+    async with SessionLocal() as s:
+        row = (await s.execute(select(StepReview).where(StepReview.run_id == review.id))).scalar_one()
+        assert (row.scope, row.round) == ("final", 3)
+    # only the whole-branch review was filed: the task's "Final review" document stays that one
+    assert filed == ["Final review round 1: approved"]
+
+
+async def test_a_review_of_the_whole_branch_has_no_fix_round(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    await _review(review, "approved")
+    [result] = [e for e in await _events(b.task_id, "review.result") if e.data["scope"] == "final"]
+    assert "fix_round" not in result.data
+
+
+async def test_a_fix_with_findings_goes_to_a_person_and_accept_finishes_again(db, tc_factory):
+    from tests.workflow.test_build import FINDING
+
+    tc = tc_factory(lifespan=True)
+    b, review = await _fix_review(db, tc)
+    await _review(review, "changes_requested", [FINDING])
+    await _finish(b.manager.id, review, "completed")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs, wf.escalation_reason, wf.stage) == (
+        "waiting_human", "escalation", "finish_fix_not_clean", "review")
+    assert (await _last(b.task_id)).id == review.id  # no second fix on its own
+    _decide(tc, b, "accept")
+    wf = await _wf(b.task_id)
+    assert (wf.stage, wf.status, wf.escalation_reason, wf.finish_tests) == ("done", "running", None, None)
+    fresh = await _last(b.task_id)
+    assert (fresh.workflow_role, fresh.requested_by) == ("finish", b.manager.id)
+
+
+async def test_a_fix_with_findings_retry_reviews_it_again(db, tc_factory):
+    from tests.workflow.test_build import FINDING
+
+    tc = tc_factory(lifespan=True)
+    b, review = await _fix_review(db, tc)
+    await _review(review, "changes_requested", [FINDING])
+    await _finish(b.manager.id, review, "completed")
+    _decide(tc, b, "retry")
+    again = await _last(b.task_id)
+    assert again.id != review.id and again.workflow_role == "final_review"
+    assert again.prompt.startswith("# Review: review the fix for the tests that failed at finish")
+    assert f"git diff {SHA_A}..HEAD" in again.prompt
+    assert "## Previous review findings" not in again.prompt
+
+
+async def test_a_review_of_the_fix_without_verdict_nudges_then_review_incomplete(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, review = await _fix_review(db, tc)
+    await _finish(b.manager.id, review, "completed")
+    nudge = await _last(b.task_id)
+    assert nudge.id != review.id and nudge.workflow_role == "final_review"
+    assert nudge.prompt.startswith("# Review: review the fix for the tests that failed at finish")
+    await _finish(b.manager.id, nudge, "completed")
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.escalation_reason) == ("waiting_human", "review_incomplete")
+
+
+async def test_a_fix_without_a_commit_skips_the_review(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, fix = await _fix_round(db, tc)
+    await _finish(b.manager.id, fix, "completed", **NO_COMMIT)
+    [ev] = await _events(b.task_id, "finish.fix_no_commit")
+    assert ev.data == {"round": 1}
+    wf = await _wf(b.task_id)
+    assert (wf.stage, wf.status, wf.finish_tests, wf.finish_fix_rounds) == ("done", "running", None, 1)
+    fresh = await _last(b.task_id)
+    assert (fresh.workflow_role, fresh.resume_session_ref) == ("finish", None)
+    assert [r for r in await _runs(b.task_id) if r.workflow_role == "final_review" and r.created_at > fix.created_at] == []
+
+
+async def test_unknown_git_state_still_reviews(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, fix = await _fix_round(db, tc)
+    await _finish(b.manager.id, fix, "completed")
+    review = await _last(b.task_id)
+    assert review.workflow_role == "final_review"
+    assert "find the commits made after the final review with `git log`" in review.prompt
+    assert await _events(b.task_id, "finish.fix_no_commit") == []
+
+
+async def test_an_uncommitted_fix_is_sent_back_first(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, fix = await _fix_round(db, tc)
+    await _finish(b.manager.id, fix, "completed", session_id="fix-1", **UNCOMMITTED)
+    commit = await _last(b.task_id)
+    assert commit.workflow_role == "final_fix" and engine.is_commit_run(commit)
+    assert await _events(b.task_id, "finish.fix_no_commit") == []
+    await _finish(b.manager.id, commit, "completed", session_id="fix-1",
+                  git_before={"head": SHA_A, "branch": "megoo/PAY-1", "dirty": True},
+                  git_after={"head": SHA_B, "branch": "megoo/PAY-1", "dirty": False, "uncommitted": False})
+    review = await _last(b.task_id)
+    assert review.workflow_role == "final_review" and f"git diff {SHA_A}..HEAD" in review.prompt
+
+
+async def test_a_second_round_and_no_third(db, tc_factory):
+    sha_c = "c" * 40
+    tc = tc_factory(lifespan=True)
+    b, review = await _fix_review(db, tc)
+    await _review(review, "approved")
+    await _finish(b.manager.id, review, "completed")
+    again = await _last(b.task_id)
+    await _test_failures(again, [NEW])
+    await _finish(b.manager.id, again, "completed", session_id="sess-2")
+    assert (await _wf(b.task_id)).escalation_reason == "finish_tests_failed"
+    _decide(tc, b, "fix")
+    wf = await _wf(b.task_id)
+    assert (wf.finish_fix_rounds, wf.review_round, wf.finish_tests["fix_round"]) == (2, 4, 2)
+    assert "fix_base" not in wf.finish_tests
+    fix2 = await _last(b.task_id)
+    assert fix2.workflow_role == "final_fix" and "Fix round 2 of 2" in fix2.prompt
+    await _finish(b.manager.id, fix2, "completed",
+                  git_before={"head": SHA_B, "branch": "megoo/PAY-1", "dirty": False},
+                  git_after={"head": sha_c, "branch": "megoo/PAY-1", "dirty": False, "uncommitted": False})
+    review2 = await _last(b.task_id)
+    assert review2.workflow_role == "final_review"
+    assert "Fix round 2 of 2" in review2.prompt and f"git diff {SHA_B}..HEAD" in review2.prompt
+    assert (await _wf(b.task_id)).finish_tests["fix_base"] == SHA_B
+    await _review(review2, "approved")
+    result = [e for e in await _events(b.task_id, "review.result") if e.data["scope"] == "final"][-1]
+    assert (result.data["round"], result.data["fix_round"]) == (4, 2)
+    await _finish(b.manager.id, review2, "completed")
+    third = await _last(b.task_id)
+    await _test_failures(third, [NEW])
+    await _finish(b.manager.id, third, "completed", session_id="sess-3")
+    assert (await _wf(b.task_id)).escalation_reason == "finish_tests_failed"
+    assert _refused(tc, b) == "fix_rounds_exhausted"
+    assert len(await _events(b.task_id, "finish.fix_started")) == 2
+
+
+async def test_pause_and_resume_keep_the_rounds_text(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, fix = await _fix_round(db, tc)
+    assert tc.post(f"/api/tasks/{b.key}/workflow/pause").json()["status"] == "paused"
+    r = tc.post(f"/api/tasks/{b.key}/workflow/resume")
+    assert r.status_code == 200, r.text
+    again = await _last(b.task_id)
+    assert again.id != fix.id and again.workflow_role == "final_fix"
+    assert again.prompt.startswith("# Review: fix the tests that failed at finish")
+    assert "## Tests that failed at finish" in again.prompt
+    await _finish(b.manager.id, again, "completed", **COMMITTED)
+    review = await _last(b.task_id)
+    assert review.workflow_role == "final_review"
+    assert tc.post(f"/api/tasks/{b.key}/workflow/pause").json()["status"] == "paused"
+    r = tc.post(f"/api/tasks/{b.key}/workflow/resume")
+    assert r.status_code == 200, r.text
+    review_again = await _last(b.task_id)
+    assert review_again.id != review.id and review_again.workflow_role == "final_review"
+    assert review_again.prompt.startswith("# Review: review the fix for the tests that failed at finish")
+    assert f"git diff {SHA_A}..HEAD" in review_again.prompt
 
 
 # ---- The workflow API (step 8) ---------------------------------------------------------------------

@@ -154,6 +154,36 @@ async def test_second_round_clean_goes_to_done_and_failed_fix_is_retried(db, tc_
     assert (await _last(b.task_id)).workflow_role == "finish"
 
 
+async def test_a_normal_second_round_keeps_its_texts_and_files_to_the_kb(db, tc_factory, monkeypatch):
+    """MC-98's fix round leaves the final review's own round 1 -> final_fix -> round 2 path as it was."""
+    filed = []
+
+    async def record(db, task, review, *, summary, actor):
+        filed.append((review.round, summary))
+
+    monkeypatch.setattr("app.kb.filing.file_final_review", record)
+    tc = tc_factory(lifespan=True)
+    b, review = await _final_review(db, tc)
+    await _review(review, "changes_requested", [FINDING])
+    await _finish(b.manager.id, review, "completed")
+    fix = await _last(b.task_id)
+    assert fix.prompt.startswith("# Review: fix the final review findings")
+    assert "## Review findings" in fix.prompt and "## Tests that failed at finish" not in fix.prompt
+    await _finish(b.manager.id, fix, "completed", git_before={"head": SHA_A, "branch": "megoo/PAY-1", "dirty": False},
+                  git_after={"head": SHA_A, "branch": "megoo/PAY-1", "dirty": False, "uncommitted": False})
+    rereview = await _last(b.task_id)  # outside a fix round, a fix without a commit is still re-reviewed
+    assert rereview.workflow_role == "final_review"
+    assert rereview.prompt.startswith("# Review: final review of the whole change")
+    assert PREVIOUS in rereview.prompt and "## The fix to review" not in rereview.prompt
+    assert (await _wf(b.task_id)).review_round == 2
+    await _review(rereview, "approved")
+    [result] = [e for e in await _events(b.task_id, "review.result") if e.data["round"] == 2]
+    assert "fix_round" not in result.data
+    await _finish(b.manager.id, rereview, "completed")
+    assert filed == [(2, "Final review round 2: approved")]
+    assert (await _last(b.task_id)).workflow_role == "finish"
+
+
 async def test_final_review_without_verdict_nudged_then_escalated(db, tc_factory):
     tc = tc_factory(lifespan=True)
     b, review = await _final_review(db, tc)

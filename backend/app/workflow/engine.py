@@ -460,6 +460,10 @@ async def enqueue(
     if fix_n is not None and role == RunRole.final_fix:
         key_override, findings = "finish_fix", None
         extra = [await finish.fix_section(db, wf, task)]
+    round_review = fix_n is not None and role == RunRole.final_review  # only the fix: no earlier findings, reports
+    if round_review:
+        key_override = "finish_fix_review"
+        extra = [finish.fix_review_section(wf)]
     if role == RunRole.finish:
         project = await db.get(Project, task.project_id)
         option = finishing_option(project, wf)
@@ -481,8 +485,9 @@ async def enqueue(
 
     prompt, meth = await build_prompt(
         db, task, role, step=step, findings=findings, key_override=key_override,
-        previous_findings=await _previous_findings(db, wf, role, step), extra_sections=extra,
-        reports=await _implementer_reports(db, task.id, role, step),
+        previous_findings=None if round_review else await _previous_findings(db, wf, role, step),
+        extra_sections=extra,
+        reports=None if round_review else await _implementer_reports(db, task.id, role, step),
         records=await run_records.review_records(db, task.id, role, step),
     )
     key = session_key(role, step)

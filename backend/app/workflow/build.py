@@ -177,11 +177,17 @@ async def submit_review(db: AsyncSession, run: AgentRun, verdict: str, findings:
     )
     db.add(review)
     await db.flush()
-    await engine.record_workflow_event(db, task, None, "review.result", {
+    data = {
         "scope": scope.value, "step": review.step, "round": review.round, "verdict": verdict.value,
         "counts": {sev: sum(f["severity"] == sev for f in clean) for sev in SEVERITIES},
         "review_id": str(review.id),
-    })
+    }
+    if scope == ReviewScope.final:
+        from app.workflow import finish  # local: finish imports this module
+
+        if (n := finish.fix_round(wf)) is not None:  # the review of a fix round's fix (MC-98)
+            data["fix_round"] = n
+    await engine.record_workflow_event(db, task, None, "review.result", data)
     # local: memory imports the workflow models
     from app.memory.sources import queue_extract
 
