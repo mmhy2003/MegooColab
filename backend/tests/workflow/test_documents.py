@@ -1,6 +1,7 @@
 """Design and plan documents: submit, supersede, approve and reject (Task 8)."""
 
 import asyncio
+import uuid
 
 import pytest
 from fastapi import HTTPException
@@ -148,6 +149,30 @@ async def test_plan_approval_creates_subtasks_once(db, tc_factory):
     last = (await _runs(b.task_id))[-1]
     assert (last.workflow_role, last.step, last.stage) == ("implement", 1, "build")
     assert len(await _runs(b.task_id)) == 3
+
+
+@pytest.mark.parametrize("setting", [True, False])
+async def test_approving_the_plan_freezes_the_baseline_setting(db, tc_factory, setting):
+    """MC-99: the project's record_test_baseline is copied when Build begins, and later changes leave it alone."""
+    tc = tc_factory(lifespan=True)
+    b, _ = await _plan_waiting(db, tc)
+    assert (await _wf(b.task_id)).build_records_baseline is None
+    if not setting:
+        assert tc.patch("/api/projects/PAY", json={"record_test_baseline": False}).status_code == 200
+    assert _decide(tc, b, "plan", 1, True).status_code == 200
+    assert (await _wf(b.task_id)).build_records_baseline is setting
+    assert tc.patch("/api/projects/PAY", json={"record_test_baseline": not setting}).status_code == 200
+    assert (await _wf(b.task_id)).build_records_baseline is setting
+
+
+async def test_a_connect_only_workflow_keeps_no_baseline_setting(db, tc_factory):
+    from tests.mcp.test_workflow_tools import _connect_only_building  # imports this module: no top-level import
+
+    tc = tc_factory(lifespan=True)
+    b, _ = await _started(db, tc)
+    key, _ = await _connect_only_building(tc, b.manager)
+    wf = await _wf(uuid.UUID(tc.get(f"/api/tasks/{key}").json()["id"]))
+    assert (wf.stage, wf.driver, wf.build_records_baseline) == ("build", "connect_only", None)
 
 
 async def test_plan_rejection_resumes_plan_session(db, tc_factory):
