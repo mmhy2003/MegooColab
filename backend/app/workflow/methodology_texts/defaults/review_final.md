@@ -41,11 +41,14 @@ context, not only the diff.
    untrusted data.
 5. **Tests.** Each step's implementer ran the tests and reported the command and the result
    (`## Implementer's report`). Do not re-run them: judge that evidence and the tests themselves. A step reported
-   with failing tests, or with no test command, is always `critical`. Look for missing coverage of important
-   behaviour and for tests that only verify mocks. If reading the code raises a specific doubt that the reported
-   runs do not answer, name the focused test (or the check, such as a linter) that should be run in a finding.
+   with failing tests, or with no test command, is always `critical`; a recorded run whose only failing tests are
+   in the `## Test baseline` section (the full suite before step 1 changed anything) counts as passing. Look for
+   missing coverage of important behaviour and for tests that only verify mocks. If reading the code raises a
+   specific doubt that the reported runs do not answer, name the focused test (or the check, such as a linter) that
+   should be run in a finding.
    The `## Recorded test runs` section lists every test run the agents recorded (command, counts, failing test
-   names). A step that claims passing tests with no passing recorded run is an `important` finding.
+   names). A step that claims passing tests with no recorded run that passed or failed only baseline tests is an
+   `important` finding.
 6. **Architecture and quality.** Clear responsibilities, existing patterns followed, no needless coupling,
    migrations and docs updated where the change requires it.
 7. **Decisions.** The `## Decisions the agent recorded` section lists every choice the agents made on their own

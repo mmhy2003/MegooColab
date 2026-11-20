@@ -554,7 +554,7 @@ async def test_step_1_is_asked_for_a_baseline(db, tc_factory):
     await _set_frozen(b.task_id, False)
     again = await _rerun(b, run)
     assert (again.workflow_role, again.step) == ("implement", 1)
-    assert "## Test baseline" not in again.prompt
+    assert "\n## Test baseline\n" not in again.prompt  # the methodology text only names the section
 
 
 async def test_the_baseline_section_reaches_the_four_roles(db, tc_factory):
@@ -588,12 +588,12 @@ async def test_the_baseline_section_reaches_the_four_roles(db, tc_factory):
     final = await _pass_step(b, await _pass_step(b, step2))
     assert final.workflow_role == "final_review"
     assert HAS_BASELINE in final.prompt and "1 test was already failing:" in final.prompt
-    assert "## Compared with the test baseline" not in final.prompt
+    assert "\n## Compared with the test baseline\n" not in final.prompt
     await _review(final, "approved")
     await _finish(b.manager.id, final, "completed")
     finish = await _last(b.task_id)
     assert finish.workflow_role == "finish"
-    assert "## Test baseline" not in finish.prompt
+    assert "\n## Test baseline\n" not in finish.prompt
 
 
 async def test_the_step_review_gets_the_comparison(db, tc_factory):
@@ -604,7 +604,7 @@ async def test_the_step_review_gets_the_comparison(db, tc_factory):
     await _baseline(run)
     await _record(run, command="uv run pytest", passed=False, failed=2, failing=[OLD, NEW])
     again = await _rerun(b, run)
-    assert "## Compared with the test baseline" not in again.prompt  # an implement prompt has none
+    assert "\n## Compared with the test baseline\n" not in again.prompt  # an implement prompt has none
     await _complete(again)
     await _finish(b.manager.id, again, "completed", session_id="impl-1", **_git(SHA_A, SHA_B))
     review = await _last(b.task_id)
@@ -612,7 +612,7 @@ async def test_the_step_review_gets_the_comparison(db, tc_factory):
     assert "## Compared with the test baseline\nThe step's latest recorded run has 2 failing tests: 1 new, 1 that also " \
            "fails in the baseline." in review.prompt
     assert f'New (not failing in the baseline):\n<untrusted source="new_failures">\n{NEW}\n</untrusted>' in review.prompt
-    assert review.prompt.index("## Test baseline") < review.prompt.index("## Compared with the test baseline")
+    assert review.prompt.index("\n## Test baseline\n") < review.prompt.index("\n## Compared with the test baseline\n")
 
 
 def _run(passed=False, failing=(), failed=None, **kw):
