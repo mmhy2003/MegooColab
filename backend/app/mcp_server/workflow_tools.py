@@ -96,6 +96,11 @@ RUN_NEXT: dict[RunRole, str] = {
     "submit_pr_review.",
     RunRole.freestyle: "Do what the latest message asks, then reply and end your turn.",
 }
+# a fix round on the tests that failed at finish (MC-98) runs final_fix and final_review with texts of its own
+ROUND_NEXT: dict[str, str] = {
+    "finish_fix": "Fix the tests that failed at finish and run the full suite; your run ends when you are done.",
+    "finish_fix_review": "Review the fix, then call submit_review with your verdict and findings.",
+}
 WAIT_NEXT: dict[Needs, str] = {
     Needs.question: "Wait for the human's answer (it appears in get_task), then call get_workflow again.",
     Needs.design_approval: "Wait for a human to approve or reject the design, then call get_workflow again.",
@@ -178,7 +183,10 @@ async def _workflow_view(db: AsyncSession, task: Task, wf: TaskWorkflow | None) 
         meth = await db.get(MethodologyVersion, run.methodology_version_id) if run.methodology_version_id else None
         out["role"] = role.value
         out["instructions"] = (meth or await methodology.current(db, ROLE_KEY[role])).body_md
-        out["next"] = RUN_NEXT[role].format(step=run.step, option=option.value if option else "")
+        out["next"] = (
+            ROUND_NEXT[meth.key] if meth is not None and meth.key in ROUND_NEXT
+            else RUN_NEXT[role].format(step=run.step, option=option.value if option else "")
+        )
         return out
     texts = [(k, (await methodology.current(db, k)).body_md.strip()) for k in methodology.KEYS[stage]]
     out["instructions"] = "\n\n".join(f"## {k}\n\n{body}" for k, body in texts)

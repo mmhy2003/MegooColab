@@ -213,6 +213,8 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
     return WorkflowOut(
         pr_fix_rounds=wf.pr_fix_rounds or 0,  # an unsaved (never started) workflow has no default yet
         pr_fix_trigger=wf.pr_fix_trigger,
+        finish_fix_rounds=wf.finish_fix_rounds or 0,  # an unsaved workflow has no default yet, as pr_fix_rounds
+        finish_fix_max=finish.MAX_FINISH_FIX_ROUNDS,
         takes_images=await task_takes_images(db, task),
         kb_documents=await filing.kb_documents(db, task.id),
         driver=wf.driver,
@@ -255,6 +257,7 @@ async def _finish_tests(db, ft: dict | None) -> FinishTestsOut | None:
     return FinishTestsOut(
         failures=ft.get("failures") or [], failing_total=ft.get("failing_total"), diagnosis=ft.get("diagnosis"),
         delivered=bool(ft.get("delivered")), settled=ft.get("settled"), accepted_by=accepted_by,
+        fix_round=ft.get("fix_round"),
     )
 
 

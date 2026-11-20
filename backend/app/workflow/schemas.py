@@ -86,12 +86,16 @@ class FinishTestsOut(BaseModel):
     delivered: bool = False
     settled: Literal["known", "accepted"] | None = None
     accepted_by: str | None = None  # the person's name
+    fix_round: int | None = None  # MC-98: the running fix round
 
 
 class WorkflowOut(TaskWorkflowOut):
     # changes requested on the pull request (piece 3): rounds used, and what asked last
     pr_fix_rounds: int = 0
     pr_fix_trigger: dict | None = None
+    # fix rounds on the tests that failed at finish (MC-98): used, and allowed
+    finish_fix_rounds: int = 0
+    finish_fix_max: int = 2
     finishing_option: FinishingOption  # the effective option
     takes_images: bool = False  # messages to its agent may carry images (app.images.support)
     finishing_forced: bool = False  # human code review forces a pull request

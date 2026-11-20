@@ -790,7 +790,7 @@ async def test_workflow_api_returns_finish_tests(db, tc_factory):
     await _finish(b.manager.id, run, "completed", session_id="sess-t")
     assert tc.get(f"/api/tasks/{b.key}/workflow").json()["finish_tests"] == {
         "failures": [NEW, FLAKY], "failing_total": 3, "diagnosis": "It fails because the layout overflows.",
-        "delivered": False, "settled": None, "accepted_by": None,
+        "delivered": False, "settled": None, "accepted_by": None, "fix_round": None,
     }
     _decide(tc, b, "accept")
     await _fail_report(await _last(b.task_id), [NEW])
@@ -798,3 +798,13 @@ async def test_workflow_api_returns_finish_tests(db, tc_factory):
     ft = tc.get(f"/api/tasks/{b.key}/workflow").json()["finish_tests"]
     assert (ft["failures"], ft["delivered"], ft["settled"], ft["accepted_by"]) == (
         [NEW], True, "accepted", b.manager.name)
+
+
+async def test_workflow_api_shows_the_fix_rounds(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _ = await _not_delivered_card(db, tc)
+    out = tc.get(f"/api/tasks/{b.key}/workflow").json()
+    assert (out["finish_fix_rounds"], out["finish_fix_max"], out["finish_tests"]["fix_round"]) == (0, 2, None)
+    for out in (_decide(tc, b, "fix"), tc.get(f"/api/tasks/{b.key}/workflow").json()):
+        assert (out["finish_fix_rounds"], out["finish_fix_max"], out["finish_tests"]["fix_round"], out["stage"]) == (
+            1, 2, 1, "review")
