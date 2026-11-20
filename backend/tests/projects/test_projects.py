@@ -183,6 +183,21 @@ async def test_tolerate_known_test_failures_setting(client, client_factory, db):
     assert (await vc.patch("/api/projects/PAY", json={"tolerate_known_test_failures": True})).status_code == 403
 
 
+async def test_record_test_baseline_setting(client, client_factory, db):
+    """MC-99: a project chooses whether step 1 records a test baseline, so new failures are marked during Build."""
+    _, team = await _manager_with_team(client, db)
+    created = (await _create(client, team)).json()
+    assert created["record_test_baseline"] is True
+    r = await client.patch("/api/projects/PAY", json={"record_test_baseline": False})
+    assert r.status_code == 200 and r.json()["record_test_baseline"] is False
+    assert (await client.get("/api/projects/PAY")).json()["record_test_baseline"] is False
+    v = await make_user(db, role=Role.viewer)
+    await client.put(f"/api/teams/{team.id}/members", json={"user_ids": await _member_ids(client, team) + [str(v.id)]})
+    vc = client_factory()
+    await login(vc, v)
+    assert (await vc.patch("/api/projects/PAY", json={"record_test_baseline": True})).status_code == 403
+
+
 async def test_pr_review_defaults_none_and_patches(client, client_factory, db):
     """Piece 4: who reviews a task's pull request (none, a human, or an agent), replacing the human review checkbox."""
     from app.agents.models import Agent

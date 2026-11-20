@@ -33,6 +33,7 @@ async def project_out(db: AsyncSession, project: Project) -> ProjectOut:
         pr_reviewer_agent_id=project.pr_reviewer_agent_id,
         send_back_on_changes_requested=project.send_back_on_changes_requested,
         tolerate_known_test_failures=project.tolerate_known_test_failures,
+        record_test_baseline=project.record_test_baseline,
         commit_docs_to_repo=project.commit_docs_to_repo,
         team_ids=sorted(await project_team_ids(db, project.id)),
         status=project.status,

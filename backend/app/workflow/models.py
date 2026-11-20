@@ -148,6 +148,8 @@ class TaskWorkflow(Base):
     finish_pr_review: Mapped[str | None] = mapped_column(String(10))
     # frozen with them (MC-97): known failing tests (start commit, flaky) don't stop the finish. None before Done
     finish_tolerates_known: Mapped[bool | None]
+    # frozen when Build begins (MC-99): step 1 records a test baseline. None before that, and for connect-only
+    build_records_baseline: Mapped[bool | None]
     # the finish run's failing tests (MC-97): {failures, failing_total, diagnosis, delivered, settled, accepted_by,
     # accepted_at, accepted, fix_round (the running fix round, MC-98), fix_base (the commit its fix started from)};
     # None until a finish reports failing tests, cleared when Done begins and on Retry
@@ -299,6 +301,8 @@ class WorkflowTestRun(IdMixin, Base):
     failing: Mapped[list] = mapped_column(MutableList.as_mutable(JSONB), default=list)
     # run on the commit the task branch started from
     on_base: Mapped[bool] = mapped_column(default=False, server_default=false())
+    # the task's test baseline: the full suite before step 1 changed anything (MC-99)
+    baseline: Mapped[bool] = mapped_column(default=False, server_default=false())
     created_at: Mapped[datetime] = _created_at()
 
 

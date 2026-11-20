@@ -28,6 +28,7 @@ class ProjectPatch(BaseModel):
     pr_reviewer_agent_id: uuid.UUID | None = None  # sent as null: the task's own agent reviews
     send_back_on_changes_requested: bool | None = None
     tolerate_known_test_failures: bool | None = None
+    record_test_baseline: bool | None = None
     commit_docs_to_repo: bool | None = None
     team_ids: list[uuid.UUID] | None = Field(default=None, min_length=1)
 
@@ -43,6 +44,7 @@ class ProjectOut(BaseModel):
     pr_reviewer_agent_id: uuid.UUID | None
     send_back_on_changes_requested: bool
     tolerate_known_test_failures: bool
+    record_test_baseline: bool
     commit_docs_to_repo: bool
     team_ids: list[uuid.UUID]
     status: ProjectStatus
