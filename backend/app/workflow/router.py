@@ -18,7 +18,7 @@ from app.projects.access import get_project_for
 from app.projects.models import Project
 from app.tasks.models import Task
 from app.tasks.service import get_task_for, pull_requests_of
-from app.workflow import documents, engine, finish, follow_ups, methodology, questions, records
+from app.workflow import documents, engine, finish, follow_ups, known_bugs, methodology, questions, records
 from app.workflow.models import (
     DocKind,
     DocStatus,
@@ -43,6 +43,7 @@ from app.workflow.schemas import (
     FinishingIn,
     FinishTestsOut,
     HumanReviewIn,
+    KnownFailureBugIn,
     ManualWorkflowIn,
     ProjectWaitOut,
     RecordsOut,
@@ -320,6 +321,14 @@ async def decide_escalation(key: str, body: EscalationDecisionIn, user: AuthedUs
     task, _ = await get_task_for(db, user, key, write=True)
     await engine.decide_escalation(db, user, task, body.action)
     await engine.dispatch_queued(db)
+    return await workflow_out(db, task, user)
+
+
+@router.post("/api/tasks/{key}/workflow/known-failures/bug")
+async def create_known_failure_bug(key: str, body: KnownFailureBugIn, user: AuthedUser, db: DbSession) -> WorkflowOut:
+    """MC-100: a bug task for a known failing test of the finish, unless the project has an open one already."""
+    task, project = await get_task_for(db, user, key, write=True)
+    await known_bugs.create(db, user, project, task, body.name)
     return await workflow_out(db, task, user)
 
 

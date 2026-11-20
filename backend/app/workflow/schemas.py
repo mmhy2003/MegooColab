@@ -123,6 +123,11 @@ class EscalationDecisionIn(BaseModel):
     action: Literal["retry", "accept", "pause", "fix"]
 
 
+class KnownFailureBugIn(BaseModel):
+    """MC-100: a known failing test of the finish report, as listed."""
+    name: NoNulStr = Field(min_length=1, max_length=300)
+
+
 class HumanReviewIn(BaseModel):
     approved: Literal[True]
 
