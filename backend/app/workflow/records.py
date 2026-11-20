@@ -207,6 +207,39 @@ def compare(run: WorkflowTestRun, baseline: WorkflowTestRun | None) -> Compariso
     return Comparison(marks, names_all and all(m == "baseline" for m in marks), complete)
 
 
+async def tests_answer(db: AsyncSession, wf: TaskWorkflow, row: WorkflowTestRun) -> dict:
+    """What record_tests answers: with a baseline, which failing tests of a failed Build run are new (MC-99)."""
+    out = {"id": str(row.id), "passed": row.passed}
+    if row.baseline:
+        return out | {"baseline": True}
+    b = await baseline_run(db, wf)
+    c = compare(row, b) if b is not None else None
+    if c is None:
+        return out
+    new = [x for x, m in zip(row.failing, c.marks) if m == "new"]
+    unlisted = [x for x, m in zip(row.failing, c.marks) if m == "unlisted"]
+    out |= {"new_failing": new, "baseline_failing": c.marks.count("baseline"), "note": _note(row, b, c, new, unlisted)}
+    if not c.complete:
+        out["unlisted_failing"] = unlisted
+    return out
+
+
+def _note(row, b, c: Comparison, new: list[str], unlisted: list[str]) -> str:
+    if c.known_only:
+        return "Every failing test also fails in the baseline: none is new. The step's tests count as passing."
+    if new:
+        one = len(new) == 1
+        return (f"{len(new)} failing {'test is' if one else 'tests are'} new: {'it' if one else 'they'} did not fail "
+                f"in the baseline. Fix {'it' if one else 'them'} before you complete the step.")
+    if unlisted:
+        one = len(unlisted) == 1
+        return (f"The baseline lists only {len(b.failing)} of its {b.failed} failing tests, so {len(unlisted)} failing "
+                f"{'test' if one else 'tests'} can't be compared. Treat {'it' if one else 'them'} as yours unless you "
+                "can show otherwise.")
+    return (f"None of the {len(row.failing)} failing tests this run names is new, but the run has {row.failed} failing "
+            "tests: the others can't be compared. Fix them, or ask a person, before you complete the step.")
+
+
 async def _task_baseline(db: AsyncSession, task_id: uuid.UUID) -> WorkflowTestRun | None:
     wf = await db.get(TaskWorkflow, task_id)
     return await baseline_run(db, wf) if wf else None
