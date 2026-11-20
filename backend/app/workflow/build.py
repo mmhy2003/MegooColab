@@ -331,6 +331,7 @@ async def enter_review(db: AsyncSession, wf: TaskWorkflow, task: Task, *, reques
     await engine.move_to_category(db, task, ColumnCategory.review)
     engine.set_step(wf, None)  # Review and Done runs have no step
     wf.review_round = 1  # the final review's first round
+    wf.finish_fix_rounds = 0  # a whole-branch review starts a new cycle of fix rounds (MC-98)
     await engine.enqueue(db, wf, task, RunRole.final_review, requested_by=requested_by)
 
 
