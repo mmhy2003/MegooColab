@@ -27,7 +27,7 @@ import {
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
 const AGENT_NAME = `${ADMIN.name}'s Claude Code`;
 const KEY = "WFL-1";
-const PROBE_KEY = "WFL-6"; // after WFL-1's follow-ups (WFL-2, WFL-3) and plan subtasks (WFL-4, WFL-5)
+const PROBE_KEY = "WFL-7"; // after WFL-1's follow-ups (WFL-2, WFL-3), plan subtasks (WFL-4, WFL-5) and bug (WFL-6)
 const PR_URL = "https://example.test/pr/1";
 const BRANCH = "megoo/WFL-1-add-a-greeting";
 
@@ -48,6 +48,8 @@ const ACCEPTED = "chose Finish anyway"; // the resume text after Finish anyway (
 const STEP = (n: number) => `## Step ${n} of 2`;
 
 const FAILING = { name: "greeting.test:1", kind: "new" };
+// MC-100: a test that also fails on the start commit, reported with the accepted finish; its position is Playwright's
+const KNOWN = { name: "e2e/legacy.spec.ts:7:3 › legacy layout", kind: "base" };
 const DIAGNOSIS = "The greeting test expects a farewell.";
 // MC-99: step 1's test baseline and the new failure its run adds (not FAILING.name: the finish checks that exact text)
 const BASELINE_FAILING = "legacy.test:1";
@@ -212,7 +214,7 @@ const SCENARIO = [
   ),
   onPrompt(
     ACCEPTED,
-    mcp("report_finish", { key: KEY, outcome: "pr_opened", branch: BRANCH, pr_url: PR_URL, tests_passed: false, failures: [FAILING] }),
+    mcp("report_finish", { key: KEY, outcome: "pr_opened", branch: BRANCH, pr_url: PR_URL, tests_passed: false, failures: [FAILING, KNOWN] }),
   ),
 ];
 
@@ -544,7 +546,16 @@ test("workflow end to end", async ({ browser }) => {
   await expect(panel.getByText("Finished", { exact: true })).toBeVisible();
   await expect(panel.getByRole("link", { name: "PR (not tracked)" })).toHaveAttribute("href", PR_URL); // no git connection
   await expect(panel.getByText(BRANCH)).toBeVisible();
-  await expect(panel.getByText(`Finished with 1 failing test accepted by ${ADMIN.name}`)).toBeVisible();
+  await expect(panel.getByText(`Finished with 2 failing tests accepted by ${ADMIN.name}`)).toBeVisible();
+  // MC-100: the known failure offers a bug task; the click creates it and the row links to it
+  await expect(panel.getByText(KNOWN.name, { exact: true })).toBeVisible();
+  await panel.getByRole("button", { name: "Create bug task" }).click(); // the only one: FAILING is new
+  await expect(panel.getByRole("link", { name: /^Bug: WFL-\d+$/ })).toBeVisible({ timeout: 15_000 });
+  await expect(panel.getByRole("button", { name: "Create bug task" })).toHaveCount(0);
+  await expect(drawer.getByText(/created bug WFL-\d+ for the failing test/)).toBeVisible();
+  await expect(column(page, "Backlog").getByText(`Failing test: ${KNOWN.name}`)).toBeVisible(); // the first column
+  const tasks: { title: string; type: string }[] = await (await page.request.get("/api/projects/WFL/tasks")).json();
+  expect(tasks.filter((t) => t.title === `Failing test: ${KNOWN.name}` && t.type === "bug")).toHaveLength(1);
   await expect(drawer.getByText("Moved to In Review by the workflow")).toBeVisible();
   await expect(drawer.getByText("Moved to Done by the workflow")).toBeVisible();
   await expect(drawer.getByText("Subtasks (2/2)")).toBeVisible();
@@ -629,8 +640,8 @@ test("workflow end to end", async ({ browser }) => {
     headers: { "X-Megoo-Client": "web" },
   });
   expect(probeAssigned.ok()).toBeTruthy();
-  await drag(page, /WFL-6 Mockup sandbox probe/, "To Do", "In Progress");
-  const probeCard = column(page, "In Progress").getByRole("button", { name: /WFL-6 Mockup sandbox probe/ });
+  await drag(page, /WFL-7 Mockup sandbox probe/, "To Do", "In Progress");
+  const probeCard = column(page, "In Progress").getByRole("button", { name: /WFL-7 Mockup sandbox probe/ });
   await expect(probeCard.getByText("NEEDS YOU")).toBeVisible({ timeout: 30_000 });
   await probeCard.click();
   const probeDrawer = page.getByRole("dialog", { name: PROBE_KEY });
