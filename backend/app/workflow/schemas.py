@@ -233,6 +233,9 @@ class TestRunOut(BaseModel):
     skipped: int | None
     failing: list[str]
     on_base: bool = False
+    baseline: bool = False
+    marks: list[Literal["new", "baseline", "unlisted"]] | None = None  # one per name in `failing`; None: not compared
+    known_only: bool = False
     author: str
     created_at: datetime
 

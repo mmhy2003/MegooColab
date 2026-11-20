@@ -6,6 +6,7 @@ test run carries its command, counts and failing test names, never output (NFR-2
 """
 
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -175,9 +176,45 @@ async def _all(db: AsyncSession, model, task_id: uuid.UUID) -> list:
     return list((await db.execute(stmt)).scalars())
 
 
+async def baseline_run(db: AsyncSession, wf: TaskWorkflow) -> WorkflowTestRun | None:
+    """The task's test baseline: its newest baseline row since the workflow started."""
+    stmt = select(WorkflowTestRun).where(WorkflowTestRun.task_id == wf.task_id, WorkflowTestRun.baseline.is_(True))
+    if wf.started_at is not None:
+        stmt = stmt.where(WorkflowTestRun.created_at >= wf.started_at)
+    return await db.scalar(stmt.order_by(WorkflowTestRun.created_at.desc(), WorkflowTestRun.id.desc()).limit(1))
+
+
+@dataclass(frozen=True)
+class Comparison:
+    marks: list[str]  # one per name in run.failing: "new", "baseline" or "unlisted"
+    known_only: bool  # every failing test is in the baseline and the run names them all: it counts as passing
+    complete: bool  # the baseline names all its failing tests
+
+
+def baseline_complete(baseline: WorkflowTestRun) -> bool:
+    return baseline.passed or (baseline.failed or 0) <= len(baseline.failing or [])
+
+
+def compare(run: WorkflowTestRun, baseline: WorkflowTestRun | None) -> Comparison | None:
+    """A failed Build run that names tests, against the baseline. Names are compared as exact text."""
+    if (baseline is None or run.baseline or run.passed or run.on_base or run.stage != Stage.build
+            or not run.failing):
+        return None
+    complete = baseline_complete(baseline)
+    known = set() if baseline.passed else set(baseline.failing or [])
+    marks = ["baseline" if name in known else "new" if complete else "unlisted" for name in run.failing]
+    names_all = run.failed is None or run.failed <= len(run.failing)
+    return Comparison(marks, names_all and all(m == "baseline" for m in marks), complete)
+
+
+async def _task_baseline(db: AsyncSession, task_id: uuid.UUID) -> WorkflowTestRun | None:
+    wf = await db.get(TaskWorkflow, task_id)
+    return await baseline_run(db, wf) if wf else None
+
+
 async def unverified_steps(db: AsyncSession, task_id: uuid.UUID) -> list[int]:
-    """Steps whose latest `step.completed` claims passing tests with no passing test run recorded for that step
-    since the claim before it (or ever, for a first claim)."""
+    """Steps whose latest `step.completed` claims passing tests with no test run recorded for that step that passed
+    or failed only baseline tests, since the claim before it (or ever, for a first claim)."""
     claims = (
         await db.execute(
             select(TaskEvent.data, TaskEvent.created_at)
@@ -185,13 +222,16 @@ async def unverified_steps(db: AsyncSession, task_id: uuid.UUID) -> list[int]:
             .order_by(TaskEvent.created_at, TaskEvent.id)
         )
     ).all()
-    passing = (
+    rows = (
         await db.execute(
-            select(WorkflowTestRun.step, WorkflowTestRun.created_at)
-            .where(WorkflowTestRun.task_id == task_id, WorkflowTestRun.passed.is_(True),
-                   WorkflowTestRun.stage == Stage.build)
+            select(WorkflowTestRun)
+            .where(WorkflowTestRun.task_id == task_id, WorkflowTestRun.stage == Stage.build,
+                   WorkflowTestRun.baseline.is_(False))
         )
-    ).all()
+    ).scalars().all()
+    baseline = await _task_baseline(db, task_id)
+    passing = [(t.step, t.created_at) for t in rows
+               if t.passed or ((c := compare(t, baseline)) is not None and c.known_only)]
     by_step: dict[int, list] = {}
     for data, at in claims:
         step = data.get("step") if isinstance(data, dict) else None
@@ -210,6 +250,8 @@ async def task_records(db: AsyncSession, task_id: uuid.UUID) -> RecordsOut:
     decisions = await _all(db, WorkflowDecision, task_id)
     runs = await _all(db, WorkflowTestRun, task_id)
     authors = await _authors(db, [*decisions, *runs])
+    baseline = await _task_baseline(db, task_id)
+    compared = {t.id: compare(t, baseline) for t in runs}
     return RecordsOut(
         decisions=[
             DecisionOut(
@@ -222,6 +264,8 @@ async def task_records(db: AsyncSession, task_id: uuid.UUID) -> RecordsOut:
             TestRunOut(
                 id=t.id, stage=t.stage, step=t.step, command=t.command, passed=t.passed, total=t.total,
                 failed=t.failed, skipped=t.skipped, failing=list(t.failing or []), on_base=t.on_base,
+                baseline=t.baseline, marks=c.marks if (c := compared[t.id]) else None,
+                known_only=bool(c and c.known_only),
                 author=authors[t.id], created_at=t.created_at,
             )
             for t in runs
@@ -240,7 +284,7 @@ async def review_records(
     if role not in (RunRole.step_review, RunRole.final_review):
         return None
     decisions = await _all(db, WorkflowDecision, task_id)
-    runs = await _all(db, WorkflowTestRun, task_id)
+    runs = [r for r in await _all(db, WorkflowTestRun, task_id) if not r.baseline]  # they have their own section
     if role == RunRole.step_review:
         decisions = [d for d in decisions if d.step == step and d.stage == Stage.build]
         runs = [r for r in runs if r.step == step and r.stage == Stage.build]
