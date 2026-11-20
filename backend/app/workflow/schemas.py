@@ -72,9 +72,17 @@ class ProjectWaitOut(BaseModel):
     can_withdraw: bool
 
 
+class KnownBugOut(BaseModel):
+    """MC-100: the open bug task of a known failing test."""
+
+    key: str
+    title: str
+
+
 class FinishFailureOut(BaseModel):
     name: str
     kind: Literal["new", "base", "flaky"]
+    bug: KnownBugOut | None = None  # base and flaky rows: the project's open bug for the test
 
 
 class FinishTestsOut(BaseModel):

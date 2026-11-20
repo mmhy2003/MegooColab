@@ -40,9 +40,11 @@ from app.workflow.schemas import (
     DocumentInfo,
     DocumentOut,
     EscalationDecisionIn,
+    FinishFailureOut,
     FinishingIn,
     FinishTestsOut,
     HumanReviewIn,
+    KnownBugOut,
     KnownFailureBugIn,
     ManualWorkflowIn,
     ProjectWaitOut,
@@ -237,7 +239,7 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
         back_merge_pr_url=wf.back_merge_pr_url,
         back_merge_pull_request=(await pull_requests_of(db, [task.id], "back_merge")).get(task.id),
         finish_outcome=wf.finish_outcome,
-        finish_tests=await _finish_tests(db, wf.finish_tests),
+        finish_tests=await _finish_tests(db, project, wf.finish_tests),
         branch_from=task.branch_from,
         start_branch=task.start_branch,
         back_merge_into=task.back_merge_into,
@@ -248,15 +250,24 @@ async def workflow_out(db, task: Task, viewer: User | None = None) -> WorkflowOu
     )
 
 
-async def _finish_tests(db, ft: dict | None) -> FinishTestsOut | None:
+async def _finish_tests(db, project: Project, ft: dict | None) -> FinishTestsOut | None:
     if not ft:
         return None
     accepted_by = None
     if ft.get("accepted_by"):
         user = await db.get(User, uuid.UUID(ft["accepted_by"]))
         accepted_by = user.name if user else None  # None when the person is gone
+    failures = ft.get("failures") or []
+    bugs = await known_bugs.open_bugs(db, project.id, {known_bugs.test_key(f["name"]) for f in failures
+                                                       if f.get("kind") in known_bugs.OFFERED})
+
+    def row(f: dict) -> FinishFailureOut:
+        b = bugs.get(known_bugs.test_key(f["name"])) if f.get("kind") in known_bugs.OFFERED else None
+        return FinishFailureOut(name=f["name"], kind=f["kind"],
+                                bug=KnownBugOut(key=f"{project.key}-{b.number}", title=b.title) if b else None)
+
     return FinishTestsOut(
-        failures=ft.get("failures") or [], failing_total=ft.get("failing_total"), diagnosis=ft.get("diagnosis"),
+        failures=[row(f) for f in failures], failing_total=ft.get("failing_total"), diagnosis=ft.get("diagnosis"),
         delivered=bool(ft.get("delivered")), settled=ft.get("settled"), accepted_by=accepted_by,
         fix_round=ft.get("fix_round"),
     )

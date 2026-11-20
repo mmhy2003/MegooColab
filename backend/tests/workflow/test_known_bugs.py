@@ -275,3 +275,46 @@ async def test_chat_round(client, db):
     async with SessionLocal() as s:
         assert (await s.execute(select(TaskLink).where(TaskLink.source_id == rnd.id))).first() is None
     assert f"(/chats/{chat['id']})" in bug.description_md
+
+
+# ---- the workflow API (step 4) ---------------------------------------------------------------------------------
+
+async def _rows(client, key) -> list[dict]:
+    r = await client.get(f"/api/tasks/{key}/workflow")
+    assert r.status_code == 200, r.text
+    return r.json()["finish_tests"]["failures"]
+
+
+async def test_workflow_api_shows_the_bug(client, db):
+    await make_project(client, db, "PAY")
+    a = await _task(client)
+    await _finished(a, [NEW, BASE, FLAKY])
+    assert await _rows(client, a["key"]) == [{**NEW, "bug": None}, {**BASE, "bug": None}, {**FLAKY, "bug": None}]
+
+    r = await _create(client, a["key"], BASE["name"])
+    assert r.status_code == 200, r.text
+    [bug] = await _bugs()
+    shown = {"key": f"PAY-{bug.number}", "title": "Failing test: e2e/a.spec.ts:42:5 › finishes a task"}
+    expected = [{**NEW, "bug": None}, {**BASE, "bug": shown}, {**FLAKY, "bug": None}]
+    assert r.json()["finish_tests"]["failures"] == expected
+    assert await _rows(client, a["key"]) == expected
+
+    b = await _task(client, "Other")
+    moved = {"name": "e2e/a.spec.ts:60:5 › finishes a task", "kind": "base"}
+    await _finished(b, [moved, {**moved, "kind": "new"}])
+    assert await _rows(client, b["key"]) == [{**moved, "bug": shown}, {**moved, "kind": "new", "bug": None}]
+
+    await _to_done(bug.id)
+    assert await _rows(client, a["key"]) == [{**NEW, "bug": None}, {**BASE, "bug": None}, {**FLAKY, "bug": None}]
+
+
+async def test_workflow_api_the_task_is_the_bug(client, db):
+    await make_project(client, db, "PAY")
+    t = await _task(client)
+    async with SessionLocal() as s:
+        await s.execute(update(Task).where(Task.id == uuid.UUID(t["id"]))
+                        .values(failing_test=known_bugs.test_key(FLAKY["name"])))
+        await s.commit()
+    await _finished(t, [FLAKY])
+    [row] = await _rows(client, t["key"])
+    assert row["bug"]["key"] == t["key"]
