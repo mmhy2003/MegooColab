@@ -40,6 +40,7 @@ from app.projects.models import BoardColumn, ColumnCategory, Project, PrReview
 from app.tasks.models import Task, TaskEvent, TaskType
 from app.tasks.service import apply_column, end_position, notify_done, record_event
 from app.teams.service import user_team_ids
+from app.triggers import emit as trigger_emit
 from app.workflow.context import FIX_ROLES, MAX_PROMPT_CHARS, build_prompt, resume_text
 from app.workflow.models import (
     DocKind,
@@ -1222,6 +1223,7 @@ async def move_to_category(db: AsyncSession, task: Task, category: str) -> None:
     await record_workflow_event(db, task, None, "status_changed", {
         "from_column": str(frm), "to_column": str(column.id), "to_category": str(column.category), "by": "workflow",
     })
+    await trigger_emit.task_moved(db, task, frm, column, None)
     if column.category == ColumnCategory.done and not was_done:
         await notify_done(db, task)
 

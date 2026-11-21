@@ -41,6 +41,7 @@ from app.tasks.schemas import (
 from app.tasks.visibility import on_board
 from app.teams.models import TeamMember
 from app.teams.service import user_team_ids
+from app.triggers import emit as trigger_emit
 from app.workflow.models import DocKind, DocStatus, TaskWorkflow, WorkflowDocument
 from app.workflow.rules import can_act
 from app.workflow.schemas import PullRequestOut, TaskWorkflowOut
@@ -511,6 +512,7 @@ async def create_task(
     await add_watcher(db, task.id, user.id)
     await record_event(db, task, user.id, "created", {"column": str(column.id)})
     if not task.in_chat:  # the chat itself is what the people concerned follow
+        await trigger_emit.task_created(db, task, user)
         await notify_assigned(db, user, project, task)
     # local: memory imports the task modules
     from app.memory.sources import queue_extract
@@ -782,8 +784,11 @@ async def move_task(db: AsyncSession, user: User, project: Project, task: Task, 
         await record_event(db, task, user.id, "status_changed", {
             "from_column": str(task.column_id), "to_column": str(column.id), "to_category": str(column.category)})
     was_done = await db.scalar(select(BoardColumn.category).where(BoardColumn.id == task.column_id)) == ColumnCategory.done
+    old_column_id = task.column_id
     apply_column(task, column)
     task.updated_at = _now()
+    if column.id != old_column_id:
+        await trigger_emit.task_moved(db, task, old_column_id, column, user)
     if column.category == ColumnCategory.done and not was_done:
         from app.mcp_server.auth import current_run  # local: the MCP tools import this module
 

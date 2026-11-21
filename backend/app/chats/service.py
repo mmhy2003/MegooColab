@@ -35,6 +35,7 @@ from app.projects.models import BoardColumn, ColumnCategory, Project, ProjectRep
 from app.runner.registry import registry
 from app.tasks.models import Task, TaskType
 from app.tasks.schemas import TaskCreate
+from app.triggers import emit as trigger_emit
 from app.workflow.models import (
     MERGE_WAITS,
     DocKind,
@@ -642,6 +643,7 @@ async def decide_board(db: AsyncSession, user: User, chat: Chat, n: int, data: B
     await db.flush()
     await _step_cards(db, user, task, wf)
     await task_changed(db, task, "task.created")
+    await trigger_emit.task_created(db, task, user)
     return task
 
 
