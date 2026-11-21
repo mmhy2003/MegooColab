@@ -3178,6 +3178,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{ref}/triggers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Triggers */
+        get: operations["list_triggers_api_projects__ref__triggers_get"];
+        put?: never;
+        /** Create Trigger */
+        post: operations["create_trigger_api_projects__ref__triggers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/triggers/{trigger_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Trigger */
+        get: operations["get_trigger_api_projects__ref__triggers__trigger_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Trigger */
+        delete: operations["delete_trigger_api_projects__ref__triggers__trigger_id__delete"];
+        options?: never;
+        head?: never;
+        /** Edit Trigger */
+        patch: operations["edit_trigger_api_projects__ref__triggers__trigger_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{ref}/triggers/{trigger_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause Trigger */
+        post: operations["pause_trigger_api_projects__ref__triggers__trigger_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/triggers/{trigger_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Trigger */
+        post: operations["resume_trigger_api_projects__ref__triggers__trigger_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/triggers/{trigger_id}/try": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Try Trigger */
+        post: operations["try_trigger_api_projects__ref__triggers__trigger_id__try_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{ref}/triggers/{trigger_id}/firings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Firings */
+        get: operations["list_firings_api_projects__ref__triggers__trigger_id__firings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/entities": {
         parameters: {
             query?: never;
@@ -4718,12 +4823,30 @@ export interface components {
              * @default false
              */
             takes_images: boolean;
+            trigger?: components["schemas"]["ChatTrigger"] | null;
         };
         /**
          * ChatStatus
          * @enum {string}
          */
         ChatStatus: "open" | "ended";
+        /**
+         * ChatTrigger
+         * @description The trigger that started a chat, and what happened.
+         */
+        ChatTrigger: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** What */
+            what: string;
+            /** Keep Open */
+            keep_open: boolean;
+        };
         /** Citation */
         Citation: {
             /** Path */
@@ -5657,6 +5780,43 @@ export interface components {
          * @enum {string}
          */
         FinishingOption: "merge_local" | "pull_request" | "keep_branch";
+        /** FiringOut */
+        FiringOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            subject: components["schemas"]["FiringSubject"];
+            agent: components["schemas"]["Named"] | null;
+            /** Chat Id */
+            chat_id: string | null;
+            /**
+             * Result
+             * @enum {string}
+             */
+            result: "starting" | "waiting_agent" | "working" | "question" | "replied" | "failed" | "skipped";
+            /** Excerpt */
+            excerpt: string | null;
+        };
+        /** FiringSubject */
+        FiringSubject: {
+            /** Kind */
+            kind: string;
+            /** Label */
+            label: string;
+            /** Title */
+            title: string;
+            /** Link */
+            link: string | null;
+            /** Note */
+            note: string;
+        };
         /** FolderIn */
         FolderIn: {
             /** Parent Id */
@@ -8637,6 +8797,108 @@ export interface components {
             folders: components["schemas"]["FolderOut"][];
             /** Documents */
             documents: components["schemas"]["TreeDoc"][];
+        };
+        /** TriggerIn */
+        TriggerIn: {
+            /** Name */
+            name: string;
+            /** Event */
+            event: string;
+            /**
+             * Config
+             * @default {}
+             */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Prompt */
+            prompt: string;
+            /** Agent Id */
+            agent_id?: string | null;
+            /**
+             * Keep Open
+             * @default false
+             */
+            keep_open: boolean;
+            /**
+             * Notify Reply
+             * @default true
+             */
+            notify_reply: boolean;
+            /**
+             * Notify Problems
+             * @default true
+             */
+            notify_problems: boolean;
+        };
+        /** TriggerOut */
+        TriggerOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Project Key */
+            project_key: string;
+            /** Name */
+            name: string;
+            /** Event */
+            event: string;
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Prompt */
+            prompt: string;
+            /** Any Agent */
+            any_agent: boolean;
+            agent: components["schemas"]["Named"] | null;
+            /** Keep Open */
+            keep_open: boolean;
+            /** Notify Reply */
+            notify_reply: boolean;
+            /** Notify Problems */
+            notify_problems: boolean;
+            /** Paused */
+            paused: boolean;
+            owner: components["schemas"]["Named"] | null;
+            created_by: components["schemas"]["Named"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Broken */
+            broken: ("column_deleted" | "label_deleted" | "cron_deleted") | null;
+            last_firing: components["schemas"]["FiringOut"] | null;
+            /** Try Subject */
+            try_subject: string | null;
+        };
+        /** TriggerPatch */
+        TriggerPatch: {
+            /** Name */
+            name?: string | null;
+            /** Event */
+            event?: string | null;
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Prompt */
+            prompt?: string | null;
+            /** Agent Id */
+            agent_id?: string | null;
+            /** Keep Open */
+            keep_open?: boolean | null;
+            /** Notify Reply */
+            notify_reply?: boolean | null;
+            /** Notify Problems */
+            notify_problems?: boolean | null;
         };
         /** UnreadCount */
         UnreadCount: {
@@ -16107,6 +16369,300 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CronRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_triggers_api_projects__ref__triggers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriggerOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_trigger_api_projects__ref__triggers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TriggerIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriggerOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_trigger_api_projects__ref__triggers__trigger_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                trigger_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriggerOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_trigger_api_projects__ref__triggers__trigger_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                trigger_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_trigger_api_projects__ref__triggers__trigger_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                trigger_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TriggerPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriggerOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_trigger_api_projects__ref__triggers__trigger_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                trigger_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriggerOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_trigger_api_projects__ref__triggers__trigger_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                trigger_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriggerOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    try_trigger_api_projects__ref__triggers__trigger_id__try_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+                trigger_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FiringOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_firings_api_projects__ref__triggers__trigger_id__firings_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                ref: string;
+                trigger_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FiringOut"][];
                 };
             };
             /** @description Validation Error */

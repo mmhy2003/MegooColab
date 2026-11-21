@@ -2,6 +2,7 @@ import { Hourglass } from "lucide-react";
 import Link from "next/link";
 
 import { FreestyleChip } from "@/components/chats/FreestyleChip";
+import { TriggerChip } from "@/components/chats/TriggerMessage";
 import { chatGroup, stateText, type Chat, type ChatGroup } from "@/lib/chats";
 
 /** Each group's mark at the start of a row, and the colour of its state text: amber waits on a person, a turning cyan
@@ -55,6 +56,7 @@ export function ChatList({ chats, selected, showProject, empty = "No chats yet."
               <span className="min-w-0 flex-1">
                 {/* two lines on a phone; one line, cut, on a wide screen. No `block`: it would undo the clamp's display */}
                 <span className={`text-sm wrap-anywhere max-md:line-clamp-2 md:block md:truncate ${group === "ended" ? "text-muted-foreground" : ""}`}>
+                  {c.trigger && <TriggerChip className="mr-1.5 px-1 py-0 text-[11px]" />}
                   {c.title}
                 </span>
                 <span className="block truncate text-xs text-muted-foreground">

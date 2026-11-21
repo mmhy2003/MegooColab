@@ -279,7 +279,10 @@ async def enter_done(db: AsyncSession, wf: TaskWorkflow, task: Task, *, requeste
     await engine.enqueue(db, wf, task, RunRole.finish, requested_by=requested_by)
 
 
-async def finish_workflow(db: AsyncSession, wf: TaskWorkflow, task: Task, actor_id: uuid.UUID | None) -> None:
+async def finish_workflow(
+    db: AsyncSession, wf: TaskWorkflow, task: Task, actor_id: uuid.UUID | None, *, tell: bool = True,
+) -> None:
+    """Finishes the round. `tell=False` skips the "Chat finished" notification (a triggered chat ending itself)."""
     wf.status = WorkflowStatus.finished
     wf.needs = None
     wf.escalation_reason = None  # finished from an escalation (a merge seen after merge_not_confirmed) clears it
@@ -288,7 +291,7 @@ async def finish_workflow(db: AsyncSession, wf: TaskWorkflow, task: Task, actor_
     await engine.record_workflow_event(db, task, actor_id, "workflow.finished", {
         "outcome": wf.finish_outcome, "branch": wf.branch, "pr_url": wf.pr_url,
     })
-    if task.in_chat:  # the chat asks whether to add the round to the board: its people hear it finished
+    if tell and task.in_chat:  # the chat asks whether to add the round to the board: its people hear it finished
         from app.chats.service import (
             chat_people,  # local: the chats modules import the workflow
         )

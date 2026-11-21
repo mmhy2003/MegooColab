@@ -70,6 +70,7 @@ export default function ProjectLayout({ children }: { children: React.ReactNode 
     { href: `/projects/${p.key}/board`, label: "Board" },
     { href: `/projects/${p.key}/chats`, label: "Chats" },
     { href: `/projects/${p.key}/crons`, label: "Crons" },
+    { href: `/projects/${p.key}/triggers`, label: "Triggers" },
     ...(p.sprints_enabled
       ? [
           { href: `/projects/${p.key}/backlog`, label: "Backlog" },

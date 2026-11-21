@@ -10,6 +10,7 @@ from app.projects.models import BoardColumn, ColumnCategory, Project
 from app.sprints.models import Sprint, SprintSnapshot, SprintState
 from app.sprints.schemas import BurndownPoint
 from app.tasks.models import Task, TaskType
+from app.triggers import emit as trigger_emit
 
 SPRINTABLE = (TaskType.story, TaskType.task, TaskType.bug)
 
@@ -79,6 +80,7 @@ async def start(db: AsyncSession, sprint: Sprint) -> None:
     total, _ = await points(db, sprint.id)
     sprint.committed_points = total
     await record_snapshot(db, sprint.id)
+    await trigger_emit.sprint_started(db, sprint)
 
 
 async def complete(db: AsyncSession, sprint: Sprint, move_open_to: str | uuid.UUID) -> None:
@@ -99,6 +101,7 @@ async def complete(db: AsyncSession, sprint: Sprint, move_open_to: str | uuid.UU
         Task.sprint_id == sprint.id, BoardColumn.category != ColumnCategory.done
     )
     await db.execute(update(Task).where(Task.id.in_(open_ids)).values(sprint_id=target))
+    await trigger_emit.sprint_completed(db, sprint)
 
 
 async def burndown(db: AsyncSession, sprint: Sprint) -> list[BurndownPoint]:
