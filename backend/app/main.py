@@ -17,6 +17,7 @@ from app.chats.context import register as register_chats_context
 from app.a2a.router import router as a2a_router
 from app.a2a.routing import route_loop
 from app.crons.scheduler import cron_loop
+from app.triggers.fire import trigger_loop
 from app.agent_runs.router import router as agent_runs_router
 from app.agent_runs.service import fail_orphaned_runs
 from app.agents.router import admin_router as admin_agents_router
@@ -124,6 +125,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     routing_task = asyncio.create_task(route_loop(stop_routing))
     # crons are started here too: their runs go to this process's runner connections
     cron_task = asyncio.create_task(cron_loop(stop_routing))
+    # and triggered chats, for the same reason
+    trigger_task = asyncio.create_task(trigger_loop(stop_routing))
     try:
         # a mounted sub-app's own lifespan never runs, so the host enters the session manager
         async with app.state.mcp.session_manager.run():
@@ -134,6 +137,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await asyncio.wait_for(routing_task, 5)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(cron_task, 5)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(trigger_task, 5)
         await hub.stop()
 
 

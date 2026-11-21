@@ -8,7 +8,7 @@ async def make_trigger(db, w, event: str, config: dict | None = None, **kw) -> T
     trigger = Trigger(
         project_id=uuid.UUID(w.project["id"]), name=kw.pop("name", f"On {event}"), event=event,
         config=config if config is not None else {}, prompt=kw.pop("prompt", "Look at it."),
-        owner_id=w.manager.id, created_by=w.manager.id, **kw,
+        owner_id=kw.pop("owner_id", w.manager.id), created_by=w.manager.id, **kw,
     )
     db.add(trigger)
     await db.commit()
