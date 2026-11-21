@@ -17,6 +17,7 @@ from app.chats.context import register as register_chats_context
 from app.a2a.router import router as a2a_router
 from app.a2a.routing import route_loop
 from app.crons.scheduler import cron_loop
+from app.triggers.context import register as register_triggers_context
 from app.triggers.fire import trigger_loop
 from app.agent_runs.router import router as agent_runs_router
 from app.agent_runs.service import fail_orphaned_runs
@@ -153,6 +154,7 @@ def create_app() -> FastAPI:
     register_memory_context()
     register_a2a_context()
     register_chats_context()
+    register_triggers_context()
     app = FastAPI(
         title="MegooColab",
         lifespan=lifespan,
