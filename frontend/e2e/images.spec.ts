@@ -12,12 +12,17 @@ import { buildBinaries, mintLinkedRunnerToken, onPrompt, readReports, say, start
  * Plan 28: images sent with a message reach the agent as images. A chat's first message carries one, and so does a
  * task comment sent to the agent before its next run; both show with their message, full size on click, and in the
  * task's Attachments. Needs the Go toolchain and git on the PATH. Project key IMG.
+ *
+ * MC-162: a PDF and a text file uploaded to a task open in the full-screen viewer from its Attachments, each with
+ * a Download button. Needs no runner. Project key PRV.
  */
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:8080";
 const WEB = { "X-Megoo-Client": "web" };
 const AGENT_NAME = `${ADMIN.name}'s Claude Code`;
 const SHOT = join(__dirname, "fixtures", "screenshot.png");
+const MIN_PDF = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+  "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n";
 const BRAINSTORM = "# Brainstorm: turn the task into an approved design";
 
 // a brainstorm run given images says so, then ends its turn
@@ -107,7 +112,7 @@ test("images reach the agent from a chat and from a task", async ({ browser }) =
   // it shows with the chat's first message, full size on click
   await view.getByRole("button", { name: "Open screenshot.png" }).click();
   const viewer = ui.getByRole("dialog", { name: "screenshot.png" });
-  await expect(viewer.getByRole("link", { name: "Download" })).toBeVisible();
+  await expect(viewer.getByRole("link", { name: "Download", exact: true })).toBeVisible();
   await ui.keyboard.press("Escape");
   await expect(viewer).toBeHidden();
 
@@ -128,6 +133,42 @@ test("images reach the agent from a chat and from a task", async ({ browser }) =
 
   // and it is one of the task's Attachments, from that message
   const attachments = ui.locator("section", { has: ui.getByRole("heading", { name: "Attachments" }) });
-  await expect(attachments.getByRole("img", { name: "screenshot.png" })).toBeVisible();
+  await expect(attachments.getByRole("button", { name: "screenshot.png", exact: true })).toBeVisible();
   await expect(attachments.getByRole("link", { name: `${ADMIN.name}'s message` })).toHaveAttribute("href", /^#activity-/);
+});
+
+test("a PDF and a text file open in the viewer from a task's Attachments", async ({ page }) => {
+  await setupOrSignIn(page);
+  const request = page.request;
+  const team = await post<{ id: string }>(request, "/api/teams", { name: "Preview Team", description: "" });
+  await post(request, "/api/projects", { key: "PRV", name: "Preview", description: "", team_ids: [team.id] });
+  const task = await post<{ key: string; number: number }>(request, "/api/projects/PRV/tasks", { title: "Files", type: "task" });
+  const upload = async (name: string, mimeType: string, body: string) => {
+    const r = await request.post(`/api/tasks/${task.key}/attachments`, {
+      multipart: { file: { name, mimeType, buffer: Buffer.from(body) } },
+      headers: WEB,
+    });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()) as { id: string };
+  };
+  const pdf = await upload("report.pdf", "application/pdf", MIN_PDF);
+  await upload("notes.txt", "text/plain", "hello from the notes");
+
+  // the PDF opens in the page, or says the browser can't show it, with its Download at hand
+  await page.goto(`/projects/PRV/tasks/${task.number}`);
+  const attachments = page.locator("section", { has: page.getByRole("heading", { name: "Attachments" }) });
+  await attachments.getByRole("button", { name: "report.pdf", exact: true }).click();
+  const viewer = page.getByRole("dialog", { name: "report.pdf" });
+  const canShow = await page.evaluate(() => navigator.pdfViewerEnabled);
+  if (canShow) await expect(viewer.locator(`iframe[src="/api/attachments/${pdf.id}?inline=1"]`)).toBeVisible();
+  else await expect(viewer.getByText("This browser can't show PDFs in the page")).toBeVisible();
+  await expect(viewer.getByRole("link", { name: "Download", exact: true })).toHaveAttribute("href", `/api/attachments/${pdf.id}`);
+
+  // the next file is the text file, shown as text
+  await page.keyboard.press("ArrowRight");
+  const text = page.getByRole("dialog", { name: "notes.txt" });
+  await expect(text.getByText("hello from the notes")).toBeVisible();
+  await expect(text.getByRole("link", { name: "Download", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(text).toBeHidden();
 });
