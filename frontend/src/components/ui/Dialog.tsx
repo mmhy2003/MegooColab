@@ -17,6 +17,7 @@ export function Dialog({
   bare = false,
   describedBy,
   phoneFull = false,
+  screen = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -34,6 +35,9 @@ export function Dialog({
   describedBy?: string;
   /** Below md, fill the screen: for a form too long for a phone's small box. */
   phoneFull?: boolean;
+  /** Fill the window with no card, title bar or padding: the content brings everything (the attachment viewer).
+   *  Escape stops here, so a drawer's window listener behind it doesn't close too. */
+  screen?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   // popups opened inside render into the dialog, not under it (see PortalContainer)
@@ -80,6 +84,7 @@ export function Dialog({
         // tooltip inside has claimed the key, nor in tests. Pickers that keep Escape for themselves stop it earlier.
         if (e.key === "Escape") {
           e.preventDefault();
+          if (screen) e.stopPropagation();
           onClose();
         }
       }}
@@ -90,11 +95,15 @@ export function Dialog({
         if (dismissible && pressedOutside.current && outside(e)) onClose();
         pressedOutside.current = false;
       }}
-      className={`card fixed inset-0 m-auto focus:outline-none max-h-[90vh] w-[calc(100%-2rem)] overflow-auto p-0 text-fg backdrop:bg-black/40 backdrop:backdrop-blur-sm ${wide ? "max-w-3xl" : "max-w-md"} ${phoneFull ? "max-md:m-0 max-md:h-dvh max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none" : ""}`}
+      className={
+        screen
+          ? "fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none overflow-hidden border-0 bg-neutral-950 p-0 text-neutral-100 focus:outline-none backdrop:bg-black/80"
+          : `card fixed inset-0 m-auto focus:outline-none max-h-[90vh] w-[calc(100%-2rem)] overflow-auto p-0 text-fg backdrop:bg-black/40 backdrop:backdrop-blur-sm ${wide ? "max-w-3xl" : "max-w-md"} ${phoneFull ? "max-md:m-0 max-md:h-dvh max-md:max-h-none max-md:w-full max-md:max-w-none max-md:rounded-none" : ""}`
+      }
     >
       {/* everything in the dialog, its own ✕ tooltip included, renders popups inside it (see PortalContainer) */}
       <PortalContainerContext.Provider value={element}>
-        {!bare && (
+        {!bare && !screen && (
           <div className="flex items-center justify-between border-b border-line px-4 py-3">
             <h2 className="text-sm font-bold text-cyan-ink glow-cyan">{title}</h2>
             <Hint label="Close">
@@ -104,7 +113,7 @@ export function Dialog({
             </Hint>
           </div>
         )}
-        <div className={bare ? "p-5" : "p-4"}>{children}</div>
+        {screen ? children : <div className={bare ? "p-5" : "p-4"}>{children}</div>}
       </PortalContainerContext.Provider>
     </dialog>
   );
