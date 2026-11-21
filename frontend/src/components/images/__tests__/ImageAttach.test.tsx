@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ImageAttach, ImageDropZone } from "@/components/images/ImageAttach";
@@ -104,6 +104,26 @@ describe("ImageAttach", () => {
     expect(screen.queryByRole("button", { name: "Remove a.png" })).toBeNull();
     expect(ids).toEqual(["img-2"]);
     await waitFor(() => expect(deleted).toEqual(["/api/images/img-1"])); // taken back on the server too
+  });
+
+  it("opens an image not sent yet, with no download", async () => {
+    render(<Box />);
+    fireEvent.change(fileInput(), { target: { files: [png()] } });
+    fireEvent.click(await screen.findByRole("button", { name: "Open shot.png" }));
+    const dialog = screen.getByRole("dialog", { name: "shot.png" });
+    expect(within(dialog).getByText("Not sent yet")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("link", { name: "Download" })).toBeNull();
+    expect(within(dialog).queryByRole("link", { name: "Open in new tab" })).toBeNull();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Remove shot.png" })).toBeInTheDocument();
+  });
+
+  it("steps through the images to send", async () => {
+    render(<Box />);
+    fireEvent.change(fileInput(), { target: { files: [png("a.png"), png("b.png")] } });
+    fireEvent.click(await screen.findByRole("button", { name: "Open b.png" }));
+    expect(within(screen.getByRole("dialog", { name: "b.png" })).getByText("2 of 2")).toBeInTheDocument();
   });
 
   it("keeps Send off while an upload is in flight", async () => {

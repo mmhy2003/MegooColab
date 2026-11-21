@@ -132,3 +132,48 @@ describe("Dialog on a phone", () => {
     expect(screen.getByRole("dialog", { name: "Add agent" }).className).toContain("max-md:h-dvh");
   });
 });
+
+describe("Dialog full screen", () => {
+  function openScreen(props: { screen?: boolean } = {}) {
+    const onClose = vi.fn();
+    render(
+      <Dialog open title="photo.png" onClose={onClose} {...props}>
+        <p>body</p>
+      </Dialog>,
+    );
+    return { onClose, dialog: screen.getByRole("dialog", { name: "photo.png" }) };
+  }
+
+  it("screen fills the window with no title bar", () => {
+    const { dialog } = openScreen({ screen: true });
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    expect(screen.queryByRole("heading")).toBeNull();
+    expect(dialog.className).not.toContain("card");
+  });
+
+  it("screen keeps Escape from reaching listeners outside", () => {
+    const outer = vi.fn();
+    window.addEventListener("keydown", outer);
+    try {
+      const { onClose, dialog } = openScreen({ screen: true });
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(outer).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", outer);
+    }
+  });
+
+  it("a normal dialog still lets Escape through", () => {
+    const outer = vi.fn();
+    window.addEventListener("keydown", outer);
+    try {
+      const { onClose, dialog } = openScreen();
+      fireEvent.keyDown(dialog, { key: "Escape" });
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(outer).toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", outer);
+    }
+  });
+});
