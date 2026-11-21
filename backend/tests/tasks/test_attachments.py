@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 from app.core.config import get_settings
@@ -71,3 +72,57 @@ async def test_direct_upload_served_inline_only_when_checked(client, db):
     kept = await client.get(f"/api/attachments/{svg['id']}?inline=1")
     assert kept.headers["content-disposition"].startswith("attachment")
     assert kept.headers["x-content-type-options"] == "nosniff"
+
+
+PDF = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
+
+
+async def test_real_pdf_is_stored_as_pdf_and_served_inline(client, db):
+    await _task(client, db)
+    att = (await client.post("/api/tasks/PAY-1/attachments", files={"file": ("r.pdf", PDF, "application/octet-stream")})).json()
+    assert att["content_type"] == "application/pdf" and att["image"] is False
+    shown = await client.get(f"/api/attachments/{att['id']}?inline=1")
+    assert shown.headers["content-disposition"].startswith("inline")
+    assert shown.headers["content-type"] == "application/pdf"
+    assert shown.headers["x-content-type-options"] == "nosniff"
+    plain = await client.get(f"/api/attachments/{att['id']}")
+    assert plain.headers["content-disposition"].startswith("attachment")
+
+
+async def test_fake_pdf_is_stored_as_octet_stream_and_stays_a_download(client, db):
+    await _task(client, db)
+    att = (await client.post("/api/tasks/PAY-1/attachments", files={"file": ("x.pdf", b"<html>hi</html>", "application/pdf")})).json()
+    assert att["content_type"] == "application/octet-stream"
+    r = await client.get(f"/api/attachments/{att['id']}?inline=1")
+    assert r.headers["content-disposition"].startswith("attachment")
+
+
+async def test_pdf_label_without_pdf_bytes_stays_a_download(client, db):
+    # a file uploaded before this change, labelled by the browser only
+    await _task(client, db)
+    att = (await client.post("/api/tasks/PAY-1/attachments", files={"file": ("old.pdf", b"not a pdf", "text/plain")})).json()
+    row = (await db.execute(select(Attachment))).scalar_one()
+    row.content_type = "application/pdf"
+    await db.commit()
+    r = await client.get(f"/api/attachments/{att['id']}?inline=1")
+    assert r.headers["content-disposition"].startswith("attachment")
+
+
+@pytest.mark.parametrize("name,body,ctype", [
+    ("a.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>", "image/svg+xml"),
+    ("a.html", b"<script>alert(1)</script>", "text/html"),
+    ("a.txt", b"hello", "text/plain"),
+])
+async def test_svg_html_and_text_are_never_inline(client, db, name, body, ctype):
+    await _task(client, db)
+    att = (await client.post("/api/tasks/PAY-1/attachments", files={"file": (name, body, ctype)})).json()
+    r = await client.get(f"/api/attachments/{att['id']}?inline=1")
+    assert r.headers["content-disposition"].startswith("attachment")
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+async def test_range_request_answers_206(client, db):
+    await _task(client, db)
+    att = (await client.post("/api/tasks/PAY-1/attachments", files={"file": ("v.mp4", b"0123456789", "video/mp4")})).json()
+    r = await client.get(f"/api/attachments/{att['id']}", headers={"Range": "bytes=2-5"})
+    assert r.status_code == 206 and r.content == b"2345"
