@@ -13,20 +13,33 @@ const brief = (over: Partial<ChatBrief> = {}): ChatBrief => ({
 });
 
 describe("ChatsCard", () => {
-  it("the status side is capped so the name keeps its room", () => {
+  it("puts the status on its own line, outside the link and never cut", () => {
     render(<ChatsCard chats={[brief()]} />);
     const status = screen.getByText("waiting: approve the plan");
-    expect(status).toHaveClass("max-w-[45%]", "truncate");
+    expect(status).not.toHaveClass("max-w-[45%]");
+    expect(status).not.toHaveClass("truncate");
+    expect(status).toHaveClass("break-words", "text-amber");
+    expect(status.closest("a")).toBeNull();
   });
 
   it("lists open chats with what each is doing, and links to all chats and a new one", () => {
     render(<ChatsCard chats={[brief(), brief({ id: "c2", title: "Bump axios", project_key: "WEB", state: "building", current_step: 2, steps_total: 3 })]} />);
     const card = screen.getByRole("region", { name: "Chats" });
-    const rows = within(card).getAllByRole("listitem").map((li) => li.textContent);
-    expect(rows[0]).toContain("Fix empty email · PAY");
-    expect(rows[0]).toContain("waiting: approve the plan");
-    expect(rows[1]).toContain("building step 2 of 3");
-    expect(within(card).getByRole("link", { name: "Fix empty email · PAY" })).toHaveAttribute("href", "/chats/c1");
+    const items = within(card).getAllByRole("listitem");
+    const link = within(card).getByRole("link", { name: "PAY Fix empty email" });
+    expect(link).toHaveAttribute("href", "/chats/c1");
+    const key = within(items[0]).getByText("PAY");
+    const title = within(items[0]).getByText("Fix empty email");
+    const status = within(items[0]).getByText("waiting: approve the plan");
+    expect(key).toHaveClass("font-mono", "shrink-0", "text-cyan-ink");
+    expect(title).toHaveClass("truncate");
+    expect(link).toContainElement(key);
+    expect(link).toContainElement(title);
+    // order inside the row: key, then title, then status
+    expect(key.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(title.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(items[1].textContent).toContain("building step 2 of 3");
+    expect(within(card).getByRole("link", { name: "WEB Bump axios" })).toHaveAttribute("href", "/chats/c2");
     expect(within(card).getByRole("link", { name: "New chat" })).toHaveAttribute("href", "/chats?new=1");
     expect(within(card).getByRole("link", { name: /^All chats/ })).toHaveAttribute("href", "/chats");
   });

@@ -20,11 +20,12 @@ export function ChatsCard({ chats }: { chats: ChatBrief[] }) {
             const state = c.state as ChatState;
             const tone = WAITING.includes(state) ? "text-amber" : state === "building" || state === "in_review" ? "text-cyan-ink" : "text-muted-foreground";
             return (
-              <li key={c.id} className="flex min-w-0 items-center gap-2 py-1.5 text-sm">
-                <Link href={`/chats/${c.id}`} className="min-w-0 flex-1 truncate text-fg no-underline hover:underline">
-                  {`${c.title} · ${c.project_key}`}
+              <li key={c.id} className="space-y-0.5 py-1.5 text-sm">
+                <Link href={`/chats/${c.id}`} className="group flex min-w-0 items-center gap-1.5 text-fg no-underline">
+                  <span className="shrink-0 font-mono text-xs text-cyan-ink">{c.project_key}</span>{" "}
+                  <span className="min-w-0 truncate group-hover:underline">{c.title}</span>
                 </Link>
-                <span className={`max-w-[45%] min-w-0 shrink truncate text-xs ${tone}`}>{chatStateText({ ...c, state })}</span>
+                <p className={`text-xs break-words ${tone}`}>{chatStateText({ ...c, state })}</p>
               </li>
             );
           })}
