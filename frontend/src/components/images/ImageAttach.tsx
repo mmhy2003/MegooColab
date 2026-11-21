@@ -1,27 +1,38 @@
 "use client";
 
 import { ImagePlus, X } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 
+import { AttachmentViewer } from "@/components/attachments/AttachmentViewer";
 import { ACCEPTED_IMAGES, type ImageDraft, MAX_IMAGES } from "@/lib/images";
+import { fromDraft } from "@/lib/preview";
 
-/** The message box's Add images button, the images added so far (✕ takes one out) and what was refused. */
+/** The message box's Add images button, the images added so far (a click opens one full screen, ✕ takes it out) and what was refused. */
 /** `compact`: on a phone the button is its icon alone (its name stays "Add images"), to share a row with Send. */
 export function ImageAttach({ draft, compact = false }: { draft: ImageDraft; compact?: boolean }) {
   const input = useRef<HTMLInputElement>(null);
   const n = draft.items.length;
+  const [open, setOpen] = useState<string | null>(null);
+  const files = useMemo(() => draft.items.map(fromDraft), [draft.items]);
   return (
     <div className="space-y-2">
       {n > 0 && (
         <ul className="flex flex-wrap gap-1.5" aria-label="Images to send">
           {draft.items.map((i) => (
             <li key={i.key} className="relative size-14 overflow-hidden rounded border border-line bg-surface-2">
-              {/* a local preview of the file being added (an object URL): next/image has nothing to optimise */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {i.preview && <img src={i.preview} alt={i.file.name} className="size-full object-cover" />}
-              {!i.id && (
-                <span aria-hidden className="absolute inset-x-1 bottom-1 h-[3px] animate-pulse rounded bg-cyan" />
-              )}
+              <button
+                type="button"
+                aria-label={`Open ${i.file.name}`}
+                onClick={() => setOpen(i.key)}
+                className="block size-full cursor-zoom-in"
+              >
+                {/* a local preview of the file being added (an object URL): next/image has nothing to optimise */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {i.preview && <img src={i.preview} alt={i.file.name} className="size-full object-cover" />}
+                {!i.id && (
+                  <span aria-hidden className="absolute inset-x-1 bottom-1 h-[3px] animate-pulse rounded bg-cyan" />
+                )}
+              </button>
               <button
                 type="button"
                 aria-label={`Remove ${i.file.name}`}
@@ -60,6 +71,7 @@ export function ImageAttach({ draft, compact = false }: { draft: ImageDraft; com
         />
       </div>
       {draft.error && <p role="alert" className="text-xs text-pink">{draft.error}</p>}
+      <AttachmentViewer files={files} openKey={open} onOpen={setOpen} onClose={() => setOpen(null)} />
     </div>
   );
 }
