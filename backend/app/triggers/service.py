@@ -17,7 +17,7 @@ from app.crons.models import Cron
 from app.kb.schemas import Named
 from app.projects.models import BoardColumn, Label, Project
 from app.tasks.models import Task
-from app.triggers import events
+from app.triggers import events, fire
 from app.triggers.models import FiringStatus, Trigger, TriggerFiring
 from app.triggers.schemas import FiringOut, FiringSubject, TriggerIn, TriggerOut, TriggerPatch
 from app.workflow.models import Needs, QuestionStatus, RunRole, TaskWorkflow, WorkflowQuestion
@@ -215,6 +215,31 @@ async def set_paused(db: AsyncSession, user: User, trigger: Trigger, paused: boo
     await audit.record(db, "trigger.paused" if paused else "trigger.resumed", actor_id=user.id,
                        target_type="trigger", target_id=trigger.id, data=_audit_data(trigger))
     return trigger
+
+
+async def try_now(db: AsyncSession, user: User, project: Project, trigger: Trigger) -> TriggerFiring:
+    """Fires once now on the newest thing that matches, even when paused; it counts toward the hourly limit."""
+    found = events.REGISTRY.get(trigger.event)
+    payload = await found.latest(db, trigger) if found is not None and found.latest is not None else None
+    if payload is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "nothing_to_try")
+    described = await found.describe(db, payload)
+    firing = TriggerFiring(trigger_id=trigger.id, event=trigger.event, subject=described.subject,
+                           what=described.what, status=FiringStatus.pending, tried=True)
+    db.add(firing)
+    await db.flush()
+    await fire.fire_one(db, firing)
+    await db.flush()
+    await audit.record(db, "trigger.tried", actor_id=user.id, target_type="trigger", target_id=trigger.id,
+                       data=_audit_data(trigger) | {"firing_id": str(firing.id)})
+    return firing
+
+
+async def firings(db: AsyncSession, trigger: Trigger, limit: int) -> list[TriggerFiring]:
+    return list((await db.execute(
+        select(TriggerFiring).where(TriggerFiring.trigger_id == trigger.id)
+        .order_by(TriggerFiring.created_at.desc(), TriggerFiring.id.desc()).limit(limit)
+    )).scalars())
 
 
 async def delete(db: AsyncSession, user: User, trigger: Trigger) -> None:
