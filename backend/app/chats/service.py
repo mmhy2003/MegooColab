@@ -230,14 +230,24 @@ async def create_round(
     return task
 
 
+async def open_chat(
+    db: AsyncSession, user: User, project: Project, agent: Agent, message: str, mode: ChatMode,
+    *, title: str | None = None,
+) -> tuple[Chat, Task]:
+    """A new chat of `agent` started by `user`, its first round's message `message` (a person's chat, or a
+    trigger's)."""
+    chat = Chat(project_id=project.id, started_by=user.id, agent_id=agent.id,
+                title=(title or first_line(message))[:200], mode=mode)
+    db.add(chat)
+    await db.flush()
+    task = await create_round(db, user, chat, message)
+    return chat, task
+
+
 async def start_chat(db: AsyncSession, user: User, data: ChatIn) -> Chat:
     project = await get_project_for(db, user, data.project_key, write=True)
     agent = await _chosen_agent(db, user, project, data.agent_id)
-    chat = Chat(project_id=project.id, started_by=user.id, agent_id=agent.id, title=first_line(data.message),
-                mode=ChatMode(data.mode))
-    db.add(chat)
-    await db.flush()
-    task = await create_round(db, user, chat, data.message)
+    chat, task = await open_chat(db, user, project, agent, data.message, ChatMode(data.mode))
     await link_images(db, user, data.image_ids, task, MessageKind.first_message, task.id)
     return chat
 
@@ -294,6 +304,7 @@ def _board(task: Task, wf: TaskWorkflow | None, chat: Chat) -> str | None:
 
 
 async def chat_out(db: AsyncSession, chat: Chat, viewer: User | None) -> ChatOut:
+    from app.triggers.service import chat_trigger  # local: the trigger modules import this one
     from app.workflow import engine
     from app.workflow.rules import can_act
 
@@ -331,6 +342,7 @@ async def chat_out(db: AsyncSession, chat: Chat, viewer: User | None) -> ChatOut
         waiting_on=await _waiting_on(db, latest) if state == "waiting_answer" else [],
         intent=await intent(db, chat, latest, latest_wf) if acting else "closed", rounds=out_rounds,
         takes_images=await task_takes_images(db, latest) if latest is not None else await agent_takes_images(db, agent),
+        trigger=await chat_trigger(db, chat.id),
     )
 
 

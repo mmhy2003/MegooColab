@@ -79,6 +79,15 @@ class RoundOut(BaseModel):
     images: list[ImageRef] = []  # sent with its first message
 
 
+class ChatTrigger(BaseModel):
+    """The trigger that started a chat, and what happened."""
+
+    id: uuid.UUID
+    name: str
+    what: str
+    keep_open: bool
+
+
 class ChatOut(BaseModel):
     id: uuid.UUID
     project_key: str
@@ -95,3 +104,4 @@ class ChatOut(BaseModel):
     can_act: bool
     rounds: list[RoundOut]
     takes_images: bool = False  # its messages may carry images (the latest round's agent can be sent them)
+    trigger: ChatTrigger | None = None  # started by a trigger's firing (None once the trigger is deleted)
