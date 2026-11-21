@@ -17,8 +17,8 @@ class Kind(StrEnum):
     agent_offline = "agent_offline"
     question_waiting = "question_waiting"
     agent_replied = "agent_replied"  # a freestyle chat's agent answered
-    task_done = "task_done"  # a task assigned to me or my agent moved into Done
-    team_task_done = "team_task_done"  # any other task of my teams' projects moved into Done
+    task_done = "task_done"  # a task (not a subtask) assigned to me or my agent moved into Done
+    team_task_done = "team_task_done"  # any other task (not a subtask) of my teams' projects moved into Done
 
 
 # (in_app, email, push, telegram) when a user has not chosen; push and Telegram stay off until the person ticks them.

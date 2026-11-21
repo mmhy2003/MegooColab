@@ -1,5 +1,6 @@
 """A task reaching Done: whoever it is assigned to (for an agent, its owner) hears it as task_done, everyone else on the
-project's teams as team_task_done. Never the person who moved it; once per move into Done."""
+project's teams as team_task_done. Never the person who moved it; once per move into Done. A subtask reaching Done tells
+nobody: its parent task stands for it."""
 
 import uuid
 
@@ -95,6 +96,55 @@ async def test_a_chats_agent_moving_a_task_to_done_tells_its_owner(client, db, t
     assert mine.body == "Card retries time out — moved to Done by laptop-claude (your agent)"
     [theirs] = await _done_rows(w.other.id)
     assert theirs.body == "Card retries time out — moved to Done by laptop-claude"
+
+
+def _subtask(tc, parent_key_id: str, title: str = "Step 1") -> dict:
+    r = tc.post("/api/projects/PAY/tasks", json={"title": title, "type": "subtask", "parent_id": parent_key_id})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def test_the_workflow_finishing_a_subtask_tells_nobody(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _board(db, tc)
+    member = await _member(db, tc)
+    sub = _subtask(tc, b.task["id"])  # a plan step: no assignee, like the ones Build makes
+    await _workflow_moves(uuid.UUID(sub["id"]), "done")
+    assert await _done_rows(b.manager.id) == []
+    assert await _done_rows(member.id) == []
+
+
+async def test_a_person_moving_a_subtask_to_done_tells_nobody(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _board(db, tc)
+    member = await _member(db, tc)
+    sub = _subtask(tc, b.task["id"])
+    assert _move(tc, sub["key"], b.cols["done"]).status_code == 200
+    assert await _done_rows(member.id) == []
+
+
+async def test_a_subtask_assigned_to_a_person_does_not_tell_them(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _board(db, tc)
+    member = await _member(db, tc)
+    sub = _subtask(tc, b.task["id"])
+    await db.execute(update(Task).where(Task.id == uuid.UUID(sub["id"])).values(assignee_user_id=member.id))
+    await db.commit()
+    assert _move(tc, sub["key"], b.cols["done"]).status_code == 200  # the manager moves it
+    assert await _done_rows(member.id) == []
+
+
+async def test_the_parent_finishing_after_its_subtask_tells_each_person_once(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b = await _board(db, tc)
+    member = await _member(db, tc)
+    sub = _subtask(tc, b.task["id"])
+    await _workflow_moves(uuid.UUID(sub["id"]), "done")
+    await _workflow_moves(b.task_id, "done")
+    [mine] = await _done_rows(b.manager.id)
+    assert (mine.kind, mine.task_id) == ("task_done", b.task_id)
+    [theirs] = await _done_rows(member.id)
+    assert (theirs.kind, theirs.task_id) == ("team_task_done", b.task_id)
 
 
 def test_defaults_and_email_look():
