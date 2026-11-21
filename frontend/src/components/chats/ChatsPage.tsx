@@ -36,18 +36,22 @@ function Chats({ projectKey, chatId }: { projectKey?: string; chatId?: string })
   // both kept in this browser
   const [picked, setPicked] = useStoredState<string[]>("chats.projects", [], "local");
   const [show, setShow] = useStoredState<ChatFilter>("chats.filter", "active", "local");
+  // whether the list shows the chats triggers started (on by default), kept in this browser too
+  const [triggered, setTriggered] = useStoredState<boolean>("chats.triggered", true, "local");
   // a project's tab asks for its chats; the Chats page takes them all and picks here
   const chats = useChats(projectKey);
+  // the triggered chats left out first, so the counts and filters only see the rest
+  const shown = useMemo(() => (triggered ? chats.data : chats.data?.filter((c) => !c.trigger)), [chats.data, triggered]);
   // a picked project no longer in view (deleted, or the viewer left its team) is ignored
   const known = useMemo(
     () => (projects.data ? picked.filter((k) => projects.data.some((p) => p.key === k)) : picked),
     [picked, projects.data],
   );
   const scoped = useMemo(
-    () => (projectKey || known.length === 0 ? chats.data : chats.data?.filter((c) => known.includes(c.project_key))),
-    [chats.data, projectKey, known],
+    () => (projectKey || known.length === 0 ? shown : shown?.filter((c) => known.includes(c.project_key))),
+    [shown, projectKey, known],
   );
-  const counts = useMemo(() => countByProject(chats.data ?? []), [chats.data]);
+  const counts = useMemo(() => countByProject(shown ?? []), [shown]);
   const area = useRef<HTMLDivElement | null>(null);
   useFillWindow(area);
   const newChat = (
@@ -76,6 +80,10 @@ function Chats({ projectKey, chatId }: { projectKey?: string; chatId?: string })
             )}
           </div>
           {scoped && <StateFilter chats={scoped} value={show} onChange={setShow} />}
+          <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" checked={triggered} onChange={(e) => setTriggered(e.target.checked)} />
+            Chats started by triggers
+          </label>
           {chats.error && <p role="alert" className="text-sm text-pink">{errorMessage(chats.error)}</p>}
           <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
             {scoped && (

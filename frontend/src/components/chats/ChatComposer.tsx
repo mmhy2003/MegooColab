@@ -20,7 +20,9 @@ export function ChatComposer({ chat, agentRunning }: { chat: Chat; agentRunning:
   const agentName = chat.agent?.name ?? "the agent";
   const images = useImageDraft(chat.takes_images ? undefined : `Update the runner on ${agentName}'s machine to send images.`);
   if (chat.status === "ended" || (chat.intent ?? "closed") === "closed") {
-    return <p className="py-3 text-center text-sm text-muted-foreground">This chat has ended.</p>;
+    // a trigger's chat ends by itself once the agent has replied, unless the trigger keeps it open
+    const ended = chat.trigger && !chat.trigger.keep_open ? "This chat ended when the agent replied." : "This chat has ended.";
+    return <p className="py-3 text-center text-sm text-muted-foreground">{ended}</p>;
   }
   const agent = chat.agent?.name ?? "the agent";
   const send = async () => {
