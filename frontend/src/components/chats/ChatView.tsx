@@ -13,6 +13,7 @@ import { ChatProjectWait } from "@/components/chats/ChatProjectWait";
 import { EndChatButton, useEndChat } from "@/components/chats/EndChatButton";
 import { RoundDivider } from "@/components/chats/RoundDivider";
 import { RoundSections } from "@/components/chats/RoundSections";
+import { TriggerChip } from "@/components/chats/TriggerMessage";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/shadcn/dropdown-menu";
 import { FollowRoom, JumpButtons } from "@/components/task/JumpButtons";
 import { PROGRAM_LABEL, useAgentRuns } from "@/lib/agents";
@@ -171,7 +172,10 @@ export function ChatView({ chatId }: { chatId: string }) {
             <span className="text-muted-foreground">{stateText(c)}</span>
           )}
           {freestyle ? (
-            <FreestyleChip className="ml-auto" />
+            <>
+              {c.trigger && <TriggerChip className="ml-auto" />}
+              <FreestyleChip className={c.trigger ? "" : "ml-auto"} />
+            </>
           ) : (
             <div className="ml-auto max-md:hidden">
               <ChatProgress round={latest} />

@@ -108,13 +108,13 @@ def _github_like(kind: GitKind, event: str, p: dict) -> list[GitEvent]:
     number, branch = _int(pr.get("number")), _str(_dict(pr.get("head")).get("ref"))
     actor = _sender(kind, p.get("sender"))
     if event == "pull_request" and number and actor:
-        url = _str(pr.get("html_url"))
+        data = {"url": _str(pr.get("html_url")), "title": excerpt(pr.get("title")),
+                "base": _str(_dict(pr.get("base")).get("ref"))}
         if action == "opened":
-            data = {"url": url, "title": excerpt(pr.get("title")), "base": _str(_dict(pr.get("base")).get("ref"))}
             return [GitEvent("git.pr_opened", path, number, branch, actor, data)]
         if action == "closed":
             return [GitEvent("git.pr_merged" if pr.get("merged") is True else "git.pr_closed", path, number, branch,
-                             actor, {"url": url})]
+                             actor, data)]
         return []
     if event == "issue_comment" and action == "created" and actor:
         issue, comment = _dict(p.get("issue")), _dict(p.get("comment"))
@@ -202,12 +202,12 @@ def _gitlab(event: str, p: dict) -> list[GitEvent]:
         if number is None:
             return []
         action = attrs.get("action")
+        data = {"url": url, "title": excerpt(attrs.get("title")), "base": _str(attrs.get("target_branch"))}
         if action == "open":
-            data = {"url": url, "title": excerpt(attrs.get("title")), "base": _str(attrs.get("target_branch"))}
             return [GitEvent("git.pr_opened", path, number, branch, actor, data)]
         if action in ("merge", "close"):
             return [GitEvent("git.pr_merged" if action == "merge" else "git.pr_closed", path, number, branch, actor,
-                             {"url": url})]
+                             data)]
         if action == "approved":
             data = {"review_id": None, "verdict": "approved", "excerpt": "", "url": url}
             return [GitEvent("git.reviewed", path, number, branch, actor, data)]

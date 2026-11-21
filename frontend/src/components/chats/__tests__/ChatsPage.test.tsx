@@ -119,6 +119,31 @@ describe("ChatsPage filters", () => {
     expect(chip(/^Ended/)).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("hides triggered chats when the switch is off, and remembers it", async () => {
+    const fired = { id: "c7", project_key: "PAY", title: "Fired", status: "open", state: "talking", can_act: true, rounds: [],
+      trigger: { id: "tr1", name: "Bug fixed", what: "PAY-7 finished", keep_open: false } };
+    CHATS.push(fired);
+    try {
+      const { unmount } = show();
+      expect(await screen.findByText("Fired")).toBeInTheDocument();
+      const box = screen.getByRole("checkbox", { name: "Chats started by triggers" });
+      expect(box).toBeChecked();
+      expect(chip(/^All/)).toHaveTextContent("7");
+      fireEvent.click(box);
+      expect(screen.queryByText("Fired")).toBeNull();
+      expect(screen.getByText("Talks")).toBeInTheDocument();
+      expect(chip(/^All/)).toHaveTextContent("6");
+      expect(chip(/^Open/)).toHaveTextContent("2");
+      unmount();
+      show();
+      await screen.findByText("Talks");
+      expect(screen.getByRole("checkbox", { name: "Chats started by triggers" })).not.toBeChecked();
+      expect(screen.queryByText("Fired")).toBeNull();
+    } finally {
+      CHATS.pop();
+    }
+  });
+
   it("says so when a filter leaves nothing", async () => {
     CHATS.splice(0, 1);
     try {

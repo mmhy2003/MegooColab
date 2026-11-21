@@ -17,6 +17,8 @@ from app.chats.context import register as register_chats_context
 from app.a2a.router import router as a2a_router
 from app.a2a.routing import route_loop
 from app.crons.scheduler import cron_loop
+from app.triggers.context import register as register_triggers_context
+from app.triggers.fire import trigger_loop
 from app.agent_runs.router import router as agent_runs_router
 from app.agent_runs.service import fail_orphaned_runs
 from app.agents.router import admin_router as admin_agents_router
@@ -44,6 +46,7 @@ from app.kb.context import register as register_kb_context
 from app.kb.router import router as kb_router
 from app.kb_drafts.router import router as kb_drafts_router
 from app.crons.router import router as crons_router
+from app.triggers.router import router as triggers_router
 from app.secrets.router import router as secrets_router
 from app.mcp_server.server import MCP_PATH, build_mcp
 from app.memory import dream as _memory_dream  # noqa: F401 - registers the dreaming jobs
@@ -124,6 +127,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     routing_task = asyncio.create_task(route_loop(stop_routing))
     # crons are started here too: their runs go to this process's runner connections
     cron_task = asyncio.create_task(cron_loop(stop_routing))
+    # and triggered chats, for the same reason
+    trigger_task = asyncio.create_task(trigger_loop(stop_routing))
     try:
         # a mounted sub-app's own lifespan never runs, so the host enters the session manager
         async with app.state.mcp.session_manager.run():
@@ -134,6 +139,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await asyncio.wait_for(routing_task, 5)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(cron_task, 5)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(trigger_task, 5)
         await hub.stop()
 
 
@@ -148,6 +155,7 @@ def create_app() -> FastAPI:
     register_memory_context()
     register_a2a_context()
     register_chats_context()
+    register_triggers_context()
     app = FastAPI(
         title="MegooColab",
         lifespan=lifespan,
@@ -210,6 +218,7 @@ def create_app() -> FastAPI:
         kb_drafts_router,
         secrets_router,
         crons_router,
+        triggers_router,
         memory_router,
         a2a_router,
         git_router,

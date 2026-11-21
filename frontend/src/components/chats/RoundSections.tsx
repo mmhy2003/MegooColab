@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { TriggerMessage } from "@/components/chats/TriggerMessage";
 import { ImageGallery } from "@/components/images/ImageGallery";
 import { TaskQuestions } from "@/components/questions/TaskQuestions";
 import { ActivityThread } from "@/components/task/ActivityThread";
@@ -67,6 +68,8 @@ export function RoundSections({ chat, round, latest }: { chat: Chat; round: Chat
 
   return (
     <div className="space-y-6">
+      {/* a trigger's chat opens with the trigger's prompt and what happened, where a person's opens with their words */}
+      {round.n === 1 && chat.trigger && <TriggerMessage chat={chat} prompt={task.data?.description_md ?? ""} />}
       {(round.images ?? []).length > 0 && (
         <section aria-label="Images with the first message">
           <h3 className="text-xs tracking-wider text-muted-foreground uppercase">Images with the first message</h3>

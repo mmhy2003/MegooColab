@@ -5,15 +5,18 @@ When a turn ends:
   an open question it asked       -> wait for the answer (Needs.question)
   an answer that never reached it -> deliver it (the session resumes with it)
   a message sent since it queued  -> the next turn starts on its own
-  otherwise                       -> wait for the next message (Needs.reply), and tell the chat's starter once
+  otherwise                       -> wait for the next message (Needs.reply), and tell the chat's starter once;
+                                     a chat a trigger started ends here instead, unless the trigger keeps it open
 A failed turn, or one cancelled by nothing a person did, waits for the next message too: never a retry, never an
-escalation, and `wf.failures` is not counted (a turn that always fails cannot loop).
+escalation, and `wf.failures` is not counted (a turn that always fails cannot loop). A triggered chat stays open.
+On a triggered chat's first turn the starter is told only as the trigger's switches say (notify_reply for a reply,
+notify_problems for a failure); later turns are told as any other.
 
 What a turn is told: the person's messages in freestyle's own words (instructions.FREESTYLE_RULE). A turn that
 resumes the conversation's session gets only the new ones; one that starts fresh gets the conversation so far.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +29,7 @@ from app.projects.models import Project
 from app.tasks.models import Comment, Delivery, Task, TaskEvent
 from app.workflow import engine, instructions, questions
 from app.workflow.context import _escape, wrap_untrusted
-from app.workflow.models import Needs, QuestionStatus, RunRole, TaskWorkflow, WorkflowQuestion
+from app.workflow.models import Needs, QuestionStatus, RunRole, Stage, TaskWorkflow, WorkflowQuestion
 
 SUMMARY_CHARS = 500
 CONVERSATION_CHARS = 12_000
@@ -143,12 +146,64 @@ async def handle_turn_end(db: AsyncSession, wf: TaskWorkflow, task: Task, run: A
         await queue_turn(db, wf, task, requested_by=await engine.owner_id(db, run))
         return
     await engine.wait_for(db, wf, Needs.reply, notify=False)  # not a Needs you item: the turn just replied
+    await _end_if_triggered(db, wf, task)
     await _notify_replied(db, task, run)
 
 
+async def _end_if_triggered(db: AsyncSession, wf: TaskWorkflow, task: Task) -> bool:
+    """A chat a trigger started, and not kept open, ends once the agent replied: the round finishes as on "End
+    chat", with nobody told it finished (the reply is). A chat a person is acting on (locked) or already ended stays
+    as it is. Skipping a locked chat keeps the lock order chat -> task -> workflow safe."""
+    from app.chats.models import Chat, ChatStatus  # local: the chats modules import the engine
+    from app.triggers.service import firing_of_chat  # local: the triggers start chats
+    from app.workflow import finish  # local: finish imports the engine, which imports this module
+
+    firing = await firing_of_chat(db, task.chat_id) if task.chat_id is not None else None
+    if firing is None or firing.keep_open:
+        return False
+    chat = (await db.execute(
+        select(Chat).where(Chat.id == task.chat_id).with_for_update(skip_locked=True)
+    )).scalar_one_or_none()
+    if chat is None or chat.status == ChatStatus.ended:
+        return False
+    wf.stage = Stage.done
+    await finish.finish_workflow(db, wf, task, None, tell=False)
+    chat.status = ChatStatus.ended
+    chat.ended_at = chat.last_activity_at = datetime.now(UTC)
+    return True
+
+
+async def _silenced(db: AsyncSession, task: Task, run: AgentRun, *, failed: bool) -> bool:
+    """On the turn a trigger started (the round's first freestyle run), the trigger's switch says whether the
+    starter hears of it."""
+    from app.triggers.models import Trigger  # local: the triggers start chats
+    from app.triggers.service import firing_of_chat
+
+    firing = await firing_of_chat(db, task.chat_id) if task.chat_id is not None else None
+    if firing is None:
+        return False
+    earlier = await db.scalar(
+        select(AgentRun.id)
+        .where(
+            AgentRun.task_id == task.id,
+            AgentRun.workflow_role == RunRole.freestyle,
+            AgentRun.id != run.id,
+            AgentRun.created_at <= run.created_at,
+        )
+        .limit(1)
+    )
+    if earlier is not None:
+        return False
+    trigger = await db.get(Trigger, firing.trigger_id)
+    return not (trigger.notify_problems if failed else trigger.notify_reply)
+
+
 async def _notify_replied(db: AsyncSession, task: Task, run: AgentRun, *, failed: bool = False) -> None:
-    """The chat's starter hears once that the turn ended: the agent replied, or couldn't finish. A task not in a
-    chat (none yet starts a freestyle round) falls back to the agent's owner, linked to the board."""
+    """The chat's starter hears once that the turn ended: the agent replied, or couldn't finish (unless the trigger
+    that started the turn says not to). A task not in a chat (none yet starts a freestyle round) falls back to the
+    agent's owner, linked to the board."""
+    if await _silenced(db, task, run, failed=failed):
+        return
     agent = await db.get(Agent, run.agent_id)
     project = await db.get(Project, task.project_id)
     key = f"{project.key}-{task.number}"
