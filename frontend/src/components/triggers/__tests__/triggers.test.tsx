@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
+  useParams: () => ({ key: "PAY", triggerId: "t1" }),
   useRouter: () => ({ push, replace: vi.fn() }),
   usePathname: () => "/projects/PAY/triggers",
   useSearchParams: () => new URLSearchParams(),
 }));
 
+import TriggerPage from "@/app/(app)/projects/[key]/triggers/[triggerId]/page";
 import { TriggerEditor } from "@/components/triggers/TriggerEditor";
 import { TriggerList } from "@/components/triggers/TriggerList";
 import { EVENTS } from "@/lib/triggers";
@@ -38,12 +40,18 @@ const CRONNED = {
 };
 
 let triggers: unknown[] = [];
+let trigger: unknown = TRIGGER;
+let firings: unknown[] = [];
+let role = "manager";
 let sprintsEnabled = true;
 let webhookStatus = "not_set_up";
 let calls: { url: string; method: string; body?: unknown }[] = [];
 
 beforeEach(() => {
   triggers = [TRIGGER, MOVED, CRONNED];
+  trigger = TRIGGER;
+  firings = [];
+  role = "manager";
   sprintsEnabled = true;
   webhookStatus = "not_set_up";
   calls = [];
@@ -53,13 +61,20 @@ beforeEach(() => {
     calls.push({ url, method, body });
     if (url.endsWith("/columns")) return new Response(JSON.stringify([{ id: "col1", name: "Ready", position: 1, category: "todo", task_count: 0 }]), { status: 200 });
     if (url.endsWith("/labels")) return new Response(JSON.stringify([{ id: "l1", name: "backend", color: "#fff" }]), { status: 200 });
-    if (url === "/api/projects/PAY") return new Response(JSON.stringify({ key: "PAY", sprints_enabled: sprintsEnabled }), { status: 200 });
+    if (url === "/api/auth/me") return new Response(JSON.stringify({ user: { id: "u1", name: "Mia", role } }), { status: 200 });
+    if (url === "/api/projects/PAY") return new Response(JSON.stringify({ key: "PAY", name: "Payments", status: "active", sprints_enabled: sprintsEnabled }), { status: 200 });
     if (url.endsWith("/agents")) return new Response(JSON.stringify([
       { id: "a1", name: "laptop", can_use: true }, { id: "a2", name: "not mine", can_use: false },
     ]), { status: 200 });
     if (url.endsWith("/repositories")) return new Response(JSON.stringify([{ id: "r1", name: "payments", webhook_status: webhookStatus }]), { status: 200 });
     if (url.endsWith("/crons")) return new Response(JSON.stringify([{ id: "c1", name: "Nightly deps" }]), { status: 200 });
     if (method === "POST" || method === "PATCH") return new Response(JSON.stringify(TRIGGER), { status: 200 });
+    if (method === "DELETE") return new Response(null, { status: 204 });
+    if (url.endsWith("/triggers/t1/firings")) return new Response(JSON.stringify(firings), { status: 200 });
+    if (url.endsWith("/triggers/t1")) {
+      if (trigger === null) return new Response(JSON.stringify({ detail: "Not found" }), { status: 404 });
+      return new Response(JSON.stringify(trigger), { status: 200 });
+    }
     return new Response(JSON.stringify(triggers), { status: 200 });
   }));
 });
@@ -271,5 +286,106 @@ describe("TriggerEditor", () => {
     expect(save()).toBeEnabled();
     fireEvent.change(screen.getByLabelText("Prompt"), { target: { value: "  " } });
     expect(save()).toBeDisabled();
+  });
+});
+
+describe("TriggerPage", () => {
+  const SKIPPED = {
+    ...FIRING, id: "f2", created_at: "2026-11-20T11:00:00Z", chat_id: null, agent: null, result: "skipped", excerpt: "no_agent",
+    subject: { kind: "task", label: "PAY-14", title: "Export CSV", link: "/projects/PAY/tasks/14", note: "finished" },
+  };
+
+  it("the trigger page shows firings and links to their chats", async () => {
+    firings = [FIRING, SKIPPED];
+    trigger = { ...TRIGGER, paused: true, broken: "label_deleted", agent: { id: "a1", name: "laptop" }, any_agent: false };
+    wrap(<TriggerPage />);
+    expect(await screen.findByRole("heading", { name: "Release notes" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Triggers" })).toHaveAttribute("href", "/projects/PAY/triggers");
+    expect(screen.getByText("A task is finished")).toBeInTheDocument();
+    expect(await screen.findByText("story, task, bug · label backend")).toBeInTheDocument();
+    expect(screen.getByText("Runs as Mia")).toBeInTheDocument();
+    expect(screen.getByText("Agent: laptop")).toBeInTheDocument();
+    expect(screen.getByText("Paused")).toBeInTheDocument();
+    expect(screen.getByText("Broken: its label was deleted")).toHaveClass("text-pink");
+    expect(document.querySelector("pre")).toHaveTextContent("Write the release notes. Then more.");
+
+    const table = await screen.findByRole("table");
+    expect([...table.querySelectorAll("th")].map((h) => h.textContent)).toEqual(["Fired at", "What happened", "Agent", "Result"]);
+    const [, replied, skipped] = within(table).getAllByRole("row");
+    expect(within(replied).getByText(new Date(FIRING.created_at).toLocaleString())).toBeInTheDocument();
+    expect(within(replied).getByRole("link", { name: /PAY-12/ })).toHaveAttribute("href", "/projects/PAY/tasks/12");
+    expect(within(replied).getByText(/Fix login/)).toBeInTheDocument();
+    expect(within(replied).getByText("finished")).toBeInTheDocument();
+    expect(within(replied).getByText("laptop")).toBeInTheDocument();
+    expect(within(replied).getByRole("link", { name: "Replied" })).toHaveAttribute("href", "/chats/ch1");
+    expect(within(replied).getByText("Done.")).toBeInTheDocument();
+    expect(within(skipped).getByText("—")).toBeInTheDocument();
+    expect(within(skipped).getByText("Skipped")).toBeInTheDocument();
+    expect(within(skipped).queryByRole("link", { name: "Skipped" })).not.toBeInTheDocument();
+    expect(within(skipped).getByText("No agent can take it")).toBeInTheDocument();
+  });
+
+  it("says when there are no firings, and any free agent", async () => {
+    wrap(<TriggerPage />);
+    expect(await screen.findByText("No firings yet.")).toBeInTheDocument();
+    expect(screen.getByText("Agent: any free agent")).toBeInTheDocument();
+  });
+
+  it("shows not found on a 404", async () => {
+    trigger = null;
+    wrap(<TriggerPage />);
+    expect(await screen.findByText("This page doesn't exist")).toBeInTheDocument();
+  });
+
+  it("Try it posts and is hidden for pr_merged or with no try_subject", async () => {
+    wrap(<TriggerPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Try it on PAY-12" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url === "/api/projects/PAY/triggers/t1/try")).toBe(true));
+    await waitFor(() => expect(calls.filter((c) => c.method === "GET" && c.url === "/api/projects/PAY/triggers/t1/firings").length).toBeGreaterThan(1));
+    cleanup();
+
+    trigger = { ...TRIGGER, event: "pr_merged", config: {} };
+    wrap(<TriggerPage />);
+    await screen.findByRole("button", { name: "Edit" });
+    expect(screen.queryByRole("button", { name: /Try it/ })).not.toBeInTheDocument();
+    cleanup();
+
+    trigger = { ...TRIGGER, try_subject: null };
+    wrap(<TriggerPage />);
+    await screen.findByRole("button", { name: "Edit" });
+    expect(screen.queryByRole("button", { name: /Try it/ })).not.toBeInTheDocument();
+  });
+
+  it("pauses, resumes and edits", async () => {
+    wrap(<TriggerPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Pause" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url === "/api/projects/PAY/triggers/t1/pause")).toBe(true));
+    cleanup();
+    trigger = { ...TRIGGER, paused: true };
+    wrap(<TriggerPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.url === "/api/projects/PAY/triggers/t1/resume")).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("dialog", { name: "Edit Release notes" })).toBeInTheDocument();
+  });
+
+  it("delete asks first", async () => {
+    wrap(<TriggerPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Delete Release notes?" });
+    expect(dialog).toHaveTextContent("Its firings go with it. The chats it started stay.");
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete trigger" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/projects/PAY/triggers"));
+    expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/projects/PAY/triggers/t1")).toBe(true);
+  });
+
+  it("members see no buttons", async () => {
+    role = "member";
+    firings = [FIRING];
+    wrap(<TriggerPage />);
+    await screen.findByRole("table");
+    expect(screen.getByRole("heading", { name: "Release notes" })).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
