@@ -403,6 +403,27 @@ def _upload_root() -> Path:
     return Path(get_settings().upload_dir)
 
 
+PDF_MAGIC = b"%PDF-"
+
+
+def _upload_type(head: bytes, image_type: str | None, claimed: str | None) -> str:
+    """The type a file is stored with: an image or a PDF by its bytes; a file that only claims to be a PDF is not one."""
+    if image_type:
+        return image_type
+    if head.startswith(PDF_MAGIC):
+        return "application/pdf"
+    claimed = (claimed or "application/octet-stream")[:200]
+    return "application/octet-stream" if claimed.split(";")[0].strip().lower() == "application/pdf" else claimed
+
+
+def _is_pdf(att: Attachment, path: Path) -> bool:
+    """A file labelled PDF whose bytes start like one, read now: uploads from before the label was checked work too."""
+    if att.content_type != "application/pdf":
+        return False
+    with path.open("rb") as f:
+        return f.read(len(PDF_MAGIC)) == PDF_MAGIC
+
+
 @router.get("/api/tasks/{key}/attachments")
 async def list_attachments(key: str, user: AuthedUser, db: DbSession) -> list[AttachmentOut]:
     task, _ = await get_task_for(db, user, key)
@@ -418,12 +439,12 @@ async def upload_attachment(key: str, file: UploadFile, user: AuthedUser, db: Db
     storage_key = f"{task.id}/{uuid.uuid4().hex}"
     dest = _upload_root() / storage_key
     size, head = await save_upload(file, dest, MAX_ATTACHMENT_BYTES, "attachment_too_large")
-    # an image is recognised by its bytes: only then is it shown in the page, whatever the browser called it
+    # an image or a PDF is recognised by its bytes: only then is it shown in the page, whatever the browser called it
     image_type = sniff(head)
     att = Attachment(
         task_id=task.id,
         filename=safe_filename(file.filename),
-        content_type=image_type or (file.content_type or "application/octet-stream")[:200],
+        content_type=_upload_type(head, image_type, file.content_type),
         size=size,
         storage_key=storage_key,
         uploaded_by=user.id,
@@ -448,14 +469,15 @@ async def _attachment(db, user: User, attachment_id: uuid.UUID, write: bool = Fa
 async def download_attachment(
     attachment_id: uuid.UUID, user: AuthedUser, db: DbSession, inline: bool = False
 ) -> FileResponse:
-    """The file, as a download; `inline` shows it in the page instead, only for an image checked by its bytes
-    (never SVG or HTML). The browser is told not to guess the type either way."""
+    """The file, as a download; `inline` shows it in the page instead, only for an image or a PDF checked by its
+    bytes (never SVG or HTML). The browser is told not to guess the type either way."""
     att, _ = await _attachment(db, user, attachment_id)
     path = _upload_root() / att.storage_key
     if not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "file_missing")
+    shown = inline and (att.image or _is_pdf(att, path))
     return FileResponse(path, media_type=att.content_type, filename=att.filename,
-                        content_disposition_type="inline" if inline and att.image else "attachment",
+                        content_disposition_type="inline" if shown else "attachment",
                         headers={"X-Content-Type-Options": "nosniff"})
 
 
