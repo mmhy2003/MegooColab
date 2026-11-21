@@ -28,11 +28,16 @@ describe("ImageGallery", () => {
     expect(within(viewer).getByText("2 of 3")).toBeInTheDocument();
     expect(within(viewer).getByText("388.0 KB")).toBeInTheDocument();
     expect(within(viewer).getByRole("link", { name: "Download" })).toHaveAttribute("href", "/api/attachments/i2");
+    expect(within(viewer).getByRole("link", { name: "Open in new tab" })).toHaveAttribute("href", "/api/attachments/i2?inline=1");
+    const strip = within(viewer).getByRole("list", { name: "Files" });
+    expect(within(strip).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Show phone-ios.png", "Show phone-android.png", "Show design.png",
+    ]);
     fireEvent.keyDown(viewer, { key: "ArrowRight" });
     expect(screen.getByRole("dialog", { name: "design.png" })).toBeInTheDocument();
     expect(screen.getByText("3 of 3")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Previous image" }));
-    fireEvent.click(screen.getByRole("button", { name: "Previous image" }));
+    fireEvent.click(screen.getByRole("button", { name: "Previous file" }));
+    fireEvent.click(screen.getByRole("button", { name: "Previous file" }));
     expect(screen.getByText("1 of 3")).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
