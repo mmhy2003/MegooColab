@@ -46,6 +46,7 @@ from app.kb.context import register as register_kb_context
 from app.kb.router import router as kb_router
 from app.kb_drafts.router import router as kb_drafts_router
 from app.crons.router import router as crons_router
+from app.triggers.router import router as triggers_router
 from app.secrets.router import router as secrets_router
 from app.mcp_server.server import MCP_PATH, build_mcp
 from app.memory import dream as _memory_dream  # noqa: F401 - registers the dreaming jobs
@@ -217,6 +218,7 @@ def create_app() -> FastAPI:
         kb_drafts_router,
         secrets_router,
         crons_router,
+        triggers_router,
         memory_router,
         a2a_router,
         git_router,
