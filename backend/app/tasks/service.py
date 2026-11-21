@@ -538,9 +538,12 @@ async def notify_assigned(db: AsyncSession, actor: User, project: Project, task:
 
 async def notify_done(db: AsyncSession, task: Task, *, actor: User | None = None, agent: Agent | None = None) -> None:
     """The task moved into Done (from a column that isn't): its assignee (for an agent, the agent's owner) hears it as
-    task_done, everyone else on the project's teams as team_task_done; never the person who moved it. Moved by
-    `actor` (a person), by `agent` (a chat's agent, with its owner's rights), or, with neither, by its workflow."""
+    task_done, everyone else on the project's teams as team_task_done; never the person who moved it. A subtask tells
+    nobody: its parent task stands for it. Moved by `actor` (a person), by `agent` (a chat's agent, with its owner's
+    rights), or, with neither, by its workflow."""
     if task.in_chat:  # a chat's round: the chat itself is what the people concerned follow
+        return
+    if task.type == TaskType.subtask:  # a plan step or a hand-made subtask: only its parent's Done is news
         return
     project = await db.get(Project, task.project_id)
     key = f"{project.key}-{task.number}"
