@@ -40,7 +40,8 @@ def test_github_pr_opened_merged_closed():
     (merged,) = _gh("pull_request", {"action": "closed", "pull_request": {**PR, "merged": True}, **who})
     (closed,) = _gh("pull_request", {"action": "closed", "pull_request": PR, **who})
     assert (merged.kind, closed.kind) == ("git.pr_merged", "git.pr_closed")
-    assert merged.data == {"url": PR["html_url"]} and merged.actor == {"name": "mo", "login": "mo"}
+    assert merged.data == {"url": PR["html_url"], "title": "Retries", "base": "main"}
+    assert closed.data == merged.data and merged.actor == {"name": "mo", "login": "mo"}
     assert _gh("pull_request", {"action": "edited", "pull_request": PR, **who}) == []
 
 
@@ -87,6 +88,7 @@ def test_gitlab_push_mr_and_note():
              for a in ("open", "merge", "close", "approved")]
     assert [k.kind for k in kinds] == ["git.pr_opened", "git.pr_merged", "git.pr_closed", "git.reviewed"]
     assert kinds[0].data == {"url": attrs["url"], "title": "T", "base": "main"} and kinds[0].branch == "megoo/PAY-7-x"
+    assert kinds[1].data == kinds[2].data == kinds[0].data
     assert kinds[3].data["verdict"] == "approved"
     (n,) = gl("Note Hook", {"object_attributes": {"noteable_type": "MergeRequest", "note": "why?", "url": "https://lab/n/1",
                                                   "position": {"new_path": "src/a.py", "new_line": 12}},

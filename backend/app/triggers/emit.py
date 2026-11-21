@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.crons.models import Cron, CronRun
-from app.projects.models import BoardColumn, ColumnCategory, Project, ProjectStatus
+from app.git.events import GitEvent
+from app.projects.models import BoardColumn, ColumnCategory, Project, ProjectRepository, ProjectStatus
 from app.sprints.models import Sprint
 from app.tasks.models import Task
 from app.triggers import events as events_mod
@@ -159,3 +160,15 @@ async def cron_found(db: AsyncSession, cron: Cron, cron_run: CronRun) -> None:
         return {"cron_id": str(cron.id), "cron_run_id": str(cron_run.id)}
 
     await _emit(db, cron.project_id, [(TriggerEvent.cron_found, build)])
+
+
+async def pr_merged(db: AsyncSession, repo: ProjectRepository, ev: GitEvent) -> None:
+    """A pull request that matches no task was merged (the hook site checks that), here into the default branch."""
+    if ev.data.get("base") != repo.default_branch:
+        return
+
+    async def build() -> dict:
+        return {"repo_id": str(repo.id), "number": ev.number, "title": ev.data.get("title"),
+                "url": ev.data.get("url"), "branch": ev.branch, "base": ev.data["base"], "actor": ev.actor["name"]}
+
+    await _emit(db, repo.project_id, [(TriggerEvent.pr_merged, build)])

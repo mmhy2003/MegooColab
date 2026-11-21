@@ -19,6 +19,7 @@ from app.git.events import GitEvent
 from app.git.models import GitConnection, GitKind, GitPrLink, TaskPullRequest
 from app.projects.models import Project, ProjectRepository
 from app.tasks.models import Task, TaskEvent
+from app.triggers import emit as trigger_emit
 
 log = logging.getLogger(__name__)
 
@@ -121,6 +122,8 @@ async def record(db: AsyncSession, conn: GitConnection, events: list[GitEvent], 
             tracked = await _tracked(db, conn, ev.path, ev.number)
             task = None if tracked is None else await db.get(Task, tracked.task_id)
         if task is None or (repo is not None and task.project_id != repo.project_id):
+            if task is None and repo is not None and ev.kind == "git.pr_merged":
+                await trigger_emit.pr_merged(db, repo, ev)
             continue
         # one delivery at a time per task: a review and its line comments arrive together
         if not await lock_task_row(db, task.id):
