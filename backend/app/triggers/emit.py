@@ -12,7 +12,9 @@ from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
+from app.crons.models import Cron, CronRun
 from app.projects.models import BoardColumn, ColumnCategory, Project, ProjectStatus
+from app.sprints.models import Sprint
 from app.tasks.models import Task
 from app.triggers import events as events_mod
 from app.triggers.events import TASK_TYPES
@@ -123,3 +125,37 @@ async def task_moved(db: AsyncSession, task: Task, from_column_id: uuid.UUID | N
     await _emit(db, task.project_id, [
         (TriggerEvent.task_moved, moved), (TriggerEvent.task_finished, finished), (TriggerEvent.epic_completed, epic),
     ])
+
+
+async def task_needs_person(db: AsyncSession, task: Task, reason: str) -> None:
+    """The task's workflow escalated: a person must decide."""
+    if not _board_task(task):
+        return
+
+    async def build() -> dict:
+        return await events_mod.task_payload(db, task, reason=reason)
+
+    await _emit(db, task.project_id, [(TriggerEvent.task_needs_person, build)])
+
+
+async def _sprint(db: AsyncSession, sprint: Sprint, event: TriggerEvent) -> None:
+    async def build() -> dict:
+        return {"sprint_id": str(sprint.id)}
+
+    await _emit(db, sprint.project_id, [(event, build)])
+
+
+async def sprint_started(db: AsyncSession, sprint: Sprint) -> None:
+    await _sprint(db, sprint, TriggerEvent.sprint_started)
+
+
+async def sprint_completed(db: AsyncSession, sprint: Sprint) -> None:
+    await _sprint(db, sprint, TriggerEvent.sprint_completed)
+
+
+async def cron_found(db: AsyncSession, cron: Cron, cron_run: CronRun) -> None:
+    """A cron run ended `done` with findings (the hook site checks that)."""
+    async def build() -> dict:
+        return {"cron_id": str(cron.id), "cron_run_id": str(cron_run.id)}
+
+    await _emit(db, cron.project_id, [(TriggerEvent.cron_found, build)])

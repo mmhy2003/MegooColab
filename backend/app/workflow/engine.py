@@ -330,6 +330,7 @@ async def escalate(db: AsyncSession, wf: TaskWorkflow, reason: str, *, cause: st
     await wait_for(db, wf, Needs.escalation)
     data = {"reason": reason} | ({"cause": cause} if cause is not None else {})
     await record_workflow_event(db, task, None, "workflow.escalated", data)
+    await trigger_emit.task_needs_person(db, task, reason)
 
 
 async def _latest_findings(db: AsyncSession, task_id: uuid.UUID, role: RunRole, step: int | None) -> list[dict]:

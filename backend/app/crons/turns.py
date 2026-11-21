@@ -20,6 +20,7 @@ from app.projects.access import accessible_project_ids
 from app.projects.models import Project, ProjectRepository, ProjectTeam
 from app.runner.protocol import McpAccess, RunCron, RunTask
 from app.teams.models import TeamMember
+from app.triggers import emit as trigger_emit
 from app.workflow import methodology
 from app.workflow.context import DOCS_NOTE, wrap_untrusted
 from app.workflow.models import MethodologyVersion
@@ -168,5 +169,7 @@ async def on_run_finished(db: AsyncSession, run: AgentRun) -> None:
     else:
         cron_run.status = CronRunStatus.failed
         cron_run.skip_reason = run.reason or ("cancelled" if run.status == RunStatus.cancelled else "agent_error")
+    if cron is not None and cron_run.status == CronRunStatus.done and (cron_run.report or {}).get("findings"):
+        await trigger_emit.cron_found(db, cron, cron_run)
     if cron is not None:
         await tell_outcome(db, cron, cron_run)
