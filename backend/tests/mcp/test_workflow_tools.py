@@ -206,13 +206,14 @@ async def test_ask_human_invalid_form_is_a_tool_error_with_paths(db, tc_factory)
     assert await _count(WorkflowQuestion) == 0
 
 
-async def test_get_form_guide_returns_every_catalog_component(db, tc_factory):
+async def test_get_form_guide_returns_every_form_component(db, tc_factory):
     tc = tc_factory(lifespan=True)
     b, run = await _started(db, tc)
     err, out = _tool(tc, await _run_token(run), "get_form_guide")
     assert not err, out
     catalog = json.loads((A2UI_DIR / "catalog.json").read_text())
-    assert set(out["catalog"]["components"]) == set(catalog["components"])
+    cards_only = {"Tabs", "List", "StatTile", "TaskLink"}
+    assert set(out["catalog"]["components"]) == set(catalog["components"]) - cards_only
     assert out["example"] == EXAMPLE_FORM
     assert out["instructions_md"].strip()
 

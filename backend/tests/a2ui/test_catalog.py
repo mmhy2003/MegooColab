@@ -23,6 +23,7 @@ CATALOG_ID = "urn:megoocolab:a2ui:catalog:v1"
 COMPONENTS = {
     "Column", "Row", "Card", "Divider", "Text",
     "TextField", "CheckBox", "ChoicePicker", "Slider", "DateTimeInput",
+    "Tabs", "List", "StatTile", "TaskLink",
 }
 FUNCTIONS = {"required", "regex", "length", "numeric", "email"}
 
@@ -43,6 +44,24 @@ EXAMPLE = {
         {"id": "notify", "component": "CheckBox", "label": "Tell the team", "value": {"@path": "/notify"}},
     ],
     "data": {"name": "", "due": "", "kind": ["patch"], "notify": True},
+}
+
+# The plan's example card (contract C3): tiles, tabs and a template list of task links.
+CARD = {
+    "components": [
+        {"id": "root", "component": "Column", "children": ["tiles", "tabs"]},
+        {"id": "tiles", "component": "Row", "children": ["passed", "failed", "time"]},
+        {"id": "passed", "component": "StatTile", "label": "Passed", "value": "412", "tone": "good"},
+        {"id": "failed", "component": "StatTile", "label": "Failed", "value": "3", "caption": "2 new since Monday",
+         "tone": "bad"},
+        {"id": "time", "component": "StatTile", "label": "Run time", "value": "4m 12s"},
+        {"id": "tabs", "component": "Tabs",
+         "tabs": [{"title": "Failing", "child": "failing"}, {"title": "Notes", "child": "notes"}]},
+        {"id": "failing", "component": "List", "children": {"componentId": "row", "path": "/failing"}},
+        {"id": "row", "component": "TaskLink", "task": {"@path": "key"}, "label": {"@path": "title"}},
+        {"id": "notes", "component": "Text", "text": "Two of the failures are **flaky**."},
+    ],
+    "data": {"failing": [{"key": "MC-181", "title": "Login times out"}, {"key": "MC-182", "title": "Export is empty"}]},
 }
 
 
@@ -118,3 +137,31 @@ def test_library_rejects_a_left_out_function():
     with pytest.raises(A2uiValidationError) as caught:
         _validate(components, EXAMPLE["data"])
     assert caught.value.details[0].path == "components.name.@checks.0.condition"
+
+
+def test_library_accepts_a_card():
+    _validate(CARD["components"], CARD["data"])
+
+
+def test_library_accepts_a_template_list():
+    components = [
+        {"id": "root", "component": "List", "children": {"componentId": "row", "path": "/items"},
+         "direction": "vertical", "align": "stretch"},
+        {"id": "row", "component": "TaskLink", "task": {"@path": "key"}, "label": {"@path": "title"}},
+    ]
+    _validate(components, {"items": [{"key": "MC-1", "title": "One"}, {"key": "MC-2", "title": "Two"}]})
+
+
+def test_library_rejects_a_bad_tone():
+    components = copy.deepcopy(CARD["components"])
+    components[2]["tone"] = "red"
+    with pytest.raises(A2uiValidationError) as caught:
+        _validate(components, CARD["data"])
+    assert "tone" in caught.value.details[0].path
+
+
+def test_library_rejects_more_than_the_tab_shape():
+    components = copy.deepcopy(CARD["components"])
+    del components[5]["tabs"][1]["child"]
+    with pytest.raises(A2uiError):
+        _validate(components, CARD["data"])

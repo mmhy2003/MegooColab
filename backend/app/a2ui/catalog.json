@@ -457,6 +457,147 @@
           ]
         }
       ]
+    },
+    "Tabs": {
+      "type": "object",
+      "properties": {
+        "component": {
+          "const": "Tabs"
+        },
+        "tabs": {
+          "description": "An array of objects, where each object defines a tab with a title and a child component.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "$ref": "common_types.json#/$defs/DynamicString",
+                "description": "The tab title."
+              },
+              "child": {
+                "$ref": "common_types.json#/$defs/Child",
+                "description": "The ID of the child component."
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "child"
+            ]
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "tabs"
+      ]
+    },
+    "List": {
+      "type": "object",
+      "properties": {
+        "component": {
+          "const": "List"
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "Defines the children. Use an array of strings for a fixed set of children, or a template object to generate children from a data list."
+        },
+        "direction": {
+          "enum": [
+            "vertical",
+            "horizontal"
+          ],
+          "type": "string",
+          "default": "vertical",
+          "description": "The direction in which the list items are laid out."
+        },
+        "align": {
+          "enum": [
+            "start",
+            "center",
+            "end",
+            "stretch"
+          ],
+          "type": "string",
+          "default": "stretch",
+          "description": "Defines the alignment of children along the cross axis."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "children"
+      ]
+    },
+    "StatTile": {
+      "type": "object",
+      "description": "A headline number: a value with its label, an optional caption below, coloured by tone. A snapshot: it never updates.",
+      "properties": {
+        "component": {
+          "const": "StatTile"
+        },
+        "label": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "What the value counts, e.g. 'Failed'."
+        },
+        "value": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "The value as text, e.g. '3' or '4m 12s'."
+        },
+        "caption": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "A short line under the label."
+        },
+        "tone": {
+          "enum": [
+            "neutral",
+            "good",
+            "warning",
+            "bad"
+          ],
+          "type": "string",
+          "default": "neutral",
+          "description": "The value's colour."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "label",
+        "value"
+      ]
+    },
+    "TaskLink": {
+      "type": "object",
+      "description": "A link to a MegooColab task by its key, followed by a label. A snapshot: the label is the words you write, not the task's current title.",
+      "properties": {
+        "component": {
+          "const": "TaskLink"
+        },
+        "task": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "A task key such as 'MC-181'."
+        },
+        "label": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "The words after the key."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "task"
+      ]
     }
   },
   "functions": {
@@ -674,6 +815,18 @@
         },
         {
           "$ref": "#/components/DateTimeInput"
+        },
+        {
+          "$ref": "#/components/Tabs"
+        },
+        {
+          "$ref": "#/components/List"
+        },
+        {
+          "$ref": "#/components/StatTile"
+        },
+        {
+          "$ref": "#/components/TaskLink"
         }
       ],
       "discriminator": {

@@ -4,6 +4,7 @@ The agent writes only `components` and `data`. `wrap` adds the envelope, `valida
 MegooColab's catalog and then our own limits, and `field_labels` names the inputs for the agent's later prompts.
 """
 
+import copy
 import json
 import uuid
 from collections.abc import Sequence
@@ -23,6 +24,8 @@ MAX_COMPONENTS = 60
 MAX_INPUTS = 20
 MAX_PROBLEMS = 10
 MAX_ANSWER_DATA_BYTES = 16 * 1024
+# Catalog entries for cards (MC-173), left out of the form guide.
+_CARD_ONLY = frozenset({"Tabs", "List", "StatTile", "TaskLink"})
 
 _HERE = Path(__file__).parent
 
@@ -49,6 +52,16 @@ def _catalog_doc() -> dict:
 @cache
 def _catalog() -> Catalog:
     return Catalog.from_json(_catalog_doc())
+
+
+@cache
+def _form_catalog() -> dict:
+    """The catalog without the card entries."""
+    doc = copy.deepcopy(_catalog_doc())
+    doc["components"] = {k: v for k, v in doc["components"].items() if k not in _CARD_ONLY}
+    any_component = doc["$defs"]["anyComponent"]
+    any_component["oneOf"] = [r for r in any_component["oneOf"] if r["$ref"].rsplit("/", 1)[-1] not in _CARD_ONLY]
+    return doc
 
 
 @cache
@@ -135,7 +148,7 @@ def field_labels(message: dict | None) -> list[str]:
 
 def guide() -> dict:
     """What get_form_guide gives an agent: instructions, the catalog and an example form."""
-    return {"instructions_md": _instructions(), "catalog": _catalog_doc(), "example": _example()}
+    return {"instructions_md": _instructions(), "catalog": _form_catalog(), "example": _example()}
 
 
 def clean_answer_data(data: dict) -> dict:

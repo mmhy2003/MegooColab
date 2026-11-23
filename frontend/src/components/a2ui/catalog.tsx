@@ -20,6 +20,10 @@ export const COMPONENT_PROPS: Record<string, readonly string[]> = {
   ChoicePicker: ["label", "variant", "options", "value", "displayStyle", "filterable", "weight"],
   Slider: ["label", "min", "max", "value", "steps", "weight"],
   DateTimeInput: ["value", "enableDate", "enableTime", "min", "max", "label", "weight"],
+  Tabs: ["tabs", "weight"],
+  List: ["children", "direction", "align", "weight"],
+  StatTile: ["label", "value", "caption", "tone", "weight"],
+  TaskLink: ["task", "label", "weight"],
 };
 
 /** What every input of the catalog takes. `FormSurface` adapts the renderer's resolved props to it. */
