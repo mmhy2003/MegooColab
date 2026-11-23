@@ -1,11 +1,35 @@
 "use client";
 
 import type { ReactCatalogComponent } from "@a2ui/react";
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import {
+  Component,
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 
 import type { FormMessage, FormValues } from "@/lib/types";
 
-import { CATALOG_ID, Column, Text, TextField } from "./catalog";
+import {
+  CATALOG_ID,
+  Card,
+  CheckBox,
+  ChoicePicker,
+  Column,
+  DateTimeInput,
+  Divider,
+  Row,
+  Slider,
+  Text,
+  TextField,
+} from "./catalog";
+
+const FAILED = "This form couldn't be shown. You can still answer in your own words.";
 
 /** The input components of the catalog: each reports whether its checks pass. */
 const INPUTS = new Set(["TextField", "CheckBox", "ChoicePicker", "Slider", "DateTimeInput"]);
@@ -23,28 +47,91 @@ function useReport(id: string, path: string, valid: boolean) {
   }, [report, id, path, valid]);
 }
 
+/** What an input adapter needs: its element id, whether the form is read-only, and its check result reported. */
+function useField(
+  context: { componentModel: { id: string }; dataContext: { path: string } },
+  props: { isValid?: boolean; validationErrors?: string[] },
+) {
+  const { surfaceId, readOnly } = useContext(FormContext);
+  const id = context.componentModel.id;
+  useReport(id, context.dataContext.path, props.isValid !== false);
+  return { id: `${surfaceId}-${id}`, readOnly, error: props.validationErrors?.[0] };
+}
+
 async function loadRenderer() {
   const [react, core] = await Promise.all([import("@a2ui/react"), import("@a2ui/web_core/v1_0")]);
   const { createComponentImplementation: implement } = react;
+  type Children = (string | { id: string; basePath: string })[] | undefined;
+  const children = (list: Children, buildChild: (id: string, basePath?: string) => ReactNode) =>
+    list?.map((c) => (typeof c === "string" ? buildChild(c) : buildChild(c.id, c.basePath)));
 
   // our components, under the v1.0 basic catalog's component APIs: no basic catalog element is ever drawn
   const components = [
-    implement(core.ColumnApi, ({ props, buildChild }) => (
-      <Column>{props.children?.map((c) => (typeof c === "string" ? buildChild(c) : buildChild(c.id, c.basePath)))}</Column>
-    )),
+    implement(core.ColumnApi, ({ props, buildChild }) => <Column>{children(props.children, buildChild)}</Column>),
+    implement(core.RowApi, ({ props, buildChild }) => <Row>{children(props.children, buildChild)}</Row>),
+    implement(core.CardApi, ({ props, buildChild }) => <Card>{buildChild(props.child)}</Card>),
+    implement(core.DividerApi, () => <Divider />),
     implement(core.TextApi, ({ props }) => <Text text={props.text ?? ""} />),
     implement(core.TextFieldApi, function TextFieldView({ props, context }) {
-      const { surfaceId, readOnly } = useContext(FormContext);
-      const id = context.componentModel.id;
-      useReport(id, context.dataContext.path, props.isValid !== false);
+      const field = useField(context, props);
       return (
         <TextField
-          id={`${surfaceId}-${id}`}
+          {...field}
           label={props.label}
-          value={props.value ?? ""}
+          // a number field's value may arrive as a number from the data model
+          value={props.value == null ? "" : String(props.value)}
           onChange={props.setValue}
-          readOnly={readOnly}
-          error={props.validationErrors?.[0]}
+          variant={props.variant === "obscured" ? "shortText" : props.variant}
+          placeholder={props.placeholder}
+        />
+      );
+    }),
+    implement(core.CheckBoxApi, function CheckBoxView({ props, context }) {
+      const field = useField(context, props);
+      return <CheckBox {...field} label={props.label} value={props.value === true} onChange={props.setValue} />;
+    }),
+    implement(core.ChoicePickerApi, function ChoicePickerView({ props, context }) {
+      const field = useField(context, props);
+      const value: unknown = props.value;
+      return (
+        <ChoicePicker
+          {...field}
+          label={props.label}
+          value={Array.isArray(value) ? value.map(String) : typeof value === "string" ? [value] : []}
+          onChange={props.setValue}
+          options={(props.options ?? []).map((o) => ({ label: String(o.label ?? o.value), value: o.value }))}
+          multiple={props.variant === "multipleSelection"}
+          chips={props.displayStyle === "chips"}
+        />
+      );
+    }),
+    implement(core.SliderApi, function SliderView({ props, context }) {
+      const field = useField(context, props);
+      const min = props.min ?? 0;
+      return (
+        <Slider
+          {...field}
+          label={props.label}
+          value={typeof props.value === "number" ? props.value : min}
+          onChange={props.setValue}
+          min={min}
+          max={props.max}
+          steps={props.steps}
+        />
+      );
+    }),
+    implement(core.DateTimeInputApi, function DateTimeInputView({ props, context }) {
+      const field = useField(context, props);
+      return (
+        <DateTimeInput
+          {...field}
+          label={props.label}
+          value={typeof props.value === "string" ? props.value : ""}
+          onChange={props.setValue}
+          enableDate={props.enableDate}
+          enableTime={props.enableTime}
+          min={typeof props.min === "string" ? props.min : undefined}
+          max={typeof props.max === "string" ? props.max : undefined}
         />
       );
     }),
@@ -55,8 +142,30 @@ async function loadRenderer() {
 
 type Renderer = Awaited<ReturnType<typeof loadRenderer>>;
 let loading: Promise<Renderer> | null = null;
-// the renderer is large: it loads the first time a page has a form
-const load = () => (loading ??= loadRenderer());
+// the renderer is large: it loads the first time a page has a form, and again on the next form if that failed
+const load = () =>
+  (loading ??= loadRenderer().catch((e: unknown) => {
+    loading = null;
+    throw e;
+  }));
+
+/** Catches what the renderer or one of our components throws while drawing. */
+class Boundary extends Component<{ children: ReactNode; onError: () => void }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onError();
+  }
+  render() {
+    return this.state.failed ? <Failed /> : this.props.children;
+  }
+}
+
+function Failed() {
+  return <p role="alert" className="text-sm text-muted-foreground">{FAILED}</p>;
+}
 
 type Surface = ComponentProps<Renderer["A2uiSurface"]>["surface"];
 type Drawn = { A2uiSurface: Renderer["A2uiSurface"]; surface: Surface; report: Form["report"] };
@@ -81,6 +190,13 @@ export function FormSurface({
   onChange?: (data: FormValues, valid: boolean) => void;
 }) {
   const [drawn, setDrawn] = useState<Drawn | null>(null);
+  // a failed form never reports: the person can only answer in their own words
+  const [failed, setFailed] = useState(false);
+  const failedRef = useRef(false);
+  const fail = () => {
+    failedRef.current = true;
+    setFailed(true);
+  };
   const onChangeRef = useRef(onChange);
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -107,7 +223,7 @@ export function FormSurface({
         queued = true;
         queueMicrotask(() => {
           queued = false;
-          if (!live || inputs.some((id) => !results.get(id)?.size)) return;
+          if (!live || failedRef.current || inputs.some((id) => !results.get(id)?.size)) return;
           const valid = [...results.values()].every((paths) => [...paths.values()].every(Boolean));
           onChangeRef.current?.(structuredClone(surface.dataModel.get("/") ?? {}) as FormValues, valid);
         });
@@ -126,6 +242,10 @@ export function FormSurface({
       };
       setDrawn({ A2uiSurface, surface, report });
       if (inputs.length === 0) emit();
+    }).catch(() => {
+      if (!live) return;
+      failedRef.current = true;
+      setFailed(true);
     });
     return () => {
       live = false;
@@ -137,11 +257,14 @@ export function FormSurface({
     () => drawn && { surfaceId: drawn.surface.id, readOnly, report: drawn.report },
     [drawn, readOnly],
   );
+  if (failed) return <Failed />;
   if (!drawn || !form) return null;
   const { A2uiSurface, surface } = drawn;
   return (
-    <FormContext.Provider value={form}>
-      <A2uiSurface surface={surface} />
-    </FormContext.Provider>
+    <Boundary onError={fail}>
+      <FormContext.Provider value={form}>
+        <A2uiSurface surface={surface} />
+      </FormContext.Provider>
+    </Boundary>
   );
 }

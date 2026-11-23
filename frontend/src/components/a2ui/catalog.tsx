@@ -2,11 +2,25 @@
 
 import { useState, type ReactNode } from "react";
 
-import { Input } from "@/components/ui/Input";
+import { Input, Textarea } from "@/components/ui/Input";
 import { Markdown } from "@/components/ui/Markdown";
 
 /** MegooColab's A2UI catalog (backend/app/a2ui/catalog.json). */
 export const CATALOG_ID = "urn:megoocolab:a2ui:catalog:v1";
+
+/** Each catalog component's property names, as catalog.json lists them (without "id" and "component"). */
+export const COMPONENT_PROPS: Record<string, readonly string[]> = {
+  Column: ["children", "justify", "align", "weight"],
+  Row: ["children", "justify", "align", "weight"],
+  Card: ["child", "weight"],
+  Divider: ["axis", "weight"],
+  Text: ["text", "variant", "weight"],
+  TextField: ["label", "value", "placeholder", "variant", "weight"],
+  CheckBox: ["label", "value", "weight"],
+  ChoicePicker: ["label", "variant", "options", "value", "displayStyle", "filterable", "weight"],
+  Slider: ["label", "min", "max", "value", "steps", "weight"],
+  DateTimeInput: ["value", "enableDate", "enableTime", "min", "max", "label", "weight"],
+};
 
 /** What every input of the catalog takes. `FormSurface` adapts the renderer's resolved props to it. */
 export type FieldProps<V> = {
@@ -19,29 +33,250 @@ export type FieldProps<V> = {
   error?: string;
 };
 
+const LABEL = "text-xs tracking-wider text-muted-foreground uppercase";
+
+/** A check message waits until the person has changed or left the field, and a read-only field shows none. */
+function useMessage(readOnly: boolean, error: string | undefined) {
+  const [touched, setTouched] = useState(false);
+  return [touched && !readOnly ? error : undefined, () => setTouched(true)] as const;
+}
+
+function Message({ text }: { text?: string }) {
+  return text ? <p className="text-xs text-pink">{text}</p> : null;
+}
+
 export function Column({ children }: { children: ReactNode }) {
-  return <div className="flex flex-col gap-3">{children}</div>;
+  return <div className="flex flex-col gap-2">{children}</div>;
+}
+
+export function Row({ children }: { children: ReactNode }) {
+  return <div className="flex flex-row flex-wrap gap-2">{children}</div>;
+}
+
+export function Card({ children }: { children: ReactNode }) {
+  return <div className="card px-3 py-2">{children}</div>;
+}
+
+export function Divider() {
+  return <hr className="border-line" />;
 }
 
 export function Text({ text }: { text: string }) {
   return <Markdown compact>{text}</Markdown>;
 }
 
-export function TextField({ id, label, value, onChange, readOnly, error }: FieldProps<string>) {
-  // a check message waits until the person has touched the field
-  const [touched, setTouched] = useState(false);
+export function TextField({
+  id,
+  label,
+  value,
+  onChange,
+  readOnly,
+  error,
+  variant = "shortText",
+  placeholder,
+}: FieldProps<string> & { variant?: "shortText" | "longText" | "number"; placeholder?: string }) {
+  const [message, touch] = useMessage(readOnly, error);
+  // like the A2UI renderers, every variant stores the text the field holds: a number field stores "3", and an
+  // emptied field stores ""; the numeric check reads it with Number()
+  const change = (v: string) => {
+    touch();
+    onChange(v);
+  };
+  if (variant === "longText") {
+    return (
+      <div className="flex flex-col gap-1">
+        <Textarea
+          id={id}
+          label={label}
+          value={value}
+          placeholder={placeholder}
+          disabled={readOnly}
+          aria-invalid={message ? true : undefined}
+          onChange={(e) => change(e.target.value)}
+          onBlur={touch}
+        />
+        <Message text={message} />
+      </div>
+    );
+  }
   return (
     <Input
       id={id}
       label={label}
+      type={variant === "number" ? "number" : "text"}
       value={value}
+      placeholder={placeholder}
       disabled={readOnly}
-      error={touched && !readOnly ? error : undefined}
+      error={message}
+      onChange={(e) => change(e.target.value)}
+      onBlur={touch}
+    />
+  );
+}
+
+export function CheckBox({ id, label, value, onChange, readOnly, error }: FieldProps<boolean>) {
+  const [message, touch] = useMessage(readOnly, error);
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="flex items-center gap-2 text-sm text-fg">
+        <input
+          id={id}
+          type="checkbox"
+          className="accent-cyan"
+          checked={value}
+          disabled={readOnly}
+          onChange={(e) => {
+            touch();
+            onChange(e.target.checked);
+          }}
+          onBlur={touch}
+        />
+        {label}
+      </label>
+      <Message text={message} />
+    </div>
+  );
+}
+
+export function ChoicePicker({
+  id,
+  label,
+  value,
+  onChange,
+  readOnly,
+  error,
+  options,
+  multiple,
+  chips,
+}: FieldProps<string[]> & { options: { label: string; value: string }[]; multiple: boolean; chips: boolean }) {
+  const [message, touch] = useMessage(readOnly, error);
+  // the A2UI renderers' rule: one choice replaces the selection, many toggle in and out of it
+  const toggle = (v: string) => {
+    touch();
+    onChange(multiple ? (value.includes(v) ? value.filter((x) => x !== v) : [...value, v]) : [v]);
+  };
+  return (
+    <fieldset className="flex flex-col gap-1" aria-label={label ? undefined : id}>
+      {label && <legend className={`${LABEL} mb-1`}>{label}</legend>}
+      <div className={chips ? "flex flex-wrap gap-2" : "flex flex-col gap-1"}>
+        {options.map((o) =>
+          chips ? (
+            <button
+              key={o.value}
+              type="button"
+              aria-pressed={value.includes(o.value)}
+              disabled={readOnly}
+              className="rounded-full border border-line px-3 py-1 text-xs text-fg aria-pressed:border-cyan aria-pressed:bg-surface-2 disabled:opacity-60"
+              onClick={() => toggle(o.value)}
+              onBlur={touch}
+            >
+              {o.label}
+            </button>
+          ) : (
+            <label key={o.value} className="flex items-center gap-2 text-sm text-fg">
+              <input
+                type={multiple ? "checkbox" : "radio"}
+                name={multiple ? undefined : id}
+                value={o.value}
+                className="accent-cyan"
+                checked={value.includes(o.value)}
+                disabled={readOnly}
+                onChange={() => toggle(o.value)}
+                onBlur={touch}
+              />
+              {o.label}
+            </label>
+          ),
+        )}
+      </div>
+      <Message text={message} />
+    </fieldset>
+  );
+}
+
+export function Slider({
+  id,
+  label,
+  value,
+  onChange,
+  readOnly,
+  error,
+  min = 0,
+  max,
+  steps,
+}: FieldProps<number> & { min?: number; max: number; steps?: number }) {
+  const [message, touch] = useMessage(readOnly, error);
+  // `steps` divides the range into that many parts, as the A2UI renderers read it
+  const step = steps && steps > 0 && max > min ? (max - min) / steps : undefined;
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex justify-between gap-2">
+        <label htmlFor={id} className={LABEL}>{label}</label>
+        <output htmlFor={id} className="font-mono text-xs text-fg">{value}</output>
+      </div>
+      <input
+        id={id}
+        type="range"
+        aria-label={label ? undefined : id}
+        className="w-full accent-cyan"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={readOnly}
+        onChange={(e) => {
+          touch();
+          onChange(Number(e.target.value));
+        }}
+        onBlur={touch}
+      />
+      <Message text={message} />
+    </div>
+  );
+}
+
+type DateTimeType = "date" | "time" | "datetime-local";
+
+/** What an input of `type` accepts from an ISO 8601 value: no seconds and no time zone, or it shows empty. */
+function forInput(value: string, type: DateTimeType) {
+  const [date, time] = value.includes("T") ? value.split("T") : value.includes(":") ? ["", value] : [value, ""];
+  if (type === "date") return date.slice(0, 10);
+  if (type === "time") return time.slice(0, 5);
+  return date && time ? `${date.slice(0, 10)}T${time.slice(0, 5)}` : "";
+}
+
+export function DateTimeInput({
+  id,
+  label,
+  value,
+  onChange,
+  readOnly,
+  error,
+  enableDate,
+  enableTime,
+  min,
+  max,
+}: FieldProps<string> & { enableDate?: boolean; enableTime?: boolean; min?: string; max?: string }) {
+  const [message, touch] = useMessage(readOnly, error);
+  // with neither flag the A2UI renderers ask for a date
+  const type: DateTimeType = enableTime ? (enableDate ? "datetime-local" : "time") : "date";
+  return (
+    <Input
+      id={id}
+      label={label}
+      aria-label={label ? undefined : id}
+      type={type}
+      value={forInput(value, type)}
+      min={min ? forInput(min, type) || undefined : undefined}
+      max={max ? forInput(max, type) || undefined : undefined}
+      disabled={readOnly}
+      error={message}
+      // the value the input holds: "2026-12-01", "09:30" or "2026-12-01T09:30"
       onChange={(e) => {
-        setTouched(true);
+        touch();
         onChange(e.target.value);
       }}
-      onBlur={() => setTouched(true)}
+      onBlur={touch}
     />
   );
 }
