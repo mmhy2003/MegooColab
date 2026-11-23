@@ -8,12 +8,15 @@ import json
 import secrets
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import func, select, update
 
+import app.a2ui
+from app.a2ui.service import CATALOG_ID
 from app.agent_runs.models import AgentRun
 from app.core.db import SessionLocal
 from app.core.security import hash_token
@@ -46,6 +49,8 @@ from tests.workflow.test_engine import (
 from tests.workflow.test_finish_failures import COMMITTED, _fix_round
 from tests.workflow.test_review_done import _fix_run
 
+A2UI_DIR = Path(app.a2ui.__file__).parent
+EXAMPLE_FORM = json.loads((A2UI_DIR / "example.json").read_text())
 ASKED = "Question posted. End your turn now; the answer arrives as your next message."
 ALL_WORKFLOW_TOOLS = {
     "ask_human": {"question": "Which DB?"},
@@ -171,6 +176,45 @@ async def test_run_token_ask_human_creates_question_and_mockup(db, tc_factory):
     await _finish(b.manager.id, run, "completed")
     wf = await _wf(b.task_id)
     assert (wf.status, wf.needs) == ("waiting_human", "question")
+
+
+async def test_run_token_ask_human_with_a_form(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    token = await _run_token(run)
+    err, out = _tool(tc, token, "ask_human", key=b.key, question="A few details?", form=EXAMPLE_FORM)
+    assert not err, out
+    assert out == ASKED
+    async with SessionLocal() as s:
+        q = (await s.execute(select(WorkflowQuestion).where(WorkflowQuestion.task_id == b.task_id))).scalar_one()
+    assert q.form["createSurface"]["catalogId"] == CATALOG_ID and q.choices == []
+    assert q.form["createSurface"]["components"] == EXAMPLE_FORM["components"]
+
+
+async def test_ask_human_invalid_form_is_a_tool_error_with_paths(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    token = await _run_token(run)
+    form = {"components": [{"id": "root", "component": "Column", "children": ["nowhere"]}, *EXAMPLE_FORM["components"][1:]]}
+    err, text = _tool(tc, token, "ask_human", key=b.key, question="A few details?", form=form)
+    # the MCP server puts "Error executing tool ask_human: " before the ToolError's own text
+    assert err and text.split(": ", 1)[1].startswith("invalid_form\n"), text
+    assert any(": " in line for line in text.splitlines()[1:]), text
+    err, text = _tool(tc, token, "ask_human", key=b.key, question="?", form=EXAMPLE_FORM,
+                      choices=[{"id": "a", "label": "A"}])
+    assert err and "form_with_choices" in text
+    assert await _count(WorkflowQuestion) == 0
+
+
+async def test_get_form_guide_returns_every_catalog_component(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    err, out = _tool(tc, await _run_token(run), "get_form_guide")
+    assert not err, out
+    catalog = json.loads((A2UI_DIR / "catalog.json").read_text())
+    assert set(out["catalog"]["components"]) == set(catalog["components"])
+    assert out["example"] == EXAMPLE_FORM
+    assert out["instructions_md"].strip()
 
 
 async def test_run_token_wrong_task_refused(db, tc_factory):

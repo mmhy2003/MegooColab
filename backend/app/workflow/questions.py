@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, update
 
+from app.a2ui import service as a2ui
 from app.agent_runs.models import AgentRun
 from app.audit import service as audit
 from app.auth.models import User
@@ -115,10 +116,11 @@ def _clean_mockup(mockup: dict[str, Any]) -> dict[str, Any]:
 
 
 async def ask(
-    db, run: AgentRun | None, task: Task, body: str, choices: list[dict] | None, mockup: dict[str, Any] | None
+    db, run: AgentRun | None, task: Task, body: str, choices: list[dict] | None, mockup: dict[str, Any] | None,
+    form: dict | None = None,
 ) -> WorkflowQuestion:
     """Record a question from an agent run. It replaces (withdraws) any older open question on the task, and
-    its mockup is stored as the task's next version. The caller commits."""
+    its mockup is stored as the task's next version. A form (MC-172) replaces choices. The caller commits."""
     body = strip_nul(body or "")
     if not body.strip():
         raise _422("empty_question")
@@ -126,6 +128,11 @@ async def ask(
         raise _422("too_large")
     clean_choices = _clean_choices(choices)
     clean_mockup = _clean_mockup(mockup) if mockup else None
+    message = None
+    if form is not None:
+        if clean_choices or (clean_mockup and clean_mockup["choices"]):
+            raise _422("form_with_choices")
+        message = a2ui.clean_form(form)  # FormError (422 invalid_form ...) before anything is written
 
     await db.execute(
         update(WorkflowQuestion)
@@ -138,11 +145,13 @@ async def ask(
     stage = Stage(run.stage) if run is not None and run.stage else (wf.stage if wf else Stage.brainstorm)
     q = WorkflowQuestion(
         task_id=task.id, run_id=run.id if run else None, stage=stage, body=body, choices=clean_choices,
-        mockup_id=mockup_row.id if mockup_row else None, status=QuestionStatus.open,
+        mockup_id=mockup_row.id if mockup_row else None, form=message, status=QuestionStatus.open,
     )
     db.add(q)
     await db.flush()
-    await engine.record_workflow_event(db, task, None, "question.asked", {"question_id": str(q.id), "has_mockup": bool(mockup_row)})
+    await engine.record_workflow_event(db, task, None, "question.asked", {
+        "question_id": str(q.id), "has_mockup": bool(mockup_row), "has_form": message is not None,
+    })
     return q
 
 
