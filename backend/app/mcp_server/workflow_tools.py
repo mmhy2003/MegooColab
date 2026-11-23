@@ -269,7 +269,7 @@ def register_workflow_tools(mcp: MCPServer) -> None:
     async def get_form_guide() -> dict[str, Any]:
         """What a form for ask_human may contain: instructions, MegooColab's A2UI catalog and an example."""
         async with tool_session():
-            return a2ui_service.guide()
+            return a2ui_service.form_guide()
 
     @mcp.tool()
     async def show_mockup(key: str, html: str, title: str) -> dict[str, Any]:

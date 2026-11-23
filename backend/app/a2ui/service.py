@@ -1,11 +1,15 @@
-"""Agent forms (MC-172): what an agent sends to ask_human becomes a validated A2UI v1.0 createSurface message.
+"""Agent forms (MC-172) and cards (MC-173): what an agent sends to ask_human or show_card becomes a validated
+A2UI v1.0 createSurface message.
 
 The agent writes only `components` and `data`. `wrap` adds the envelope, `validate` runs a2ui-core against
 MegooColab's catalog and then our own limits, and `field_labels` names the inputs for the agent's later prompts.
+Forms and cards share the catalog but each allows its own components: `clean_form` takes FORM_COMPONENTS and
+`clean_card` takes CARD_COMPONENTS, a read-only set without inputs.
 """
 
 import copy
 import json
+import re
 import uuid
 from collections.abc import Sequence
 from functools import cache
@@ -24,8 +28,12 @@ MAX_COMPONENTS = 60
 MAX_INPUTS = 20
 MAX_PROBLEMS = 10
 MAX_ANSWER_DATA_BYTES = 16 * 1024
-# Catalog entries for cards (MC-173), left out of the form guide.
-_CARD_ONLY = frozenset({"Tabs", "List", "StatTile", "TaskLink"})
+FORM_COMPONENTS = frozenset({"Column", "Row", "Card", "Divider", "Text", *INPUTS})
+CARD_COMPONENTS = frozenset({"Column", "Row", "Card", "Divider", "Text", "Tabs", "List", "StatTile", "TaskLink"})
+MAX_CARD_BYTES = 16 * 1024
+MAX_TABS = 6
+MAX_DATA_ITEMS = 50
+TASK_KEY = re.compile(r"^[A-Z][A-Z0-9]{1,9}-[1-9][0-9]*$")
 
 _HERE = Path(__file__).parent
 
@@ -38,6 +46,10 @@ class FormError(HTTPException):
         self.problems = [{"path": str(p["path"]), "message": str(p["message"])} for p in problems][:MAX_PROBLEMS]
         super().__init__(status.HTTP_422_UNPROCESSABLE_CONTENT,
                          "\n".join([code, *(f"{p['path']}: {p['message']}" for p in self.problems)]))
+
+
+class CardError(FormError):
+    """A card refused: the same 422 as FormError (the code, then up to MAX_PROBLEMS "path: message" lines)."""
 
 
 def _size(value: Any) -> int:
@@ -55,16 +67,6 @@ def _catalog() -> Catalog:
 
 
 @cache
-def _form_catalog() -> dict:
-    """The catalog without the card entries."""
-    doc = copy.deepcopy(_catalog_doc())
-    doc["components"] = {k: v for k, v in doc["components"].items() if k not in _CARD_ONLY}
-    any_component = doc["$defs"]["anyComponent"]
-    any_component["oneOf"] = [r for r in any_component["oneOf"] if r["$ref"].rsplit("/", 1)[-1] not in _CARD_ONLY]
-    return doc
-
-
-@cache
 def _instructions() -> str:
     return (_HERE / "guide.md").read_text()
 
@@ -74,10 +76,20 @@ def _example() -> dict:
     return json.loads((_HERE / "example.json").read_text())
 
 
-def wrap(components: list, data: dict | None) -> dict:
-    """The createSurface message for a form, with a surface id of its own."""
+@cache
+def _card_instructions() -> str:
+    return (_HERE / "card_guide.md").read_text()
+
+
+@cache
+def _card_example() -> dict:
+    return json.loads((_HERE / "card_example.json").read_text())
+
+
+def wrap(components: list, data: dict | None, prefix: str = "form") -> dict:
+    """The createSurface message for a form or a card, with a surface id of its own."""
     return {"version": "1.0",
-            "createSurface": {"surfaceId": "form-" + uuid.uuid4().hex[:12], "catalogId": CATALOG_ID,
+            "createSurface": {"surfaceId": f"{prefix}-" + uuid.uuid4().hex[:12], "catalogId": CATALOG_ID,
                               "components": components, "dataModel": data or {}}}
 
 
@@ -108,15 +120,28 @@ def _check_limits(components: list, data: dict | None) -> None:
         raise FormError("form_without_inputs")
 
 
-def validate(message: dict) -> None:
-    """The library's checks against our catalog, then our limits. Raises FormError."""
+def _library(message: dict) -> list[dict]:
+    """a2ui-core's problems with the message against our catalog; empty when it passes."""
     processor = MessageProcessor([_catalog()], options=MessageProcessorOptions(validation_config=STRICT_VALIDATION))
     try:
         processor.process_messages([message])
     except A2uiError as error:
-        raise FormError("invalid_form", _problems(error)) from None
+        return _problems(error)
+    return []
+
+
+def validate(message: dict) -> None:
+    """The library's checks against our catalog, then our limits. Raises FormError."""
+    if problems := _library(message):
+        raise FormError("invalid_form", problems)
     surface = message["createSurface"]
     _check_limits(surface["components"], surface.get("dataModel"))
+
+
+def _outside(components: list, allowed: frozenset[str]) -> list[dict]:
+    """The components whose name is not one of `allowed`, as problems."""
+    return [{"path": f"components.{c.get('id')}.component", "message": f"{c.get('component')!r} is not allowed here"}
+            for c in components if not (isinstance(c.get("component"), str) and c["component"] in allowed)]
 
 
 def clean_form(form: Any) -> dict:
@@ -128,9 +153,60 @@ def clean_form(form: Any) -> dict:
     if not isinstance(form.get("data", {}), dict):
         raise FormError("invalid_form", [{"path": "form", "message": "data must be an object"}])
     form = strip_nul_deep(form)
+    if problems := _outside(form["components"], FORM_COMPONENTS):
+        raise FormError("invalid_form", problems)
     _check_limits(form["components"], form.get("data"))
     message = wrap(form["components"], form.get("data"))
     validate(message)
+    return message
+
+
+def _long_array(value: Any, path: str = "data") -> str | None:
+    """The path of the first array in `value` with more than MAX_DATA_ITEMS items."""
+    if isinstance(value, list):
+        if len(value) > MAX_DATA_ITEMS:
+            return path
+        items = enumerate(value)
+    elif isinstance(value, dict):
+        items = value.items()
+    else:
+        return None
+    for key, item in items:
+        if found := _long_array(item, f"{path}.{key}"):
+            return found
+    return None
+
+
+def clean_card(card: Any) -> dict:
+    """The agent's {components, data?} as a validated, stored card surface. Raises CardError."""
+    if not (isinstance(card, dict) and "components" in card and set(card) <= {"components", "data"}):
+        raise CardError("invalid_card", [{"path": "card", "message": "must be {components, data?} and nothing else"}])
+    if not (isinstance(card["components"], list) and all(isinstance(c, dict) for c in card["components"])):
+        raise CardError("invalid_card", [{"path": "card", "message": "components must be a list of objects"}])
+    if not isinstance(card.get("data", {}), dict):
+        raise CardError("invalid_card", [{"path": "card", "message": "data must be an object"}])
+    card = strip_nul_deep(card)
+    components, data = card["components"], card.get("data")
+    if _size(card) > MAX_CARD_BYTES:
+        raise CardError("too_large", [{"path": "card", "message": f"over {MAX_CARD_BYTES} bytes"}])
+    if len(components) > MAX_COMPONENTS:
+        raise CardError("too_large", [{"path": "components", "message": f"over {MAX_COMPONENTS} components"}])
+    if any(_is_input(c) for c in components):
+        raise CardError("card_with_inputs")
+    if problems := _outside(components, CARD_COMPONENTS):
+        raise CardError("invalid_card", problems)
+    for c in components:
+        if c["component"] == "Tabs" and isinstance(c.get("tabs"), list) and len(c["tabs"]) > MAX_TABS:
+            raise CardError("too_large", [{"path": f"components.{c.get('id')}.tabs", "message": f"over {MAX_TABS} tabs"}])
+        task = c.get("task") if c["component"] == "TaskLink" else None
+        if isinstance(task, str) and not TASK_KEY.fullmatch(task):
+            raise CardError("invalid_card", [{"path": f"components.{c.get('id')}.task",
+                                              "message": "not a task key such as MC-181"}])
+    if path := _long_array(data):
+        raise CardError("too_large", [{"path": path, "message": f"over {MAX_DATA_ITEMS} items"}])
+    message = wrap(components, data, prefix="card")
+    if problems := _library(message):
+        raise CardError("invalid_card", problems)
     return message
 
 
@@ -146,9 +222,24 @@ def field_labels(message: dict | None) -> list[str]:
     return labels
 
 
-def guide() -> dict:
-    """What get_form_guide gives an agent: instructions, the catalog and an example form."""
-    return {"instructions_md": _instructions(), "catalog": _form_catalog(), "example": _example()}
+def _catalog_for(allowed: frozenset[str]) -> dict:
+    """The catalog cut down to `allowed` components (functions kept)."""
+    doc = copy.deepcopy(_catalog_doc())
+    doc["components"] = {k: v for k, v in doc["components"].items() if k in allowed}
+    one_of = doc["$defs"]["anyComponent"]["oneOf"]
+    doc["$defs"]["anyComponent"]["oneOf"] = [r for r in one_of if r["$ref"].rsplit("/", 1)[-1] in allowed]
+    return doc
+
+
+def form_guide() -> dict:
+    """What get_form_guide gives an agent: instructions, the form part of the catalog and an example form."""
+    return {"instructions_md": _instructions(), "catalog": _catalog_for(FORM_COMPONENTS), "example": _example()}
+
+
+def card_guide() -> dict:
+    """What get_card_guide gives an agent: instructions, the card part of the catalog and an example card."""
+    return {"instructions_md": _card_instructions(), "catalog": _catalog_for(CARD_COMPONENTS),
+            "example": _card_example()}
 
 
 def clean_answer_data(data: dict) -> dict:
