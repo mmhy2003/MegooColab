@@ -1630,8 +1630,8 @@ export interface paths {
         };
         /**
          * Download Attachment
-         * @description The file, as a download; `inline` shows it in the page instead, only for an image checked by its bytes
-         *     (never SVG or HTML). The browser is told not to guess the type either way.
+         * @description The file, as a download; `inline` shows it in the page instead, only for an image or a PDF checked by its
+         *     bytes (never SVG or HTML). The browser is told not to guess the type either way.
          */
         get: operations["download_attachment_api_attachments__attachment_id__get"];
         put?: never;
@@ -9227,6 +9227,10 @@ export interface components {
              * @default []
              */
             image_ids: string[];
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** FollowUpRef */
         app__workflow__schemas__FollowUpRef: {

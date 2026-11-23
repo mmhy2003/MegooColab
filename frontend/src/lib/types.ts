@@ -60,6 +60,10 @@ export type ActivityQuestion = {
   answered_by: { id: string; name: string } | null;
   answer_choice: string | null;
   answer_text: string | null;
+  /** the form the agent asked with, drawn in place of the choices */
+  form: FormMessage | null;
+  /** what the person sent with the form; null when they answered in their own words */
+  answer_data: FormValues | null;
 };
 export type MockupInfo = { id: string; version: number; title: string; choices: string[]; created_at: string };
 /** A form's values: the whole data model of its A2UI surface. */
