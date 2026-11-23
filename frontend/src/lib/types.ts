@@ -62,6 +62,13 @@ export type ActivityQuestion = {
   answer_text: string | null;
 };
 export type MockupInfo = { id: string; version: number; title: string; choices: string[]; created_at: string };
+/** A form's values: the whole data model of its A2UI surface. */
+export type FormValues = Record<string, unknown>;
+/** A form question's A2UI v1.0 `createSurface` message, as the backend stores it. */
+export type FormMessage = {
+  version: "1.0";
+  createSurface: { surfaceId: string; catalogId: string; components: Record<string, unknown>[]; dataModel?: FormValues };
+};
 export type ReviewDetail = S["ReviewOut"];
 export type MethodologyItem = S["MethodologyOut"];
 export type MethodologyVersionInfo = S["MethodologyVersionInfo"];
