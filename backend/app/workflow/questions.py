@@ -171,15 +171,16 @@ async def next_mockup(db, task: Task, clean: dict[str, Any]) -> Mockup:
 
 async def answer(
     db, user: User, task: Task, question_id: uuid.UUID, choice: str | None, text: str | None,
-    images: Sequence[uuid.UUID] = (),
+    images: Sequence[uuid.UUID] = (), data: dict[str, Any] | None = None,
 ) -> None:
     """A human answers a question (WF-6 roles). The first answer wins (409 already_decided). If the workflow is
-    waiting on this question, the asking role's session resumes; otherwise the answer is only recorded."""
+    waiting on this question, the asking role's session resumes; otherwise the answer is only recorded. A form
+    question (MC-172) is answered with `data` (the form's values) or in the person's own words, never by choice."""
     wf = await engine.lock_task(db, task)  # lock order: task, workflow, then the question row
     await engine.require_actor(db, user, task, wf)
     choice = strip_nul(choice) if choice else None
     text = strip_nul(text) if text else None
-    if not choice and not text:
+    if not choice and not text and data is None:
         raise _422("empty_answer")
     if text and len(text) > MAX_ANSWER_TEXT:
         raise _422("too_large")
@@ -195,6 +196,14 @@ async def answer(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "question_not_found")
     if q.status != QuestionStatus.open:
         raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")
+    if data is not None and q.form is None:
+        raise _422("no_form")
+    if choice and q.form is not None:
+        raise _422("unknown_choice")
+    if data is not None and (text or images):
+        raise _422("invalid_answer")
+    if data is not None:
+        data = a2ui.clean_answer_data(data)  # 422 too_large
     if choice:
         await _choice_label(db, q, choice)  # 422 unknown_choice
     # Only the task's latest open question is "current". ask() withdraws older ones under the same row lock
@@ -209,10 +218,12 @@ async def answer(
     q.answered_by = user.id
     q.answer_choice = choice
     q.answer_text = text
+    q.answer_data = data
     q.answered_at = datetime.now(UTC)
     await link_images(db, user, images, task, MessageKind.answer, q.id)
     await engine.record_workflow_event(
-        db, task, user.id, "question.answered", {"question_id": str(q.id), "choice": choice, "has_text": bool(text)}
+        db, task, user.id, "question.answered",
+        {"question_id": str(q.id), "choice": choice, "has_text": bool(text), "has_data": data is not None},
     )
     await audit.record(
         db, "workflow.answer", actor_id=user.id, target_type="question", target_id=q.id, data={"task_id": str(task.id)}
@@ -297,7 +308,7 @@ async def deliver(db, wf: TaskWorkflow, task: Task, q: WorkflowQuestion, *, requ
         session_ref = None
     run = await engine.hand_to_agent(
         db, wf, task, role, step=step, resume_kind="answer",
-        payload={"choice_label": label, "text": q.answer_text}, requested_by=requested_by,
+        payload={"choice_label": label, "text": q.answer_text, "data": q.answer_data}, requested_by=requested_by,
         resume_session_ref=session_ref,
     )
     q.delivered_at = datetime.now(UTC)

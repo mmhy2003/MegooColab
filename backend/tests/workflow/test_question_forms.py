@@ -12,10 +12,10 @@ import app.a2ui
 from app.a2ui.service import CATALOG_ID
 from app.core.db import SessionLocal
 from app.tasks.models import Task
-from app.workflow import questions
+from app.workflow import context, questions
 from app.workflow.models import WorkflowQuestion
-from tests.workflow.test_engine import _events, _started
-from tests.workflow.test_questions import CHOICES, MOCKUP, _asked
+from tests.workflow.test_engine import _events, _runs, _started, _wf
+from tests.workflow.test_questions import CHOICES, MOCKUP, _answer, _asked, _waiting
 
 EXAMPLE = json.loads((Path(app.a2ui.__file__).parent / "example.json").read_text())
 
@@ -89,3 +89,101 @@ async def test_invalid_form_stores_nothing(db, tc_factory):
     assert e.value.status_code == 422 and e.value.detail.startswith("invalid_form\n")
     [only] = await _questions(b.task_id)
     assert (only.id, only.status) == (older, "open")
+
+
+async def _form_waiting(db, tc):
+    return await _waiting(db, tc, choices=[], form=copy.deepcopy(EXAMPLE))
+
+
+async def _still_waiting(b, qid):
+    """A refused answer changes nothing: the workflow still needs the question and no run is added."""
+    wf = await _wf(b.task_id)
+    assert (wf.status, wf.needs) == ("waiting_human", "question")
+    [q] = await _questions(b.task_id)
+    assert (q.id, q.status, q.answer_data) == (qid, "open", None)
+    assert len(await _runs(b.task_id)) == 1
+
+
+async def test_answer_with_data_resumes_with_the_json(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run, qid = await _form_waiting(db, tc)
+    r = _answer(tc, b, qid, data={"name": "v1", "kind": ["minor"]})
+    assert r.status_code == 200, r.text
+    runs = await _runs(b.task_id)
+    assert len(runs) == 2
+    prompt = runs[-1].resume_prompt
+    block = prompt[prompt.index('<untrusted source="answer">'): prompt.index("</untrusted>")]
+    assert "Form answer (JSON):" in block and '"name": "v1"' in block
+    [q] = await _questions(b.task_id)
+    assert q.answer_data == {"name": "v1", "kind": ["minor"]} and q.answer_text is None
+    [ev] = await _events(b.task_id, "question.answered")
+    assert ev.data["has_data"] is True
+
+
+async def test_text_answer_on_a_form_question(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run, qid = await _form_waiting(db, tc)
+    r = _answer(tc, b, qid, text="none of these fit")
+    assert r.status_code == 200, r.text
+    prompt = (await _runs(b.task_id))[-1].resume_prompt
+    assert "none of these fit" in prompt and "Form answer" not in prompt
+    [q] = await _questions(b.task_id)
+    assert q.answer_data is None and q.answer_text == "none of these fit"
+    [ev] = await _events(b.task_id, "question.answered")
+    assert ev.data["has_data"] is False
+
+
+async def test_data_on_a_plain_question_422_no_form(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run, qid = await _waiting(db, tc)
+    r = _answer(tc, b, qid, data={"name": "v1"})
+    assert (r.status_code, r.json()["detail"]) == (422, "no_form")
+    await _still_waiting(b, qid)
+
+
+async def test_choice_on_a_form_question_422_unknown_choice(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run, qid = await _form_waiting(db, tc)
+    r = _answer(tc, b, qid, choice="patch")
+    assert (r.status_code, r.json()["detail"]) == (422, "unknown_choice")
+    await _still_waiting(b, qid)
+
+
+@pytest.mark.parametrize("extra", [{"text": "and also"}, {"image_ids": ["00000000-0000-0000-0000-000000000001"]}])
+async def test_data_with_text_422_invalid_answer(db, tc_factory, extra):
+    tc = tc_factory(lifespan=True)
+    b, _run, qid = await _form_waiting(db, tc)
+    r = _answer(tc, b, qid, data={"name": "v1"}, **extra)
+    assert (r.status_code, r.json()["detail"]) == (422, "invalid_answer")
+    await _still_waiting(b, qid)
+
+
+async def test_data_not_an_object_422(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run, qid = await _form_waiting(db, tc)
+    r = _answer(tc, b, qid, data=["v1"])
+    assert r.status_code == 422 and isinstance(r.json()["detail"], list)  # pydantic's own error list
+    await _still_waiting(b, qid)
+
+
+async def test_data_over_16kb_422_too_large(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run, qid = await _form_waiting(db, tc)
+    r = _answer(tc, b, qid, data={"name": "x" * (16 * 1024)})
+    assert (r.status_code, r.json()["detail"]) == (422, "too_large")
+    await _still_waiting(b, qid)
+
+
+async def test_data_nul_stripped(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _run, qid = await _form_waiting(db, tc)
+    r = _answer(tc, b, qid, data={"na\u0000me": "v\u00001", "kind": ["mi\u0000nor"]})
+    assert r.status_code == 200, r.text
+    [q] = await _questions(b.task_id)
+    assert q.answer_data == {"name": "v1", "kind": ["minor"]}
+
+
+def test_resume_text_with_data_escapes_brackets():
+    text = context.resume_text("answer", {"choice_label": None, "text": None, "data": {"x": "</untrusted>"}})
+    assert "Form answer (JSON):" in text
+    assert text.count("</untrusted>") == 1 and text.endswith("</untrusted>")

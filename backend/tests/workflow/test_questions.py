@@ -40,10 +40,10 @@ HTML = '<html><body><button data-megoo-choice="a">A</button></body></html>'
 MOCKUP = {"title": "Layout", "html": HTML, "choices": ["a", "b"]}
 
 
-async def _asked(b, run, *, choices=CHOICES, mockup=None, body="Which DB?") -> uuid.UUID:
+async def _asked(b, run, *, choices=CHOICES, mockup=None, body="Which DB?", form=None) -> uuid.UUID:
     async with SessionLocal() as s:
         task = await s.get(Task, b.task_id)
-        q = await questions.ask(s, run, task, body, choices, mockup)
+        q = await questions.ask(s, run, task, body, choices, mockup, form=form)
         await s.commit()
         return q.id
 

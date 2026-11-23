@@ -4,6 +4,7 @@ Task text, thread items, answers, comments and findings are untrusted (NFR-3): e
 <untrusted source="...">, and the content cannot close the wrapper from inside.
 """
 
+import json
 import logging
 import unicodedata
 import uuid
@@ -429,7 +430,7 @@ def _project_answers_text(payload: dict) -> str:
 
 def resume_text(kind: str, payload: Any) -> str:
     """The short text sent when a session is resumed. Payload by kind:
-    answer {choice_label?, text?}; rejection {comment, kind: "design"|"plan"};
+    answer {choice_label?, text?, data?}; rejection {comment, kind: "design"|"plan"};
     nudge {text?} (or a str); findings: list of finding dicts;
     failures_accepted {by, names, failing_total} (MC-97: a person chose Finish anyway)."""
     if kind == "answer":
@@ -438,6 +439,8 @@ def resume_text(kind: str, payload: Any) -> str:
             parts.append(f"Chosen: {payload['choice_label']}")
         if payload.get("text"):
             parts.append(str(payload["text"]))
+        if payload.get("data") is not None:
+            parts.append("Form answer (JSON):\n" + json.dumps(payload["data"], ensure_ascii=False, indent=2))
         return _bounded("The human answered your question.\n", "answer", "\n".join(parts) or "(no answer text)")
     if kind == "rejection":
         tool = "submit_plan" if payload.get("kind") == "plan" else "submit_design"
