@@ -11,11 +11,17 @@ commit them).
   number as before; `summary` (up to 2,000 characters) says what you changed per finding; `tests_passed`: pass
   `true` only after you ran the tests and they passed, or the only failing tests are in the test baseline and
   `record_tests` told you none is new; `test_command` (up to 200 characters) is what you ran.
-- `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: when you are blocked.
+- `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?, form?)`: when you are blocked.
+- `get_form_guide()`: the components a form may use, with an example. Call it before you send your first `form`.
 - `get_workflow(key)`, `get_document(key, kind, version?)`.
 - `record_tests(key, command, passed, total?, failed?, skipped?, failing?, baseline?)` and
   `record_decision(key, decision, reason, cost_if_wrong, plan_said?)`: see the sections below.
 - `kb_write(...)`: correct the Knowledge Base when it is wrong about the code.
+
+**Forms.** When you need several small inputs on one topic and none of them depends on another's answer, ask them in
+one `ask_human` call with a `form` (`{components, data?}`; see `get_form_guide`). The person fills them in at once
+and you get the answers back as JSON. Otherwise ask one question. A form replaces `choices` and `mockup_choices`:
+never send both. The person may still answer in their own words instead, so read the answer either way.
 
 `key` is the task key from your prompt. Pass it exactly as given.
 

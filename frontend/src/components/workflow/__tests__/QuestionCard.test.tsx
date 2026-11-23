@@ -1,9 +1,13 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CATALOG_ID } from "@/components/a2ui/catalog";
 import { QuestionCard } from "@/components/workflow/QuestionCard";
-import type { ActivityItem, ActivityQuestion } from "@/lib/types";
+import type { ActivityItem, ActivityQuestion, FormMessage, FormValues } from "@/lib/types";
 
 afterEach(() => {
   cleanup();
@@ -22,6 +26,8 @@ const base: ActivityQuestion = {
   answered_by: null,
   answer_choice: null,
   answer_text: null,
+  form: null,
+  answer_data: null,
 };
 const item = (q: Partial<ActivityQuestion> = {}): ActivityItem => ({
   type: "question",
@@ -31,7 +37,11 @@ const item = (q: Partial<ActivityQuestion> = {}): ActivityItem => ({
   question: { ...base, ...q },
 });
 
-function setup(q: Partial<ActivityQuestion> = {}, canAct = true, answer?: Response, extra: { readOnly?: boolean; mockupsFail?: boolean; onAnswered?: () => void } = {}) {
+function setup(
+  q: Partial<ActivityQuestion> = {},
+  canAct = true, answer?: Response,   extra: { readOnly?: boolean; mockupsFail?: boolean; onAnswered?: () => void; Card?: typeof QuestionCard } = {},
+) {
+  const Card = extra.Card ?? QuestionCard;
   const fetchMock = vi.fn(async (...args: [url: string, init?: RequestInit]) => {
     const url = args[0];
     if (url.endsWith("/answer")) return (answer ?? new Response("{}", { status: 200 })).clone();
@@ -47,7 +57,7 @@ function setup(q: Partial<ActivityQuestion> = {}, canAct = true, answer?: Respon
   vi.stubGlobal("fetch", fetchMock);
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <QuestionCard item={item(q)} taskKey="PAY-1" canAct={canAct} readOnly={extra.readOnly} onAnswered={extra.onAnswered} />
+      <Card item={item(q)} taskKey="PAY-1" canAct={canAct} readOnly={extra.readOnly} onAnswered={extra.onAnswered} />
     </QueryClientProvider>,
   );
   const answers = () => fetchMock.mock.calls.filter(([u]) => String(u).endsWith("/answer"));
@@ -202,5 +212,117 @@ describe("QuestionCard", () => {
     setup({}, true, new Response(JSON.stringify({ detail: "already_decided" }), { status: 409 }), { onAnswered });
     fireEvent.click(screen.getByRole("button", { name: /SQLite/ }));
     await waitFor(() => expect(onAnswered).toHaveBeenCalled());
+  });
+});
+
+// the plan's example form, as backend/app/a2ui/service.py's wrap stores it
+const example = (
+  JSON.parse(readFileSync(join(process.cwd(), "..", "backend", "tests", "a2ui", "fixtures", "forms.json"), "utf8")) as {
+    valid: { name: string; form: { components: Record<string, unknown>[]; data: FormValues } }[];
+  }
+).valid.find((f) => f.name === "example")!.form;
+const form: FormMessage = {
+  version: "1.0",
+  createSurface: { surfaceId: "form-0123456789ab", catalogId: CATALOG_ID, components: example.components, dataModel: example.data },
+};
+const formQuestion: Partial<ActivityQuestion> = { body: "About the release", choices: [], form };
+const send = () => screen.getByRole("button", { name: "Send answer" });
+
+describe("QuestionCard with a form", () => {
+  it("a form question shows the form and no choice buttons", async () => {
+    setup({ ...formQuestion, choices: [{ id: "a", label: "Option A" }] });
+    expect(await screen.findByLabelText("Release name")).toBeEnabled();
+    expect(screen.getByRole("group", { name: "Kind" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Option A/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Other" })).toBeNull();
+  });
+
+  it("Send is off while a check fails", async () => {
+    setup(formQuestion);
+    const name = await screen.findByLabelText("Release name");
+    expect(send()).toBeDisabled();
+    await userEvent.type(name, "v1");
+    await waitFor(() => expect(send()).toBeEnabled());
+  });
+
+  it("sends the form data", async () => {
+    const { answers, sentBody } = setup(formQuestion);
+    await userEvent.type(await screen.findByLabelText("Release name"), "v1");
+    await waitFor(() => expect(send()).toBeEnabled());
+    fireEvent.click(send());
+    await waitFor(() => expect(answers()).toHaveLength(1));
+    expect(sentBody()).toEqual({ data: { name: "v1", due: "", kind: ["patch"], notify: true } });
+  });
+
+  it("switching to own words and back keeps the form values and sends text", async () => {
+    const { answers, sentBody } = setup(formQuestion);
+    await userEvent.type(await screen.findByLabelText("Release name"), "v1");
+    fireEvent.click(screen.getByRole("button", { name: "Answer in your own words instead" }));
+    // the form stays mounted under Tailwind's `hidden` (jsdom has no stylesheet, so look for the class)
+    expect(screen.getByLabelText("Release name").closest(".hidden")).not.toBeNull();
+    expect(send()).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Call it v1" } });
+    expect(screen.getByText("10/4000")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to the form" }));
+    expect(screen.getByLabelText("Release name").closest(".hidden")).toBeNull();
+    expect(screen.getByLabelText("Release name")).toHaveValue("v1");
+    expect(screen.queryByLabelText("Your answer")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Answer in your own words instead" }));
+    expect(screen.getByLabelText("Your answer")).toHaveValue("Call it v1");
+    fireEvent.click(send());
+    await waitFor(() => expect(answers()).toHaveLength(1));
+    expect(sentBody()).toEqual({ text: "Call it v1" });
+  });
+
+  it("the answered form is read-only with the sent values", async () => {
+    setup({ ...formQuestion, status: "answered", answered_by: { id: "u1", name: "Sara Kim" }, answer_data: { name: "v1" } });
+    const name = await screen.findByLabelText("Release name");
+    expect(name).toBeDisabled();
+    expect(name).toHaveValue("v1");
+    expect(screen.getByText("Sara Kim answered with the form.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send answer" })).toBeNull();
+  });
+
+  it("a text answer on a form question shows the text", async () => {
+    setup({ ...formQuestion, status: "answered", answered_by: { id: "u1", name: "Sara Kim" }, answer_text: "Call it v1" });
+    expect(screen.getByText(/Sara Kim answered:/).parentElement).toHaveTextContent("Call it v1");
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(screen.queryByLabelText("Release name")).toBeNull();
+  });
+
+  it("a withdrawn form question is read-only", async () => {
+    setup({ ...formQuestion, status: "withdrawn" });
+    expect(await screen.findByLabelText("Release name")).toBeDisabled();
+    expect(screen.getByText(/withdrawn/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send answer" })).toBeNull();
+    cleanup();
+    setup(formQuestion, false);
+    expect(await screen.findByLabelText("Release name")).toBeDisabled();
+    expect(screen.getByText("Waiting on the agent's owner, a project manager or an admin to answer.")).toBeInTheDocument();
+  });
+});
+
+describe("QuestionCard when the form renderer fails", () => {
+  afterEach(() => {
+    vi.doUnmock("@a2ui/react");
+    vi.resetModules();
+  });
+
+  it("when the renderer fails, the person can still answer in their own words", async () => {
+    vi.resetModules();
+    vi.doMock("@a2ui/react", () => {
+      throw new Error("chunk failed to load");
+    });
+    const { QuestionCard: Card } = await import("@/components/workflow/QuestionCard");
+    const { answers, sentBody } = setup(formQuestion, true, undefined, { Card });
+    expect(await screen.findByRole("alert")).toHaveTextContent("This form couldn't be shown.");
+    expect(send()).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Answer in your own words instead" }));
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Call it v1" } });
+    fireEvent.click(send());
+    await waitFor(() => expect(answers()).toHaveLength(1));
+    expect(sentBody()).toEqual({ text: "Call it v1" });
   });
 });

@@ -1,0 +1,17 @@
+{
+  "components": [
+    {"id": "root", "component": "Column", "children": ["intro", "name", "due", "kind", "notify"]},
+    {"id": "intro", "component": "Text", "text": "A few details about the release."},
+    {"id": "name", "component": "TextField", "label": "Release name", "value": {"@path": "/name"},
+     "variant": "shortText",
+     "@checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/name"}}},
+                  "message": "A name is needed"}]},
+    {"id": "due", "component": "DateTimeInput", "label": "Due date", "value": {"@path": "/due"},
+     "enableDate": true, "enableTime": false},
+    {"id": "kind", "component": "ChoicePicker", "label": "Kind", "variant": "mutuallyExclusive",
+     "options": [{"label": "Patch", "value": "patch"}, {"label": "Minor", "value": "minor"}],
+     "value": {"@path": "/kind"}},
+    {"id": "notify", "component": "CheckBox", "label": "Tell the team", "value": {"@path": "/notify"}}
+  ],
+  "data": {"name": "", "due": "", "kind": ["patch"], "notify": true}
+}

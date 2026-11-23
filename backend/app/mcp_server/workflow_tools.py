@@ -23,6 +23,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.a2ui import service as a2ui_service
 from app.agent_runs.models import AgentRun
 from app.auth.models import User
 from app.mcp_server.auth import current_run, live_run, require_run_task, tool_session
@@ -241,10 +242,12 @@ def register_workflow_tools(mcp: MCPServer) -> None:
         mockup_html: str | None = None,
         mockup_title: str | None = None,
         mockup_choices: list[str] | None = None,
+        form: dict[str, Any] | None = None,
     ) -> str:
         """Ask a human a question, then end your turn. `choices`: up to 6 of {id, label, description?,
         recommended?}. An optional HTML mockup (with a title) is shown sandboxed; elements with
-        data-megoo-choice="<id>" pick one of `mockup_choices`."""
+        data-megoo-choice="<id>" pick one of `mockup_choices`. `form`: {components, data?}, a form of several
+        inputs instead of choices (call get_form_guide first); never with choices or mockup_choices."""
         async with tool_session() as (db, user):
             task = await _task(db, user, key, "ask_human", write=True)
             mockup = None
@@ -252,15 +255,21 @@ def register_workflow_tools(mcp: MCPServer) -> None:
                 mockup = {"html": mockup_html, "title": mockup_title, "choices": mockup_choices}
             # the workflow lock before the question rows: the order questions.answer takes them in
             if current_run.get() is not None:
-                await questions.ask(db, await live_run(db, task), task, question, choices, mockup)
+                await questions.ask(db, await live_run(db, task), task, question, choices, mockup, form)
             else:
                 wf = await engine.lock_connect_only(db, user, task)
                 if wf.status == WorkflowStatus.finished:
                     raise HTTPException(status.HTTP_409_CONFLICT, "workflow_finished")
-                await questions.ask(db, None, task, question, choices, mockup)
+                await questions.ask(db, None, task, question, choices, mockup, form)
                 if wf.status == WorkflowStatus.running:  # an approval it already waits for stays the need
                     await engine.wait_for(db, wf, Needs.question)
             return ASKED
+
+    @mcp.tool()
+    async def get_form_guide() -> dict[str, Any]:
+        """What a form for ask_human may contain: instructions, MegooColab's A2UI catalog and an example."""
+        async with tool_session():
+            return a2ui_service.guide()
 
     @mcp.tool()
     async def show_mockup(key: str, html: str, title: str) -> dict[str, Any]:

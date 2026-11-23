@@ -88,7 +88,7 @@ class ActivityItem(BaseModel):
     kind: str | None = None
     data: dict | None = None
     # type "question": {id, body, choices, status, mockup: {id, version, title}|None, answered_by,
-    # answer_choice, answer_text}
+    # answer_choice, answer_text, form: the A2UI createSurface message|None, answer_data: the form's answer|None}
     question: dict | None = None
     to_agent: AgentMessageOut | None = None  # type "comment": a message for the task's agent
     # the images sent with it: a comment's, an answer's (type "question"), a change request's (event
@@ -223,6 +223,7 @@ async def activity_items(
                 "id": str(q.id), "body": q.body, "choices": list(q.choices or []), "status": str(q.status),
                 "mockup": mockups.get(q.mockup_id), "answered_by": answerers.get(q.answered_by),
                 "answer_choice": q.answer_choice, "answer_text": q.answer_text,
+                "form": q.form, "answer_data": q.answer_data,
             },
         )
         for q in questions

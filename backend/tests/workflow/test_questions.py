@@ -40,10 +40,10 @@ HTML = '<html><body><button data-megoo-choice="a">A</button></body></html>'
 MOCKUP = {"title": "Layout", "html": HTML, "choices": ["a", "b"]}
 
 
-async def _asked(b, run, *, choices=CHOICES, mockup=None, body="Which DB?") -> uuid.UUID:
+async def _asked(b, run, *, choices=CHOICES, mockup=None, body="Which DB?", form=None) -> uuid.UUID:
     async with SessionLocal() as s:
         task = await s.get(Task, b.task_id)
-        q = await questions.ask(s, run, task, body, choices, mockup)
+        q = await questions.ask(s, run, task, body, choices, mockup, form=form)
         await s.commit()
         return q.id
 
@@ -266,7 +266,8 @@ async def test_questions_in_activity_feed_reach_the_prompt(db, tc_factory):
     assert q["status"] == "answered" and q["answer_choice"] == "pg" and q["answer_text"] == "because"
     assert q["answered_by"] == {"id": str(b.manager.id), "name": b.manager.name} and q["choices"][0]["label"] == "Postgres"
     assert q["mockup"]["version"] == 1 and q["mockup"]["title"] == "Layout"
-    assert set(q) == {"id", "body", "choices", "status", "mockup", "answered_by", "answer_choice", "answer_text"}
+    assert set(q) == {"id", "body", "choices", "status", "mockup", "answered_by", "answer_choice", "answer_text",
+                      "form", "answer_data"}
     # chronological with the other items, and under the latest-N paging
     async with SessionLocal() as s:
         task = await s.get(Task, b.task_id)

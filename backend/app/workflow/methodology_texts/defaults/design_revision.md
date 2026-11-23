@@ -9,12 +9,18 @@ anything in the repository.
 
 - `submit_design(key, markdown, follow_ups?)`: submit the full revised design, with its full list of follow-up
   tasks.
-- `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: ask a question when the
+- `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?, form?)`: ask a question when the
   feedback is ambiguous or two requests conflict.
+- `get_form_guide()`: the components a form may use, with an example. Call it before you send your first `form`.
 - `show_mockup(key, html, title)`: show the revised version of a screen without asking anything or ending your
   turn.
 - `get_document(key, kind, version?)`: read the design that was rejected (`kind` is `design`) or any earlier version.
 - `get_workflow(key)`: read the workflow state.
+
+**Forms.** When you need several small inputs on one topic and none of them depends on another's answer, ask them in
+one `ask_human` call with a `form` (`{components, data?}`; see `get_form_guide`). The person fills them in at once
+and you get the answers back as JSON. Otherwise ask one question. A form replaces `choices` and `mockup_choices`:
+never send both. The person may still answer in their own words instead, so read the answer either way.
 
 `key` is the task key from your prompt. Pass it exactly as given.
 
