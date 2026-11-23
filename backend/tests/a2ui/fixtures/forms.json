@@ -1,0 +1,173 @@
+{
+  "valid": [
+    {
+      "name": "example",
+      "form": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["intro", "name", "due", "kind", "notify"]},
+          {"id": "intro", "component": "Text", "text": "A few details about the release."},
+          {"id": "name", "component": "TextField", "label": "Release name", "value": {"@path": "/name"},
+           "variant": "shortText",
+           "@checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/name"}}},
+                        "message": "A name is needed"}]},
+          {"id": "due", "component": "DateTimeInput", "label": "Due date", "value": {"@path": "/due"},
+           "enableDate": true, "enableTime": false},
+          {"id": "kind", "component": "ChoicePicker", "label": "Kind", "variant": "mutuallyExclusive",
+           "options": [{"label": "Patch", "value": "patch"}, {"label": "Minor", "value": "minor"}],
+           "value": {"@path": "/kind"}},
+          {"id": "notify", "component": "CheckBox", "label": "Tell the team", "value": {"@path": "/notify"}}
+        ],
+        "data": {"name": "", "due": "", "kind": ["patch"], "notify": true}
+      }
+    },
+    {
+      "name": "every-input",
+      "form": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["title", "card", "line", "row", "picks", "when"]},
+          {"id": "title", "component": "Text", "text": "**Deploy settings**", "variant": "body"},
+          {"id": "card", "component": "Card", "child": "contact"},
+          {"id": "contact", "component": "Column", "children": ["email", "notes"]},
+          {"id": "email", "component": "TextField", "label": "Email", "value": {"@path": "/email"},
+           "variant": "shortText",
+           "@checks": [{"condition": {"@call": "email", "args": {"value": {"@path": "/email"}}},
+                        "message": "Enter an email address"}]},
+          {"id": "notes", "component": "TextField", "label": "Notes", "value": {"@path": "/notes"},
+           "variant": "longText",
+           "@checks": [{"condition": {"@call": "length", "args": {"value": {"@path": "/notes"}, "max": 500}},
+                        "message": "At most 500 characters"}]},
+          {"id": "line", "component": "Divider", "axis": "horizontal"},
+          {"id": "row", "component": "Row", "children": ["replicas", "tag", "share"]},
+          {"id": "replicas", "component": "TextField", "label": "Replicas", "value": {"@path": "/replicas"},
+           "variant": "number",
+           "@checks": [{"condition": {"@call": "numeric", "args": {"value": {"@path": "/replicas"}, "min": 1, "max": 9}},
+                        "message": "Between 1 and 9"}]},
+          {"id": "tag", "component": "TextField", "label": "Tag", "value": {"@path": "/tag"},
+           "@checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/tag"}}},
+                        "message": "A tag is needed"},
+                       {"condition": {"@call": "regex", "args": {"value": {"@path": "/tag"}, "pattern": "^v[0-9]+$"}},
+                        "message": "Like v12"}]},
+          {"id": "share", "component": "CheckBox", "label": "Share the logs", "value": {"@path": "/share"}},
+          {"id": "picks", "component": "Column", "children": ["region", "targets", "load"]},
+          {"id": "region", "component": "ChoicePicker", "label": "Region", "variant": "mutuallyExclusive",
+           "options": [{"label": "Europe", "value": "eu"}, {"label": "America", "value": "us"}],
+           "value": {"@path": "/region"}},
+          {"id": "targets", "component": "ChoicePicker", "label": "Targets", "variant": "multipleSelection",
+           "options": [{"label": "Web", "value": "web"}, {"label": "API", "value": "api"},
+                       {"label": "Workers", "value": "workers"}],
+           "value": {"@path": "/targets"}},
+          {"id": "load", "component": "Slider", "label": "Traffic (%)", "min": 0, "max": 100,
+           "value": {"@path": "/load"}},
+          {"id": "when", "component": "DateTimeInput", "label": "Start", "value": {"@path": "/when"},
+           "enableDate": true, "enableTime": true}
+        ],
+        "data": {"email": "", "notes": "", "replicas": 2, "tag": "", "share": false,
+                 "region": ["eu"], "targets": [], "load": 10, "when": ""}
+      }
+    },
+    {
+      "name": "no-data",
+      "form": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["ok"]},
+          {"id": "ok", "component": "CheckBox", "label": "Go ahead?", "value": {"@path": "/ok"}}
+        ]
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "unknown-component",
+      "form": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["ok", "map"]},
+          {"id": "ok", "component": "CheckBox", "label": "Go ahead?", "value": {"@path": "/ok"}},
+          {"id": "map", "component": "Map", "text": "here"}
+        ]
+      },
+      "code": "invalid_form",
+      "path_contains": "components.map.component"
+    },
+    {
+      "name": "dangling-id",
+      "form": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["ok", "ghost"]},
+          {"id": "ok", "component": "CheckBox", "label": "Go ahead?", "value": {"@path": "/ok"}}
+        ]
+      },
+      "code": "invalid_form",
+      "path_contains": "components"
+    },
+    {
+      "name": "missing-root",
+      "form": {
+        "components": [
+          {"id": "top", "component": "Column", "children": ["ok"]},
+          {"id": "ok", "component": "CheckBox", "label": "Go ahead?", "value": {"@path": "/ok"}}
+        ]
+      },
+      "code": "invalid_form",
+      "path_contains": "components"
+    },
+    {
+      "name": "obscured-variant",
+      "form": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["password"]},
+          {"id": "password", "component": "TextField", "label": "Password", "value": {"@path": "/password"},
+           "variant": "obscured"}
+        ]
+      },
+      "code": "invalid_form",
+      "path_contains": "components.password.variant"
+    },
+    {
+      "name": "button",
+      "form": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["ok", "send"]},
+          {"id": "ok", "component": "CheckBox", "label": "Go ahead?", "value": {"@path": "/ok"}},
+          {"id": "label", "component": "Text", "text": "Send"},
+          {"id": "send", "component": "Button", "child": "label", "action": {"event": {"name": "send"}}}
+        ]
+      },
+      "code": "invalid_form",
+      "path_contains": "components.send.component"
+    },
+    {
+      "name": "image",
+      "form": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["ok", "pic"]},
+          {"id": "ok", "component": "CheckBox", "label": "Go ahead?", "value": {"@path": "/ok"}},
+          {"id": "pic", "component": "Image", "url": "https://example.com/a.png"}
+        ]
+      },
+      "code": "invalid_form",
+      "path_contains": "components.pic.component"
+    },
+    {
+      "name": "no-inputs",
+      "form": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["hello"]},
+          {"id": "hello", "component": "Text", "text": "Nothing to fill in."}
+        ]
+      },
+      "code": "form_without_inputs"
+    },
+    {
+      "name": "extra-key",
+      "form": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["ok"]},
+          {"id": "ok", "component": "CheckBox", "label": "Go ahead?", "value": {"@path": "/ok"}}
+        ],
+        "surfaceId": "mine"
+      },
+      "code": "invalid_form",
+      "path_contains": "form"
+    }
+  ]
+}
