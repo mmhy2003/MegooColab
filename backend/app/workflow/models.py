@@ -229,10 +229,13 @@ class WorkflowQuestion(IdMixin, Base):
     body: Mapped[str] = mapped_column(Text)
     choices: Mapped[list] = mapped_column(MutableList.as_mutable(JSONB), default=list)
     mockup_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_mockups.id", ondelete="SET NULL"))
+    # MC-172: an A2UI v1.0 createSurface message (app.a2ui.service.wrap); a question has choices or a form
+    form: Mapped[dict | None] = mapped_column(JSONB)
     status: Mapped[QuestionStatus] = mapped_column(String(20), default=QuestionStatus.open)
     answered_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     answer_choice: Mapped[str | None] = mapped_column(String(40))
     answer_text: Mapped[str | None] = mapped_column(Text)
+    answer_data: Mapped[dict | None] = mapped_column(JSONB)  # the form's data model, when answered with the form
     created_at: Mapped[datetime] = _created_at()
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # when the answer was sent to the agent's session; null while an answer waits for the run to end or a resume
