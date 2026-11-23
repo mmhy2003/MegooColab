@@ -171,6 +171,22 @@ class Comment(IdMixin, Base):
     __table_args__ = (Index("ix_comments_task_id_delivery", "task_id", "delivery"),)
 
 
+class TaskCard(IdMixin, Base):
+    """MC-173: a read-only A2UI card an agent showed in the task's thread (app.tasks.cards.show). Its title and text
+    stand in for it wherever it can't be drawn."""
+
+    __tablename__ = "task_cards"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id", ondelete="SET NULL"))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))  # a personal token's
+    title: Mapped[str] = mapped_column(String(120))
+    text: Mapped[str] = mapped_column(Text)
+    surface: Mapped[dict] = mapped_column(JSONB)  # the createSurface message (app.a2ui.service.clean_card)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
 class Attachment(IdMixin, Base):
     __tablename__ = "attachments"
 
