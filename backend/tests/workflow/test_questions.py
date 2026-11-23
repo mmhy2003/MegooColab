@@ -266,7 +266,8 @@ async def test_questions_in_activity_feed_reach_the_prompt(db, tc_factory):
     assert q["status"] == "answered" and q["answer_choice"] == "pg" and q["answer_text"] == "because"
     assert q["answered_by"] == {"id": str(b.manager.id), "name": b.manager.name} and q["choices"][0]["label"] == "Postgres"
     assert q["mockup"]["version"] == 1 and q["mockup"]["title"] == "Layout"
-    assert set(q) == {"id", "body", "choices", "status", "mockup", "answered_by", "answer_choice", "answer_text"}
+    assert set(q) == {"id", "body", "choices", "status", "mockup", "answered_by", "answer_choice", "answer_text",
+                      "form", "answer_data"}
     # chronological with the other items, and under the latest-N paging
     async with SessionLocal() as s:
         task = await s.get(Task, b.task_id)

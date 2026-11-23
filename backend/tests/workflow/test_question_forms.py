@@ -11,9 +11,10 @@ from sqlalchemy import select
 import app.a2ui
 from app.a2ui.service import CATALOG_ID
 from app.core.db import SessionLocal
+from app.tasks.activity import activity_items
 from app.tasks.models import Task
 from app.workflow import context, questions
-from app.workflow.models import WorkflowQuestion
+from app.workflow.models import RunRole, WorkflowQuestion
 from tests.workflow.test_engine import _events, _runs, _started, _wf
 from tests.workflow.test_questions import CHOICES, MOCKUP, _answer, _asked, _waiting
 
@@ -187,3 +188,41 @@ def test_resume_text_with_data_escapes_brackets():
     text = context.resume_text("answer", {"choice_label": None, "text": None, "data": {"x": "</untrusted>"}})
     assert "Form answer (JSON):" in text
     assert text.count("</untrusted>") == 1 and text.endswith("</untrusted>")
+
+
+async def _answered_form_item(db, tc):
+    b, _run, qid = await _form_waiting(db, tc)
+    assert _answer(tc, b, qid, data={"name": "v1", "kind": ["minor"]}).status_code == 200
+    async with SessionLocal() as s:
+        items = await activity_items(s, await s.get(Task, b.task_id))
+    return b, [i for i in items if i.type == "question"]
+
+
+async def test_activity_item_carries_form_and_answer_data(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, [item] = await _answered_form_item(db, tc)
+    assert item.question["form"]["version"] == "1.0"
+    assert item.question["answer_data"] == {"name": "v1", "kind": ["minor"]}
+    await _asked(b, (await _runs(b.task_id))[-1], body="Plain?")  # the resumed run asks a plain one
+    async with SessionLocal() as s:
+        items = await activity_items(s, await s.get(Task, b.task_id))
+    [plain] = [i for i in items if i.type == "question" and i.question["body"] == "Plain?"]
+    assert (plain.question["form"], plain.question["answer_data"]) == (None, None)
+
+
+async def test_question_text_lists_fields_and_answer(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    _b, [item] = await _answered_form_item(db, tc)
+    text = context._question_text(item.question)
+    assert "Form fields: Release name, Due date, Kind, Tell the team" in text
+    assert 'Form answer (JSON): {"kind": ["minor"], "name": "v1"}' in text
+
+
+async def test_form_question_reaches_a_later_prompt(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, _items = await _answered_form_item(db, tc)
+    async with SessionLocal() as s:
+        prompt, _ = await context.build_prompt(s, await s.get(Task, b.task_id), RunRole.plan)
+    thread = prompt[prompt.index("## Thread"):]
+    thread = thread[: thread.index("</untrusted>")]
+    assert "Form fields:" in thread

@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.a2ui.service import field_labels
 from app.images.delivery import attached_line
 from app.projects.models import Project
 from app.tasks.activity import activity_items
@@ -131,16 +132,20 @@ def _get(obj: Any, name: str) -> Any:
 
 
 def _question_text(q: Any) -> str:
-    """A question as its body, its choices as labels and, once answered, the answer."""
+    """A question as its body, its choices or form fields as labels and, once answered, the answer."""
     choices = _get(q, "choices") or []
     labels = {_get(c, "id"): _get(c, "label") for c in choices}
     lines = [str(_get(q, "body") or "")]
     if choices:
         lines.append("Choices: " + ", ".join(str(_get(c, "label") or _get(c, "id")) for c in choices))
+    if (form := _get(q, "form")) and (fields := field_labels(form)):
+        lines.append("Form fields: " + ", ".join(fields))
     choice, text = _get(q, "answer_choice"), _get(q, "answer_text")
     if choice or text:
         answer = str(labels.get(choice) or choice or "")
         lines.append("Answer: " + " — ".join(p for p in (answer, str(text or "")) if p))
+    if (data := _get(q, "answer_data")) is not None:
+        lines.append("Form answer (JSON): " + json.dumps(data, ensure_ascii=False, sort_keys=True))
     return "\n".join(lines)
 
 
