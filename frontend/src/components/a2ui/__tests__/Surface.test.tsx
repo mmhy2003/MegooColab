@@ -243,11 +243,47 @@ describe("Surface drawing a card", () => {
   });
 });
 
+const panelFixtures = JSON.parse(
+  readFileSync(join(process.cwd(), "..", "backend", "tests", "a2ui", "fixtures", "panels.json"), "utf8"),
+) as { valid: { name: string; panel: Form }[] };
+const examplePanel = panelFixtures.valid.find((f) => f.name === "example")!.panel;
+const asPanel = (panel: Form) => wrap(panel, "panel-0123456789ab");
+
+describe("Surface drawing a panel", () => {
+  it("draws every valid panel fixture", async () => {
+    for (const { name, panel } of panelFixtures.valid) {
+      const { container, unmount } = render(<Surface message={asPanel(panel)} readOnly />);
+      await waitFor(() => expect(container).not.toBeEmptyDOMElement());
+      for (const c of panel.components.filter((c) => c.component === "StatTile")) {
+        const tile = await screen.findByRole("group", { name: String(c.label) });
+        expect(tile, `${name}: ${String(c.label)}`).toHaveTextContent(String(c.value));
+      }
+      for (const c of panel.components.filter((c) => c.component === "Chart")) {
+        await waitFor(() => expect(screen.getByRole("region", { name: String(c.title) }), name).toBeInTheDocument());
+      }
+      expect(screen.queryByRole("alert"), name).not.toBeInTheDocument();
+      const custom = [...container.querySelectorAll("*")].map((e) => e.localName).filter((n) => n.includes("-"));
+      expect(custom.filter((n) => !n.startsWith("a2ui-react-")), name).toEqual([]);
+      unmount();
+    }
+  });
+
+  it("a chart's table view lists its points", async () => {
+    render(<Surface message={asPanel(examplePanel)} readOnly />);
+    const chart = await screen.findByRole("region", { name: "Slowest suites" });
+    await userEvent.click(within(chart).getByRole("button", { name: "Show table" }));
+    const rows = within(chart).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveTextContent("api131");
+  });
+});
+
 describe("Surface when the renderer fails", () => {
   const failure = "This form couldn't be shown. You can still answer in your own words.";
 
   afterEach(() => {
     vi.doUnmock("@a2ui/react");
+    vi.doUnmock("@/components/a2ui/Chart");
     vi.resetModules();
     vi.restoreAllMocks();
   });
@@ -306,5 +342,16 @@ describe("Surface when the renderer fails", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Card text");
     expect(alert).not.toHaveTextContent(failure);
+  });
+
+  it("shows the fallback when the chart can't load", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.resetModules();
+    vi.doMock("@/components/a2ui/Chart", () => {
+      throw new Error("chunk failed");
+    });
+    const { Surface } = await import("@/components/a2ui/Surface");
+    render(<Surface message={asPanel(examplePanel)} readOnly fallback={<p role="alert">Panel text</p>} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Panel text");
   });
 });

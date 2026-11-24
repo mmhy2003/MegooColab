@@ -4,6 +4,8 @@ import type { ReactCatalogComponent } from "@a2ui/react";
 import {
   Component,
   createContext,
+  lazy,
+  Suspense,
   useContext,
   useEffect,
   useMemo,
@@ -32,6 +34,9 @@ import {
   Text,
   TextField,
 } from "./catalog";
+
+// Recharts loads only when a panel draws a chart
+const Chart = lazy(() => import("./Chart"));
 
 const FAILED = "This form couldn't be shown. You can still answer in your own words.";
 
@@ -73,7 +78,7 @@ async function loadRenderer() {
   const children = (list: Children, buildChild: (id: string, basePath?: string) => ReactNode) =>
     list?.map((c) => (typeof c === "string" ? buildChild(c) : buildChild(c.id, c.basePath)));
 
-  // our own two components' APIs, as catalog.json defines them
+  // our own components' APIs, as catalog.json defines them
   const S = core.CommonSchemas;
   const StatTileApi = {
     name: "StatTile",
@@ -82,6 +87,18 @@ async function loadRenderer() {
       value: S.DynamicString,
       caption: S.DynamicString.optional(),
       tone: z.enum(["neutral", "good", "warning", "bad"]).optional(),
+      weight: z.number().optional(),
+    }),
+  };
+  const ChartApi = {
+    name: "Chart",
+    schema: z.object({
+      kind: z.enum(["bar", "line"]),
+      title: z.string(),
+      points: S.DynamicValue,
+      x: z.string(),
+      series: z.array(z.object({ key: z.string(), label: z.string() })),
+      unit: z.string().optional(),
       weight: z.number().optional(),
     }),
   };
@@ -114,6 +131,11 @@ async function loadRenderer() {
         caption={props.caption == null ? undefined : String(props.caption)}
         tone={props.tone}
       />
+    )),
+    implement(ChartApi, ({ props }) => (
+      <Suspense fallback={null}>
+        <Chart kind={props.kind} title={props.title} points={props.points} x={props.x} series={props.series} unit={props.unit} />
+      </Suspense>
     )),
     implement(TaskLinkApi, ({ props }) => (
       <TaskLink task={String(props.task ?? "")} label={props.label == null ? undefined : String(props.label)} />
@@ -224,7 +246,7 @@ function forRenderer(message: SurfaceMessage) {
   return { ...message, createSurface: { ...message.createSurface, components } };
 }
 
-/** An A2UI surface drawn with MegooColab's own components: a question's form or a thread's card. `onChange` gets the
+/** An A2UI surface drawn with MegooColab's own components: a question's form, a thread's card or a cron run's panel. `onChange` gets the
  * surface's whole data model and whether every check passes: once all inputs are drawn, then on every change.
  * `fallback` is shown in place of the surface when it can't be drawn (a form's failure message by default). */
 export function Surface({
