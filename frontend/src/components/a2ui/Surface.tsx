@@ -23,8 +23,12 @@ import {
   Column,
   DateTimeInput,
   Divider,
+  List,
   Row,
   Slider,
+  StatTile,
+  Tabs,
+  TaskLink,
   Text,
   TextField,
 } from "./catalog";
@@ -59,11 +63,32 @@ function useField(
 }
 
 async function loadRenderer() {
-  const [react, core] = await Promise.all([import("@a2ui/react"), import("@a2ui/web_core/v1_0")]);
+  const [react, core, { z }] = await Promise.all([
+    import("@a2ui/react"),
+    import("@a2ui/web_core/v1_0"),
+    import("zod"),
+  ]);
   const { createComponentImplementation: implement } = react;
   type Children = (string | { id: string; basePath: string })[] | undefined;
   const children = (list: Children, buildChild: (id: string, basePath?: string) => ReactNode) =>
     list?.map((c) => (typeof c === "string" ? buildChild(c) : buildChild(c.id, c.basePath)));
+
+  // our own two components' APIs, as catalog.json defines them
+  const S = core.CommonSchemas;
+  const StatTileApi = {
+    name: "StatTile",
+    schema: z.object({
+      label: S.DynamicString,
+      value: S.DynamicString,
+      caption: S.DynamicString.optional(),
+      tone: z.enum(["neutral", "good", "warning", "bad"]).optional(),
+      weight: z.number().optional(),
+    }),
+  };
+  const TaskLinkApi = {
+    name: "TaskLink",
+    schema: z.object({ task: S.DynamicString, label: S.DynamicString.optional(), weight: z.number().optional() }),
+  };
 
   // our components, under the v1.0 basic catalog's component APIs: no basic catalog element is ever drawn
   const components = [
@@ -72,6 +97,27 @@ async function loadRenderer() {
     implement(core.CardApi, ({ props, buildChild }) => <Card>{buildChild(props.child)}</Card>),
     implement(core.DividerApi, () => <Divider />),
     implement(core.TextApi, ({ props }) => <Text text={props.text ?? ""} />),
+    implement(core.TabsApi, function TabsView({ props, buildChild, context }) {
+      const { surfaceId } = useContext(FormContext);
+      return (
+        <Tabs
+          id={`${surfaceId}-${context.componentModel.id}`}
+          tabs={(props.tabs ?? []).map((t) => ({ title: String(t.title ?? ""), panel: buildChild(t.child) }))}
+        />
+      );
+    }),
+    implement(core.ListApi, ({ props, buildChild }) => <List items={children(props.children, buildChild) ?? []} />),
+    implement(StatTileApi, ({ props }) => (
+      <StatTile
+        label={String(props.label ?? "")}
+        value={String(props.value ?? "")}
+        caption={props.caption == null ? undefined : String(props.caption)}
+        tone={props.tone}
+      />
+    )),
+    implement(TaskLinkApi, ({ props }) => (
+      <TaskLink task={String(props.task ?? "")} label={props.label == null ? undefined : String(props.label)} />
+    )),
     implement(core.TextFieldApi, function TextFieldView({ props, context }) {
       const field = useField(context, props);
       return (

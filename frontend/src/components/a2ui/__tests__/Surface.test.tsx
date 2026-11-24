@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -166,6 +166,80 @@ describe("Surface", () => {
     expect((await screen.findByText("Read this")).tagName).toBe("STRONG");
     expect(screen.getByRole("link", { name: "the plan" })).toHaveAttribute("href", "https://example.com/plan.png");
     expect(container.querySelector("img")).toBeNull();
+  });
+});
+
+const cardFixtures = JSON.parse(
+  readFileSync(join(process.cwd(), "..", "backend", "tests", "a2ui", "fixtures", "cards.json"), "utf8"),
+) as { valid: { name: string; card: Form }[] };
+const exampleCard = cardFixtures.valid.find((f) => f.name === "example")!.card;
+const asCard = (card: Form) => wrap(card, "card-0123456789ab");
+
+describe("Surface drawing a card", () => {
+  it("draws every valid card fixture", async () => {
+    for (const { name, card } of cardFixtures.valid) {
+      const { container, unmount } = render(<Surface message={asCard(card)} readOnly />);
+      // drawn (or failed, which the alert check below catches)
+      await waitFor(() => expect(container).not.toBeEmptyDOMElement());
+      for (const c of card.components.filter((c) => c.component === "StatTile")) {
+        const tile = await screen.findByRole("group", { name: String(c.label) });
+        expect(tile, `${name}: ${String(c.label)}`).toHaveTextContent(String(c.value));
+      }
+      expect(screen.queryByRole("alert"), name).not.toBeInTheDocument();
+      const custom = [...container.querySelectorAll("*")].map((e) => e.localName).filter((n) => n.includes("-"));
+      expect(custom.filter((n) => !n.startsWith("a2ui-react-")), name).toEqual([]);
+      unmount();
+    }
+  });
+
+  it("a StatTile is coloured by its tone", async () => {
+    render(<Surface message={asCard(exampleCard)} readOnly />);
+    const tile = await screen.findByRole("group", { name: "Failed" });
+    expect(tile).toHaveAttribute("data-tone", "bad");
+    expect(within(tile).getByText("3")).toHaveClass("text-pink");
+  });
+
+  it("switches tabs", async () => {
+    render(<Surface message={asCard(exampleCard)} readOnly />);
+    const failing = await screen.findByRole("tab", { name: "Failing" });
+    const notes = screen.getByRole("tab", { name: "Notes" });
+    expect(failing).toHaveAttribute("aria-selected", "true");
+    const flaky = screen.getByText("flaky", { exact: false });
+    expect(flaky).not.toBeVisible();
+    await userEvent.click(notes);
+    expect(flaky).toBeVisible();
+    expect(notes).toHaveAttribute("aria-selected", "true");
+    expect(failing).toHaveAttribute("aria-selected", "false");
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(failing).toHaveAttribute("aria-selected", "true");
+    expect(flaky).not.toBeVisible();
+    // both panels stay mounted
+    expect(screen.getAllByRole("tabpanel", { hidden: true })).toHaveLength(2);
+  });
+
+  it("expands a template list", async () => {
+    render(<Surface message={asCard(exampleCard)} readOnly />);
+    const rows = await screen.findAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    const link = screen.getByRole("link", { name: "MC-181" });
+    expect(link).toHaveAttribute("href", "/projects/MC/board?task=MC-181");
+    expect(rows[0]).toHaveTextContent("Login times out");
+  });
+
+  it("a TaskLink that isn't a task key is plain text", async () => {
+    const card: Form = {
+      components: [{ id: "root", component: "TaskLink", task: { "@path": "/key" }, label: "Odd" }],
+      data: { key: "not-a-key" },
+    };
+    render(<Surface message={asCard(card)} readOnly />);
+    expect(await screen.findByText("not-a-key Odd")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("a long List scrolls inside the card", async () => {
+    render(<Surface message={asCard(exampleCard)} readOnly />);
+    const list = await screen.findByRole("list");
+    expect(list).toHaveClass("max-h-60", "overflow-y-auto");
   });
 });
 

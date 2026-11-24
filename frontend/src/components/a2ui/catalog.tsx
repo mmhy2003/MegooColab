@@ -1,12 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
 import { Input, Textarea } from "@/components/ui/Input";
 import { Markdown } from "@/components/ui/Markdown";
+import { TabPanel, Tabs as UiTabs } from "@/components/ui/Tabs";
 
 /** MegooColab's A2UI catalog (backend/app/a2ui/catalog.json). */
 export const CATALOG_ID = "urn:megoocolab:a2ui:catalog:v1";
+
+/** A task key, as the backend's app.a2ui.service.TASK_KEY. */
+export const TASK_KEY = /^[A-Z][A-Z0-9]{1,9}-[1-9][0-9]*$/;
 
 /** Each catalog component's property names, as catalog.json lists them (without "id" and "component"). */
 export const COMPONENT_PROPS: Record<string, readonly string[]> = {
@@ -67,6 +72,74 @@ export function Divider() {
 
 export function Text({ text }: { text: string }) {
   return <Markdown compact>{text}</Markdown>;
+}
+
+/** Underline tabs with ui/Tabs' look and keys; the open tab is local state. Hidden panels stay mounted. */
+export function Tabs({ id, tabs }: { id: string; tabs: { title: string; panel: ReactNode }[] }) {
+  const [open, setOpen] = useState("0");
+  const defs = tabs.map((t, i) => ({ id: `${id}-${i}`, label: t.title }));
+  return (
+    <div>
+      <UiTabs label="Tabs" tabs={defs} value={`${id}-${open}`} onChange={(v) => setOpen(v.slice(id.length + 1))} />
+      {tabs.map((t, i) => (
+        <TabPanel key={i} id={`${id}-${i}`} active={String(i) === open}>
+          {t.panel}
+        </TabPanel>
+      ))}
+    </div>
+  );
+}
+
+/** Rows with a line between them; past about 15 rem it scrolls inside the card. */
+export function List({ items }: { items: ReactNode[] }) {
+  return (
+    <div role="list" className="max-h-60 divide-y divide-line overflow-y-auto">
+      {items.map((item, i) => (
+        <div key={i} role="listitem" className="py-1.5">
+          {item}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const TONE = { neutral: "", good: "text-green-ink", warning: "text-amber", bad: "text-pink" } as const;
+
+/** The Dashboard Tile's look: a mono value, its label, a caption. */
+export function StatTile({
+  label,
+  value,
+  caption,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  caption?: string;
+  tone?: keyof typeof TONE;
+}) {
+  return (
+    <div role="group" aria-label={label} data-tone={tone} className="card min-w-0 px-3 py-2.5">
+      <p className={`font-mono text-2xl leading-tight font-semibold ${TONE[tone] ?? ""}`}>{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+      {caption && <p className="text-[11px] text-muted-foreground">{caption}</p>}
+    </div>
+  );
+}
+
+/** A task's key as a link to its board drawer, then the agent's label; anything else as plain text. */
+export function TaskLink({ task, label }: { task: string; label?: string }) {
+  if (!TASK_KEY.test(task)) return <span>{[task, label].filter(Boolean).join(" ")}</span>;
+  return (
+    <span>
+      <Link
+        href={`/projects/${task.replace(/-\d+$/, "")}/board?task=${task}`}
+        className="font-mono text-cyan-ink underline"
+      >
+        {task}
+      </Link>
+      {label && ` ${label}`}
+    </span>
+  );
 }
 
 export function TextField({
