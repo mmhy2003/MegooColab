@@ -1,0 +1,936 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "protocolVersion": "1.0",
+  "catalogId": "urn:megoocolab:a2ui:catalog:v1",
+  "components": {
+    "Column": {
+      "type": "object",
+      "description": "A layout component that arranges its children vertically. To create a grid layout, nest Rows within this Column.",
+      "properties": {
+        "component": {
+          "const": "Column"
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "Defines the children. Use an array of strings for a fixed set of children, or a template object to generate children from a data list. Children cannot be defined inline, they must be referred to by ID."
+        },
+        "justify": {
+          "enum": [
+            "center",
+            "end",
+            "spaceAround",
+            "spaceBetween",
+            "spaceEvenly",
+            "start",
+            "stretch"
+          ],
+          "type": "string",
+          "default": "start",
+          "description": "Defines the arrangement of children along the main axis (vertically). Use 'spaceBetween' to push items to the edges (e.g. header at top, footer at bottom), or 'start'/'end'/'center' to pack them together."
+        },
+        "align": {
+          "enum": [
+            "start",
+            "center",
+            "end",
+            "stretch"
+          ],
+          "type": "string",
+          "default": "stretch",
+          "description": "Defines the alignment of children along the cross axis (horizontally). This is similar to the CSS 'align-items' property."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "children"
+      ]
+    },
+    "Row": {
+      "type": "object",
+      "description": "A layout component that arranges its children horizontally. To create a grid layout, nest Columns within this Row.",
+      "properties": {
+        "component": {
+          "const": "Row"
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "Defines the children. Use an array of strings for a fixed set of children, or a template object to generate children from a data list. Children cannot be defined inline, they must be referred to by ID."
+        },
+        "justify": {
+          "enum": [
+            "center",
+            "end",
+            "spaceAround",
+            "spaceBetween",
+            "spaceEvenly",
+            "start",
+            "stretch"
+          ],
+          "type": "string",
+          "default": "start",
+          "description": "Defines the arrangement of children along the main axis (horizontally). Use 'spaceBetween' to push items to the edges, or 'start'/'end'/'center' to pack them together."
+        },
+        "align": {
+          "enum": [
+            "start",
+            "center",
+            "end",
+            "stretch"
+          ],
+          "type": "string",
+          "default": "stretch",
+          "description": "Defines the alignment of children along the cross axis (vertically). This is similar to the CSS 'align-items' property, but uses camelCase values (e.g., 'start')."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "children"
+      ]
+    },
+    "Card": {
+      "type": "object",
+      "properties": {
+        "component": {
+          "const": "Card"
+        },
+        "child": {
+          "$ref": "common_types.json#/$defs/Child",
+          "description": "The ID of the single child component to be rendered inside the card. To display multiple elements, you MUST wrap them in a layout component (like Column or Row) and pass that container's ID here. Do NOT pass multiple IDs or a non-existent ID."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "child"
+      ]
+    },
+    "Divider": {
+      "type": "object",
+      "properties": {
+        "component": {
+          "const": "Divider"
+        },
+        "axis": {
+          "enum": [
+            "vertical",
+            "horizontal"
+          ],
+          "type": "string",
+          "default": "horizontal",
+          "description": "The orientation of the divider."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component"
+      ]
+    },
+    "Text": {
+      "type": "object",
+      "properties": {
+        "component": {
+          "const": "Text"
+        },
+        "text": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "The text content to display. While simple Markdown formatting is supported (i.e. without HTML, images, or links), utilizing dedicated UI components is generally preferred for a richer and more structured presentation."
+        },
+        "variant": {
+          "enum": [
+            "caption",
+            "body"
+          ],
+          "type": "string",
+          "default": "body",
+          "description": "A hint for the base text style."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "text"
+      ]
+    },
+    "TextField": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "common_types.json#/$defs/Checkable"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "TextField"
+            },
+            "label": {
+              "$ref": "common_types.json#/$defs/DynamicString",
+              "description": "The text label for the input field."
+            },
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicString",
+              "description": "The value of the text field."
+            },
+            "placeholder": {
+              "$ref": "common_types.json#/$defs/DynamicString",
+              "description": "The placeholder text for the input field."
+            },
+            "variant": {
+              "enum": [
+                "longText",
+                "number",
+                "shortText"
+              ],
+              "type": "string",
+              "default": "shortText",
+              "description": "The type of input field to display."
+            },
+            "weight": {
+              "$ref": "#/$defs/Weight"
+            }
+          },
+          "required": [
+            "component",
+            "label",
+            "value"
+          ]
+        }
+      ]
+    },
+    "CheckBox": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "common_types.json#/$defs/Checkable"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "CheckBox"
+            },
+            "label": {
+              "$ref": "common_types.json#/$defs/DynamicString",
+              "description": "The text to display next to the checkbox."
+            },
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicBoolean",
+              "description": "The current state of the checkbox (true for checked, false for unchecked)."
+            },
+            "weight": {
+              "$ref": "#/$defs/Weight"
+            }
+          },
+          "required": [
+            "component",
+            "label",
+            "value"
+          ]
+        }
+      ]
+    },
+    "ChoicePicker": {
+      "type": "object",
+      "description": "A component that allows selecting one or more options from a list.",
+      "allOf": [
+        {
+          "$ref": "common_types.json#/$defs/Checkable"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "ChoicePicker"
+            },
+            "label": {
+              "$ref": "common_types.json#/$defs/DynamicString",
+              "description": "The label for the group of options."
+            },
+            "variant": {
+              "enum": [
+                "multipleSelection",
+                "mutuallyExclusive"
+              ],
+              "type": "string",
+              "default": "mutuallyExclusive",
+              "description": "A hint for how the choice picker should be displayed and behave."
+            },
+            "options": {
+              "description": "The list of available options to choose from.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "$ref": "common_types.json#/$defs/DynamicString",
+                    "description": "The text to display for this option."
+                  },
+                  "value": {
+                    "description": "The stable value associated with this option.",
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "label",
+                  "value"
+                ]
+              },
+              "type": "array"
+            },
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicStringList",
+              "description": "The list of currently selected values. This should be bound to a string array in the data model."
+            },
+            "displayStyle": {
+              "enum": [
+                "checkbox",
+                "chips"
+              ],
+              "type": "string",
+              "default": "checkbox",
+              "description": "The display style of the component."
+            },
+            "filterable": {
+              "type": "boolean",
+              "default": false,
+              "description": "If true, displays a search input to filter the options."
+            },
+            "weight": {
+              "$ref": "#/$defs/Weight"
+            }
+          },
+          "required": [
+            "component",
+            "options",
+            "value"
+          ]
+        }
+      ]
+    },
+    "Slider": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "common_types.json#/$defs/Checkable"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "Slider"
+            },
+            "label": {
+              "$ref": "common_types.json#/$defs/DynamicString",
+              "description": "The label for the slider."
+            },
+            "min": {
+              "type": "number",
+              "default": 0,
+              "description": "The minimum value of the slider."
+            },
+            "max": {
+              "description": "The maximum value of the slider.",
+              "type": "number"
+            },
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicNumber",
+              "description": "The current value of the slider."
+            },
+            "steps": {
+              "minimum": 1,
+              "type": "integer",
+              "description": "The number of discrete divisions in the slider range. If specified, the slider will snap to discrete values."
+            },
+            "weight": {
+              "$ref": "#/$defs/Weight"
+            }
+          },
+          "required": [
+            "component",
+            "max",
+            "value"
+          ]
+        }
+      ]
+    },
+    "DateTimeInput": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "common_types.json#/$defs/Checkable"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "component": {
+              "const": "DateTimeInput"
+            },
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicString",
+              "description": "The selected date and/or time value in ISO 8601 format. If not yet set, initialize with an empty string."
+            },
+            "enableDate": {
+              "type": "boolean",
+              "default": false,
+              "description": "If true, allows the user to select a date."
+            },
+            "enableTime": {
+              "type": "boolean",
+              "default": false,
+              "description": "If true, allows the user to select a time."
+            },
+            "min": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "oneOf": [
+                      {
+                        "format": "date"
+                      },
+                      {
+                        "format": "time"
+                      },
+                      {
+                        "format": "date-time"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "description": "The minimum allowed date/time in ISO 8601 format."
+            },
+            "max": {
+              "allOf": [
+                {
+                  "$ref": "common_types.json#/$defs/DynamicString"
+                },
+                {
+                  "if": {
+                    "type": "string"
+                  },
+                  "then": {
+                    "oneOf": [
+                      {
+                        "format": "date"
+                      },
+                      {
+                        "format": "time"
+                      },
+                      {
+                        "format": "date-time"
+                      }
+                    ]
+                  }
+                }
+              ],
+              "description": "The maximum allowed date/time in ISO 8601 format."
+            },
+            "label": {
+              "$ref": "common_types.json#/$defs/DynamicString",
+              "description": "The text label for the input field."
+            },
+            "weight": {
+              "$ref": "#/$defs/Weight"
+            }
+          },
+          "required": [
+            "component",
+            "value"
+          ]
+        }
+      ]
+    },
+    "Tabs": {
+      "type": "object",
+      "properties": {
+        "component": {
+          "const": "Tabs"
+        },
+        "tabs": {
+          "description": "An array of objects, where each object defines a tab with a title and a child component.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "$ref": "common_types.json#/$defs/DynamicString",
+                "description": "The tab title."
+              },
+              "child": {
+                "$ref": "common_types.json#/$defs/Child",
+                "description": "The ID of the child component."
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "child"
+            ]
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "tabs"
+      ]
+    },
+    "List": {
+      "type": "object",
+      "properties": {
+        "component": {
+          "const": "List"
+        },
+        "children": {
+          "$ref": "common_types.json#/$defs/ChildList",
+          "description": "Defines the children. Use an array of strings for a fixed set of children, or a template object to generate children from a data list."
+        },
+        "direction": {
+          "enum": [
+            "vertical",
+            "horizontal"
+          ],
+          "type": "string",
+          "default": "vertical",
+          "description": "The direction in which the list items are laid out."
+        },
+        "align": {
+          "enum": [
+            "start",
+            "center",
+            "end",
+            "stretch"
+          ],
+          "type": "string",
+          "default": "stretch",
+          "description": "Defines the alignment of children along the cross axis."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "children"
+      ]
+    },
+    "StatTile": {
+      "type": "object",
+      "description": "A headline number: a value with its label, an optional caption below, coloured by tone. A snapshot: it never updates.",
+      "properties": {
+        "component": {
+          "const": "StatTile"
+        },
+        "label": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "What the value counts, e.g. 'Failed'."
+        },
+        "value": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "The value as text, e.g. '3' or '4m 12s'."
+        },
+        "caption": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "A short line under the label."
+        },
+        "tone": {
+          "enum": [
+            "neutral",
+            "good",
+            "warning",
+            "bad"
+          ],
+          "type": "string",
+          "default": "neutral",
+          "description": "The value's colour."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "label",
+        "value"
+      ]
+    },
+    "TaskLink": {
+      "type": "object",
+      "description": "A link to a MegooColab task by its key, followed by a label. A snapshot: the label is the words you write, not the task's current title.",
+      "properties": {
+        "component": {
+          "const": "TaskLink"
+        },
+        "task": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "A task key such as 'MC-181'."
+        },
+        "label": {
+          "$ref": "common_types.json#/$defs/DynamicString",
+          "description": "The words after the key."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "task"
+      ]
+    },
+    "Chart": {
+      "type": "object",
+      "description": "A bar or line chart of numbers from the data model, one point per label on the x axis, 1 to 4 series. Panels only. Series take the theme's chart colours in the order listed; you never pick a colour. A snapshot: it never updates.",
+      "properties": {
+        "component": {
+          "const": "Chart"
+        },
+        "kind": {
+          "enum": [
+            "bar",
+            "line"
+          ],
+          "type": "string",
+          "description": "bar for counts per label, line for a trend across runs."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "What the chart shows, e.g. 'Failing tests by suite, last 14 runs': its heading and accessible name."
+        },
+        "points": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "A binding to a list of 1 to 50 objects in data, e.g. {\"@path\": \"/trend\"}."
+        },
+        "x": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "The key of each point that holds its label (a day, a suite name)."
+        },
+        "series": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "label"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "description": "The key of the number in each point."
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "description": "The series' name in the legend and table."
+              }
+            }
+          },
+          "description": "1 to 4 series."
+        },
+        "unit": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "A short unit shown after values, e.g. 's', 'ms' or '%'."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "kind",
+        "title",
+        "points",
+        "x",
+        "series"
+      ]
+    }
+  },
+  "functions": {
+    "required": {
+      "type": "object",
+      "description": "Checks that the value is not null, undefined, or empty.",
+      "returnType": "validationResult",
+      "properties": {
+        "@call": {
+          "const": "required"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "description": "The value to check."
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ]
+    },
+    "regex": {
+      "type": "object",
+      "description": "Checks that the value matches a regular expression string.",
+      "returnType": "validationResult",
+      "properties": {
+        "@call": {
+          "const": "regex"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicString"
+            },
+            "pattern": {
+              "description": "The regular expression to search for in the value. Uses the A2UI regex dialect: a portable subset of ECMAScript pattern syntax in Unicode mode with no flags. Matching is case-sensitive, '.' excludes line terminators, and '^' and '$' match only at the ends of the value. Backreferences, lookbehind, named groups and '\\p{...}' are not allowed. Patterns longer than 256 code points or that could backtrack catastrophically are rejected.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "value",
+            "pattern"
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ]
+    },
+    "length": {
+      "type": "object",
+      "description": "Checks string length constraints.",
+      "returnType": "validationResult",
+      "properties": {
+        "@call": {
+          "const": "length"
+        },
+        "args": {
+          "type": "object",
+          "anyOf": [
+            {
+              "required": [
+                "min"
+              ]
+            },
+            {
+              "required": [
+                "max"
+              ]
+            }
+          ],
+          "properties": {
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicString"
+            },
+            "min": {
+              "minimum": 0,
+              "type": "integer",
+              "description": "The minimum allowed length."
+            },
+            "max": {
+              "minimum": 0,
+              "type": "integer",
+              "description": "The maximum allowed length."
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ]
+    },
+    "numeric": {
+      "type": "object",
+      "description": "Checks numeric range constraints.",
+      "returnType": "validationResult",
+      "properties": {
+        "@call": {
+          "const": "numeric"
+        },
+        "args": {
+          "type": "object",
+          "anyOf": [
+            {
+              "required": [
+                "min"
+              ]
+            },
+            {
+              "required": [
+                "max"
+              ]
+            }
+          ],
+          "properties": {
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicNumber"
+            },
+            "min": {
+              "type": "number",
+              "description": "The minimum allowed value."
+            },
+            "max": {
+              "type": "number",
+              "description": "The maximum allowed value."
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ]
+    },
+    "email": {
+      "type": "object",
+      "description": "Checks that the value is a valid email address.",
+      "returnType": "validationResult",
+      "properties": {
+        "@call": {
+          "const": "email"
+        },
+        "args": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "$ref": "common_types.json#/$defs/DynamicString"
+            }
+          },
+          "required": [
+            "value"
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": [
+        "@call",
+        "args"
+      ]
+    }
+  },
+  "$defs": {
+    "Weight": {
+      "description": "The relative weight of this component within a Row or Column. This is similar to the CSS 'flex-grow' property. Note: this may ONLY be set when the component is a direct descendant of a Row or Column.",
+      "type": "number"
+    },
+    "anyComponent": {
+      "oneOf": [
+        {
+          "$ref": "#/components/Column"
+        },
+        {
+          "$ref": "#/components/Row"
+        },
+        {
+          "$ref": "#/components/Card"
+        },
+        {
+          "$ref": "#/components/Divider"
+        },
+        {
+          "$ref": "#/components/Text"
+        },
+        {
+          "$ref": "#/components/TextField"
+        },
+        {
+          "$ref": "#/components/CheckBox"
+        },
+        {
+          "$ref": "#/components/ChoicePicker"
+        },
+        {
+          "$ref": "#/components/Slider"
+        },
+        {
+          "$ref": "#/components/DateTimeInput"
+        },
+        {
+          "$ref": "#/components/Tabs"
+        },
+        {
+          "$ref": "#/components/List"
+        },
+        {
+          "$ref": "#/components/StatTile"
+        },
+        {
+          "$ref": "#/components/TaskLink"
+        },
+        {
+          "$ref": "#/components/Chart"
+        }
+      ],
+      "discriminator": {
+        "propertyName": "component"
+      }
+    },
+    "anyFunction": {
+      "oneOf": [
+        {
+          "$ref": "#/functions/required"
+        },
+        {
+          "$ref": "#/functions/regex"
+        },
+        {
+          "$ref": "#/functions/length"
+        },
+        {
+          "$ref": "#/functions/numeric"
+        },
+        {
+          "$ref": "#/functions/email"
+        }
+      ]
+    }
+  }
+}

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import exists, func, select, tuple_
 from sqlalchemy.orm import aliased
 
+from app.agents.models import Agent
 from app.auth.deps import AuthedUser
 from app.auth.models import Role, User
 from app.auth.schemas import UserOut
@@ -23,7 +24,7 @@ from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.access import get_project_for
 from app.tasks import file_links
-from app.tasks.models import Attachment, Comment, Delivery, Task, TaskEvent
+from app.tasks.models import Attachment, Comment, Delivery, Task, TaskCard, TaskEvent
 from app.tasks.service import get_task_for
 from app.workflow.models import Mockup, WorkflowQuestion
 
@@ -79,7 +80,7 @@ def comment_out(c: Comment) -> CommentOut:
 
 
 class ActivityItem(BaseModel):
-    type: Literal["comment", "event", "question"]
+    type: Literal["comment", "event", "question", "card"]
     id: uuid.UUID
     at: datetime
     actor: UserOut | None
@@ -88,8 +89,10 @@ class ActivityItem(BaseModel):
     kind: str | None = None
     data: dict | None = None
     # type "question": {id, body, choices, status, mockup: {id, version, title}|None, answered_by,
-    # answer_choice, answer_text}
+    # answer_choice, answer_text, form: the A2UI createSurface message|None, answer_data: the form's answer|None}
     question: dict | None = None
+    # type "card": {id, title, text, surface: the createSurface message, agent: {id, name}|None}
+    card: dict | None = None
     to_agent: AgentMessageOut | None = None  # type "comment": a message for the task's agent
     # the images sent with it: a comment's, an answer's (type "question"), a change request's (event
     # "document.rejected")
@@ -134,7 +137,7 @@ async def _changed(db, task: Task, kind: str) -> None:
 
 
 def _shown(task: Task):
-    """The statements for what a task's Activity shows: its comments, events and questions."""
+    """The statements for what a task's Activity shows: its comments, events, questions and cards."""
     c_stmt = select(Comment).where(Comment.task_id == task.id)
     # the question item shows its own asked/answered state, so those events are not repeated; the pull request's
     # bare state changes are shown by the badge and the git.* entries; a merge or close the webhook named stands
@@ -152,13 +155,14 @@ def _shown(task: Task):
         ~(TaskEvent.kind.in_(("pr.merged", "pr.closed")) & same_pr),
     )
     q_stmt = select(WorkflowQuestion).where(WorkflowQuestion.task_id == task.id)
-    return c_stmt, e_stmt, q_stmt
+    k_stmt = select(TaskCard).where(TaskCard.task_id == task.id)
+    return c_stmt, e_stmt, q_stmt, k_stmt
 
 
 async def count_after(db, task: Task, after: datetime, after_id: uuid.UUID, limit: int) -> int:
     """How many Activity items came after the (at, id) cursor, counting no further than `limit`."""
     total = 0
-    for stmt, model in zip(_shown(task), (Comment, TaskEvent, WorkflowQuestion), strict=True):
+    for stmt, model in zip(_shown(task), (Comment, TaskEvent, WorkflowQuestion, TaskCard), strict=True):
         ids = (
             stmt.with_only_columns(model.id)
             .where(tuple_(model.created_at, model.id) > (after, after_id))
@@ -173,17 +177,19 @@ async def count_after(db, task: Task, after: datetime, after_id: uuid.UUID, limi
 async def activity_items(
     db, task: Task, limit: int = 50, before: datetime | None = None, before_id: uuid.UUID | None = None
 ) -> list[ActivityItem]:
-    c_stmt, e_stmt, q_stmt = _shown(task)
+    c_stmt, e_stmt, q_stmt, k_stmt = _shown(task)
     if before and before_id:
         # (at, id) cursor: items written in one transaction share a timestamp
         cursor = (before, before_id)
         c_stmt = c_stmt.where(tuple_(Comment.created_at, Comment.id) < cursor)
         e_stmt = e_stmt.where(tuple_(TaskEvent.created_at, TaskEvent.id) < cursor)
         q_stmt = q_stmt.where(tuple_(WorkflowQuestion.created_at, WorkflowQuestion.id) < cursor)
+        k_stmt = k_stmt.where(tuple_(TaskCard.created_at, TaskCard.id) < cursor)
     elif before:
         c_stmt = c_stmt.where(Comment.created_at < before)
         e_stmt = e_stmt.where(TaskEvent.created_at < before)
         q_stmt = q_stmt.where(WorkflowQuestion.created_at < before)
+        k_stmt = k_stmt.where(TaskCard.created_at < before)
     comments = (await db.execute(c_stmt.order_by(Comment.created_at.desc(), Comment.id.desc()).limit(limit))).scalars().all()
     events = (await db.execute(e_stmt.order_by(TaskEvent.created_at.desc(), TaskEvent.id.desc()).limit(limit))).scalars().all()
     questions = (
@@ -191,6 +197,12 @@ async def activity_items(
             q_stmt.order_by(WorkflowQuestion.created_at.desc(), WorkflowQuestion.id.desc()).limit(limit)
         )
     ).scalars().all()
+    cards = (await db.execute(k_stmt.order_by(TaskCard.created_at.desc(), TaskCard.id.desc()).limit(limit))).scalars().all()
+    agent_ids = {k.agent_id for k in cards if k.agent_id}
+    agents = {
+        a.id: {"id": str(a.id), "name": a.name}
+        for a in (await db.execute(select(Agent.id, Agent.name).where(Agent.id.in_(agent_ids))))
+    } if agent_ids else {}
     mockup_ids = {q.mockup_id for q in questions if q.mockup_id}
     mockups = {
         m.id: {"id": str(m.id), "version": m.version, "title": m.title}
@@ -202,7 +214,7 @@ async def activity_items(
             await db.execute(select(User).where(User.id.in_({q.answered_by for q in questions if q.answered_by})))
         ).scalars()
     }
-    actor_ids = {c.author_user_id for c in comments} | {e.actor_user_id for e in events}
+    actor_ids = {c.author_user_id for c in comments} | {e.actor_user_id for e in events} | {k.user_id for k in cards}
     actor_ids.discard(None)
     actors = {
         u.id: UserOut.model_validate(u)
@@ -223,9 +235,17 @@ async def activity_items(
                 "id": str(q.id), "body": q.body, "choices": list(q.choices or []), "status": str(q.status),
                 "mockup": mockups.get(q.mockup_id), "answered_by": answerers.get(q.answered_by),
                 "answer_choice": q.answer_choice, "answer_text": q.answer_text,
+                "form": q.form, "answer_data": q.answer_data,
             },
         )
         for q in questions
+    ] + [
+        ActivityItem(
+            type="card", id=k.id, at=k.created_at, actor=actors.get(k.user_id),
+            card={"id": str(k.id), "title": k.title, "text": k.text, "surface": k.surface,
+                  "agent": agents.get(k.agent_id)},
+        )
+        for k in cards
     ]
     items.sort(key=lambda i: (i.at, i.id), reverse=True)
     items = list(reversed(items[:limit]))
@@ -239,7 +259,9 @@ async def activity_items(
 
 def _message_of(item: ActivityItem) -> uuid.UUID | None:
     """The message an activity item's images were sent with: the comment or question itself, or for a change
-    request the rejected document."""
+    request the rejected document. A card has none."""
+    if item.type == "card":
+        return None
     if item.type != "event":
         return item.id
     doc = (item.data or {}).get("document_id") if item.kind == "document.rejected" else None
@@ -317,7 +339,6 @@ async def create_comment(
 async def _address_to_agent(db, user: User, task: Task, comment: Comment) -> None:
     """Only the people who direct the task's work may instruct its agent (WF-6). The workflow row is locked
     first, so a run being sent out at the same moment either takes this message or leaves it for the steer."""
-    from app.agents.models import Agent
     from app.workflow import engine  # local: the workflow imports the task modules
 
     if task.assignee_agent_id is None:

@@ -1630,8 +1630,8 @@ export interface paths {
         };
         /**
          * Download Attachment
-         * @description The file, as a download; `inline` shows it in the page instead, only for an image checked by its bytes
-         *     (never SVG or HTML). The browser is told not to guess the type either way.
+         * @description The file, as a download; `inline` shows it in the page instead, only for an image or a PDF checked by its
+         *     bytes (never SVG or HTML). The browser is told not to guess the type either way.
          */
         get: operations["download_attachment_api_attachments__attachment_id__get"];
         put?: never;
@@ -4154,7 +4154,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "comment" | "event" | "question";
+            type: "comment" | "event" | "question" | "card";
             /**
              * Id
              * Format: uuid
@@ -4178,6 +4178,10 @@ export interface components {
             } | null;
             /** Question */
             question?: {
+                [key: string]: unknown;
+            } | null;
+            /** Card */
+            card?: {
                 [key: string]: unknown;
             } | null;
             to_agent?: components["schemas"]["AgentMessageOut"] | null;
@@ -5187,6 +5191,10 @@ export interface components {
             commit: string | null;
             /** Tasks Created */
             tasks_created: number;
+            /** Panel */
+            panel?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** DashboardOut */
         DashboardOut: {
@@ -9227,6 +9235,10 @@ export interface components {
              * @default []
              */
             image_ids: string[];
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** FollowUpRef */
         app__workflow__schemas__FollowUpRef: {

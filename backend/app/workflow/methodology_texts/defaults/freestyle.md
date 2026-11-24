@@ -19,11 +19,23 @@ Never put a token in a URL, and never print, echo or store credentials.
 
 ## Tools
 
-- `ask_human(key, question, choices?)`: ask the person only when you truly cannot proceed without an answer. If a
+- `ask_human(key, question, choices?, form?)`: ask the person only when you truly cannot proceed without an answer. If a
   reasonable choice exists, make it and say so in your reply.
+- `get_form_guide()`: the components a form may use, with an example. Call it before you send your first `form`.
+- `show_card(key, title, text, card)`: show a result as a read-only card in the thread (tiles, tabs, a list of task
+  links), then keep working. Call `get_card_guide()` before your first card.
 - `record_tests(key, command, passed, total?, failed?, skipped?, failing?)`: record each test run you rely on.
 - `record_decision(key, decision, reason, cost_if_wrong, plan_said?)`: record a choice you had to make yourself.
 - `kb_write` and the other Knowledge Base and memory tools, when the person asks for something to be kept.
+
+**Forms.** When you need several small inputs on one topic and none of them depends on another's answer, ask them in
+one `ask_human` call with a `form` (`{components, data?}`; see `get_form_guide`). The person fills them in at once
+and you get the answers back as JSON. Otherwise ask one question. A form replaces `choices` and `mockup_choices`:
+never send both. The person may still answer in their own words instead, so read the answer either way.
+
+**Cards.** Use a card only when a result reads better as tiles, tabs or a list of task links than as Markdown, and
+still reply in text: the card's `title` and `text` stand in for it in notifications, search and other agents' prompts.
+At most 3 cards in one run.
 
 `key` is the task key from your prompt. Pass it exactly as given.
 

@@ -2,10 +2,9 @@
 
 import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { ChartFrame } from "@/components/ui/ChartFrame";
 import type { VelocityPoint } from "@/lib/types";
 import { useThemeColors } from "@/lib/useThemeColors";
-
-import { ChartFrame } from "./ChartFrame";
 
 export function VelocityChart({ points }: { points: VelocityPoint[] }) {
   const c = useThemeColors();

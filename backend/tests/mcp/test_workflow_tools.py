@@ -8,18 +8,23 @@ import json
 import secrets
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 from mcp.server.mcpserver.exceptions import ToolError
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
+import app.a2ui
+from app.a2ui.service import CARD_COMPONENTS, CATALOG_ID
 from app.agent_runs.models import AgentRun
+from app.auth.models import Role
 from app.core.db import SessionLocal
 from app.core.security import hash_token
 from app.mcp_server.auth import current_mcp_user_id, current_run
 from app.projects.models import BoardColumn
-from app.tasks.models import Comment, Task, TaskEvent
+from app.tasks.models import Comment, Task, TaskCard, TaskEvent
+from app.teams.models import TeamMember
 from app.workflow import engine, methodology
 from app.workflow.models import (
     MethodologyVersion,
@@ -31,6 +36,7 @@ from app.workflow.models import (
     WorkflowQuestion,
 )
 from tests.agent_runs.test_dispatch import _task
+from tests.factories import make_user
 from tests.runner.test_protocol_v2 import MCP_HEADERS
 from tests.runner.test_runner_ws import _login
 from tests.workflow.test_build import _last
@@ -46,6 +52,9 @@ from tests.workflow.test_engine import (
 from tests.workflow.test_finish_failures import COMMITTED, _fix_round
 from tests.workflow.test_review_done import _fix_run
 
+A2UI_DIR = Path(app.a2ui.__file__).parent
+EXAMPLE_FORM = json.loads((A2UI_DIR / "example.json").read_text())
+EXAMPLE_CARD = json.loads((A2UI_DIR / "card_example.json").read_text())
 ASKED = "Question posted. End your turn now; the answer arrives as your next message."
 ALL_WORKFLOW_TOOLS = {
     "ask_human": {"question": "Which DB?"},
@@ -61,6 +70,7 @@ ALL_WORKFLOW_TOOLS = {
     "report_test_failures": {"failures": [{"name": "t", "kind": "new"}], "diagnosis": "d"},
     "report_pr_fix": {"summary": "Added a back-off", "tests_passed": True},
     "submit_pr_review": {"verdict": "approved", "summary": "Looks good", "merged": True},
+    "show_card": {"title": "T", "text": "t", "card": EXAMPLE_CARD},
 }
 ALLOWED = {
     "ask_human": {"brainstorm", "plan", "implement", "step_fix", "final_fix", "finish", "pr_fix", "freestyle"},
@@ -76,6 +86,7 @@ ALLOWED = {
     "report_pr_fix": {"pr_fix"},
     "submit_pr_review": {"pr_review"},
 }
+ALLOWED["show_card"] = ALLOWED["ask_human"]
 
 
 def _tool(tc, token: str, name: str, /, **args):
@@ -171,6 +182,139 @@ async def test_run_token_ask_human_creates_question_and_mockup(db, tc_factory):
     await _finish(b.manager.id, run, "completed")
     wf = await _wf(b.task_id)
     assert (wf.status, wf.needs) == ("waiting_human", "question")
+
+
+async def test_run_token_ask_human_with_a_form(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    token = await _run_token(run)
+    err, out = _tool(tc, token, "ask_human", key=b.key, question="A few details?", form=EXAMPLE_FORM)
+    assert not err, out
+    assert out == ASKED
+    async with SessionLocal() as s:
+        q = (await s.execute(select(WorkflowQuestion).where(WorkflowQuestion.task_id == b.task_id))).scalar_one()
+    assert q.form["createSurface"]["catalogId"] == CATALOG_ID and q.choices == []
+    assert q.form["createSurface"]["components"] == EXAMPLE_FORM["components"]
+
+
+async def test_ask_human_invalid_form_is_a_tool_error_with_paths(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    token = await _run_token(run)
+    form = {"components": [{"id": "root", "component": "Column", "children": ["nowhere"]}, *EXAMPLE_FORM["components"][1:]]}
+    err, text = _tool(tc, token, "ask_human", key=b.key, question="A few details?", form=form)
+    # the MCP server puts "Error executing tool ask_human: " before the ToolError's own text
+    assert err and text.split(": ", 1)[1].startswith("invalid_form\n"), text
+    assert any(": " in line for line in text.splitlines()[1:]), text
+    err, text = _tool(tc, token, "ask_human", key=b.key, question="?", form=EXAMPLE_FORM,
+                      choices=[{"id": "a", "label": "A"}])
+    assert err and "form_with_choices" in text
+    assert await _count(WorkflowQuestion) == 0
+
+
+async def test_get_form_guide_returns_every_catalog_component(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    err, out = _tool(tc, await _run_token(run), "get_form_guide")
+    assert not err, out
+    assert set(out["catalog"]["components"]) == {
+        "Column", "Row", "Card", "Divider", "Text", "TextField", "CheckBox", "ChoicePicker", "Slider", "DateTimeInput"}
+    assert out["example"] == EXAMPLE_FORM
+    assert out["instructions_md"].strip()
+
+
+# ---- show_card / get_card_guide (MC-173) -------------------------------------------------------------
+
+
+async def _cards(task_id) -> list[TaskCard]:
+    async with SessionLocal() as s:
+        return list((await s.execute(select(TaskCard).where(TaskCard.task_id == task_id))).scalars())
+
+
+async def test_run_token_show_card_stores_it_and_keeps_the_turn(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    token = await _run_token(run)
+    before = await _wf(b.task_id)
+    err, out = _tool(tc, token, "show_card", key=b.key, title="Test run", text="412 passed, 3 failed", card=EXAMPLE_CARD)
+    assert not err, out
+    [row] = await _cards(b.task_id)
+    assert out == {"card_id": str(row.id)}
+    assert (row.run_id, row.agent_id, row.user_id, row.title, row.text) == (
+        run.id, run.agent_id, None, "Test run", "412 passed, 3 failed")
+    assert row.surface["createSurface"]["components"] == EXAMPLE_CARD["components"]
+    # nothing is asked and nothing waits: the run keeps its turn
+    after = await _wf(b.task_id)
+    assert (after.stage, after.status, after.needs) == (before.stage, before.status, before.needs)
+    assert await _count(WorkflowQuestion) == 0
+
+
+async def test_show_card_for_each_allowed_role(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    token = await _run_token(run)
+    for role in sorted(ALLOWED["show_card"]):
+        await _set_role(run, role, step=1)
+        err, out = _tool(tc, token, "show_card", key=b.key, **ALL_WORKFLOW_TOOLS["show_card"])
+        assert not err and out["card_id"], (role, out)
+        async with SessionLocal() as s:  # at most 3 cards in one run: start each role afresh
+            await s.execute(delete(TaskCard).where(TaskCard.task_id == b.task_id))
+            await s.commit()
+
+
+async def test_show_card_invalid_is_a_tool_error(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    token = await _run_token(run)
+    card = {"components": [{"id": "root", "component": "Column", "children": ["nowhere"]}]}
+    err, text = _tool(tc, token, "show_card", key=b.key, title="T", text="t", card=card)
+    assert err and text.split(": ", 1)[1].startswith("invalid_card\n"), text
+    err, text = _tool(tc, token, "show_card", key=b.key, title="T", text="t", card=EXAMPLE_FORM)
+    assert err and "card_with_inputs" in text, text
+    assert await _cards(b.task_id) == []
+
+
+async def test_personal_token_show_card(db, tc_factory):
+    tc, viewer_tc = tc_factory(lifespan=True), tc_factory()
+    b, _ = await _started(db, tc)
+    mine = _my_task(tc, b.manager)
+    task_id = uuid.UUID(mine["id"])
+    err, out = _tool(tc, _personal(tc), "show_card", key=mine["key"], **ALL_WORKFLOW_TOOLS["show_card"])
+    assert not err, out
+    [row] = await _cards(task_id)
+    assert (row.run_id, row.agent_id, row.user_id) == (None, None, b.manager.id)
+    assert await _wf(task_id) is None  # no workflow is started
+    # another person's task in the project: a viewer may read it but not write to it
+    viewer = await make_user(db, role=Role.viewer)
+    team_id = tc.get("/api/projects/PAY").json()["team_ids"][0]
+    db.add(TeamMember(team_id=uuid.UUID(team_id), user_id=viewer.id))
+    await db.commit()
+    _login(viewer_tc, viewer)
+    err, text = _tool(viewer_tc, _personal(viewer_tc), "show_card", key=mine["key"], **ALL_WORKFLOW_TOOLS["show_card"])
+    assert err and "forbidden" in text, text
+    assert len(await _cards(task_id)) == 1
+
+
+async def test_get_task_lists_a_card_without_its_surface(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    token = await _run_token(run)
+    assert not _tool(tc, token, "show_card", key=b.key, title="Test run", text="3 failed", card=EXAMPLE_CARD)[0]
+    err, task = _tool(tc, token, "get_task", key=b.key)
+    assert not err, task
+    [item] = [i for i in task["activity"] if i["type"] == "card"]
+    assert (item["card"]["title"], item["card"]["text"]) == ("Test run", "3 failed")
+    assert "surface" not in item["card"]
+
+
+async def test_get_card_guide(db, tc_factory):
+    tc = tc_factory(lifespan=True)
+    b, run = await _started(db, tc)
+    err, out = _tool(tc, await _run_token(run), "get_card_guide")
+    assert not err, out
+    assert set(out["catalog"]["components"]) == CARD_COMPONENTS
+    assert out["example"] == EXAMPLE_CARD
+    assert out["instructions_md"].strip()
 
 
 async def test_run_token_wrong_task_refused(db, tc_factory):
@@ -504,6 +648,8 @@ async def test_personal_token_refused_on_runner_driven_or_others_task(db, tc_fac
     # the agent's task is driven by MegooColab: the human's own client cannot submit for their agent
     for name, args in {**ALL_WORKFLOW_TOOLS, "get_workflow": {}}.items():
         if name in ("submit_review", "report_finish", "report_test_failures", "report_pr_fix", "submit_pr_review"):  # runner-only: refused by role, tested elsewhere
+            continue
+        if name == "show_card":  # not a stage tool: a person's token shows a card on any task it may edit
             continue
         err, text = _tool(tc, token, name, key=b.key, **args)
         assert err and "runner_driven" in text, (name, text)

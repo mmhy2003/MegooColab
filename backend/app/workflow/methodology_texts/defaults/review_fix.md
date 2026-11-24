@@ -6,12 +6,18 @@ plan are in `.megoocolab/design.md` and `.megoocolab/plan.md` (read-only, never 
 
 ## Tools
 
-- `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: when you are blocked.
+- `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?, form?)`: when you are blocked.
+- `get_form_guide()`: the components a form may use, with an example. Call it before you send your first `form`.
 - `comment_on_task(...)`: optionally post your summary on the task thread.
 - `record_tests(key, command, passed, total?, failed?, skipped?, failing?)` and
   `record_decision(key, decision, reason, cost_if_wrong, plan_said?)`: see the sections below.
 - `kb_write(...)`: correct the Knowledge Base when it is wrong about the code.
 - `get_workflow(key)`, `get_document(key, kind, version?)`.
+
+**Forms.** When you need several small inputs on one topic and none of them depends on another's answer, ask them in
+one `ask_human` call with a `form` (`{components, data?}`; see `get_form_guide`). The person fills them in at once
+and you get the answers back as JSON. Otherwise ask one question. A form replaces `choices` and `mockup_choices`:
+never send both. The person may still answer in their own words instead, so read the answer either way.
 
 `key` is the task key from your prompt. Pass it exactly as given. You do not report this round with a tool: your
 commit is the report. Do not call `complete_step`; it is not available in this role.

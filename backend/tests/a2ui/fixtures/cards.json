@@ -1,0 +1,178 @@
+{
+  "valid": [
+    {
+      "name": "example",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["tiles", "tabs"]},
+          {"id": "tiles", "component": "Row", "children": ["passed", "failed", "time"]},
+          {"id": "passed", "component": "StatTile", "label": "Passed", "value": "412", "tone": "good"},
+          {"id": "failed", "component": "StatTile", "label": "Failed", "value": "3", "caption": "2 new since Monday", "tone": "bad"},
+          {"id": "time", "component": "StatTile", "label": "Run time", "value": "4m 12s"},
+          {"id": "tabs", "component": "Tabs", "tabs": [{"title": "Failing", "child": "failing"}, {"title": "Notes", "child": "notes"}]},
+          {"id": "failing", "component": "List", "children": {"componentId": "row", "path": "/failing"}},
+          {"id": "row", "component": "TaskLink", "task": {"@path": "key"}, "label": {"@path": "title"}},
+          {"id": "notes", "component": "Text", "text": "Two of the failures are **flaky**."}
+        ],
+        "data": {"failing": [{"key": "MC-181", "title": "Login times out"}, {"key": "MC-182", "title": "Export is empty"}]}
+      }
+    },
+    {
+      "name": "tiles-only",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Row", "children": ["open", "late", "done", "count"]},
+          {"id": "open", "component": "StatTile", "label": "Open", "value": "12", "tone": "neutral"},
+          {"id": "late", "component": "StatTile", "label": "Late", "value": "2", "caption": "since Friday", "tone": "warning"},
+          {"id": "done", "component": "StatTile", "label": "Done", "value": "30", "tone": "good"},
+          {"id": "count", "component": "StatTile", "label": "Blocked", "value": "1", "tone": "bad"}
+        ]
+      }
+    },
+    {
+      "name": "template-list",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Card", "child": "list"},
+          {"id": "list", "component": "List", "direction": "vertical", "align": "start",
+           "children": {"componentId": "row", "path": "/tasks"}},
+          {"id": "row", "component": "TaskLink", "task": {"@path": "key"}, "label": {"@path": "title"}}
+        ],
+        "data": {"tasks": [{"key": "MC-1", "title": "One"}, {"key": "MC-2", "title": "Two"}, {"key": "MC-3", "title": "Three"}]}
+      }
+    },
+    {
+      "name": "tabs-six",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Tabs", "tabs": [
+            {"title": "One", "child": "t1"}, {"title": "Two", "child": "t2"}, {"title": "Three", "child": "t3"},
+            {"title": "Four", "child": "t4"}, {"title": "Five", "child": "t5"}, {"title": "Six", "child": "t6"}]},
+          {"id": "t1", "component": "Text", "text": "1"},
+          {"id": "t2", "component": "Text", "text": "2"},
+          {"id": "t3", "component": "Text", "text": "3"},
+          {"id": "t4", "component": "Divider"},
+          {"id": "t5", "component": "TaskLink", "task": "MC-181", "label": "Login times out"},
+          {"id": "t6", "component": "List", "children": ["t6a", "t6b"]},
+          {"id": "t6a", "component": "TaskLink", "task": "MC-7"},
+          {"id": "t6b", "component": "TaskLink", "task": "AB12-40", "label": "Elsewhere"}
+        ]
+      }
+    },
+    {
+      "name": "text-with-link",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Text", "text": "See [the board](/projects/MC/board) and **MC-181**."}
+        ]
+      }
+    },
+    {
+      "name": "no-data",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["tile", "link"]},
+          {"id": "tile", "component": "StatTile", "label": "Coverage", "value": "87%"},
+          {"id": "link", "component": "TaskLink", "task": "MC-173", "label": "Cards"}
+        ]
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "input",
+      "code": "card_with_inputs",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["name"]},
+          {"id": "name", "component": "TextField", "label": "Name", "value": {"@path": "/name"}}
+        ]
+      }
+    },
+    {
+      "name": "button",
+      "code": "invalid_card",
+      "path_contains": "components.send.component",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["send"]},
+          {"id": "send", "component": "Button", "child": "root"}
+        ]
+      }
+    },
+    {
+      "name": "image",
+      "code": "invalid_card",
+      "path_contains": "components.pic.component",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["pic"]},
+          {"id": "pic", "component": "Image", "url": "https://example.com/a.png"}
+        ]
+      }
+    },
+    {
+      "name": "bad-tone",
+      "code": "invalid_card",
+      "path_contains": "tone",
+      "card": {
+        "components": [
+          {"id": "root", "component": "StatTile", "label": "Failed", "value": "3", "tone": "red"}
+        ]
+      }
+    },
+    {
+      "name": "bad-task-key",
+      "code": "invalid_card",
+      "path_contains": "components.link.task",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["link"]},
+          {"id": "link", "component": "TaskLink", "task": "mc181", "label": "Login times out"}
+        ]
+      }
+    },
+    {
+      "name": "seven-tabs",
+      "code": "too_large",
+      "path_contains": "components.root.tabs",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Tabs", "tabs": [
+            {"title": "1", "child": "t1"}, {"title": "2", "child": "t2"}, {"title": "3", "child": "t3"},
+            {"title": "4", "child": "t4"}, {"title": "5", "child": "t5"}, {"title": "6", "child": "t6"},
+            {"title": "7", "child": "t7"}]},
+          {"id": "t1", "component": "Text", "text": "1"},
+          {"id": "t2", "component": "Text", "text": "2"},
+          {"id": "t3", "component": "Text", "text": "3"},
+          {"id": "t4", "component": "Text", "text": "4"},
+          {"id": "t5", "component": "Text", "text": "5"},
+          {"id": "t6", "component": "Text", "text": "6"},
+          {"id": "t7", "component": "Text", "text": "7"}
+        ]
+      }
+    },
+    {
+      "name": "dangling-id",
+      "code": "invalid_card",
+      "path_contains": "components",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["tile", "ghost"]},
+          {"id": "tile", "component": "StatTile", "label": "Open", "value": "1"}
+        ]
+      }
+    },
+    {
+      "name": "extra-key",
+      "code": "invalid_card",
+      "path_contains": "card",
+      "card": {
+        "components": [
+          {"id": "root", "component": "Text", "text": "Hello"}
+        ],
+        "surfaceId": "mine"
+      }
+    }
+  ]
+}

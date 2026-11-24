@@ -1,0 +1,285 @@
+{
+  "valid": [
+    {
+      "name": "example",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["tiles", "charts"]},
+          {"id": "tiles", "component": "Row", "children": ["failing", "passed", "duration", "flaky"]},
+          {"id": "failing", "component": "StatTile", "label": "Failing", "value": "3", "caption": "1 fewer than last run", "tone": "bad"},
+          {"id": "passed", "component": "StatTile", "label": "Passed", "value": "412", "tone": "good"},
+          {"id": "duration", "component": "StatTile", "label": "Suite time", "value": "4m 12s"},
+          {"id": "flaky", "component": "StatTile", "label": "Flaky", "value": "2", "tone": "warning"},
+          {"id": "charts", "component": "Row", "children": ["trend", "slowest"]},
+          {"id": "trend", "component": "Chart", "kind": "line", "title": "Failing tests by suite, last 3 runs", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]},
+          {"id": "slowest", "component": "Chart", "kind": "bar", "title": "Slowest suites", "points": {"@path": "/slowest"}, "x": "suite", "series": [{"key": "seconds", "label": "Time"}], "unit": "s"}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "api": 4, "web": 1}, {"day": "Nov 23", "api": 3, "web": 1}, {"day": "Nov 24", "api": 2, "web": 1}], "slowest": [{"suite": "api", "seconds": 131}, {"suite": "web", "seconds": 74}, {"suite": "runner", "seconds": 38}]}
+      }
+    },
+    {
+      "name": "line-four-series",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "a", "label": "A"}, {"key": "b", "label": "B"}, {"key": "c", "label": "C"}, {"key": "d", "label": "D"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "a": 0, "b": 1, "c": 2, "d": 3}, {"day": "Nov 23", "a": 1, "b": 2, "c": 3, "d": 4}, {"day": "Nov 24", "a": 2, "b": 3, "c": 4, "d": 5}]}
+      }
+    },
+    {
+      "name": "bar-one-series-unit",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "bar", "title": "Failing tests by suite", "points": {"@path": "/slowest"}, "x": "suite", "series": [{"key": "ms", "label": "Time"}], "unit": "ms"}
+        ],
+        "data": {"slowest": [{"suite": "api", "ms": 131.5}, {"suite": "web", "ms": 74}, {"suite": "runner", "ms": 38}]}
+      }
+    },
+    {
+      "name": "gaps",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "api": 4, "web": null}, {"day": "Nov 23", "api": 3}, {"day": "Nov 24", "api": 2, "web": 1}]}
+      }
+    },
+    {
+      "name": "card-only",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Tabs", "tabs": [{"title": "Numbers", "child": "tile"}, {"title": "Failing", "child": "list"}]},
+          {"id": "tile", "component": "StatTile", "label": "Failing", "value": "2", "tone": "bad"},
+          {"id": "list", "component": "List", "children": {"componentId": "row", "path": "/failing"}},
+          {"id": "row", "component": "TaskLink", "task": {"@path": "key"}, "label": {"@path": "title"}}
+        ],
+        "data": {"failing": [{"key": "MC-181", "title": "Login times out"}, {"key": "MC-182", "title": "Export is empty"}]}
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "input",
+      "code": "panel_with_inputs",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["name"]},
+          {"id": "name", "component": "TextField", "label": "Name", "value": {"@path": "/name"}}
+        ]
+      }
+    },
+    {
+      "name": "button",
+      "code": "invalid_panel",
+      "path_contains": "components.send.component",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["send"]},
+          {"id": "send", "component": "Button", "child": "root"}
+        ]
+      }
+    },
+    {
+      "name": "five-series",
+      "code": "invalid_panel",
+      "path_contains": "series",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "a", "label": "A"}, {"key": "b", "label": "B"}, {"key": "c", "label": "C"}, {"key": "d", "label": "D"}, {"key": "e", "label": "E"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "a": 0, "b": 0, "c": 0, "d": 0, "e": 0}, {"day": "Nov 23", "a": 1, "b": 1, "c": 1, "d": 1, "e": 1}, {"day": "Nov 24", "a": 2, "b": 2, "c": 2, "d": 2, "e": 2}]}
+      }
+    },
+    {
+      "name": "five-charts",
+      "code": "too_large",
+      "path_contains": "components",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c0", "c1", "c2", "c3", "c4"]},
+          {"id": "c0", "component": "Chart", "kind": "bar", "title": "Chart 0", "points": {"@path": "/slowest"}, "x": "suite", "series": [{"key": "seconds", "label": "Time"}]},
+          {"id": "c1", "component": "Chart", "kind": "bar", "title": "Chart 1", "points": {"@path": "/slowest"}, "x": "suite", "series": [{"key": "seconds", "label": "Time"}]},
+          {"id": "c2", "component": "Chart", "kind": "bar", "title": "Chart 2", "points": {"@path": "/slowest"}, "x": "suite", "series": [{"key": "seconds", "label": "Time"}]},
+          {"id": "c3", "component": "Chart", "kind": "bar", "title": "Chart 3", "points": {"@path": "/slowest"}, "x": "suite", "series": [{"key": "seconds", "label": "Time"}]},
+          {"id": "c4", "component": "Chart", "kind": "bar", "title": "Chart 4", "points": {"@path": "/slowest"}, "x": "suite", "series": [{"key": "seconds", "label": "Time"}]}
+        ],
+        "data": {"slowest": [{"suite": "api", "seconds": 131}, {"suite": "web", "seconds": 74}, {"suite": "runner", "seconds": 38}]}
+      }
+    },
+    {
+      "name": "bad-kind",
+      "code": "invalid_panel",
+      "path_contains": "kind",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "pie", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "api": 4, "web": 1}, {"day": "Nov 23", "api": 3, "web": 1}, {"day": "Nov 24", "api": 2, "web": 1}]}
+      }
+    },
+    {
+      "name": "points-relative",
+      "code": "invalid_panel",
+      "path_contains": "components.c.points",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "api": 4, "web": 1}, {"day": "Nov 23", "api": 3, "web": 1}, {"day": "Nov 24", "api": 2, "web": 1}]}
+      }
+    },
+    {
+      "name": "points-missing",
+      "code": "invalid_panel",
+      "path_contains": "components.c.points",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/nowhere"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "api": 4, "web": 1}, {"day": "Nov 23", "api": 3, "web": 1}, {"day": "Nov 24", "api": 2, "web": 1}]}
+      }
+    },
+    {
+      "name": "points-empty",
+      "code": "invalid_panel",
+      "path_contains": "components.c.points",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+        ],
+        "data": {"trend": []}
+      }
+    },
+    {
+      "name": "points-not-objects",
+      "code": "invalid_panel",
+      "path_contains": "components.c.points",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+        ],
+        "data": {"trend": [1, 2]}
+      }
+    },
+    {
+      "name": "fifty-one-points",
+      "code": "too_large",
+      "path_contains": "data.trend",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+        ],
+        "data": {"trend": [{"day": "d0", "api": 0, "web": 0}, {"day": "d1", "api": 1, "web": 1}, {"day": "d2", "api": 2, "web": 2}, {"day": "d3", "api": 3, "web": 3}, {"day": "d4", "api": 4, "web": 4}, {"day": "d5", "api": 5, "web": 5}, {"day": "d6", "api": 6, "web": 6}, {"day": "d7", "api": 7, "web": 7}, {"day": "d8", "api": 8, "web": 8}, {"day": "d9", "api": 9, "web": 9}, {"day": "d10", "api": 10, "web": 10}, {"day": "d11", "api": 11, "web": 11}, {"day": "d12", "api": 12, "web": 12}, {"day": "d13", "api": 13, "web": 13}, {"day": "d14", "api": 14, "web": 14}, {"day": "d15", "api": 15, "web": 15}, {"day": "d16", "api": 16, "web": 16}, {"day": "d17", "api": 17, "web": 17}, {"day": "d18", "api": 18, "web": 18}, {"day": "d19", "api": 19, "web": 19}, {"day": "d20", "api": 20, "web": 20}, {"day": "d21", "api": 21, "web": 21}, {"day": "d22", "api": 22, "web": 22}, {"day": "d23", "api": 23, "web": 23}, {"day": "d24", "api": 24, "web": 24}, {"day": "d25", "api": 25, "web": 25}, {"day": "d26", "api": 26, "web": 26}, {"day": "d27", "api": 27, "web": 27}, {"day": "d28", "api": 28, "web": 28}, {"day": "d29", "api": 29, "web": 29}, {"day": "d30", "api": 30, "web": 30}, {"day": "d31", "api": 31, "web": 31}, {"day": "d32", "api": 32, "web": 32}, {"day": "d33", "api": 33, "web": 33}, {"day": "d34", "api": 34, "web": 34}, {"day": "d35", "api": 35, "web": 35}, {"day": "d36", "api": 36, "web": 36}, {"day": "d37", "api": 37, "web": 37}, {"day": "d38", "api": 38, "web": 38}, {"day": "d39", "api": 39, "web": 39}, {"day": "d40", "api": 40, "web": 40}, {"day": "d41", "api": 41, "web": 41}, {"day": "d42", "api": 42, "web": 42}, {"day": "d43", "api": 43, "web": 43}, {"day": "d44", "api": 44, "web": 44}, {"day": "d45", "api": 45, "web": 45}, {"day": "d46", "api": 46, "web": 46}, {"day": "d47", "api": 47, "web": 47}, {"day": "d48", "api": 48, "web": 48}, {"day": "d49", "api": 49, "web": 49}, {"day": "d50", "api": 50, "web": 50}]}
+      }
+    },
+    {
+      "name": "x-missing",
+      "code": "invalid_panel",
+      "path_contains": "components.c.x",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "api": 4, "web": 1}, {"api": 3, "web": 1}]}
+      }
+    },
+    {
+      "name": "value-not-number",
+      "code": "invalid_panel",
+      "path_contains": "components.c.series.0.key",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "api": 4, "web": 1}, {"day": "Nov 23", "api": "3", "web": 1}]}
+      }
+    },
+    {
+      "name": "series-no-number",
+      "code": "invalid_panel",
+      "path_contains": "components.c.series.1.key",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "api": 4, "web": null}, {"day": "Nov 23", "api": 3, "web": null}]}
+      }
+    },
+    {
+      "name": "duplicate-key",
+      "code": "invalid_panel",
+      "path_contains": "components.c.series",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "api", "label": "API"}, {"key": "api", "label": "Again"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "api": 4, "web": 1}, {"day": "Nov 23", "api": 3, "web": 1}, {"day": "Nov 24", "api": 2, "web": 1}]}
+      }
+    },
+    {
+      "name": "key-is-x",
+      "code": "invalid_panel",
+      "path_contains": "components.c.series",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["c"]},
+          {"id": "c", "component": "Chart", "kind": "line", "title": "Failing tests by suite", "points": {"@path": "/trend"}, "x": "day", "series": [{"key": "day", "label": "Day"}]}
+        ],
+        "data": {"trend": [{"day": "Nov 22", "api": 4, "web": 1}, {"day": "Nov 23", "api": 3, "web": 1}, {"day": "Nov 24", "api": 2, "web": 1}]}
+      }
+    },
+    {
+      "name": "seven-tabs",
+      "code": "too_large",
+      "path_contains": "components.root.tabs",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Tabs", "tabs": [{"title": "1", "child": "t1"}, {"title": "2", "child": "t2"}, {"title": "3", "child": "t3"}, {"title": "4", "child": "t4"}, {"title": "5", "child": "t5"}, {"title": "6", "child": "t6"}, {"title": "7", "child": "t7"}]},
+          {"id": "t1", "component": "Text", "text": "1"},
+          {"id": "t2", "component": "Text", "text": "2"},
+          {"id": "t3", "component": "Text", "text": "3"},
+          {"id": "t4", "component": "Text", "text": "4"},
+          {"id": "t5", "component": "Text", "text": "5"},
+          {"id": "t6", "component": "Text", "text": "6"},
+          {"id": "t7", "component": "Text", "text": "7"}
+        ]
+      }
+    },
+    {
+      "name": "bad-task-key",
+      "code": "invalid_panel",
+      "path_contains": "components.link.task",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Column", "children": ["link"]},
+          {"id": "link", "component": "TaskLink", "task": "mc181", "label": "Login times out"}
+        ]
+      }
+    },
+    {
+      "name": "extra-key",
+      "code": "invalid_panel",
+      "path_contains": "panel",
+      "panel": {
+        "components": [
+          {"id": "root", "component": "Text", "text": "Hello"}
+        ],
+        "surfaceId": "mine"
+      }
+    }
+  ]
+}

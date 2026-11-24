@@ -187,6 +187,27 @@ def test_baseline_texts():
         assert "baseline=true" not in text(key), key
 
 
+def test_every_text_that_lists_ask_human_teaches_forms():
+    """Every agent that can ask a person learns it may ask with a form (MC-172)."""
+    keys = []
+    for key in methodology.ALL_KEYS:
+        body = (methodology.DEFAULTS_DIR / f"{key}.md").read_text(encoding="utf-8")
+        if "`ask_human(" not in body:
+            continue
+        keys.append(key)
+        for phrase in ("form?", "get_form_guide()", "**Forms.**"):
+            assert phrase in body, (key, phrase)
+    assert len(keys) == 10
+
+
+def test_freestyle_and_finish_texts_teach_cards():
+    """The agents that reply with a result learn they may show it as a card, and still reply in text (MC-173)."""
+    for key in ("freestyle", "finish"):
+        body = (methodology.DEFAULTS_DIR / f"{key}.md").read_text(encoding="utf-8")
+        for phrase in ("`show_card(key, title, text, card)`", "get_card_guide()", "**Cards.**", "still reply in text"):
+            assert phrase in body, (key, phrase)
+
+
 def _old_default(monkeypatch, key: str, text: str) -> None:
     """Pretend `text` shipped as an earlier default of `key`."""
     import hashlib
@@ -260,3 +281,11 @@ def test_finish_fix_texts():
     assert review.startswith("# Review: review the fix for the tests that failed at finish\n")
     for phrase in ("The fix to review", "git diff", "critical", "submit_review"):
         assert phrase in review, phrase
+
+
+def test_cron_text_teaches_panels():
+    """A cron's agent learns when a panel is worth sending, and that the report stands without it (MC-174)."""
+    body = (methodology.DEFAULTS_DIR / "cron.md").read_text(encoding="utf-8")
+    for phrase in ("panel?", "get_panel_guide()", "## A panel", "complete without it", "from the last panel",
+                   "refused twice"):
+        assert phrase in body, phrase

@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Surface } from "@/components/a2ui/Surface";
 import { ImageAttach, ImageDropZone } from "@/components/images/ImageAttach";
 import { ImageGallery } from "@/components/images/ImageGallery";
 import { Button } from "@/components/ui/Button";
@@ -11,7 +12,7 @@ import { api, ApiError } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { useImageDraft } from "@/lib/images";
 import { qk } from "@/lib/queries";
-import type { ActivityItem, ActivityQuestion, MockupInfo } from "@/lib/types";
+import type { ActivityItem, ActivityQuestion, FormValues, MockupInfo } from "@/lib/types";
 
 import { MockupFrame } from "./MockupFrame";
 
@@ -45,6 +46,10 @@ export function QuestionCard({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const images = useImageDraft(); // with an answer in the person's own words
+  // a form question: what the form holds, whether its checks pass, and whether the person answers in their own words
+  const [data, setData] = useState<FormValues | null>(null);
+  const [valid, setValid] = useState(false);
+  const [ownWords, setOwnWords] = useState(false);
   const open = q.status === "open";
   const answerable = canAct && !readOnly && open;
 
@@ -64,10 +69,20 @@ export function QuestionCard({
   const ready = selected !== null && (!other || text.trim().length > 0) && !(other && images.uploading);
   const sendSelected = () => {
     if (!ready) return;
-    void send(other ? { text: text.trim(), ...(images.ids.length ? { image_ids: images.ids } : {}) } : { choice: selected! });
+    if (other) sendOwnWords();
+    else void send({ choice: selected! });
   };
 
-  const send = async (json: { choice: string } | { text: string; image_ids?: string[] }) => {
+  const ownWordsReady = text.trim().length > 0 && !images.uploading;
+  const sendOwnWords = () => void send({ text: text.trim(), ...(images.ids.length ? { image_ids: images.ids } : {}) });
+  const formReady = ownWords ? ownWordsReady : valid && data !== null;
+  const sendForm = () => {
+    if (!formReady) return;
+    if (ownWords) sendOwnWords();
+    else void send({ data: data! });
+  };
+
+  const send = async (json: { choice: string } | { text: string; image_ids?: string[] } | { data: FormValues }) => {
     if (busy) return;
     setError(null);
     setBusy(true);
@@ -88,6 +103,25 @@ export function QuestionCard({
     }
   };
 
+  const ownWordsBox = (
+    <div className="space-y-1">
+      <ImageDropZone draft={images}>
+        <textarea
+          aria-label="Your answer"
+          className="block w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm"
+          rows={3}
+          maxLength={MAX_ANSWER}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+      </ImageDropZone>
+      <ImageAttach draft={images} />
+      <p className="text-right text-xs text-muted-foreground">
+        {text.length}/{MAX_ANSWER}
+      </p>
+    </div>
+  );
+
   return (
     // data-waiting: the task's "waiting on you" button jumps here (JumpButtons)
     <div data-waiting={answerable ? "question" : undefined} className={`card min-w-0 flex-1 space-y-2 px-3 py-2 ${q.status === "withdrawn" ? "opacity-60" : ""}`}>
@@ -102,7 +136,28 @@ export function QuestionCard({
         <MockupFrame mockupId={mockup.id} version={mockup.version} title={mockup.title} choices={mockup.choices} onChoice={answerable ? preselect : noop} />
       )}
 
-      {answerable ? (
+      {answerable && q.form ? (
+        <div className="space-y-2">
+          {/* hidden, not unmounted, in own-words mode: what the person filled in survives the switch */}
+          <div className={ownWords ? "hidden" : undefined}>
+            <Surface
+              message={q.form}
+              readOnly={busy}
+              onChange={(d, v) => {
+                setData(d);
+                setValid(v);
+              }}
+            />
+          </div>
+          <button type="button" className="text-xs text-cyan-ink underline" onClick={() => setOwnWords((o) => !o)}>
+            {ownWords ? "Back to the form" : "Answer in your own words instead"}
+          </button>
+          {ownWords && ownWordsBox}
+          <Button disabled={!formReady || busy} onClick={sendForm}>
+            Send answer
+          </Button>
+        </div>
+      ) : answerable ? (
         <div className="space-y-2">
           <ul className="space-y-1">
             {choices.map((c) => (
@@ -135,30 +190,17 @@ export function QuestionCard({
           {selected !== null && !other && !q.choices.some((c) => c.id === selected) && (
             <p className="text-xs text-muted-foreground">Selected in the mockup: {selected}</p>
           )}
-          {other && (
-            <div className="space-y-1">
-              <ImageDropZone draft={images}>
-                <textarea
-                  aria-label="Your answer"
-                  className="block w-full rounded border border-line bg-surface-2 px-2 py-1 text-sm"
-                  rows={3}
-                  maxLength={MAX_ANSWER}
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                />
-              </ImageDropZone>
-              <ImageAttach draft={images} />
-              <p className="text-right text-xs text-muted-foreground">
-                {text.length}/{MAX_ANSWER}
-              </p>
-            </div>
-          )}
+          {other && ownWordsBox}
           <Button disabled={!ready || busy} onClick={sendSelected}>
             Send answer
           </Button>
         </div>
       ) : (
         <>
+          {q.form && q.status !== "answered" && <Surface message={q.form} readOnly />}
+          {q.form && q.answer_data && (
+            <Surface message={{ ...q.form, createSurface: { ...q.form.createSurface, dataModel: q.answer_data } }} readOnly />
+          )}
           {q.choices.length > 0 && (
             <ul className="space-y-0.5 text-xs text-muted-foreground">
               {choices.map((c) => (
@@ -178,7 +220,10 @@ export function QuestionCard({
         </>
       )}
 
-      {q.status === "answered" && (
+      {q.status === "answered" && q.answer_data && (
+        <p className="text-sm text-muted-foreground">{q.answered_by?.name ?? "Someone"} answered with the form.</p>
+      )}
+      {q.status === "answered" && !q.answer_data && (
         <p className="text-sm">
           <span className="text-muted-foreground">{q.answered_by?.name ?? "Someone"} answered: </span>
           {q.answer_choice ? label(q.answer_choice) : null}

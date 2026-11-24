@@ -68,6 +68,8 @@ class CronRun(IdMixin, Base):
     agent_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
     # {summary, findings: [{title, detail, task_key?, created?}], checked, nothing_new, notes: [], timed_out?}
     report: Mapped[dict | None] = mapped_column(JSONB)
+    # the agent's panel: a stored A2UI createSurface message (MC-174), or None
+    panel: Mapped[dict | None] = mapped_column(JSONB)
     # the commit the run worked on
     commit: Mapped[str | None] = mapped_column(String(64))
     tasks_created: Mapped[int] = mapped_column(Integer, default=0)

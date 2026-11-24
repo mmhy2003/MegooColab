@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
@@ -382,6 +383,7 @@ class AnswerIn(BaseModel):
     choice: NoNulStr | None = None
     text: NoNulStr | None = None
     image_ids: list[uuid.UUID] = Field(default=[], max_length=6)  # unsent images (POST /api/images) it sends
+    data: dict[str, Any] | None = None  # a form question's answer (MC-172)
 
 
 class MockupOut(BaseModel):
@@ -409,7 +411,7 @@ async def answer_question(
     key: str, question_id: uuid.UUID, body: AnswerIn, user: AuthedUser, db: DbSession
 ) -> WorkflowOut:
     task, _ = await get_task_for(db, user, key, write=True)
-    await questions.answer(db, user, task, question_id, body.choice, body.text, body.image_ids)
+    await questions.answer(db, user, task, question_id, body.choice, body.text, body.image_ids, data=body.data)
     await engine.dispatch_queued(db)
     return await workflow_out(db, task, user)
 

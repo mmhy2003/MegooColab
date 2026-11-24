@@ -15,7 +15,7 @@ from app.notifications.models import Notification
 from app.projects.models import Label
 from app.tasks.models import Comment, Task, task_labels
 from tests.factories import login
-from tests.mcp.test_workflow_tools import _run_token, _tool
+from tests.mcp.test_workflow_tools import EXAMPLE_CARD, _run_token, _tool
 
 BASE = "/api/projects/PAY/crons"
 
@@ -146,7 +146,8 @@ async def test_cron_run_reads_only_its_project_tasks(client, db, world, tc_facto
     assert not _tool(tc, token, "get_task", key=task["key"])[0]
     for name, args in (("list_tasks", {"project_key": "WEB"}), ("kb_write", {"title": "t", "body_md": "b"}),
                        ("ask_project", {"project_key": "PAY", "question": "q"}),
-                       ("comment_on_task", {"key": task["key"], "body_md": "x"})):
+                       ("comment_on_task", {"key": task["key"], "body_md": "x"}),
+                       ("show_card", {"key": task["key"], "title": "t", "text": "t", "card": EXAMPLE_CARD})):
         err, text = _tool(tc, token, name, **args)
         assert err and "not_allowed_in_role" in text, (name, text)
 

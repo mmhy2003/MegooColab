@@ -60,8 +60,28 @@ export type ActivityQuestion = {
   answered_by: { id: string; name: string } | null;
   answer_choice: string | null;
   answer_text: string | null;
+  /** the form the agent asked with, drawn in place of the choices */
+  form: SurfaceMessage | null;
+  /** what the person sent with the form; null when they answered in their own words */
+  answer_data: FormValues | null;
 };
 export type MockupInfo = { id: string; version: number; title: string; choices: string[]; created_at: string };
+/** A form's values: the whole data model of its A2UI surface. */
+export type FormValues = Record<string, unknown>;
+/** An A2UI v1.0 `createSurface` message, as the backend stores it: a form question's or a card's. */
+export type SurfaceMessage = {
+  version: "1.0";
+  createSurface: { surfaceId: string; catalogId: string; components: Record<string, unknown>[]; dataModel?: FormValues };
+};
+/** The `card` of an activity item with type "card" (the API types it as a loose object). */
+export type ActivityCard = {
+  id: string;
+  title: string;
+  text: string;
+  surface: SurfaceMessage;
+  /** the agent whose run showed it; null for a person's own agent (the item's actor) or a deleted agent */
+  agent: { id: string; name: string } | null;
+};
 export type ReviewDetail = S["ReviewOut"];
 export type MethodologyItem = S["MethodologyOut"];
 export type MethodologyVersionInfo = S["MethodologyVersionInfo"];

@@ -4,6 +4,7 @@ Task text, thread items, answers, comments and findings are untrusted (NFR-3): e
 <untrusted source="...">, and the content cannot close the wrapper from inside.
 """
 
+import json
 import logging
 import unicodedata
 import uuid
@@ -13,6 +14,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.a2ui.service import field_labels
 from app.images.delivery import attached_line
 from app.projects.models import Project
 from app.tasks.activity import activity_items
@@ -130,23 +132,36 @@ def _get(obj: Any, name: str) -> Any:
 
 
 def _question_text(q: Any) -> str:
-    """A question as its body, its choices as labels and, once answered, the answer."""
+    """A question as its body, its choices or form fields as labels and, once answered, the answer."""
     choices = _get(q, "choices") or []
     labels = {_get(c, "id"): _get(c, "label") for c in choices}
     lines = [str(_get(q, "body") or "")]
     if choices:
         lines.append("Choices: " + ", ".join(str(_get(c, "label") or _get(c, "id")) for c in choices))
+    if (form := _get(q, "form")) and (fields := field_labels(form)):
+        lines.append("Form fields: " + ", ".join(fields))
     choice, text = _get(q, "answer_choice"), _get(q, "answer_text")
     if choice or text:
         answer = str(labels.get(choice) or choice or "")
         lines.append("Answer: " + " — ".join(p for p in (answer, str(text or "")) if p))
+    if (data := _get(q, "answer_data")) is not None:
+        lines.append("Form answer (JSON): " + json.dumps(data, ensure_ascii=False, sort_keys=True))
     return "\n".join(lines)
+
+
+def _card_text(card: Any) -> str:
+    """A card as its title and text: what stands in for it where it can't be drawn (never its surface)."""
+    return f"{_get(card, 'title') or ''}\n{_get(card, 'text') or ''}"
 
 
 def _item_text(item: Any) -> str:
     who = getattr(getattr(item, "actor", None), "name", None) or "system"
     if item.type == "question":
         body = _question_text(_get(item, "question"))
+    elif item.type == "card":
+        card = _get(item, "card")
+        who = getattr(getattr(item, "actor", None), "name", None) or _get(_get(card, "agent"), "name") or "Agent"
+        body = _card_text(card)
     else:
         body = getattr(item, "body_md", None) or ""
     images = getattr(item, "images", None) or []
@@ -162,7 +177,8 @@ async def _thread(db: AsyncSession, task: Task) -> list[str]:
     items = await activity_items(db, task, limit=MAX_THREAD_ITEMS * 4)
     # messages for the agent are instructions, in a section of their own (instructions.kept_in_mind, or for a
     # freestyle run freestyle.conversation_so_far)
-    texts = [_item_text(i) for i in items if i.type in ("comment", "question") and getattr(i, "to_agent", None) is None]
+    texts = [_item_text(i) for i in items
+             if i.type in ("comment", "question", "card") and getattr(i, "to_agent", None) is None]
     return texts[-MAX_THREAD_ITEMS:]
 
 
@@ -429,7 +445,7 @@ def _project_answers_text(payload: dict) -> str:
 
 def resume_text(kind: str, payload: Any) -> str:
     """The short text sent when a session is resumed. Payload by kind:
-    answer {choice_label?, text?}; rejection {comment, kind: "design"|"plan"};
+    answer {choice_label?, text?, data?}; rejection {comment, kind: "design"|"plan"};
     nudge {text?} (or a str); findings: list of finding dicts;
     failures_accepted {by, names, failing_total} (MC-97: a person chose Finish anyway)."""
     if kind == "answer":
@@ -438,6 +454,8 @@ def resume_text(kind: str, payload: Any) -> str:
             parts.append(f"Chosen: {payload['choice_label']}")
         if payload.get("text"):
             parts.append(str(payload["text"]))
+        if payload.get("data") is not None:
+            parts.append("Form answer (JSON):\n" + json.dumps(payload["data"], ensure_ascii=False, indent=2))
         return _bounded("The human answered your question.\n", "answer", "\n".join(parts) or "(no answer text)")
     if kind == "rejection":
         tool = "submit_plan" if payload.get("kind") == "plan" else "submit_design"

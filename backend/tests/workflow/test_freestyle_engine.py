@@ -107,6 +107,33 @@ async def test_notification_body_is_the_whole_reply_not_the_last_chunk(client, d
     assert note.body.startswith("Created release/2026.11.06.208")
 
 
+async def _card(task_id, run):
+    from app.tasks.models import TaskCard
+
+    surface = {"version": "1.0", "createSurface": {"surfaceId": "card-1", "catalogId": "urn:megoocolab:a2ui:catalog:v1",
+                                                   "components": [{"id": "root", "component": "Text", "text": "hi"}]}}
+    async with SessionLocal() as s:
+        s.add(TaskCard(task_id=task_id, run_id=run.id, agent_id=run.agent_id, title="Test results",
+                       text="412 passed, 3 failed.", surface=surface))
+        await s.commit()
+
+
+async def test_notification_carries_the_turns_cards(client, db):
+    w, task_id, run = await _freestyle(client, db)
+    await _card(task_id, run)
+    await _end(run.id, "completed", "Done")
+    [note] = await _notifications(w.owner.id, task_id)
+    assert note.body == "Done\nCard: Test results. 412 passed, 3 failed."
+
+
+async def test_a_long_reply_with_a_card_keeps_the_notification_short(client, db):
+    w, task_id, run = await _freestyle(client, db)
+    await _card(task_id, run)
+    await _end(run.id, "completed", "y" * 2_000)
+    [note] = await _notifications(w.owner.id, task_id)
+    assert len(note.body) == freestyle.SUMMARY_CHARS and note.body.startswith("yyy")
+
+
 async def test_failed_turns_never_retry_or_escalate(client, db):
     w, task_id, run = await _freestyle(client, db)
     for i in range(3):

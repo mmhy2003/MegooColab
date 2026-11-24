@@ -31,7 +31,7 @@ async def _named(db: AsyncSession, model, id_: uuid.UUID | None) -> Named | None
     return Named(id=row.id, name=row.name) if row else None
 
 
-async def run_out(db: AsyncSession, run: CronRun) -> CronRunOut:
+async def run_out(db: AsyncSession, run: CronRun, *, with_panel: bool = True) -> CronRunOut:
     from app.agent_runs.models import AgentRun  # local: agent_runs calls into the crons package
 
     agent_id = await db.scalar(select(AgentRun.agent_id).where(AgentRun.id == run.agent_run_id)) if run.agent_run_id else None
@@ -39,6 +39,7 @@ async def run_out(db: AsyncSession, run: CronRun) -> CronRunOut:
         id=run.id, scheduled_at=run.scheduled_at, status=run.status, skip_reason=run.skip_reason,
         agent=await _named(db, Agent, agent_id), started_at=run.started_at, finished_at=run.finished_at,
         report=run.report, commit=run.commit, tasks_created=run.tasks_created,
+        panel=run.panel if with_panel else None,
     )
 
 
@@ -53,7 +54,7 @@ async def cron_out(db: AsyncSession, cron: Cron) -> CronOut:
         timezone=cron.timezone, description=schedule.describe(cron.schedule), agent=await _named(db, Agent, cron.agent_id),
         mode=cron.mode, kb_title=cron.kb_title, kb_document_id=cron.kb_document_id,
         notify_findings=cron.notify_findings, notify_every=cron.notify_every, notify_failures=cron.notify_failures,
-        paused=cron.paused, next_run_at=cron.next_run_at, last_run=await run_out(db, last) if last else None,
+        paused=cron.paused, next_run_at=cron.next_run_at, last_run=await run_out(db, last, with_panel=False) if last else None,
         created_by=await _named(db, User, cron.created_by), created_at=cron.created_at,
     )
 

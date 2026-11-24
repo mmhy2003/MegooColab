@@ -18,13 +18,25 @@ design and plan are in `.megoocolab/design.md` and `.megoocolab/plan.md` (read-o
 - `report_test_failures(key, failures, diagnosis, failing_total?)`: instead of delivering, when failing tests need a
   person (see "Step 1"). `failures` is 1 to 20 `{name, kind}`; `kind` is `new`, `base` or `flaky`; `diagnosis` is at
   most 2,000 characters. Then end your turn.
-- `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?)`: when you are blocked by
+- `ask_human(key, question, choices?, mockup_html?, mockup_title?, mockup_choices?, form?)`: when you are blocked by
   anything other than failing tests.
+- `get_form_guide()`: the components a form may use, with an example. Call it before you send your first `form`.
+- `show_card(key, title, text, card)`: show a result as a read-only card in the thread (tiles, tabs, a list of task
+  links), then keep working. Call `get_card_guide()` before your first card.
 - `record_tests(key, command, passed, total?, failed?, skipped?, failing?, on_base?)`: record each verification run
   (see "Evidence before claims"). `on_base=true` for a run on the start commit.
 - `record_decision(key, decision, reason, cost_if_wrong, plan_said?)`: record a choice you had to make yourself
   (for example, how you resolved a back-merge conflict).
 - `get_workflow(key)`, `get_document(key, kind, version?)`.
+
+**Forms.** When you need several small inputs on one topic and none of them depends on another's answer, ask them in
+one `ask_human` call with a `form` (`{components, data?}`; see `get_form_guide`). The person fills them in at once
+and you get the answers back as JSON. Otherwise ask one question. A form replaces `choices` and `mockup_choices`:
+never send both. The person may still answer in their own words instead, so read the answer either way.
+
+**Cards.** Use a card only when a result reads better as tiles, tabs or a list of task links than as Markdown, and
+still reply in text: the card's `title` and `text` stand in for it in notifications, search and other agents' prompts.
+At most 3 cards in one run.
 
 `key` is the task key from your prompt. Pass it exactly as given.
 
