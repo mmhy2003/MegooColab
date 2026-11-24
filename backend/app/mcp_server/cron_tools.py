@@ -5,6 +5,7 @@ from typing import Any
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from app.a2ui import service as a2ui_service
 from app.crons import report
 from app.mcp_server.auth import current_run, tool_session
 
@@ -17,15 +18,25 @@ def register_cron_tools(mcp: MCPServer) -> None:
         checked: str = "",
         nothing_new: bool = False,
         document_md: str | None = None,
+        panel: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Report this cron run, once, at the end. `summary`: one or two sentences. `findings`: real problems, each
         {title, detail, new_task?, existing_task_key?} — new_task asks for a task (when your cron may open tasks),
         existing_task_key names an open task of the project that already tracks it. `checked`: what you looked at.
         `nothing_new`: nothing changed since the last run. `document_md`: the whole new document (when your cron keeps
-        a Knowledge Base document)."""
+        a Knowledge Base document). `panel`: optional tiles and charts drawn above the report,
+        {components, data?} (call get_panel_guide first); a refused panel refuses the whole call and nothing is
+        stored."""
         run = current_run.get()
         if run is None or run.cron_run_id is None:
             raise ToolError("not_allowed_in_role")
         async with tool_session() as (db, _user):  # REST errors become tool errors with their code
             return await report.apply_report(db, run, summary=summary, findings=findings, checked=checked,
-                                             nothing_new=nothing_new, document_md=document_md)
+                                             nothing_new=nothing_new, document_md=document_md, panel=panel)
+
+    @mcp.tool()
+    async def get_panel_guide() -> dict[str, Any]:
+        """What a panel for submit_cron_report may contain: instructions, MegooColab's A2UI catalog for panels and an
+        example."""
+        async with tool_session():
+            return a2ui_service.panel_guide()

@@ -96,7 +96,7 @@ async def test_tools_list_contains_expected_names(app, client, db, mcp_running):
         "update_task", "move_task", "comment_on_task", "delete_task",
         "list_sprints", "create_sprint", "update_sprint", "start_sprint", "complete_sprint", "delete_sprint",
         "set_task_sprint",
-        "get_workflow", "get_document", "ask_human", "get_form_guide", "show_card", "get_card_guide", "submit_design", "submit_plan", "complete_step",
+        "get_workflow", "get_document", "ask_human", "get_form_guide", "show_card", "get_card_guide", "get_panel_guide", "submit_design", "submit_plan", "complete_step",
         "submit_review", "report_finish", "report_test_failures", "report_pr_fix", "submit_pr_review", "show_mockup", "record_decision", "record_tests",
         "kb_search", "kb_list", "kb_read", "kb_write", "kb_draft_read", "kb_draft_submit", "submit_cron_report",
         "search_memory", "ask_memory",
