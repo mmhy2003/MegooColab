@@ -9,6 +9,10 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { CATALOG_ID } from "@/components/a2ui/catalog";
 import { CronEditor } from "@/components/crons/CronEditor";
 import { CronList } from "@/components/crons/CronList";
 import { CronReport } from "@/components/crons/CronReport";
@@ -137,6 +141,59 @@ describe("CronReport", () => {
   it("says why a run was skipped", () => {
     wrap(<CronReport projectKey="PAY" run={CRON.last_run as never} />);
     expect(screen.getByText("skipped: no agent online")).toBeInTheDocument();
+  });
+
+  const example = (
+    JSON.parse(readFileSync(join(process.cwd(), "..", "backend", "tests", "a2ui", "fixtures", "panels.json"), "utf8")) as {
+      valid: { name: string; panel: { components: Record<string, unknown>[]; data: Record<string, unknown> } }[];
+    }
+  ).valid.find((p) => p.name === "example")!.panel;
+  const PANEL_MESSAGE = {
+    version: "1.0",
+    createSurface: { surfaceId: "panel-0123456789ab", catalogId: CATALOG_ID, components: example.components, dataModel: example.data },
+  };
+  const reported = (panel: unknown) => ({
+    ...CRON.last_run, status: "done", skip_reason: null, panel,
+    report: { summary: "3 failing.", findings: [], checked: "the suite", nothing_new: false, notes: [] },
+  }) as never;
+  const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
+
+  it("draws the panel above the summary", async () => {
+    wrap(<CronReport projectKey="PAY" run={reported(PANEL_MESSAGE)} />);
+    const tile = await screen.findByRole("group", { name: "Failing" });
+    const summary = screen.getByRole("heading", { name: "Summary" });
+    const panel = screen.getByRole("heading", { name: "Panel" });
+    expect(panel.compareDocumentPosition(summary) & FOLLOWING).toBeTruthy();
+    expect(tile.compareDocumentPosition(summary) & FOLLOWING).toBeTruthy();
+  });
+
+  it("without a panel the run reads as before", () => {
+    const { container } = wrap(<CronReport projectKey="PAY" run={reported(null)} />);
+    expect(screen.queryByRole("heading", { name: "Panel" })).not.toBeInTheDocument();
+    expect(container.querySelector("h3")).toHaveTextContent("Summary");
+  });
+
+  it("a panel that can't be drawn leaves the report complete", async () => {
+    vi.resetModules();
+    vi.doMock("@a2ui/react", () => {
+      throw new Error("x");
+    });
+    try {
+      const { CronReport } = await import("@/components/crons/CronReport");
+      wrap(<CronReport projectKey="PAY" run={reported(PANEL_MESSAGE)} />);
+      expect(
+        await screen.findByText("This run's panel couldn't be drawn. The report below is complete without it."),
+      ).toBeInTheDocument();
+      expect(screen.getByText("3 failing.")).toBeInTheDocument();
+    } finally {
+      vi.doUnmock("@a2ui/react");
+      vi.resetModules();
+    }
+  });
+
+  it("a run without a report shows no panel", () => {
+    wrap(<CronReport projectKey="PAY" run={{ ...CRON.last_run, panel: PANEL_MESSAGE } as never} />);
+    expect(screen.queryByRole("heading", { name: "Panel" })).not.toBeInTheDocument();
   });
 });
 

@@ -281,3 +281,11 @@ def test_finish_fix_texts():
     assert review.startswith("# Review: review the fix for the tests that failed at finish\n")
     for phrase in ("The fix to review", "git diff", "critical", "submit_review"):
         assert phrase in review, phrase
+
+
+def test_cron_text_teaches_panels():
+    """A cron's agent learns when a panel is worth sending, and that the report stands without it (MC-174)."""
+    body = (methodology.DEFAULTS_DIR / "cron.md").read_text(encoding="utf-8")
+    for phrase in ("panel?", "get_panel_guide()", "## A panel", "complete without it", "from the last panel",
+                   "refused twice"):
+        assert phrase in body, phrase

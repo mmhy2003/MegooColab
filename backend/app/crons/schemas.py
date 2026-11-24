@@ -61,6 +61,8 @@ class CronRunOut(BaseModel):
     report: dict | None
     commit: str | None
     tasks_created: int
+    # the agent's panel (a stored createSurface message); always null inside a cron's last_run
+    panel: dict | None = None
 
 
 class CronOut(BaseModel):

@@ -10,7 +10,8 @@ import { buildBinaries, mcp, mintLinkedRunnerToken, onPrompt, say, startRunner, 
 
 /**
  * Agent crons: a cron written with the schedule helper (a mistake shown, then a preset), run now on the project's
- * agent in a throwaway copy of origin's default branch, reports a finding that becomes a task labelled "from cron".
+ * agent in a throwaway copy of origin's default branch, reports a finding that becomes a task labelled "from cron",
+ * with a panel of tiles and two charts drawn above the report's summary.
  * Needs the Go toolchain and git on the PATH.
  */
 
@@ -19,11 +20,38 @@ const WEB = { "X-Megoo-Client": "web" };
 const AGENT_NAME = `${ADMIN.name}'s Claude Code`;
 const JOB = "Check the dependencies for e2e.";
 
+// the plan's panel example: four tiles, a line chart and a bar chart reading their points from the data model
+const PANEL = {
+  components: [
+    { id: "root", component: "Column", children: ["tiles", "charts"] },
+    { id: "tiles", component: "Row", children: ["failing", "passed", "duration", "flaky"] },
+    { id: "failing", component: "StatTile", label: "Failing", value: "3", caption: "1 fewer than last run", tone: "bad" },
+    { id: "passed", component: "StatTile", label: "Passed", value: "412", tone: "good" },
+    { id: "duration", component: "StatTile", label: "Suite time", value: "4m 12s" },
+    { id: "flaky", component: "StatTile", label: "Flaky", value: "2", tone: "warning" },
+    { id: "charts", component: "Row", children: ["trend", "slowest"] },
+    {
+      id: "trend", component: "Chart", kind: "line", title: "Failing tests by suite, last 3 runs",
+      points: { "@path": "/trend" }, x: "day",
+      series: [{ key: "api", label: "API" }, { key: "web", label: "Web" }],
+    },
+    {
+      id: "slowest", component: "Chart", kind: "bar", title: "Slowest suites", points: { "@path": "/slowest" },
+      x: "suite", series: [{ key: "seconds", label: "Time" }], unit: "s",
+    },
+  ],
+  data: {
+    trend: [{ day: "Nov 22", api: 4, web: 1 }, { day: "Nov 23", api: 3, web: 1 }, { day: "Nov 24", api: 2, web: 1 }],
+    slowest: [{ suite: "api", seconds: 131 }, { suite: "web", seconds: 74 }, { suite: "runner", seconds: 38 }],
+  },
+};
+
 const SCENARIO = [
   onPrompt(JOB, mcp("submit_cron_report", {
     summary: "One vulnerable package.",
     findings: [{ title: "jsonwebtoken 8.5.1", detail: "Signature bypass; move to 9.0.2.", new_task: true }],
     checked: "42 packages",
+    panel: PANEL,
   }), say("done")),
 ];
 
@@ -135,6 +163,19 @@ test("a cron from its schedule to a report and a task", async ({ browser }) => {
   // 3. the cron page shows the report with the new task, which carries the "from cron" label
   await ui.getByRole("link", { name: "Nightly dependency check" }).click();
   await expect(ui.getByText("One vulnerable package.")).toBeVisible();
+  // the panel: its tiles and both charts above the summary, and a chart's table view
+  const panel = ui.getByRole("region", { name: "Panel" });
+  await expect(panel.getByRole("group", { name: "Failing" })).toContainText("3");
+  await expect(panel.getByRole("group", { name: "Suite time" })).toContainText("4m 12s");
+  const trend = panel.getByRole("region", { name: "Failing tests by suite, last 3 runs" });
+  await expect(trend.locator("svg.recharts-surface")).toBeVisible();
+  const slowest = panel.getByRole("region", { name: "Slowest suites" });
+  await expect(slowest.locator("svg.recharts-surface")).toBeVisible();
+  await slowest.getByRole("button", { name: "Show table" }).click();
+  await expect(slowest.getByRole("row")).toHaveCount(4); // header + 3 suites
+  await expect(slowest.getByRole("row").nth(1)).toContainText("131");
+  const box = async (name: string) => (await ui.getByRole("heading", { name }).boundingBox())!.y;
+  expect(await box("Panel")).toBeLessThan(await box("Summary"));
   await expect(ui.getByRole("link", { name: "JOB-1 created" })).toBeVisible();
   await expect(ui.getByText(`commit ${originHead.slice(0, 7)}`, { exact: false })).toBeVisible();
   const task = await get<{ title: string; labels: { name: string }[] }>(request, "/api/tasks/JOB-1");

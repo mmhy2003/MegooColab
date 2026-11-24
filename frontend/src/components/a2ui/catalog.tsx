@@ -29,6 +29,7 @@ export const COMPONENT_PROPS: Record<string, readonly string[]> = {
   List: ["children", "direction", "align", "weight"],
   StatTile: ["label", "value", "caption", "tone", "weight"],
   TaskLink: ["task", "label", "weight"],
+  Chart: ["kind", "title", "points", "x", "series", "unit", "weight"],
 };
 
 /** What every input of the catalog takes. `Surface` adapts the renderer's resolved props to it. */

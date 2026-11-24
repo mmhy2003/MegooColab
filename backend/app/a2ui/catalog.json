@@ -598,6 +598,83 @@
         "component",
         "task"
       ]
+    },
+    "Chart": {
+      "type": "object",
+      "description": "A bar or line chart of numbers from the data model, one point per label on the x axis, 1 to 4 series. Panels only. Series take the theme's chart colours in the order listed; you never pick a colour. A snapshot: it never updates.",
+      "properties": {
+        "component": {
+          "const": "Chart"
+        },
+        "kind": {
+          "enum": [
+            "bar",
+            "line"
+          ],
+          "type": "string",
+          "description": "bar for counts per label, line for a trend across runs."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "What the chart shows, e.g. 'Failing tests by suite, last 14 runs': its heading and accessible name."
+        },
+        "points": {
+          "$ref": "common_types.json#/$defs/DynamicValue",
+          "description": "A binding to a list of 1 to 50 objects in data, e.g. {\"@path\": \"/trend\"}."
+        },
+        "x": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "The key of each point that holds its label (a day, a suite name)."
+        },
+        "series": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "label"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "description": "The key of the number in each point."
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "description": "The series' name in the legend and table."
+              }
+            }
+          },
+          "description": "1 to 4 series."
+        },
+        "unit": {
+          "type": "string",
+          "maxLength": 8,
+          "description": "A short unit shown after values, e.g. 's', 'ms' or '%'."
+        },
+        "weight": {
+          "$ref": "#/$defs/Weight"
+        }
+      },
+      "required": [
+        "component",
+        "kind",
+        "title",
+        "points",
+        "x",
+        "series"
+      ]
     }
   },
   "functions": {
@@ -827,6 +904,9 @@
         },
         {
           "$ref": "#/components/TaskLink"
+        },
+        {
+          "$ref": "#/components/Chart"
         }
       ],
       "discriminator": {

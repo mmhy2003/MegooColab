@@ -3,7 +3,16 @@
 import { useEffect, useState } from "react";
 
 // chart colour name -> the CSS variable it reads (grey text is --muted-foreground, shadcn's name)
-const TOKENS = { "chart-1": "chart-1", "chart-2": "chart-2", muted: "muted-foreground", line: "line", fg: "fg", surface: "surface" } as const;
+const TOKENS = {
+  "chart-1": "chart-1",
+  "chart-2": "chart-2",
+  "chart-3": "chart-3",
+  "chart-4": "chart-4",
+  muted: "muted-foreground",
+  line: "line",
+  fg: "fg",
+  surface: "surface",
+} as const;
 export type ThemeColors = Record<keyof typeof TOKENS, string>;
 
 function read(): ThemeColors {

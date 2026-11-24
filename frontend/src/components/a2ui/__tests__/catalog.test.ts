@@ -31,4 +31,10 @@ describe("catalog", () => {
   it("has the card components", () => {
     expect(Object.keys(COMPONENT_PROPS)).toEqual(expect.arrayContaining(["Tabs", "List", "StatTile", "TaskLink"]));
   });
+
+  it("has the Chart", () => {
+    expect([...(COMPONENT_PROPS.Chart ?? [])].sort()).toEqual(
+      ["kind", "title", "points", "x", "series", "unit", "weight"].sort(),
+    );
+  });
 });

@@ -145,3 +145,23 @@ def test_forms_refuse_the_display_components(component):
         service.clean_form(form)
     assert caught.value.code == "invalid_form"
     assert any(p["path"] == "components.shown.component" for p in caught.value.problems)
+
+
+CHART = {"id": "shown", "component": "Chart", "kind": "bar", "title": "Slowest suites", "points": {"@path": "/slowest"},
+         "x": "suite", "series": [{"key": "seconds", "label": "Time"}], "unit": "s"}
+
+
+def test_forms_and_cards_refuse_a_chart():
+    form = copy.deepcopy(FORM_EXAMPLE)
+    form["components"][0]["children"] += ["shown"]
+    form["components"] += [copy.deepcopy(CHART)]
+    with pytest.raises(FormError) as caught:
+        service.clean_form(form)
+    assert caught.value.code == "invalid_form"
+    assert any(p["path"] == "components.shown.component" for p in caught.value.problems)
+
+    card = {"components": [{**CHART, "id": "root"}], "data": {"slowest": [{"suite": "api", "seconds": 131}]}}
+    with pytest.raises(CardError) as caught:
+        service.clean_card(card)
+    assert caught.value.code == "invalid_card"
+    assert any(p["path"] == "components.root.component" for p in caught.value.problems)

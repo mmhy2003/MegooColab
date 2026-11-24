@@ -1,5 +1,6 @@
 """A cron run's report, and what MegooColab does with it per the cron's mode: keep it, open tasks for real problems
-(at most MAX_TASKS, labelled "from cron"), or rewrite the cron's one Knowledge Base document."""
+(at most MAX_TASKS, labelled "from cron"), or rewrite the cron's one Knowledge Base document. An optional panel (tiles
+and charts) is checked before anything else is written and kept in the run's own column, never in the report."""
 
 from typing import Any
 
@@ -7,6 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.a2ui import service as a2ui
 from app.agent_runs.models import AgentRun, RunStatus
 from app.agents.models import Agent
 from app.auth.models import User
@@ -96,7 +98,8 @@ async def _write_document(db, owner: User, run: AgentRun, project: Project, cron
 
 
 async def apply_report(db: AsyncSession, run: AgentRun, *, summary: str, findings: list[dict[str, Any]],
-                       checked: str, nothing_new: bool, document_md: str | None) -> dict[str, Any]:
+                       checked: str, nothing_new: bool, document_md: str | None,
+                       panel: dict | None = None) -> dict[str, Any]:
     cron_run = (
         await db.execute(
             select(CronRun).where(CronRun.id == run.cron_run_id).with_for_update()
@@ -114,6 +117,7 @@ async def apply_report(db: AsyncSession, run: AgentRun, *, summary: str, finding
         raise _refuse("run_not_running")
     if (cron_run.report or {}).get("submitted"):
         raise _refuse("already_submitted")
+    surface = a2ui.clean_panel(panel) if panel is not None else None
     cron = await db.get(Cron, cron_run.cron_id)
     project = await db.get(Project, cron.project_id)
     owner = await db.get(User, await db.scalar(select(Agent.owner_id).where(Agent.id == run.agent_id)))
@@ -134,6 +138,8 @@ async def apply_report(db: AsyncSession, run: AgentRun, *, summary: str, finding
         f.pop("existing_task_key", None)
     cron_run.report = {"summary": _text(summary, SUMMARY_MAX), "findings": clean, "checked": _text(checked, CHECKED_MAX),
                        "nothing_new": bool(nothing_new), "notes": notes, "submitted": True}
+    if surface is not None:
+        cron_run.panel = surface
     cron_run.tasks_created = created
     await db.flush()
     return {"ok": True, "tasks_created": created, "notes": notes}
