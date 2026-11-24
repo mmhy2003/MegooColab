@@ -23,7 +23,7 @@ CATALOG_ID = "urn:megoocolab:a2ui:catalog:v1"
 COMPONENTS = {
     "Column", "Row", "Card", "Divider", "Text",
     "TextField", "CheckBox", "ChoicePicker", "Slider", "DateTimeInput",
-    "Tabs", "List", "StatTile", "TaskLink",
+    "Tabs", "List", "StatTile", "TaskLink", "Chart",
 }
 FUNCTIONS = {"required", "regex", "length", "numeric", "email"}
 
@@ -63,6 +63,13 @@ CARD = {
     ],
     "data": {"failing": [{"key": "MC-181", "title": "Login times out"}, {"key": "MC-182", "title": "Export is empty"}]},
 }
+
+# The plan's example panel chart (R3): a line chart bound to /trend.
+TREND = {"id": "trend", "component": "Chart", "kind": "line", "title": "Failing tests by suite, last 3 runs",
+         "points": {"@path": "/trend"}, "x": "day",
+         "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]}
+TREND_DATA = {"trend": [{"day": "Nov 22", "api": 4, "web": 1}, {"day": "Nov 23", "api": 3, "web": 1},
+                        {"day": "Nov 24", "api": 2, "web": 1}]}
 
 
 def _catalog_doc() -> dict:
@@ -165,3 +172,20 @@ def test_library_rejects_more_than_the_tab_shape():
     del components[5]["tabs"][1]["child"]
     with pytest.raises(A2uiError):
         _validate(components, CARD["data"])
+
+
+def test_library_accepts_a_chart():
+    _validate([{**TREND, "id": "root"}], TREND_DATA)
+
+
+def test_library_rejects_five_series():
+    chart = {**TREND, "id": "root", "series": [{"key": k, "label": k.upper()} for k in "abcde"]}
+    with pytest.raises(A2uiValidationError) as caught:
+        _validate([chart], TREND_DATA)
+    assert "series" in caught.value.details[0].path
+
+
+def test_library_rejects_a_pie():
+    with pytest.raises(A2uiValidationError) as caught:
+        _validate([{**TREND, "id": "root", "kind": "pie"}], TREND_DATA)
+    assert "kind" in caught.value.details[0].path

@@ -1,10 +1,11 @@
-"""Agent forms (MC-172) and cards (MC-173): what an agent sends to ask_human or show_card becomes a validated
-A2UI v1.0 createSurface message.
+"""Agent forms (MC-172), cards (MC-173) and cron panels (MC-174): what an agent sends to ask_human, show_card or
+submit_cron_report becomes a validated A2UI v1.0 createSurface message.
 
 The agent writes only `components` and `data`. `wrap` adds the envelope, `validate` runs a2ui-core against
 MegooColab's catalog and then our own limits, and `field_labels` names the inputs for the agent's later prompts.
-Forms and cards share the catalog but each allows its own components: `clean_form` takes FORM_COMPONENTS and
-`clean_card` takes CARD_COMPONENTS, a read-only set without inputs.
+Forms, cards and panels share the catalog but each allows its own components: `clean_form` takes FORM_COMPONENTS,
+`clean_card` takes CARD_COMPONENTS, a read-only set without inputs, and a panel takes PANEL_COMPONENTS, the card's
+set plus `Chart`.
 """
 
 import copy
@@ -30,6 +31,7 @@ MAX_PROBLEMS = 10
 MAX_ANSWER_DATA_BYTES = 16 * 1024
 FORM_COMPONENTS = frozenset({"Column", "Row", "Card", "Divider", "Text", *INPUTS})
 CARD_COMPONENTS = frozenset({"Column", "Row", "Card", "Divider", "Text", "Tabs", "List", "StatTile", "TaskLink"})
+PANEL_COMPONENTS = CARD_COMPONENTS | {"Chart"}
 MAX_CARD_BYTES = 16 * 1024
 MAX_TABS = 6
 MAX_DATA_ITEMS = 50
