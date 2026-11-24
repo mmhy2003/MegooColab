@@ -94,6 +94,16 @@ def _card_example() -> dict:
     return json.loads((_HERE / "card_example.json").read_text())
 
 
+@cache
+def _panel_instructions() -> str:
+    return (_HERE / "panel_guide.md").read_text()
+
+
+@cache
+def _panel_example() -> dict:
+    return json.loads((_HERE / "panel_example.json").read_text())
+
+
 def wrap(components: list, data: dict | None, prefix: str = "form") -> dict:
     """The createSurface message for a form, a card or a panel, with a surface id of its own."""
     return {"version": "1.0",
@@ -341,6 +351,12 @@ def card_guide() -> dict:
     """What get_card_guide gives an agent: instructions, the card part of the catalog and an example card."""
     return {"instructions_md": _card_instructions(), "catalog": _catalog_for(CARD_COMPONENTS),
             "example": _card_example()}
+
+
+def panel_guide() -> dict:
+    """What get_panel_guide gives an agent: instructions, the panel part of the catalog and an example panel."""
+    return {"instructions_md": _panel_instructions(), "catalog": _catalog_for(PANEL_COMPONENTS),
+            "example": _panel_example()}
 
 
 def clean_answer_data(data: dict) -> dict:

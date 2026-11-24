@@ -1,0 +1,20 @@
+{
+  "components": [
+    {"id": "root", "component": "Column", "children": ["tiles", "charts"]},
+    {"id": "tiles", "component": "Row", "children": ["failing", "passed", "duration", "flaky"]},
+    {"id": "failing", "component": "StatTile", "label": "Failing", "value": "3", "caption": "1 fewer than last run", "tone": "bad"},
+    {"id": "passed", "component": "StatTile", "label": "Passed", "value": "412", "tone": "good"},
+    {"id": "duration", "component": "StatTile", "label": "Suite time", "value": "4m 12s"},
+    {"id": "flaky", "component": "StatTile", "label": "Flaky", "value": "2", "tone": "warning"},
+    {"id": "charts", "component": "Row", "children": ["trend", "slowest"]},
+    {"id": "trend", "component": "Chart", "kind": "line", "title": "Failing tests by suite, last 3 runs",
+     "points": {"@path": "/trend"}, "x": "day",
+     "series": [{"key": "api", "label": "API"}, {"key": "web", "label": "Web"}]},
+    {"id": "slowest", "component": "Chart", "kind": "bar", "title": "Slowest suites", "points": {"@path": "/slowest"},
+     "x": "suite", "series": [{"key": "seconds", "label": "Time"}], "unit": "s"}
+  ],
+  "data": {
+    "trend": [{"day": "Nov 22", "api": 4, "web": 1}, {"day": "Nov 23", "api": 3, "web": 1}, {"day": "Nov 24", "api": 2, "web": 1}],
+    "slowest": [{"suite": "api", "seconds": 131}, {"suite": "web", "seconds": 74}, {"suite": "runner", "seconds": 38}]
+  }
+}

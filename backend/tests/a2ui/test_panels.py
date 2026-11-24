@@ -9,12 +9,13 @@ from pathlib import Path
 import pytest
 
 from app.a2ui import service
-from app.a2ui.service import CATALOG_ID, MAX_COMPONENTS, MAX_PANEL_BYTES, FormError, PanelError
+from app.a2ui.service import CATALOG_ID, MAX_COMPONENTS, MAX_PANEL_BYTES, PANEL_COMPONENTS, FormError, PanelError
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures" / "panels.json").read_text())
 VALID = FIXTURES["valid"]
 INVALID = FIXTURES["invalid"]
 EXAMPLE = next(f["panel"] for f in VALID if f["name"] == "example")
+PANEL_EXAMPLE_FILE = Path(service.__file__).parent / "panel_example.json"
 
 
 def _with_texts(count: int) -> dict:
@@ -124,3 +125,22 @@ def test_nul_is_stripped():
     surface = service.clean_panel(panel)["createSurface"]
     assert surface["components"][3]["label"] == "Passed"
     assert surface["dataModel"]["slowest"] == EXAMPLE["data"]["slowest"]
+
+
+def test_panel_guide_lists_exactly_the_panel_components():
+    guide = service.panel_guide()
+    assert set(guide) == {"instructions_md", "catalog", "example"}
+    catalog = guide["catalog"]
+    assert catalog["catalogId"] == CATALOG_ID
+    assert set(catalog["components"]) == PANEL_COMPONENTS
+    assert len(catalog["$defs"]["anyComponent"]["oneOf"]) == 10
+    for name in catalog["components"]:
+        assert f"`{name}`" in guide["instructions_md"]
+    assert guide["example"] == json.loads(PANEL_EXAMPLE_FILE.read_text())
+    service.clean_panel(copy.deepcopy(guide["example"]))
+    assert guide["example"] == EXAMPLE
+
+
+def test_card_and_form_guides_are_unchanged():
+    assert "Chart" not in service.card_guide()["catalog"]["components"]
+    assert "Chart" not in service.form_guide()["catalog"]["components"]
