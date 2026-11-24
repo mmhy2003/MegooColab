@@ -184,13 +184,17 @@ def build_mcp() -> tuple[MCPServer, ASGIApp]:
 
     @mcp.tool()
     async def get_task(key: str) -> dict[str, Any]:
-        """A task by key (e.g. PAY-12) with its last 20 activity items (comments, events and questions), the files
-        in its Attachments (get one with get_attachment), and the images people sent you with their messages, after
-        the task's JSON."""
+        """A task by key (e.g. PAY-12) with its last 20 activity items (comments, events, questions and cards), the
+        files in its Attachments (get one with get_attachment), and the images people sent you with their messages,
+        after the task's JSON."""
         async with _tool_session() as (db, user):
             task = await readable_task(db, user, key)
             out = _json(await service.task_out(db, task, user))
-            out["activity"] = [_json(i) for i in await activity_items(db, task, ACTIVITY_LIMIT)]
+            activity = [_json(i) for i in await activity_items(db, task, ACTIVITY_LIMIT)]
+            for item in activity:
+                if item.get("card"):
+                    item["card"].pop("surface", None)  # a card's title and text stand in for it
+            out["activity"] = activity
             out["attachments"] = await file_links.entries(db, await file_links.task_files(db, task))
             return await _with_images(db, task, out)
 

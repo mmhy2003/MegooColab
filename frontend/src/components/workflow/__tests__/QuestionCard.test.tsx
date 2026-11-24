@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CATALOG_ID } from "@/components/a2ui/catalog";
 import { QuestionCard } from "@/components/workflow/QuestionCard";
-import type { ActivityItem, ActivityQuestion, FormMessage, FormValues } from "@/lib/types";
+import type { ActivityItem, ActivityQuestion, FormValues, SurfaceMessage } from "@/lib/types";
 
 afterEach(() => {
   cleanup();
@@ -221,7 +221,7 @@ const example = (
     valid: { name: string; form: { components: Record<string, unknown>[]; data: FormValues } }[];
   }
 ).valid.find((f) => f.name === "example")!.form;
-const form: FormMessage = {
+const form: SurfaceMessage = {
   version: "1.0",
   createSurface: { surfaceId: "form-0123456789ab", catalogId: CATALOG_ID, components: example.components, dataModel: example.data },
 };

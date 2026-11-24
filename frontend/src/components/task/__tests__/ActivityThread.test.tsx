@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CATALOG_ID } from "@/components/a2ui/catalog";
 import { ActivityThread } from "@/components/task/ActivityThread";
-import type { ActivityItem } from "@/lib/types";
+import type { ActivityCard, ActivityItem } from "@/lib/types";
 
 const actor = {
   id: "u1",
@@ -650,5 +653,83 @@ describe("ActivityThread: the agent's review of the pull request", () => {
     expect(rows[2]).toHaveTextContent("requested changes on PR #42 · 3 findings");
     expect(within(rows[2]).getByText("Two <b>things</b>")).toBeInTheDocument();
     expect(rows[2]).not.toHaveTextContent("Someone");
+  });
+});
+
+describe("ActivityThread cards", () => {
+  const example = JSON.parse(
+    readFileSync(join(process.cwd(), "..", "backend", "app", "a2ui", "card_example.json"), "utf8"),
+  ) as { components: Record<string, unknown>[]; data: Record<string, unknown> };
+  const card = (agent: ActivityCard["agent"] = { id: "a1", name: "laptop-claude" }): ActivityCard => ({
+    id: "k1",
+    title: "Test results",
+    text: "412 passed, 3 failed (2 new). Failing: MC-181, MC-182.",
+    surface: {
+      version: "1.0",
+      createSurface: {
+        surfaceId: "card-0123456789ab", catalogId: CATALOG_ID, components: example.components, dataModel: example.data,
+      },
+    },
+    agent,
+  });
+  const cardItem = (c = card(), actor: ActivityItem["actor"] = null): ActivityItem => ({
+    type: "card", id: "k1", at: "2026-11-20T10:01:00Z", actor, card: c,
+  });
+  const render1 = (list: ActivityItem[]) =>
+    render(<ActivityThread items={list} columnNames={new Map()} userNames={new Map()} agentNames={new Map([["a1", "laptop-claude"]])} />);
+
+  afterEach(() => {
+    vi.doUnmock("@a2ui/react");
+    vi.resetModules();
+    vi.restoreAllMocks();
+  });
+
+  it("draws a card item with its title", async () => {
+    const { container } = render1([cardItem()]);
+    const row = container.querySelector("[data-card]")!;
+    expect(row).toHaveTextContent("laptop-claude showed a card");
+    const drawn = container.querySelector<HTMLElement>("[data-thread-card]")!;
+    expect(within(drawn).getByRole("heading", { name: "Test results" })).toBeInTheDocument();
+    expect(await within(drawn).findByRole("group", { name: "Passed" })).toHaveTextContent("412");
+    // the text stands in only where the card can't be drawn
+    expect(drawn).not.toHaveTextContent("412 passed, 3 failed");
+  });
+
+  it("a TaskLink points at the board address", async () => {
+    render1([cardItem()]);
+    expect(await screen.findByRole("link", { name: /MC-181/ })).toHaveAttribute("href", "/projects/MC/board?task=MC-181");
+  });
+
+  it("a person's card names the person", () => {
+    const { container, unmount } = render1([cardItem(card(null), actor)]);
+    expect(container.querySelector("[data-card]")).toHaveTextContent("Ahmed Ali showed a card");
+    unmount();
+    const again = render1([cardItem(card(null))]);
+    expect(again.container.querySelector("[data-card]")).toHaveTextContent("Agent showed a card");
+  });
+
+  it("a card between two reply pieces splits the reply", () => {
+    const piece = (id: string, text: string): ActivityItem => ({
+      type: "event", id, at: "2026-11-20T10:00:00Z", actor: null, kind: "agent_message", data: { agent_id: "a1", run_id: "r1", text },
+    });
+    const { container } = render1([piece("m1", "Here "), cardItem(), piece("m2", "are")]);
+    const rows = [...container.querySelectorAll("ol > li")];
+    expect(rows.map((li) => li.hasAttribute("data-agent-reply") ? "reply" : li.hasAttribute("data-card") ? "card" : "?"))
+      .toEqual(["reply", "card", "reply"]);
+    expect(rows[0]).toHaveTextContent("Here");
+    expect(rows[2]).toHaveTextContent("are");
+  });
+
+  it("the fallback shows the text", async () => {
+    vi.resetModules();
+    vi.doMock("@a2ui/react", () => {
+      throw new Error("chunk failed to load");
+    });
+    const { ActivityThread: Thread } = await import("@/components/task/ActivityThread");
+    render(<Thread items={[cardItem()]} columnNames={new Map()} userNames={new Map()} />);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("412 passed, 3 failed (2 new). Failing: MC-181, MC-182.");
+    expect(alert).toHaveTextContent("This card couldn't be drawn. This is its text.");
+    expect(screen.getByRole("heading", { name: "Test results" })).toBeInTheDocument();
   });
 });

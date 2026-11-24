@@ -18,7 +18,7 @@ from app.agents.models import Agent, AgentBinding
 from app.auth.models import User, UserStatus
 from app.kb.models import KbDocument, KbSpace
 from app.projects.models import BoardColumn, Label, Project
-from app.tasks.models import Comment, Task, task_labels
+from app.tasks.models import Comment, Task, TaskCard, task_labels
 from app.teams.models import Team, TeamMember
 
 KINDS = ("task", "document", "project", "team", "person", "agent", "question")
@@ -61,6 +61,17 @@ async def _task(db: AsyncSession, id: uuid.UUID) -> dict | None:
         select(Comment.body_md).where(Comment.task_id == task.id).order_by(Comment.created_at.desc(), Comment.id)
     )
     for body in rows.scalars():
+        if size + len(body) + 1 > MAX_COMMENTS_CHARS:
+            break
+        comments.append(body)
+        size += len(body) + 1
+    # the cards an agent showed in the thread are found by their title and text, under the same budget
+    cards = await db.execute(
+        select(TaskCard.title, TaskCard.text).where(TaskCard.task_id == task.id)
+        .order_by(TaskCard.created_at.desc(), TaskCard.id)
+    )
+    for title, text in cards:
+        body = f"{title}\n{text}"
         if size + len(body) + 1 > MAX_COMMENTS_CHARS:
             break
         comments.append(body)

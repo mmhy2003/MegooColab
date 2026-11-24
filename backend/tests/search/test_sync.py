@@ -11,7 +11,7 @@ from app.jobs.models import Job, JobStatus
 from app.kb import access as kb_access
 from app.search import client, documents
 from app.search import jobs as search_jobs
-from app.tasks.models import Task
+from app.tasks.models import Task, TaskCard
 from tests.factories import login, make_project, make_user
 from tests.search.conftest import drain
 
@@ -129,6 +129,19 @@ async def test_jobs_are_deduplicated_per_item(client, db, meili_index):
             await s.flush()
         await s.commit()
     assert await _queued() == 1
+
+
+async def test_a_card_marks_its_task(client, db, meili_index):
+    _, manager, _ = await _setup(client, db)
+    await client.post("/api/projects/PAY/tasks", json={"title": "One", "type": "task"})
+    await drain()
+    async with SessionLocal() as s:
+        task = (await s.execute(select(Task))).scalar_one()
+        s.add(TaskCard(task_id=task.id, user_id=manager.id, title="Test results", text="412 passed", surface={}))
+        await s.commit()
+        job = (await s.execute(select(Job).where(Job.dedupe_key == f"search.sync:task:{task.id}",
+                                               Job.status == JobStatus.queued))).scalar_one()
+    assert job.kind == "search.sync"
 
 
 async def test_saves_succeed_and_jobs_catch_up_when_meilisearch_is_down(client, db, meili_index):

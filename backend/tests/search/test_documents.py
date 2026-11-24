@@ -11,7 +11,7 @@ from app.kb import access as kb_access
 from app.kb.models import KbDocument
 from app.projects.models import BoardColumn, Label, Project
 from app.search import documents
-from app.tasks.models import Comment, Task, task_labels
+from app.tasks.models import Comment, Task, TaskCard, task_labels
 from app.teams.models import TeamMember
 from tests.factories import make_project, make_team, make_user
 
@@ -72,6 +72,35 @@ async def test_task_comments_capped_at_20000_characters_newest_first(client, db)
     doc = await documents.build(db, "task", task.id)
     assert len(doc["comments"]) <= 20_000
     assert doc["comments"].startswith("c039") and "c000" not in doc["comments"]
+
+
+async def test_task_document_has_its_cards(client, db):
+    project, manager, _ = await _project(client, db)
+    task = await _task(db, project)
+    db.add_all([Comment(task_id=task.id, author_user_id=manager.id, body_md="First comment"),
+                TaskCard(task_id=task.id, user_id=manager.id, title="Test results", text="412 passed", surface={})])
+    await db.commit()
+    doc = await documents.build(db, "task", task.id)
+    assert all(s in doc["comments"] for s in ("First comment", "Test results", "412 passed"))
+
+
+async def test_cards_share_the_comments_budget(client, db):
+    project, manager, _ = await _project(client, db)
+    task = await _task(db, project)
+    db.add_all(TaskCard(task_id=task.id, user_id=manager.id, title=f"card {n}", text="x" * 900, surface={})
+               for n in range(30))
+    await db.commit()
+    doc = await documents.build(db, "task", task.id)
+    assert 0 < len(doc["comments"]) <= documents.MAX_COMMENTS_CHARS
+    assert "card " in doc["comments"]
+
+
+async def test_a_chat_rounds_cards_are_not_indexed(client, db):
+    project, manager, _ = await _project(client, db)
+    task = await _task(db, project, in_chat=True)
+    db.add(TaskCard(task_id=task.id, user_id=manager.id, title="Test results", text="412 passed", surface={}))
+    await db.commit()
+    assert await documents.build(db, "task", task.id) is None
 
 
 async def test_documents_in_project_and_team_spaces(client, db):

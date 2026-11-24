@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type { FormMessage, FormValues } from "@/lib/types";
+import type { FormValues, SurfaceMessage } from "@/lib/types";
 
 import {
   CATALOG_ID,
@@ -23,8 +23,12 @@ import {
   Column,
   DateTimeInput,
   Divider,
+  List,
   Row,
   Slider,
+  StatTile,
+  Tabs,
+  TaskLink,
   Text,
   TextField,
 } from "./catalog";
@@ -59,11 +63,32 @@ function useField(
 }
 
 async function loadRenderer() {
-  const [react, core] = await Promise.all([import("@a2ui/react"), import("@a2ui/web_core/v1_0")]);
+  const [react, core, { z }] = await Promise.all([
+    import("@a2ui/react"),
+    import("@a2ui/web_core/v1_0"),
+    import("zod"),
+  ]);
   const { createComponentImplementation: implement } = react;
   type Children = (string | { id: string; basePath: string })[] | undefined;
   const children = (list: Children, buildChild: (id: string, basePath?: string) => ReactNode) =>
     list?.map((c) => (typeof c === "string" ? buildChild(c) : buildChild(c.id, c.basePath)));
+
+  // our own two components' APIs, as catalog.json defines them
+  const S = core.CommonSchemas;
+  const StatTileApi = {
+    name: "StatTile",
+    schema: z.object({
+      label: S.DynamicString,
+      value: S.DynamicString,
+      caption: S.DynamicString.optional(),
+      tone: z.enum(["neutral", "good", "warning", "bad"]).optional(),
+      weight: z.number().optional(),
+    }),
+  };
+  const TaskLinkApi = {
+    name: "TaskLink",
+    schema: z.object({ task: S.DynamicString, label: S.DynamicString.optional(), weight: z.number().optional() }),
+  };
 
   // our components, under the v1.0 basic catalog's component APIs: no basic catalog element is ever drawn
   const components = [
@@ -72,6 +97,27 @@ async function loadRenderer() {
     implement(core.CardApi, ({ props, buildChild }) => <Card>{buildChild(props.child)}</Card>),
     implement(core.DividerApi, () => <Divider />),
     implement(core.TextApi, ({ props }) => <Text text={props.text ?? ""} />),
+    implement(core.TabsApi, function TabsView({ props, buildChild, context }) {
+      const { surfaceId } = useContext(FormContext);
+      return (
+        <Tabs
+          id={`${surfaceId}-${context.componentModel.id}`}
+          tabs={(props.tabs ?? []).map((t) => ({ title: String(t.title ?? ""), panel: buildChild(t.child) }))}
+        />
+      );
+    }),
+    implement(core.ListApi, ({ props, buildChild }) => <List items={children(props.children, buildChild) ?? []} />),
+    implement(StatTileApi, ({ props }) => (
+      <StatTile
+        label={String(props.label ?? "")}
+        value={String(props.value ?? "")}
+        caption={props.caption == null ? undefined : String(props.caption)}
+        tone={props.tone}
+      />
+    )),
+    implement(TaskLinkApi, ({ props }) => (
+      <TaskLink task={String(props.task ?? "")} label={props.label == null ? undefined : String(props.label)} />
+    )),
     implement(core.TextFieldApi, function TextFieldView({ props, context }) {
       const field = useField(context, props);
       return (
@@ -150,7 +196,7 @@ const load = () =>
   }));
 
 /** Catches what the renderer or one of our components throws while drawing. */
-class Boundary extends Component<{ children: ReactNode; onError: () => void }, { failed: boolean }> {
+class Boundary extends Component<{ children: ReactNode; fallback: ReactNode; onError: () => void }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
@@ -159,7 +205,7 @@ class Boundary extends Component<{ children: ReactNode; onError: () => void }, {
     this.props.onError();
   }
   render() {
-    return this.state.failed ? <Failed /> : this.props.children;
+    return this.state.failed ? (this.props.fallback ?? <Failed />) : this.props.children;
   }
 }
 
@@ -167,27 +213,30 @@ function Failed() {
   return <p role="alert" className="text-sm text-muted-foreground">{FAILED}</p>;
 }
 
-type Surface = ComponentProps<Renderer["A2uiSurface"]>["surface"];
-type Drawn = { A2uiSurface: Renderer["A2uiSurface"]; surface: Surface; report: Form["report"] };
+type SurfaceModel = ComponentProps<Renderer["A2uiSurface"]>["surface"];
+type Drawn = { A2uiSurface: Renderer["A2uiSurface"]; surface: SurfaceModel; report: Form["report"] };
 
 /** a2ui-core (the backend's validator) writes a component's checks as "@checks", web_core reads "checks" */
-function forRenderer(message: FormMessage) {
+function forRenderer(message: SurfaceMessage) {
   const components = message.createSurface.components.map(({ "@checks": checks, ...rest }) =>
     checks === undefined ? rest : { ...rest, checks },
   );
   return { ...message, createSurface: { ...message.createSurface, components } };
 }
 
-/** An A2UI form drawn with MegooColab's own components. `onChange` gets the surface's whole data model and whether
- * every check passes: once all inputs are drawn, then on every change. */
-export function FormSurface({
+/** An A2UI surface drawn with MegooColab's own components: a question's form or a thread's card. `onChange` gets the
+ * surface's whole data model and whether every check passes: once all inputs are drawn, then on every change.
+ * `fallback` is shown in place of the surface when it can't be drawn (a form's failure message by default). */
+export function Surface({
   message,
   readOnly = false,
   onChange,
+  fallback,
 }: {
-  message: FormMessage;
+  message: SurfaceMessage;
   readOnly?: boolean;
   onChange?: (data: FormValues, valid: boolean) => void;
+  fallback?: ReactNode;
 }) {
   const [drawn, setDrawn] = useState<Drawn | null>(null);
   // a failed form never reports: the person can only answer in their own words
@@ -205,7 +254,7 @@ export function FormSurface({
   const source = JSON.stringify(message);
 
   useEffect(() => {
-    const message = JSON.parse(source) as FormMessage;
+    const message = JSON.parse(source) as SurfaceMessage;
     let live = true;
     let dispose = () => {};
     load().then(({ A2uiSurface, MessageProcessor, catalog }) => {
@@ -257,11 +306,11 @@ export function FormSurface({
     () => drawn && { surfaceId: drawn.surface.id, readOnly, report: drawn.report },
     [drawn, readOnly],
   );
-  if (failed) return <Failed />;
+  if (failed) return fallback ?? <Failed />;
   if (!drawn || !form) return null;
   const { A2uiSurface, surface } = drawn;
   return (
-    <Boundary onError={fail}>
+    <Boundary fallback={fallback} onError={fail}>
       <FormContext.Provider value={form}>
         <A2uiSurface surface={surface} />
       </FormContext.Provider>

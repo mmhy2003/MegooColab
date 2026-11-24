@@ -9,7 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.a2ui import service
-from app.a2ui.service import CATALOG_ID, MAX_ANSWER_DATA_BYTES, MAX_FORM_BYTES, FormError
+from app.a2ui.service import CATALOG_ID, FORM_COMPONENTS, MAX_ANSWER_DATA_BYTES, MAX_FORM_BYTES, FormError
 from app.core.text import strip_nul_deep
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures" / "forms.json").read_text())
@@ -169,9 +169,10 @@ def test_field_labels_of_no_form():
 
 
 def test_guide_lists_every_component():
-    guide = service.guide()
+    guide = service.form_guide()
     assert set(guide) == {"instructions_md", "catalog", "example"}
     assert guide["catalog"]["catalogId"] == CATALOG_ID
+    assert set(guide["catalog"]["components"]) == FORM_COMPONENTS
     for name in guide["catalog"]["components"]:
         assert f"`{name}`" in guide["instructions_md"]
     assert guide["example"] == EXAMPLE

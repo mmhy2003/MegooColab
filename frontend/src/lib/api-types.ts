@@ -4154,7 +4154,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "comment" | "event" | "question";
+            type: "comment" | "event" | "question" | "card";
             /**
              * Id
              * Format: uuid
@@ -4178,6 +4178,10 @@ export interface components {
             } | null;
             /** Question */
             question?: {
+                [key: string]: unknown;
+            } | null;
+            /** Card */
+            card?: {
                 [key: string]: unknown;
             } | null;
             to_agent?: components["schemas"]["AgentMessageOut"] | null;

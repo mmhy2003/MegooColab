@@ -1,0 +1,14 @@
+{
+  "components": [
+    {"id": "root", "component": "Column", "children": ["tiles", "tabs"]},
+    {"id": "tiles", "component": "Row", "children": ["passed", "failed", "time"]},
+    {"id": "passed", "component": "StatTile", "label": "Passed", "value": "412", "tone": "good"},
+    {"id": "failed", "component": "StatTile", "label": "Failed", "value": "3", "caption": "2 new since Monday", "tone": "bad"},
+    {"id": "time", "component": "StatTile", "label": "Run time", "value": "4m 12s"},
+    {"id": "tabs", "component": "Tabs", "tabs": [{"title": "Failing", "child": "failing"}, {"title": "Notes", "child": "notes"}]},
+    {"id": "failing", "component": "List", "children": {"componentId": "row", "path": "/failing"}},
+    {"id": "row", "component": "TaskLink", "task": {"@path": "key"}, "label": {"@path": "title"}},
+    {"id": "notes", "component": "Text", "text": "Two of the failures are **flaky**."}
+  ],
+  "data": {"failing": [{"key": "MC-181", "title": "Login times out"}, {"key": "MC-182", "title": "Export is empty"}]}
+}

@@ -1,7 +1,7 @@
 """Keeps the search index current without touching every write path (Plan 9).
 
-`after_flush` notes which searchable items a transaction changed (a comment or an activity event counts as a
-change to its task). `before_commit` queues one deduplicated `search.sync` job per item, in the same transaction,
+`after_flush` notes which searchable items a transaction changed (a comment, a card or an activity event counts
+as a change to its task). `before_commit` queues one deduplicated `search.sync` job per item, in the same transaction,
 so a change is indexed only once it is committed and a slow or absent Meilisearch never slows a save. Deleted
 projects and Knowledge Base spaces also queue `search.purge`, for the rows their `ON DELETE CASCADE` removes.
 """
@@ -19,7 +19,7 @@ from app.jobs.models import Job
 from app.jobs.queue import CHANNEL
 from app.kb.models import KbDocument, KbSpace
 from app.projects.models import BoardColumn, Label, Project
-from app.tasks.models import Comment, Task, TaskEvent, task_labels
+from app.tasks.models import Comment, Task, TaskCard, TaskEvent, task_labels
 from app.teams.models import Team, TeamMember
 
 # index updates outlast any Meilisearch outage: the backoff caps at an hour, so this is about six weeks of retries
@@ -32,6 +32,7 @@ SKIP = "search_skip"
 _AFFECTS: dict[type, Any] = {
     Task: lambda o: [("task", o.id)],
     Comment: lambda o: [("task", o.task_id)],
+    TaskCard: lambda o: [("task", o.task_id)],
     TaskEvent: lambda o: [("task", o.task_id)],
     KbDocument: lambda o: [("document", o.id)],
     Project: lambda o: [("project", o.id)],

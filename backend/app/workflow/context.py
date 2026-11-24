@@ -149,10 +149,19 @@ def _question_text(q: Any) -> str:
     return "\n".join(lines)
 
 
+def _card_text(card: Any) -> str:
+    """A card as its title and text: what stands in for it where it can't be drawn (never its surface)."""
+    return f"{_get(card, 'title') or ''}\n{_get(card, 'text') or ''}"
+
+
 def _item_text(item: Any) -> str:
     who = getattr(getattr(item, "actor", None), "name", None) or "system"
     if item.type == "question":
         body = _question_text(_get(item, "question"))
+    elif item.type == "card":
+        card = _get(item, "card")
+        who = getattr(getattr(item, "actor", None), "name", None) or _get(_get(card, "agent"), "name") or "Agent"
+        body = _card_text(card)
     else:
         body = getattr(item, "body_md", None) or ""
     images = getattr(item, "images", None) or []
@@ -168,7 +177,8 @@ async def _thread(db: AsyncSession, task: Task) -> list[str]:
     items = await activity_items(db, task, limit=MAX_THREAD_ITEMS * 4)
     # messages for the agent are instructions, in a section of their own (instructions.kept_in_mind, or for a
     # freestyle run freestyle.conversation_so_far)
-    texts = [_item_text(i) for i in items if i.type in ("comment", "question") and getattr(i, "to_agent", None) is None]
+    texts = [_item_text(i) for i in items
+             if i.type in ("comment", "question", "card") and getattr(i, "to_agent", None) is None]
     return texts[-MAX_THREAD_ITEMS:]
 
 

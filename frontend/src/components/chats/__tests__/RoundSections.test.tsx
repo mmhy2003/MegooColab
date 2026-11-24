@@ -21,7 +21,7 @@ const SUBTASKS = [
 const DESIGN = { kind: "design", status: "awaiting_approval", version: 1 };
 
 /** The round's task with what it holds; empty means a round with nothing but its conversation. */
-function show({ latest, empty = false }: { latest: boolean; empty?: boolean }) {
+function show({ latest, empty = false, activity = [] }: { latest: boolean; empty?: boolean; activity?: unknown[] }) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
@@ -30,6 +30,7 @@ function show({ latest, empty = false }: { latest: boolean; empty?: boolean }) {
         : url.startsWith("/api/projects/PAY/tasks") ? (empty ? [] : SUBTASKS)
         : url === "/api/tasks/PAY-7/workflow" ? { documents: empty ? [] : [DESIGN], can_act: true }
         : url === "/api/tasks/PAY-7/records" ? { decisions: [] }
+        : url.startsWith("/api/tasks/PAY-7/activity") ? activity
         : url === "/api/tasks/PAY-7/attachments" ? (empty ? [] : [{ id: "a1", task_id: "t7", filename: "notes.txt", content_type: "text/plain", size: 4, uploaded_by: null, created_at: "2026-11-01T10:00:00Z", image: false, message_kind: null, message_id: null }])
         : [];
       return new Response(JSON.stringify(body), { status: 200 });
@@ -81,5 +82,14 @@ describe("RoundSections", () => {
     await userEvent.click(await screen.findByRole("button", { name: /Validate the email/ }));
     expect(push).toHaveBeenCalledWith("/projects/PAY/tasks/8");
     expect(screen.queryByLabelText("New subtask")).toBeNull();
+  });
+
+  it("a round whose activity has a card shows its title", async () => {
+    const surface = { version: "1.0", createSurface: { surfaceId: "card-0123456789ab", catalogId: "urn:megoocolab:a2ui:catalog:v1",
+      components: [{ id: "root", component: "StatTile", label: "Passed", value: "412" }] } };
+    show({ latest: false, empty: true, activity: [{ type: "card", id: "k1", at: "2026-11-20T10:01:00Z", actor: null,
+      card: { id: "k1", title: "Test results", text: "412 passed.", surface, agent: { id: "a1", name: "laptop-claude" } } }] });
+    expect(await screen.findByRole("heading", { name: "Test results" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Activity" })).toHaveTextContent("laptop-claude showed a card");
   });
 });

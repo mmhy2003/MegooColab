@@ -13,6 +13,7 @@ import Link from "next/link";
 import { ImageGallery } from "@/components/images/ImageGallery";
 import { Avatar } from "@/components/ui/Avatar";
 import { Markdown } from "@/components/ui/Markdown";
+import { ThreadCard } from "@/components/task/ThreadCard";
 import { QuestionCard } from "@/components/workflow/QuestionCard";
 import { ReviewResult } from "@/components/workflow/ReviewFindings";
 import { stateText } from "@/lib/agentMessages";
@@ -20,7 +21,7 @@ import { joinAgentMessages } from "@/lib/agentReplies";
 import { runReasonText } from "@/lib/agents";
 import { describeGitEvent, type GitLine } from "@/lib/gitActivity";
 import type { ImageRef } from "@/lib/images";
-import type { ActivityItem } from "@/lib/types";
+import type { ActivityCard, ActivityItem } from "@/lib/types";
 import {
   escalationReasonText, type FinishTests, finishedWithSummary, FINISHING_LABEL, finishTestsSummary, STAGES, type FinishingOption,
 } from "@/lib/workflow";
@@ -476,6 +477,22 @@ export function ActivityThread({
             <li key={item.id} id={`activity-${item.id}`} className="flex gap-2">
               <Avatar name="Agent" size={24} />
               <QuestionCard item={item} taskKey={taskKey} canAct={canAct} readOnly={readOnly} onAnswered={onAnswered} />
+            </li>
+          );
+        }
+        if (item.type === "card" && item.card) {
+          const card = item.card as ActivityCard;
+          const who = item.actor?.name ?? card.agent?.name ?? "Agent";
+          return (
+            <li key={item.id} id={`activity-${item.id}`} data-card className="flex items-start gap-2 pl-1 text-xs text-muted-foreground">
+              <span aria-hidden className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan" />
+              <div className="min-w-0 flex-1">
+                <p>
+                  <span className="text-fg">{who}</span> showed a card
+                  <RowTime at={item.at} />
+                </p>
+                <ThreadCard card={card} />
+              </div>
             </li>
           );
         }

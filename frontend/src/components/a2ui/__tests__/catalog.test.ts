@@ -27,4 +27,8 @@ describe("catalog", () => {
     expect(actual).toEqual(expected);
     expect(CATALOG_ID).toBe(backend.catalogId);
   });
+
+  it("has the card components", () => {
+    expect(Object.keys(COMPONENT_PROPS)).toEqual(expect.arrayContaining(["Tabs", "List", "StatTile", "TaskLink"]));
+  });
 });
