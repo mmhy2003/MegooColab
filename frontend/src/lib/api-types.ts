@@ -5191,6 +5191,10 @@ export interface components {
             commit: string | null;
             /** Tasks Created */
             tasks_created: number;
+            /** Panel */
+            panel?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** DashboardOut */
         DashboardOut: {
