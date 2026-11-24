@@ -2,10 +2,9 @@
 
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { ChartFrame } from "@/components/ui/ChartFrame";
 import type { BurndownPoint } from "@/lib/types";
 import { useThemeColors } from "@/lib/useThemeColors";
-
-import { ChartFrame } from "./ChartFrame";
 
 function shortDay(iso: string): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
