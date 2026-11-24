@@ -33,6 +33,8 @@ FORM_COMPONENTS = frozenset({"Column", "Row", "Card", "Divider", "Text", *INPUTS
 CARD_COMPONENTS = frozenset({"Column", "Row", "Card", "Divider", "Text", "Tabs", "List", "StatTile", "TaskLink"})
 PANEL_COMPONENTS = CARD_COMPONENTS | {"Chart"}
 MAX_CARD_BYTES = 16 * 1024
+MAX_PANEL_BYTES = 16 * 1024
+MAX_CHARTS = 4
 MAX_TABS = 6
 MAX_DATA_ITEMS = 50
 TASK_KEY = re.compile(r"^[A-Z][A-Z0-9]{1,9}-[1-9][0-9]*$")
@@ -52,6 +54,10 @@ class FormError(HTTPException):
 
 class CardError(FormError):
     """A card refused: the same 422 as FormError (the code, then up to MAX_PROBLEMS "path: message" lines)."""
+
+
+class PanelError(FormError):
+    """A panel refused: the same 422 as FormError (the code, then up to MAX_PROBLEMS "path: message" lines)."""
 
 
 def _size(value: Any) -> int:
@@ -89,7 +95,7 @@ def _card_example() -> dict:
 
 
 def wrap(components: list, data: dict | None, prefix: str = "form") -> dict:
-    """The createSurface message for a form or a card, with a surface id of its own."""
+    """The createSurface message for a form, a card or a panel, with a surface id of its own."""
     return {"version": "1.0",
             "createSurface": {"surfaceId": f"{prefix}-" + uuid.uuid4().hex[:12], "catalogId": CATALOG_ID,
                               "components": components, "dataModel": data or {}}}
@@ -179,37 +185,130 @@ def _long_array(value: Any, path: str = "data") -> str | None:
     return None
 
 
-def clean_card(card: Any) -> dict:
-    """The agent's {components, data?} as a validated, stored card surface. Raises CardError."""
-    if not (isinstance(card, dict) and "components" in card and set(card) <= {"components", "data"}):
-        raise CardError("invalid_card", [{"path": "card", "message": "must be {components, data?} and nothing else"}])
-    if not (isinstance(card["components"], list) and all(isinstance(c, dict) for c in card["components"])):
-        raise CardError("invalid_card", [{"path": "card", "message": "components must be a list of objects"}])
-    if not isinstance(card.get("data", {}), dict):
-        raise CardError("invalid_card", [{"path": "card", "message": "data must be an object"}])
-    card = strip_nul_deep(card)
-    components, data = card["components"], card.get("data")
-    if _size(card) > MAX_CARD_BYTES:
-        raise CardError("too_large", [{"path": "card", "message": f"over {MAX_CARD_BYTES} bytes"}])
+def _checked_display(value: Any, name: str, error: type[FormError], allowed: frozenset[str],
+                     max_bytes: int) -> tuple[list, dict | None]:
+    """The checks every read-only surface (a card, a panel) gets: its shape, NUL stripped, its size, its component
+    count, no inputs, only `allowed` components, tabs, task keys, data arrays. Codes are invalid_<name>,
+    <name>_with_inputs and too_large; shape problems have the path `name`. Returns (components, data)."""
+    invalid = f"invalid_{name}"
+    if not (isinstance(value, dict) and "components" in value and set(value) <= {"components", "data"}):
+        raise error(invalid, [{"path": name, "message": "must be {components, data?} and nothing else"}])
+    if not (isinstance(value["components"], list) and all(isinstance(c, dict) for c in value["components"])):
+        raise error(invalid, [{"path": name, "message": "components must be a list of objects"}])
+    if not isinstance(value.get("data", {}), dict):
+        raise error(invalid, [{"path": name, "message": "data must be an object"}])
+    value = strip_nul_deep(value)
+    components, data = value["components"], value.get("data")
+    if _size(value) > max_bytes:
+        raise error("too_large", [{"path": name, "message": f"over {max_bytes} bytes"}])
     if len(components) > MAX_COMPONENTS:
-        raise CardError("too_large", [{"path": "components", "message": f"over {MAX_COMPONENTS} components"}])
+        raise error("too_large", [{"path": "components", "message": f"over {MAX_COMPONENTS} components"}])
     if any(_is_input(c) for c in components):
-        raise CardError("card_with_inputs")
-    if problems := _outside(components, CARD_COMPONENTS):
-        raise CardError("invalid_card", problems)
+        raise error(f"{name}_with_inputs")
+    if problems := _outside(components, allowed):
+        raise error(invalid, problems)
     for c in components:
         if c["component"] == "Tabs" and isinstance(c.get("tabs"), list) and len(c["tabs"]) > MAX_TABS:
-            raise CardError("too_large", [{"path": f"components.{c.get('id')}.tabs", "message": f"over {MAX_TABS} tabs"}])
+            raise error("too_large", [{"path": f"components.{c.get('id')}.tabs", "message": f"over {MAX_TABS} tabs"}])
         task = c.get("task") if c["component"] == "TaskLink" else None
         if isinstance(task, str) and not TASK_KEY.fullmatch(task):
-            raise CardError("invalid_card", [{"path": f"components.{c.get('id')}.task",
-                                              "message": "not a task key such as MC-181"}])
+            raise error(invalid, [{"path": f"components.{c.get('id')}.task", "message": "not a task key such as MC-181"}])
     if path := _long_array(data):
-        raise CardError("too_large", [{"path": path, "message": f"over {MAX_DATA_ITEMS} items"}])
+        raise error("too_large", [{"path": path, "message": f"over {MAX_DATA_ITEMS} items"}])
+    return components, data
+
+
+def clean_card(card: Any) -> dict:
+    """The agent's {components, data?} as a validated, stored card surface. Raises CardError."""
+    components, data = _checked_display(card, "card", CardError, CARD_COMPONENTS, MAX_CARD_BYTES)
     message = wrap(components, data, prefix="card")
     if problems := _library(message):
         raise CardError("invalid_card", problems)
     return message
+
+
+def _points(component: dict) -> str | None:
+    """The data-model path a chart's points are bound to, or None when they aren't bound to a path."""
+    points = component.get("points")
+    path = points.get("@path") if isinstance(points, dict) else None
+    return path if isinstance(path, str) else None
+
+
+def _resolve(data: dict, path: str) -> Any:
+    """The value at an absolute JSON pointer in data (~1 is "/", ~0 is "~"), or None when it isn't there."""
+    value: Any = data
+    for token in path.split("/")[1:]:
+        token = token.replace("~1", "/").replace("~0", "~")
+        if isinstance(value, dict) and token in value:
+            value = value[token]
+        elif isinstance(value, list) and token.isdigit() and int(token) < len(value):
+            value = value[int(token)]
+        else:
+            return None
+    return value
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _chart_problems(components: list, data: dict) -> list[dict]:
+    """Each chart's data checked against the panel's own data, as {path, message} problems. A rule whose shape is
+    wrong (x not text, series not a list of objects) is skipped: the catalog check after it names that."""
+    problems = []
+    for c in components:
+        at = f"components.{c.get('id')}"
+        path = _points(c)
+        if path is None or not path.startswith("/"):
+            problems.append({"path": f"{at}.points", "message": "must be an absolute path such as /trend"})
+            continue
+        points = _resolve(data, path)
+        if not (isinstance(points, list) and 1 <= len(points) <= MAX_DATA_ITEMS
+                and all(isinstance(p, dict) for p in points)):
+            problems.append({"path": f"{at}.points",
+                             "message": f"{path} is not a list of 1 to {MAX_DATA_ITEMS} objects in data"})
+            continue
+        x = c.get("x")
+        if isinstance(x, str):
+            for n, point in enumerate(points):
+                if not (isinstance(point.get(x), str) or _is_number(point.get(x))):
+                    problems.append({"path": f"{at}.x", "message": f'point {n} of {path} has no text or number under "{x}"'})
+                    break
+        series = c.get("series")
+        if not (isinstance(series, list) and all(isinstance(s, dict) and isinstance(s.get("key"), str) for s in series)):
+            continue
+        keys = [s["key"] for s in series]
+        if len(set(keys)) < len(keys) or x in keys:
+            problems.append({"path": f"{at}.series", "message": "series keys must differ from each other and from x"})
+        for k, key in enumerate(keys):
+            values = [point.get(key) for point in points]
+            wrong = next(((n, v) for n, v in enumerate(values) if v is not None and not _is_number(v)), None)
+            if wrong is not None:
+                problems.append({"path": f"{at}.series.{k}.key",
+                                 "message": f'point {wrong[0]} of {path} has {wrong[1]!r} under "{key}", not a number'})
+            elif not any(_is_number(v) for v in values):
+                problems.append({"path": f"{at}.series.{k}.key", "message": f'no point of {path} has a number under "{key}"'})
+    return problems
+
+
+def clean_panel(panel: Any) -> dict:
+    """The agent's {components, data?} as a validated, stored panel surface. Raises PanelError."""
+    components, data = _checked_display(panel, "panel", PanelError, PANEL_COMPONENTS, MAX_PANEL_BYTES)
+    charts = [c for c in components if c["component"] == "Chart"]
+    if len(charts) > MAX_CHARTS:
+        raise PanelError("too_large", [{"path": "components", "message": f"over {MAX_CHARTS} charts"}])
+    if problems := _chart_problems(charts, data or {}):
+        raise PanelError("invalid_panel", problems)
+    message = wrap(components, data, prefix="panel")
+    if problems := _library(message):
+        raise PanelError("invalid_panel", problems)
+    return message
+
+
+def unwrap(message: dict) -> dict:
+    """The {components, data} an agent writes, from a stored createSurface message."""
+    surface = message["createSurface"]
+    return {"components": surface["components"], "data": surface.get("dataModel") or {}}
 
 
 def field_labels(message: dict | None) -> list[str]:
