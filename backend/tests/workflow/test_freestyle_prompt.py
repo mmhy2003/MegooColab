@@ -182,3 +182,32 @@ async def test_reply_falls_back_to_the_summary_without_messages(client, db):
     await _events(task_id, run, ("agent_tool", {"title": "bump"}))
     await _end(run.id, "completed", "Done: bumped VERSION")
     assert '<untrusted source="agent_reply">\nDone: bumped VERSION\n</untrusted>' in await _conversation(task_id)
+
+
+async def _card(task_id, run, title="Test results", text="412 passed, 3 failed."):
+    from app.tasks.models import TaskCard
+
+    surface = {"version": "1.0", "createSurface": {"surfaceId": "card-1", "catalogId": "urn:megoocolab:a2ui:catalog:v1",
+                                                   "components": [{"id": "root", "component": "Text", "text": "hi"}]}}
+    async with SessionLocal() as s:
+        s.add(TaskCard(task_id=task_id, run_id=run.id, agent_id=run.agent_id, title=title, text=text,
+                       surface=surface))
+        await s.commit()
+
+
+async def test_conversation_so_far_adds_a_turns_cards(client, db):
+    w, task_id, run = await _freestyle(client, db)
+    await _card(task_id, run)
+    await _end(run.id, "completed", REPLY)
+    text = await _conversation(task_id)
+    assert (f'<untrusted source="agent_reply">\n{REPLY}\n\nCard: Test results\n412 passed, 3 failed.\n</untrusted>'
+            in text)
+    assert "createSurface" not in text
+
+
+async def test_a_turn_with_only_a_card_still_appears(client, db):
+    w, task_id, run = await _freestyle(client, db)
+    await _card(task_id, run)
+    await _end(run.id, "completed", "  ")
+    text = await _conversation(task_id)
+    assert '<untrusted source="agent_reply">\nCard: Test results\n412 passed, 3 failed.\n</untrusted>' in text

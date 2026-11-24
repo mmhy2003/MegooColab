@@ -26,6 +26,7 @@ from app.agents.models import Agent
 from app.notifications import service as notifications
 from app.notifications.models import Kind
 from app.projects.models import Project
+from app.tasks import cards as cards_service
 from app.tasks.models import Comment, Delivery, Task, TaskEvent
 from app.workflow import engine, instructions, questions
 from app.workflow.context import _escape, wrap_untrusted
@@ -71,7 +72,8 @@ async def _replies(db: AsyncSession, task: Task, runs: list[AgentRun]) -> dict[s
 
 async def conversation_so_far(db: AsyncSession, task: Task) -> str | None:
     """For a turn starting a fresh session: every message the agent was given and, for every ended turn, its reply
-    (its last message, else the run's summary; the agent's own text: wrapped as untrusted), in order. The oldest
+    (its last message, else the run's summary) followed by the title and text of each card it showed (the agent's own
+    text: wrapped as untrusted), in order. A turn with neither is left out. The oldest
     are cut to fit CONVERSATION_CHARS; the newest is always kept whole. The messages still waiting come with the
     turn itself (take_waiting's "New instructions"), and the first message is the task's description."""
     entries: list[tuple[datetime, str]] = [
@@ -88,8 +90,10 @@ async def conversation_so_far(db: AsyncSession, task: Task) -> str | None:
         .order_by(AgentRun.created_at, AgentRun.id)
     )).all()
     replies = await _replies(db, task, [run for run, _ in turns])
+    cards = await cards_service.of_runs(db, [run.id for run, _ in turns])
     for run, agent in turns:
         reply = replies.get(str(run.id)) or (run.summary or "").strip()
+        reply = "\n\n".join([reply, *(f"Card: {c.title}\n{c.text}" for c in cards.get(run.id, []))]).strip()
         if not reply:
             continue
         at = run.finished_at or run.started_at or run.created_at
@@ -201,7 +205,8 @@ async def _silenced(db: AsyncSession, task: Task, run: AgentRun, *, failed: bool
 async def _notify_replied(db: AsyncSession, task: Task, run: AgentRun, *, failed: bool = False) -> None:
     """The chat's starter hears once that the turn ended: the agent replied, or couldn't finish (unless the trigger
     that started the turn says not to). A task not in a chat (none yet starts a freestyle round) falls back to the
-    agent's owner, linked to the board."""
+    agent's owner, linked to the board. A reply's body is the reply, then a line for each card the turn showed (its
+    title and text), cut to SUMMARY_CHARS."""
     if await _silenced(db, task, run, failed=failed):
         return
     agent = await db.get(Agent, run.agent_id)
@@ -225,7 +230,8 @@ async def _notify_replied(db: AsyncSession, task: Task, run: AgentRun, *, failed
     else:
         title = f"{agent.name} replied {where}"
         reply = (await _replies(db, task, [run])).get(str(run.id)) or run.summary or ""
-        body = reply[:SUMMARY_CHARS]
+        cards = (await cards_service.of_runs(db, [run.id])).get(run.id, [])
+        body = "\n".join(p for p in [reply, *(f"Card: {c.title}. {c.text}" for c in cards)] if p)[:SUMMARY_CHARS]
     await notifications.notify(
         db, recipients, Kind.agent_replied, title=title, body=body, link=link,
         task_id=task.id, project_id=project.id,
