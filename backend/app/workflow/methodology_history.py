@@ -10,6 +10,7 @@ DEFAULT_HISTORY: dict[str, list[str]] = {
     "freestyle": [
         "533e10a68647b78784c2d0ce611fadea2170fdb7bd8daeb9ac6e9f10d356cebd",
         "58e7bf59ecdbf312be26bae501573daaa5d772f66540097754c6dbc988fb6dc9",
+        "4310bb9e43ce82c1a10ead920eaf10daafb633dc477ac750c2d0702c18ea2ba5",
     ],
     "cron": [
         "6242ec4f5f17b35bb2d0db59ff6f610ea64f3edffde2a1ce36918f85c5433ada",
@@ -103,5 +104,6 @@ DEFAULT_HISTORY: dict[str, list[str]] = {
         "f658da73ac2a20f3f721758e426f8cf9cda77c28795a974dc7cf1bd52e5a83ca",
         "ec8efb7994e8baf0987ca423fcaa265dc150de2cb25f06c7706844dec1642831",
         "a3147a058f56f62023712421d4a418ca989b58c081844bf60909ec9c30740c91",
+        "79e8fcc2e6de619a35e5cf747df64fc03d6fd8381cc971a0f329b4a9c02bc371",
     ],
 }

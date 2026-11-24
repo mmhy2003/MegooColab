@@ -200,6 +200,14 @@ def test_every_text_that_lists_ask_human_teaches_forms():
     assert len(keys) == 10
 
 
+def test_freestyle_and_finish_texts_teach_cards():
+    """The agents that reply with a result learn they may show it as a card, and still reply in text (MC-173)."""
+    for key in ("freestyle", "finish"):
+        body = (methodology.DEFAULTS_DIR / f"{key}.md").read_text(encoding="utf-8")
+        for phrase in ("`show_card(key, title, text, card)`", "get_card_guide()", "**Cards.**", "still reply in text"):
+            assert phrase in body, (key, phrase)
+
+
 def _old_default(monkeypatch, key: str, text: str) -> None:
     """Pretend `text` shipped as an earlier default of `key`."""
     import hashlib
