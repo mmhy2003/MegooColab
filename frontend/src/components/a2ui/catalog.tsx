@@ -26,7 +26,7 @@ export const COMPONENT_PROPS: Record<string, readonly string[]> = {
   TaskLink: ["task", "label", "weight"],
 };
 
-/** What every input of the catalog takes. `FormSurface` adapts the renderer's resolved props to it. */
+/** What every input of the catalog takes. `Surface` adapts the renderer's resolved props to it. */
 export type FieldProps<V> = {
   id: string;
   label?: string;

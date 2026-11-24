@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from "react";
 
-import type { FormMessage, FormValues } from "@/lib/types";
+import type { FormValues, SurfaceMessage } from "@/lib/types";
 
 import {
   CATALOG_ID,
@@ -150,7 +150,7 @@ const load = () =>
   }));
 
 /** Catches what the renderer or one of our components throws while drawing. */
-class Boundary extends Component<{ children: ReactNode; onError: () => void }, { failed: boolean }> {
+class Boundary extends Component<{ children: ReactNode; fallback: ReactNode; onError: () => void }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
@@ -159,7 +159,7 @@ class Boundary extends Component<{ children: ReactNode; onError: () => void }, {
     this.props.onError();
   }
   render() {
-    return this.state.failed ? <Failed /> : this.props.children;
+    return this.state.failed ? (this.props.fallback ?? <Failed />) : this.props.children;
   }
 }
 
@@ -167,27 +167,30 @@ function Failed() {
   return <p role="alert" className="text-sm text-muted-foreground">{FAILED}</p>;
 }
 
-type Surface = ComponentProps<Renderer["A2uiSurface"]>["surface"];
-type Drawn = { A2uiSurface: Renderer["A2uiSurface"]; surface: Surface; report: Form["report"] };
+type SurfaceModel = ComponentProps<Renderer["A2uiSurface"]>["surface"];
+type Drawn = { A2uiSurface: Renderer["A2uiSurface"]; surface: SurfaceModel; report: Form["report"] };
 
 /** a2ui-core (the backend's validator) writes a component's checks as "@checks", web_core reads "checks" */
-function forRenderer(message: FormMessage) {
+function forRenderer(message: SurfaceMessage) {
   const components = message.createSurface.components.map(({ "@checks": checks, ...rest }) =>
     checks === undefined ? rest : { ...rest, checks },
   );
   return { ...message, createSurface: { ...message.createSurface, components } };
 }
 
-/** An A2UI form drawn with MegooColab's own components. `onChange` gets the surface's whole data model and whether
- * every check passes: once all inputs are drawn, then on every change. */
-export function FormSurface({
+/** An A2UI surface drawn with MegooColab's own components: a question's form or a thread's card. `onChange` gets the
+ * surface's whole data model and whether every check passes: once all inputs are drawn, then on every change.
+ * `fallback` is shown in place of the surface when it can't be drawn (a form's failure message by default). */
+export function Surface({
   message,
   readOnly = false,
   onChange,
+  fallback,
 }: {
-  message: FormMessage;
+  message: SurfaceMessage;
   readOnly?: boolean;
   onChange?: (data: FormValues, valid: boolean) => void;
+  fallback?: ReactNode;
 }) {
   const [drawn, setDrawn] = useState<Drawn | null>(null);
   // a failed form never reports: the person can only answer in their own words
@@ -205,7 +208,7 @@ export function FormSurface({
   const source = JSON.stringify(message);
 
   useEffect(() => {
-    const message = JSON.parse(source) as FormMessage;
+    const message = JSON.parse(source) as SurfaceMessage;
     let live = true;
     let dispose = () => {};
     load().then(({ A2uiSurface, MessageProcessor, catalog }) => {
@@ -257,11 +260,11 @@ export function FormSurface({
     () => drawn && { surfaceId: drawn.surface.id, readOnly, report: drawn.report },
     [drawn, readOnly],
   );
-  if (failed) return <Failed />;
+  if (failed) return fallback ?? <Failed />;
   if (!drawn || !form) return null;
   const { A2uiSurface, surface } = drawn;
   return (
-    <Boundary onError={fail}>
+    <Boundary fallback={fallback} onError={fail}>
       <FormContext.Provider value={form}>
         <A2uiSurface surface={surface} />
       </FormContext.Provider>

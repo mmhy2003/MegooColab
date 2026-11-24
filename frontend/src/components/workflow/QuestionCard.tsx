@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { FormSurface } from "@/components/a2ui/FormSurface";
+import { Surface } from "@/components/a2ui/Surface";
 import { ImageAttach, ImageDropZone } from "@/components/images/ImageAttach";
 import { ImageGallery } from "@/components/images/ImageGallery";
 import { Button } from "@/components/ui/Button";
@@ -140,7 +140,7 @@ export function QuestionCard({
         <div className="space-y-2">
           {/* hidden, not unmounted, in own-words mode: what the person filled in survives the switch */}
           <div className={ownWords ? "hidden" : undefined}>
-            <FormSurface
+            <Surface
               message={q.form}
               readOnly={busy}
               onChange={(d, v) => {
@@ -197,9 +197,9 @@ export function QuestionCard({
         </div>
       ) : (
         <>
-          {q.form && q.status !== "answered" && <FormSurface message={q.form} readOnly />}
+          {q.form && q.status !== "answered" && <Surface message={q.form} readOnly />}
           {q.form && q.answer_data && (
-            <FormSurface message={{ ...q.form, createSurface: { ...q.form.createSurface, dataModel: q.answer_data } }} readOnly />
+            <Surface message={{ ...q.form, createSurface: { ...q.form.createSurface, dataModel: q.answer_data } }} readOnly />
           )}
           {q.choices.length > 0 && (
             <ul className="space-y-0.5 text-xs text-muted-foreground">

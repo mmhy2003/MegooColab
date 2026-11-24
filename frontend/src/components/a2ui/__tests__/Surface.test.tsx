@@ -4,9 +4,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { FormSurface } from "@/components/a2ui/FormSurface";
+import { Surface } from "@/components/a2ui/Surface";
 import { CATALOG_ID } from "@/components/a2ui/catalog";
-import type { FormMessage, FormValues } from "@/lib/types";
+import type { FormValues, SurfaceMessage } from "@/lib/types";
 
 type Form = { components: Record<string, unknown>[]; data?: FormValues };
 const fixtures = JSON.parse(
@@ -14,14 +14,14 @@ const fixtures = JSON.parse(
 ) as { valid: { name: string; form: Form }[] };
 
 /** The stored message for a form, as backend/app/a2ui/service.py's wrap builds it. */
-function wrap({ components, data }: Form, surfaceId = "form-0123456789ab"): FormMessage {
+function wrap({ components, data }: Form, surfaceId = "form-0123456789ab"): SurfaceMessage {
   return { version: "1.0", createSurface: { surfaceId, catalogId: CATALOG_ID, components, dataModel: data ?? {} } };
 }
 
 const everyInput = fixtures.valid.find((f) => f.name === "every-input")!.form;
 const INPUTS = ["TextField", "CheckBox", "ChoicePicker", "Slider", "DateTimeInput"];
 
-const message: FormMessage = {
+const message: SurfaceMessage = {
   version: "1.0",
   createSurface: {
     surfaceId: "form-0123456789ab",
@@ -41,9 +41,9 @@ const message: FormMessage = {
   },
 };
 
-describe("FormSurface", () => {
+describe("Surface", () => {
   it("draws the form with MegooColab's own components", async () => {
-    const { container } = render(<FormSurface message={message} />);
+    const { container } = render(<Surface message={message} />);
     expect(await screen.findByText("A few details about the release.")).toBeInTheDocument();
     expect(await screen.findByLabelText("Name")).toBeInTheDocument();
     // the renderer hosts each of our components in an <a2ui-react-…> element: never a basic catalog element
@@ -53,7 +53,7 @@ describe("FormSurface", () => {
 
   it("reports the data model and whether every check passes", async () => {
     const onChange = vi.fn();
-    render(<FormSurface message={message} onChange={onChange} />);
+    render(<Surface message={message} onChange={onChange} />);
     const input = await screen.findByLabelText("Name");
     await waitFor(() => expect(onChange).toHaveBeenLastCalledWith({ name: "" }, false));
     await userEvent.type(input, "x");
@@ -61,7 +61,7 @@ describe("FormSurface", () => {
   });
 
   it("shows the check message once the field was changed back to empty", async () => {
-    render(<FormSurface message={message} />);
+    render(<Surface message={message} />);
     const input = await screen.findByLabelText("Name");
     expect(screen.queryByText("A name is needed")).not.toBeInTheDocument();
     await userEvent.type(input, "x");
@@ -71,7 +71,7 @@ describe("FormSurface", () => {
 
   it("draws every valid fixture form", async () => {
     for (const { name, form } of fixtures.valid) {
-      const { unmount } = render(<FormSurface message={wrap(form)} />);
+      const { unmount } = render(<Surface message={wrap(form)} />);
       for (const c of form.components.filter((c) => INPUTS.includes(String(c.component)))) {
         const label = String(c.label);
         const found =
@@ -86,7 +86,7 @@ describe("FormSurface", () => {
 
   it("reports data and validity", async () => {
     const onChange = vi.fn();
-    render(<FormSurface message={wrap(everyInput)} onChange={onChange} />);
+    render(<Surface message={wrap(everyInput)} onChange={onChange} />);
     await userEvent.type(await screen.findByLabelText("Email"), "ops@example.com");
     const tag = screen.getByLabelText("Tag");
     await userEvent.type(tag, "x12");
@@ -120,7 +120,7 @@ describe("FormSurface", () => {
 
   it("readOnly disables every input", async () => {
     const onChange = vi.fn();
-    const { container } = render(<FormSurface message={wrap(everyInput)} readOnly onChange={onChange} />);
+    const { container } = render(<Surface message={wrap(everyInput)} readOnly onChange={onChange} />);
     await screen.findByLabelText("Email");
     const fields = [...container.querySelectorAll("input, textarea, select, button")];
     // 4 text fields, the checkbox, 2 + 3 options, the slider and the date-time
@@ -146,7 +146,7 @@ describe("FormSurface", () => {
       ],
       data: { envs: ["staging"] },
     };
-    render(<FormSurface message={wrap(form)} onChange={onChange} />);
+    render(<Surface message={wrap(form)} onChange={onChange} />);
     const prod = await screen.findByRole("button", { name: "Production" });
     expect(screen.getByRole("button", { name: "Staging" })).toHaveAttribute("aria-pressed", "true");
     expect(prod).toHaveAttribute("aria-pressed", "false");
@@ -162,14 +162,14 @@ describe("FormSurface", () => {
         { id: "ok", component: "CheckBox", label: "Go ahead?", value: { "@path": "/ok" } },
       ],
     };
-    const { container } = render(<FormSurface message={wrap(form)} />);
+    const { container } = render(<Surface message={wrap(form)} />);
     expect((await screen.findByText("Read this")).tagName).toBe("STRONG");
     expect(screen.getByRole("link", { name: "the plan" })).toHaveAttribute("href", "https://example.com/plan.png");
     expect(container.querySelector("img")).toBeNull();
   });
 });
 
-describe("FormSurface when the renderer fails", () => {
+describe("Surface when the renderer fails", () => {
   const failure = "This form couldn't be shown. You can still answer in your own words.";
 
   afterEach(() => {
@@ -183,9 +183,9 @@ describe("FormSurface when the renderer fails", () => {
     vi.doMock("@a2ui/react", () => {
       throw new Error("chunk failed to load");
     });
-    const { FormSurface } = await import("@/components/a2ui/FormSurface");
+    const { Surface } = await import("@/components/a2ui/Surface");
     const onChange = vi.fn();
-    render(<FormSurface message={message} onChange={onChange} />);
+    render(<Surface message={message} onChange={onChange} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(failure);
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -199,10 +199,38 @@ describe("FormSurface when the renderer fails", () => {
         throw new Error("broken surface");
       },
     }));
-    const { FormSurface } = await import("@/components/a2ui/FormSurface");
+    const { Surface } = await import("@/components/a2ui/Surface");
     const onChange = vi.fn();
-    render(<FormSurface message={message} onChange={onChange} />);
+    render(<Surface message={message} onChange={onChange} />);
     expect(await screen.findByRole("alert")).toHaveTextContent(failure);
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("shows the fallback when the renderer can't load", async () => {
+    vi.resetModules();
+    vi.doMock("@a2ui/react", () => {
+      throw new Error("chunk failed to load");
+    });
+    const { Surface } = await import("@/components/a2ui/Surface");
+    render(<Surface message={message} fallback={<p role="alert">Card text</p>} />);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Card text");
+    expect(alert).not.toHaveTextContent(failure);
+  });
+
+  it("shows the fallback when the renderer throws", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.resetModules();
+    vi.doMock("@a2ui/react", async (original) => ({
+      ...(await original<typeof import("@a2ui/react")>()),
+      A2uiSurface: () => {
+        throw new Error("broken surface");
+      },
+    }));
+    const { Surface } = await import("@/components/a2ui/Surface");
+    render(<Surface message={message} fallback={<p role="alert">Card text</p>} />);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Card text");
+    expect(alert).not.toHaveTextContent(failure);
   });
 });
