@@ -28,6 +28,7 @@ from app.agent_runs.models import AgentRun
 from app.auth.models import User
 from app.mcp_server.auth import current_run, live_run, require_run_task, tool_session
 from app.projects.models import Project, ProjectRepository
+from app.tasks import cards
 from app.tasks.models import Task
 from app.tasks.service import get_task_for
 from app.workflow import (
@@ -56,14 +57,16 @@ from app.workflow.models import (
 
 ASKED = "Question posted. End your turn now; the answer arrives as your next message."
 
+# a reviewer never asks: it judges what is there; a card is shown by those who may ask
+ASKING = frozenset({
+    RunRole.brainstorm, RunRole.plan, RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish,
+    RunRole.pr_fix, RunRole.freestyle,
+})
 TOOL_ROLES: dict[str, frozenset[RunRole]] = {
     "get_workflow": frozenset(RunRole),
     "get_document": frozenset(RunRole),
-    # a reviewer never asks: it judges what is there
-    "ask_human": frozenset({
-        RunRole.brainstorm, RunRole.plan, RunRole.implement, RunRole.step_fix, RunRole.final_fix, RunRole.finish,
-        RunRole.pr_fix, RunRole.freestyle,
-    }),
+    "ask_human": ASKING,
+    "show_card": ASKING,
     "submit_design": frozenset({RunRole.brainstorm}),
     "submit_plan": frozenset({RunRole.plan}),
     "complete_step": frozenset({RunRole.implement, RunRole.step_fix}),
@@ -270,6 +273,24 @@ def register_workflow_tools(mcp: MCPServer) -> None:
         """What a form for ask_human may contain: instructions, MegooColab's A2UI catalog and an example."""
         async with tool_session():
             return a2ui_service.form_guide()
+
+    @mcp.tool()
+    async def show_card(key: str, title: str, text: str, card: dict[str, Any]) -> dict[str, Any]:
+        """Show a read-only card in the task's or chat's thread, next to your reply, and keep working: `card` is
+        {components, data?} (call get_card_guide first). `title` (at most 120 characters) is its heading; `text` (at
+        most 500) stands in for it wherever it can't be drawn (notifications, search, other agents). Still reply in
+        text. At most 3 cards in one run."""
+        async with tool_session() as (db, user):
+            task = await _task(db, user, key, "show_card", write=True)
+            run = await live_run(db, task) if current_run.get() is not None else None
+            row = await cards.show(db, task, run, user, title, text, card)
+            return {"card_id": str(row.id)}
+
+    @mcp.tool()
+    async def get_card_guide() -> dict[str, Any]:
+        """What a card for show_card may contain: instructions, MegooColab's A2UI catalog for cards and an example."""
+        async with tool_session():
+            return a2ui_service.card_guide()
 
     @mcp.tool()
     async def show_mockup(key: str, html: str, title: str) -> dict[str, Any]:
