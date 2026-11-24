@@ -1,12 +1,14 @@
 """A cron's run: an AgentRun targeting its CronRun (beside task, question and draft runs). It runs commands in a
 throwaway copy of the project's default branch on the agent's machine, and reports through submit_cron_report."""
 
+import json
 import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.a2ui import service as a2ui
 from app.agent_runs.models import AgentRun, RunStatus
 from app.agent_runs.tokens import issue_run_token
 from app.agents.models import Agent, AgentBinding
@@ -66,9 +68,16 @@ async def cron_prompt(db: AsyncSession, cron: Cron, run: CronRun) -> tuple[str, 
         + (f" Last report: {previous.scheduled_at:%Y-%m-%d %H:%M} UTC." if previous else " This is its first report."),
     ]
     if previous is not None:
-        import json
-
         parts.append("## The last run's report\n\n" + wrap_untrusted("last report", json.dumps(previous.report)))
+    last_panel = await db.scalar(
+        select(CronRun).where(CronRun.cron_id == cron.id, CronRun.scheduled_at < run.scheduled_at,
+                              CronRun.panel.is_not(None))
+        .order_by(CronRun.scheduled_at.desc()).limit(1)
+    )
+    if last_panel is not None:
+        parts.append(f"## The last panel\n\nFrom the run of {last_panel.scheduled_at:%Y-%m-%d %H:%M} UTC. For a trend, "
+                     "keep its layout, update its tiles and add this run's point to each series.\n\n"
+                     + wrap_untrusted("last panel", json.dumps(a2ui.unwrap(last_panel.panel))))
     parts += [f"## The job\n\n{cron.prompt.strip()}", f"## What your cron may do\n\n{MODE_TEXT[CronMode(cron.mode)]}"]
     return "\n\n".join(parts), version
 

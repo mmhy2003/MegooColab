@@ -2,14 +2,17 @@
 
 import importlib.util
 import json
+import uuid
 from pathlib import Path
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.a2ui import service
 from app.a2ui.service import PANEL_COMPONENTS
+from app.agent_runs.models import AgentRun
 from app.core.db import SessionLocal
-from app.crons.models import CronRun
+from app.crons import turns
+from app.crons.models import Cron, CronRun
 from app.tasks.models import Task
 from tests.crons.test_report import BASE, _cron_run, _cron_runs, _finish, _report, _tasks
 from tests.mcp.test_workflow_tools import _run_token, _tool
@@ -127,3 +130,70 @@ async def test_get_panel_guide(client, db, world, tc_factory):
     assert not err, out
     assert set(out["catalog"]["components"]) == PANEL_COMPONENTS
     assert out["example"] == EXAMPLE
+
+
+async def _prompt(run_id) -> str:
+    async with SessionLocal() as s:
+        cron_run = await s.get(CronRun, run_id)
+        cron = await s.get(Cron, cron_run.cron_id)
+        return (await turns.cron_prompt(s, cron, cron_run))[0]
+
+
+async def _run_now(client, cron_id) -> AgentRun:
+    run = (await client.post(f"{BASE}/{cron_id}/run-now")).json()
+    async with SessionLocal() as s:
+        return (await s.execute(select(AgentRun).where(AgentRun.cron_run_id == uuid.UUID(run["id"])))).scalar_one()
+
+
+async def _stored_run(run: AgentRun) -> CronRun:
+    async with SessionLocal() as s:
+        return await s.get(CronRun, run.cron_run_id)
+
+
+async def test_the_first_run_has_no_last_panel(client, db, world):
+    _, run = await _cron_run(client, world, "report")
+    assert "## The last panel" not in await _prompt(run.cron_run_id)
+
+
+async def test_the_next_run_gets_the_last_panel(client, db, world, tc_factory):
+    tc = tc_factory(lifespan=True)
+    cron_id, run1 = await _cron_run(client, world, "report")
+    assert not (await _report(tc, run1, panel=PANEL))[0]
+    await _finish(world.manager.id, run1)
+    run2 = await _run_now(client, cron_id)
+
+    prompt = await _prompt(run2.cron_run_id)
+    first = await _stored_run(run1)
+    assert "## The last panel" in prompt
+    assert f"From the run of {first.scheduled_at:%Y-%m-%d %H:%M} UTC" in prompt
+    assert '<untrusted source="last panel">' in prompt
+    assert json.dumps(service.unwrap(first.panel)) in prompt
+    assert prompt.index("## The last run's report") < prompt.index("## The last panel") < prompt.index("## The job")
+
+
+async def test_a_run_without_a_panel_does_not_lose_it(client, db, world, tc_factory):
+    tc = tc_factory(lifespan=True)
+    cron_id, run1 = await _cron_run(client, world, "report")
+    assert not (await _report(tc, run1, panel=PANEL))[0]
+    await _finish(world.manager.id, run1)
+    run2 = await _run_now(client, cron_id)
+    assert not (await _report(tc, run2))[0]
+    await _finish(world.manager.id, run2)
+    run3 = await _run_now(client, cron_id)
+
+    prompt = await _prompt(run3.cron_run_id)
+    first = await _stored_run(run1)
+    assert f"From the run of {first.scheduled_at:%Y-%m-%d %H:%M} UTC" in prompt
+    assert json.dumps(service.unwrap(first.panel)) in prompt
+
+
+async def test_no_earlier_panel_leaves_it_out(client, db, world, tc_factory):
+    tc = tc_factory(lifespan=True)
+    cron_id, run1 = await _cron_run(client, world, "report")
+    assert not (await _report(tc, run1))[0]
+    await _finish(world.manager.id, run1)
+    run2 = await _run_now(client, cron_id)
+
+    prompt = await _prompt(run2.cron_run_id)
+    assert "## The last run's report" in prompt
+    assert "## The last panel" not in prompt
