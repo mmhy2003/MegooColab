@@ -40,4 +40,16 @@ describe("theme tokens", () => {
     }
     expect(css).not.toMatch(/^\s*\.dark\s*\{/m); // dark mode is data-theme, never a .dark class
   });
+
+  it("has four chart colours in each theme", () => {
+    const block = (selector: string) => css.slice(css.indexOf(selector), css.indexOf("}", css.indexOf(selector)));
+    const light = block(':root[data-theme="light"] {');
+    const dark = block(':root[data-theme="dark"] {');
+    for (const line of ["--chart-1: #0090a8;", "--chart-2: #d4004f;", "--chart-3: #6d28d9;", "--chart-4: #b7791f;"]) {
+      expect(light).toContain(line);
+    }
+    for (const line of ["--chart-1: #0aa5c0;", "--chart-2: #ff3d81;", "--chart-3: #a06bf0;", "--chart-4: #c98500;"]) {
+      expect(dark).toContain(line);
+    }
+  });
 });
