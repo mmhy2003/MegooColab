@@ -155,6 +155,23 @@ func TestReconnectsAfterDrop(t *testing.T) {
 	}
 }
 
+func TestReconnectCapShortensTheDelay(t *testing.T) {
+	s := testserver.New(t, token)
+	c := newTestClient(t, s, token)
+	c.BackoffBase = time.Hour
+	c.BackoffMax = time.Hour
+	c.ReconnectCap = func() time.Duration { return 20 * time.Millisecond }
+	start(t, c)
+	s.WaitConnected(t, 1)
+	s.WaitFrame(t, "hello")
+	dropped := time.Now()
+	s.Close(1011, "bye")
+	s.WaitConnected(t, 2)
+	if waited := time.Since(dropped); waited > 2*time.Second {
+		t.Fatalf("reconnected after %s, want under 2s", waited)
+	}
+}
+
 func TestStopsOn4401(t *testing.T) {
 	s := testserver.New(t, token)
 	s.RejectWith(protocol.CloseUnauthorized)
