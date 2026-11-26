@@ -12,6 +12,9 @@ Lock order. Every transaction that changes workflow state or ends a workflow run
 TaskEvent inserts take FOR KEY SHARE on the task (the FK check), which conflicts with none of these. A
 transaction touching several tasks takes them in task id order (stop_runs_before_delete locks all tasks, then
 all workflows, then all runs; the runner-loss paths go run by run in task id order, without step 1).
+Nothing that calls an AI provider runs under these locks: a queued run's Knowledge Base and Memory sections are
+added after the commit, in dispatch_pending (app/agent_runs/late_context.py), which takes the run row alone, for one
+UPDATE.
 """
 
 import contextvars
@@ -494,6 +497,7 @@ async def enqueue(
         reports=None if round_review else await _implementer_reports(db, task.id, role, step),
         records=await run_records.review_records(db, task.id, role, step),
     )
+    context_at = len(prompt)  # the late sections go here, before any resume note (late_context)
     key = session_key(role, step)
     # a fresh-by-design role has no stored session; an answer resumes the asking run's own (resume_session_ref)
     session = resume_session_ref or (wf.sessions.get(key) if key else None)
@@ -522,6 +526,7 @@ async def enqueue(
         resume_session_ref=session,
         resume_prompt=text if session else None,
         methodology_version_id=meth.id,
+        context_at=context_at,
         created_at=_now(),  # not the transaction's start time: latest_run relies on creation order
     )
     db.add(run)

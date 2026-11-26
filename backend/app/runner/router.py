@@ -12,6 +12,8 @@ from sqlalchemy import select
 from app.agent_runs.models import AgentRun
 from app.agent_runs.service import (
     apply_update,
+    apply_updates,
+    claim_held_runs,
     dispatch_pending,
     fail_disconnected_runs,
     fail_unclaimed_runs,
@@ -27,6 +29,8 @@ from app.hub import importing as hub_importing
 from app.hub import machines as hub_machines
 from app.projects.models import Project
 from app.ratelimit.ws import CLOSE_RATE_LIMITED, connect_allowed
+from app.runner import grace
+from app.runner.inbox import Inbox
 from app.runner.protocol import (
     CLOSE_IDLE,
     CLOSE_PROTOCOL_ERROR,
@@ -35,7 +39,9 @@ from app.runner.protocol import (
     AgentStatus,
     ConfigChanged,
     Hello,
+    RunCancel,
     RunFinished,
+    RunsHeld,
     RunSteerResult,
     RunUpdate,
     ToolsDrift,
@@ -46,7 +52,7 @@ from app.runner.protocol import (
     WelcomeBinding,
     runner_message,
 )
-from app.runner.registry import RunnerClosed, RunnerConn, registry
+from app.runner.registry import RESUME_CAPABILITY, RunnerClosed, RunnerConn, registry
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -109,6 +115,7 @@ async def build_welcome(user_id: uuid.UUID, token_id: uuid.UUID) -> Welcome:
                 )
                 for a in agents
             ],
+            grace_seconds=grace.seconds(),
         )
 
 
@@ -233,19 +240,25 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
     except (ValueError, ValidationError):
         return False
     conn.touch()
+    await _apply(conn, msg)
+    return True
+
+
+async def _apply(conn: RunnerConn, msg) -> None:
+    """Apply one valid runner message (the inbox's worker calls it, in the order the messages arrived)."""
     if isinstance(msg, Hello):
         conn.capabilities = set(msg.capabilities)
         conn.version, conn.os = msg.runner_version, msg.os
         await _remember_machine(conn, msg.os)
         if "tools/1" in conn.capabilities:
             await _hub(conn, lambda db, token: hub_machines.deliver(db, token))
-        await _fail_unclaimed(conn)
+        if not (RESUME_CAPABILITY in conn.capabilities and grace.seconds() > 0):
+            await _fail_unclaimed(conn)  # a resume/1 runner's runs_held settles them instead
         await _apply_reports(conn, msg.agents)
     elif isinstance(msg, AgentStatus):
         await _apply_reports(conn, [msg])
     elif isinstance(msg, RunUpdate):
-        if await _on_this_machine(conn, msg.run_id):
-            await _run_message(apply_update, conn.user_id, msg.run_id, msg.seq, msg.kind, msg.data)
+        await _run_updates(conn, [msg])
     elif isinstance(msg, RunFinished):
         if await _on_this_machine(conn, msg.run_id):
             await _run_message(finish_run, conn.user_id, msg.run_id, msg.outcome, msg.summary, msg.error, msg)
@@ -263,8 +276,50 @@ async def _handle(conn: RunnerConn, text: str) -> bool:
             )
 
             await _run_message(instructions.on_steer_result, msg.run_id, msg.message_id, msg.outcome, msg.error)
-    # Heartbeat only refreshes last_seen
-    return True
+    elif isinstance(msg, RunsHeld):
+        await _runs_held(conn, msg)
+    # Heartbeat only refreshes last_seen (the inbox's reader does that)
+
+
+def _holds_runs(conn: RunnerConn) -> bool:
+    """A connection that ended whose running runs wait for the runner to come back instead of failing now."""
+    return (grace.seconds() > 0 and conn.close_code != CLOSE_UNAUTHORIZED
+            and (RESUME_CAPABILITY in conn.capabilities or grace.pending(conn.token_id)))
+
+
+async def _runs_held(conn: RunnerConn, msg: RunsHeld) -> None:
+    """The runner lists the runs it still holds: they are this connection's; a listed run that is no longer running
+    gets run_cancel; the running runs it did not list fail; the token's deadline is settled."""
+    try:
+        async with SessionLocal() as db:
+            stale = await claim_held_runs(db, conn, msg.runs)
+        for run_id in stale:
+            with contextlib.suppress(RunnerClosed):
+                await conn.send(RunCancel(run_id=run_id))
+        await _fail_unclaimed(conn)
+    finally:
+        conn.runs_held_seen = True
+        grace.cancel(conn.token_id)
+    await _dispatch(conn.user_id)
+
+
+async def _run_updates(conn: RunnerConn, updates: list[RunUpdate]) -> None:
+    """A batch of run updates in one transaction, one task.updated per task; if it fails, one by one as before."""
+    allowed: dict[uuid.UUID, bool] = {}
+    for u in updates:
+        if u.run_id not in allowed:
+            allowed[u.run_id] = await _on_this_machine(conn, u.run_id)
+    mine = [u for u in updates if allowed[u.run_id]]
+    if not mine:
+        return
+    try:
+        async with SessionLocal() as db:
+            await apply_updates(db, conn.user_id, mine)
+            await db.commit()
+    except Exception:
+        log.exception("runner: a batch of %d run updates failed; applying them one by one", len(mine))
+        for u in mine:
+            await _run_message(apply_update, conn.user_id, u.run_id, u.seq, u.kind, u.data)
 
 
 async def _on_this_machine(conn: RunnerConn, run_id: uuid.UUID) -> bool:
@@ -295,6 +350,7 @@ async def runner_socket(websocket: WebSocket) -> None:
     # subscribe before authorizing so nothing published after the handshake is missed
     queue = hub.subscribe()
     conn: RunnerConn | None = None
+    inbox: Inbox | None = None
     raw = _bearer(websocket)
     try:
         who = await _authorize(raw)
@@ -305,7 +361,8 @@ async def runner_socket(websocket: WebSocket) -> None:
         user_id, token_id = who
         conn = await registry.connect(token_id, user_id, websocket)
         await _send_welcome(conn, announce_change=False)
-        await _serve(conn, queue, raw)
+        inbox = Inbox(conn, _apply, _run_updates)
+        await _serve(conn, queue, raw, inbox)
     except (WebSocketDisconnect, RunnerClosed):  # the runner went away
         pass
     finally:
@@ -313,13 +370,22 @@ async def runner_socket(websocket: WebSocket) -> None:
         if conn is not None:
             registry.disconnect(conn)
             # shielded: a cancelled handler (server shutdown) must still fail its runs
-            await asyncio.shield(asyncio.ensure_future(_cleanup(conn)))
+            await asyncio.shield(asyncio.ensure_future(_cleanup(conn, inbox)))
 
 
-async def _cleanup(conn: RunnerConn) -> None:
+async def _cleanup(conn: RunnerConn, inbox: Inbox | None = None) -> None:
     lost = set(conn.available)
+    # a run_finished queued before the drop still ends its run; a revoked token's messages are not applied
+    if inbox is not None and conn.close_code != CLOSE_UNAUTHORIZED:
+        try:
+            await inbox.drain()
+        except Exception:
+            log.exception("runner disconnect: applying queued run messages failed")
     try:
-        await _fail_runs(conn)
+        if _holds_runs(conn):  # the runner may come back within the grace period and list them in runs_held
+            grace.hold(conn.token_id, conn.user_id, set(conn.run_ids))
+        else:
+            await _fail_runs(conn)
     except Exception:  # never let cleanup raise, but do not hide it
         log.exception("runner disconnect: failing running runs failed")
     try:
@@ -328,9 +394,11 @@ async def _cleanup(conn: RunnerConn) -> None:
         log.exception("runner disconnect: publishing availability failed")
 
 
-async def _serve(conn: RunnerConn, queue: asyncio.Queue[Event], raw: str | None) -> None:
-    ws = conn.socket
-    recv = asyncio.create_task(ws.receive())
+async def _serve(conn: RunnerConn, queue: asyncio.Queue[Event], raw: str | None, inbox: Inbox | None = None) -> None:
+    """Until the runner goes away: its messages are read and applied by the inbox (so the socket keeps being read
+    however slow the database is), while this loop follows the hub's events, the idle limit and the token."""
+    inbox = inbox or Inbox(conn, _apply, _run_updates)
+    inbox.start()
     event = asyncio.create_task(queue.get())
     replaced = asyncio.create_task(conn.closed.wait())
     next_check = time.monotonic() + REVALIDATE_EVERY_SECONDS
@@ -339,20 +407,15 @@ async def _serve(conn: RunnerConn, queue: asyncio.Queue[Event], raw: str | None)
             now = time.monotonic()
             timeout = max(0.0, min(next_check - now, conn.last_seen + IDLE_TIMEOUT_SECONDS - now))
             done, _ = await asyncio.wait(
-                {recv, event, replaced}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+                {inbox.worker, event, replaced}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
             )
             if replaced in done:
                 return  # already closed with 4409
-            recheck = False
-            if recv in done:
-                message = recv.result()
-                if message["type"] == "websocket.disconnect":
-                    return
-                text = message.get("text")
-                if text is None or not await _handle(conn, text):
+            if inbox.worker in done:  # the runner went away, or sent what is not a valid message
+                if inbox.end is not None and inbox.end.invalid:
                     await conn.close(CLOSE_PROTOCOL_ERROR)
-                    return
-                recv = asyncio.create_task(ws.receive())
+                return
+            recheck = False
             if event in done:
                 ev: Event = event.result()
                 event = asyncio.create_task(queue.get())
@@ -375,4 +438,5 @@ async def _serve(conn: RunnerConn, queue: asyncio.Queue[Event], raw: str | None)
                     await conn.close(CLOSE_UNAUTHORIZED)
                     return
     finally:
-        await _cancel(recv, event, replaced)
+        await inbox.stop()
+        await _cancel(event, replaced)

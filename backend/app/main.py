@@ -24,6 +24,7 @@ from app.agent_runs.service import fail_orphaned_runs
 from app.agents.router import admin_router as admin_agents_router
 from app.agents.router import project_agents_router
 from app.agents.router import router as agents_router
+from app.ai.client import usage_written
 from app.ai.router import router as ai_router
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
@@ -63,6 +64,7 @@ from app.ratelimit.middleware import RateLimitMiddleware
 from app.ratelimit.router import router as rate_limits_router
 from app.ratelimit.store import RateLimited, rate_limited_response
 from app.realtime.router import router as realtime_router
+from app.runner import grace
 from app.runner.router import router as runner_router
 from app.search.router import router as search_router
 from app.setup.router import router as setup_router
@@ -122,6 +124,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.wait_for(hub.ready.wait(), timeout=10)
     except TimeoutError:
         log.error("event hub not connected yet; live updates start once the database is reachable")
+    # runs still running from before a restart wait for their runner, and fail if it never returns (MC-214)
+    try:
+        await grace.hold_at_startup()
+    except Exception:
+        log.exception("runner grace: scheduling startup deadlines failed")
     # agent-to-agent questions are routed here: runner connections live in this process (A2A-2)
     stop_routing = asyncio.Event()
     routing_task = asyncio.create_task(route_loop(stop_routing))
@@ -141,6 +148,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await asyncio.wait_for(cron_task, 5)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(trigger_task, 5)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(usage_written(), 5)
+        grace.cancel_all()  # no runner's deadline outlives the app
         await hub.stop()
 
 

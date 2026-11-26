@@ -68,7 +68,7 @@ func TestHelloAdvertisesWorkflowCapability(t *testing.T) {
 	if err := json.Unmarshal(s.WaitFrame(t, "hello").Raw, &hello); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(hello.Capabilities, ",") != "workflow/1,branch/1,model/1,steer/1,tools/1,omp/1,images/1,drafts/1,secrets/1,crons/1,stagemodel/1" {
+	if strings.Join(hello.Capabilities, ",") != "workflow/1,branch/1,model/1,steer/1,tools/1,omp/1,images/1,drafts/1,secrets/1,crons/1,stagemodel/1,resume/1" {
 		t.Fatalf("capabilities = %v", hello.Capabilities)
 	}
 }
@@ -152,6 +152,23 @@ func TestReconnectsAfterDrop(t *testing.T) {
 				t.Fatalf("connections = %d", s.Connections())
 			}
 		})
+	}
+}
+
+func TestReconnectCapShortensTheDelay(t *testing.T) {
+	s := testserver.New(t, token)
+	c := newTestClient(t, s, token)
+	c.BackoffBase = time.Hour
+	c.BackoffMax = time.Hour
+	c.ReconnectCap = func() time.Duration { return 20 * time.Millisecond }
+	start(t, c)
+	s.WaitConnected(t, 1)
+	s.WaitFrame(t, "hello")
+	dropped := time.Now()
+	s.Close(1011, "bye")
+	s.WaitConnected(t, 2)
+	if waited := time.Since(dropped); waited > 2*time.Second {
+		t.Fatalf("reconnected after %s, want under 2s", waited)
 	}
 }
 

@@ -84,8 +84,9 @@ async def test_provider_registered_after_kb(client, db):
     kb_context.register()
     mem_context.register()
     mem_context.register()
-    providers = context.context_providers
+    providers = context.late_providers
     assert providers.count(mem_context.memory_context) == 1
+    assert mem_context.memory_context not in context.context_providers
     assert providers.index(kb_context.kb_context) < providers.index(mem_context.memory_context)
 
 

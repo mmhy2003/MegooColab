@@ -53,6 +53,9 @@ type Client struct {
 	// messages of that connection may still be queued in Messages(). The server fails a run when its runner disconnects, so callers
 	// stop their in-flight work here.
 	OnDisconnect func(error)
+	// ReconnectCap, if set and it returns > 0, means no reconnect waits longer
+	// than that (the jobs manager caps it while it holds runs through a drop).
+	ReconnectCap func() time.Duration
 
 	cfg      config.Config
 	version  string
@@ -139,6 +142,11 @@ func (c *Client) Run(ctx context.Context) error {
 			c.OnDisconnect(err)
 		}
 		delay := backoffDelay(c.BackoffBase, c.BackoffMax, attempt, c.Jitter())
+		if c.ReconnectCap != nil {
+			if cp := c.ReconnectCap(); cp > 0 && delay > cp {
+				delay = cp
+			}
+		}
 		attempt++
 		c.state(fmt.Sprintf("reconnecting in %s (%v)", delay.Round(time.Millisecond), err))
 		select {

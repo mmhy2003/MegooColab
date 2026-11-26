@@ -7,6 +7,7 @@ import litellm
 import pytest
 from sqlalchemy import select, update
 
+from app.agent_runs import late_context
 from app.auth.models import Role
 from app.core.config import get_settings
 from app.core.db import SessionLocal
@@ -153,7 +154,7 @@ async def test_unrelated_documents_stay_out_of_prompts_and_search(client, db):
     assert "Login button" in section and "Holiday" not in section
 
 
-async def test_kb_section_is_trimmed_before_the_thread(client, db, monkeypatch):
+async def test_kb_section_is_left_out_before_the_description_is_cut(client, db, monkeypatch):
     task, _, org, _ = await _world(client, db)
     await _doc(client, db, org.id, "Webhook secrets", "Rotate webhook secrets. " * 300)
     kb_context.register()
@@ -163,6 +164,8 @@ async def test_kb_section_is_trimmed_before_the_thread(client, db, monkeypatch):
     task.description_md = "Webhook secrets expire. " * 200
     await db.commit()
     prompt, _ = await context.build_prompt(db, task, RunRole.brainstorm)
+    sections = await context.late_sections(db, task, RunRole.brainstorm)
+    prompt = late_context.insert_sections(prompt, len(prompt), sections)
     assert "## Knowledge Base" not in prompt
     assert "Webhook secrets expire." in prompt
 
@@ -203,6 +206,7 @@ async def test_failing_context_provider_does_not_break_the_prompt(client, db, mo
 
 @pytest.fixture(autouse=True)
 def _restore_providers():
-    saved = list(context.context_providers)
+    saved, saved_late = list(context.context_providers), list(context.late_providers)
     yield
     context.context_providers[:] = saved
+    context.late_providers[:] = saved_late

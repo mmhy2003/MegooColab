@@ -205,8 +205,25 @@ class ToolsFound(_FromRunner):
     items: list[FoundTool] = Field(default=[], max_length=500)
 
 
+class RunsHeld(_FromRunner):
+    """A resume/1 runner's runs still going after a drop: sent once per connection, after its first welcome with a
+    grace period, also when empty."""
+
+    type: Literal["runs_held"]
+    runs: list[uuid.UUID] = Field(default=[], max_length=200)
+
+
 RunnerMessage = Annotated[
-    Hello | Heartbeat | AgentStatus | RunUpdate | RunFinished | RunSteerResult | ToolsReport | ToolsDrift | ToolsFound,
+    Hello
+    | Heartbeat
+    | AgentStatus
+    | RunUpdate
+    | RunFinished
+    | RunSteerResult
+    | ToolsReport
+    | ToolsDrift
+    | ToolsFound
+    | RunsHeld,
     Field(discriminator="type"),
 ]
 runner_message = TypeAdapter(RunnerMessage)
@@ -231,6 +248,7 @@ class Welcome(BaseModel):
     type: Literal["welcome"] = "welcome"
     user_id: uuid.UUID
     agents: list[WelcomeAgent]
+    grace_seconds: int = 0  # how long the runner may keep its runs going after a drop; 0: stop them at once
 
 
 class RunTask(BaseModel):

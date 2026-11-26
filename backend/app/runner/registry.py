@@ -40,6 +40,8 @@ CRONS_CAPABILITY = "crons/1"
 # even to a resumed session
 STAGE_MODEL_CAPABILITY = "stagemodel/1"
 STAGE_MODEL_PROBLEM = "runner too old to choose a model per stage — update megoocolab-runner"
+# the runner keeps its runs through a drop of up to welcome.grace_seconds and lists them in runs_held
+RESUME_CAPABILITY = "resume/1"
 
 
 class RunnerClosed(Exception):
@@ -63,6 +65,7 @@ class RunnerConn:
         self.version: str | None = None  # from the hello: megoocolab-runner's version and operating system
         self.os: str | None = None
         self.run_ids: set[uuid.UUID] = set()  # runs dispatched over this connection
+        self.runs_held_seen = False  # this connection's runner sent runs_held
 
     @property
     def available(self) -> frozenset[uuid.UUID]:

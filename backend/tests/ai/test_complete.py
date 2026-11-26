@@ -57,6 +57,7 @@ async def test_complete_calls_litellm_and_records_usage(client, db, real_mode, m
     assert out == '{"a":1}'
     assert seen["model"] == "openai/gpt-x" and seen["response_format"] == {"type": "json_object"}
     assert seen["timeout"] == 9 and seen["max_tokens"] == 50 and seen["api_key"] == "sk"
+    await ai.usage_written()
     row = (await db.execute(select(AiUsage))).scalar_one()
     assert (row.job, row.input_tokens, row.output_tokens, row.ok) == ("extraction", 7, 3, True)
 
@@ -71,6 +72,7 @@ async def test_complete_failure_recorded_and_raised(client, db, real_mode, monke
     monkeypatch.setattr(litellm, "acompletion", boom)
     with pytest.raises(RuntimeError):
         await ai.complete(db, "extraction", [{"role": "user", "content": "hi"}])
+    await ai.usage_written()
     row = (await db.execute(select(AiUsage))).scalar_one()
     assert (row.ok, row.error_code) == (False, "RuntimeError")
 
@@ -86,6 +88,7 @@ async def test_complete_fake_mode_uses_registered_fake_and_raises_without_one(db
     monkeypatch.delitem(ai.FAKE_COMPLETIONS, "dreaming", raising=False)
     with pytest.raises(ai.AiNotConfigured):
         await ai.complete(db, "dreaming", [{"role": "user", "content": "q"}])
+    await ai.usage_written()
     rows = (await db.execute(select(AiUsage))).scalars().all()
     assert [(r.job, r.cost_usd) for r in rows] == [("answering", 0.0)]
 

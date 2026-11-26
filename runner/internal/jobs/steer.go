@@ -62,7 +62,7 @@ func (m *Manager) HandleRunSteer(s protocol.RunSteer) {
 	r := m.runs[s.RunID]
 	m.mu.Unlock()
 	if r == nil || r.stale() {
-		_ = m.send(protocol.NewRunSteerResult(s.RunID, s.MessageID, protocol.SteerNotRunning, ""))
+		m.sendRun(protocol.NewRunSteerResult(s.RunID, s.MessageID, protocol.SteerNotRunning, ""))
 		return
 	}
 	r.queueSteer(s)
@@ -72,7 +72,7 @@ func (r *run) answerSteer(s protocol.RunSteer, outcome, errMsg string) {
 	if r.stale() {
 		return
 	}
-	_ = r.m.send(protocol.NewRunSteerResult(r.id, s.MessageID, outcome, truncate(r.blankText(errMsg), 200)))
+	r.m.sendRun(protocol.NewRunSteerResult(r.id, s.MessageID, outcome, truncate(r.blankText(errMsg), 200)))
 }
 
 func (r *run) queueSteer(s protocol.RunSteer) {

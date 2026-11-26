@@ -92,7 +92,7 @@ func TestWireFieldNames(t *testing.T) {
 
 func TestListsNeverNull(t *testing.T) {
 	data, _ := json.Marshal(NewHello("1", "linux", "amd64", nil))
-	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1","omp/1","images/1","drafts/1","secrets/1","crons/1","stagemodel/1"]}` {
+	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1","omp/1","images/1","drafts/1","secrets/1","crons/1","stagemodel/1","resume/1"]}` {
 		t.Fatalf("hello = %s", data)
 	}
 	data, _ = json.Marshal(NewHello("1", "l", "a", []AgentAvailability{{AgentID: "x"}}))
@@ -200,6 +200,16 @@ func TestHelloAdvertisesStageModel(t *testing.T) {
 	t.Fatalf("capabilities = %v, want stagemodel/1", h.Capabilities)
 }
 
+func TestHelloAdvertisesResume(t *testing.T) {
+	h := NewHello("1", "linux", "amd64", nil)
+	for _, c := range h.Capabilities {
+		if c == "resume/1" {
+			return
+		}
+	}
+	t.Fatalf("capabilities = %v, want resume/1", h.Capabilities)
+}
+
 func TestRunStartDecodesModelChoice(t *testing.T) {
 	var rs RunStart
 	if err := json.Unmarshal([]byte(`{"type":"run_start","run_id":"r","model_choice":{"model":"","effort":"max"}}`), &rs); err != nil {
@@ -214,5 +224,39 @@ func TestRunStartDecodesModelChoice(t *testing.T) {
 	}
 	if plain.ModelChoice != nil {
 		t.Fatalf("no model_choice sent, got %+v", plain.ModelChoice)
+	}
+}
+
+func TestRunsHeldShape(t *testing.T) {
+	b, err := json.Marshal(NewRunsHeld(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(b), `{"type":"runs_held","runs":[]}`; got != want {
+		t.Fatalf("runs_held = %s, want %s", got, want)
+	}
+}
+
+func TestRunsHeldIsBounded(t *testing.T) {
+	ids := make([]string, 250)
+	for i := range ids {
+		ids[i] = strings.Repeat("r", i+1)
+	}
+	held := NewRunsHeld(ids)
+	if len(held.Runs) != RunsHeldLimit || RunsHeldLimit != 200 {
+		t.Fatalf("runs = %d, want 200", len(held.Runs))
+	}
+	if held.Runs[0] != ids[0] || held.Runs[199] != ids[199] {
+		t.Fatal("runs_held must keep the first RunsHeldLimit runs")
+	}
+}
+
+func TestWelcomeCarriesGraceSeconds(t *testing.T) {
+	var w Welcome
+	if err := json.Unmarshal([]byte(`{"type":"welcome","user_id":"u","agents":[],"grace_seconds":60}`), &w); err != nil {
+		t.Fatal(err)
+	}
+	if w.GraceSeconds != 60 {
+		t.Fatalf("grace_seconds = %d, want 60", w.GraceSeconds)
 	}
 }

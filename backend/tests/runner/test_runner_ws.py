@@ -126,6 +126,7 @@ async def test_welcome_lists_agents_and_bindings(db, tc_factory):
                     "effort": None,
                 }
             ],
+            "grace_seconds": 60,
         }
 
 

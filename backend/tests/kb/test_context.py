@@ -60,9 +60,11 @@ async def test_context_in_built_prompt(client, db):
     await _doc(client, db, org.id, "Webhook secrets", "Rotate webhook secrets.")
     kb_context.register()
     kb_context.register()  # idempotent
-    assert context.context_providers.count(kb_context.kb_context) == 1
+    assert context.late_providers.count(kb_context.kb_context) == 1
+    assert kb_context.kb_context not in context.context_providers
     prompt, _ = await context.build_prompt(db, task, RunRole.brainstorm)
-    assert "## Knowledge Base" in prompt
+    assert "## Knowledge Base" not in prompt  # added after the commit (late_context), never under the locks
+    assert "## Knowledge Base" in "\n\n".join(await context.late_sections(db, task, RunRole.brainstorm))
 
 
 async def test_context_respects_owner_access(client, db):
