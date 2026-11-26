@@ -31,10 +31,14 @@ from app.workflow.models import (
 log = logging.getLogger(__name__)
 
 ContextProvider = Callable[[AsyncSession, Task, RunRole], Awaitable[str | None]]
-# Plans 4 and 5 append providers here; each returns a section (or None) to add after the built-in ones.
+# each returns a section (or None) to add after the built-in ones. They run under the task and workflow locks, so
+# they only read the DB: anything that calls an AI provider goes in `late_providers`
 context_providers: list[ContextProvider] = []
 # what a resumed session is handed after its resume text (it never sees the full prompt's sections again)
 resume_providers: list[ContextProvider] = []
+# providers that may call an AI provider (the Knowledge Base and Memory): they never run under row locks. Their
+# sections are added after the commit that queued the run (app/agent_runs/late_context.py), so they must only read
+late_providers: list[ContextProvider] = []
 
 ROLE_KEY: dict[RunRole, str] = {
     RunRole.brainstorm: "brainstorm",
@@ -230,6 +234,11 @@ async def resume_extra(db: AsyncSession, task: Task, role: RunRole) -> str | Non
     return "\n\n".join(parts) or None
 
 
+async def late_sections(db: AsyncSession, task: Task, role: RunRole) -> list[str]:
+    """The late providers' sections, in order; a failing provider is logged and skipped."""
+    return [s for p in late_providers if (s := await _provided(db, task, role, p))]
+
+
 async def _files_section(db: AsyncSession, task: Task) -> str | None:
     """The files in the task's Attachments: they never reach the agent by themselves, so it is told they are there
     and how to get them. Their names are the person's text."""
@@ -369,7 +378,7 @@ async def build_prompt(
     prompt = render()
     while len(prompt) > MAX_PROMPT_CHARS:
         over = len(prompt) - MAX_PROMPT_CHARS
-        if extra:  # optional context (the Knowledge Base) goes before anything about the task itself
+        if extra:  # optional context (other projects, earlier rounds) goes before anything about the task itself
             extra.pop()
         elif thread:
             thread.pop(0)

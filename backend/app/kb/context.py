@@ -67,5 +67,5 @@ async def kb_context(db: AsyncSession, task: Task, role: RunRole) -> str | None:
 
 
 def register() -> None:
-    if kb_context not in context.context_providers:
-        context.context_providers.append(kb_context)
+    if kb_context not in context.late_providers:
+        context.late_providers.append(kb_context)

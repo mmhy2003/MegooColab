@@ -279,6 +279,8 @@ async def _claim_next(
                 select(AgentRun)
                 .where(AgentRun.agent_id == agent.id, AgentRun.status == RunStatus.queued, ~task_running,
                        ~question_running, ~draft_running, ~cron_run_running,
+                       # a run waiting for its late sections goes once they are in (late_context)
+                       AgentRun.context_at.is_(None),
                        runnable)
                 .order_by(AgentRun.created_at, AgentRun.id)
                 .limit(1)
@@ -560,7 +562,11 @@ async def dispatch_pending(db: AsyncSession, owner_id: uuid.UUID) -> None:
     """Send run_start for each available agent's oldest queued runs, up to its free slots.
 
     Commits the session it is given (claim, then send, then record), so call it with a session of its own.
+    The owner's queued runs get their late prompt sections (Knowledge Base, Memory) first, with no row lock held.
     """
+    from app.agent_runs.late_context import fill_pending  # local: late_context imports the workflow modules, which import this one
+
+    await fill_pending(owner_id)
     for conn in registry.conns_for_user(owner_id):  # each of the owner's machines
         await _send_pending(db, conn, owner_id)
     # a run that could not be started ends here, and its question may have gone to another owner's agent
