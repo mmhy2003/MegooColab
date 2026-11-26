@@ -345,6 +345,12 @@ async def runner_socket(websocket: WebSocket) -> None:
 
 async def _cleanup(conn: RunnerConn, inbox: Inbox | None = None) -> None:
     lost = set(conn.available)
+    # a run_finished queued before the drop still ends its run; a revoked token's messages are not applied
+    if inbox is not None and conn.close_code != CLOSE_UNAUTHORIZED:
+        try:
+            await inbox.drain()
+        except Exception:
+            log.exception("runner disconnect: applying queued run messages failed")
     try:
         await _fail_runs(conn)
     except Exception:  # never let cleanup raise, but do not hide it

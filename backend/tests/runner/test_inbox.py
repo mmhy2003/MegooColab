@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 import time
 
 from sqlalchemy import func, select
@@ -12,7 +13,9 @@ from websockets.protocol import State
 import app.runner.router as rr
 from app.core.db import SessionLocal
 from app.tasks.models import TaskEvent
+from tests.agent_runs.test_dispatch import _avail, _setup, _start, _wait_run
 from tests.runner.live import live_server, running_runs, runner_socket
+from tests.runner.test_runner_ws import URL, _expect_close, _hello, _manager_with_project
 
 
 def _stall(monkeypatch) -> asyncio.Event:
@@ -113,3 +116,69 @@ async def test_two_runs_streaming_on_one_socket_both_finish(client, db, monkeypa
     for run_id in runs:
         titles = [e.data["title"] for e in events if e.data["run_id"] == str(run_id)]
         assert titles == [f"Read {seq}" for seq in range(1, 51)]
+
+
+def _stall_threaded(monkeypatch) -> threading.Event:
+    """As _stall, for TestClient tests: the app's loop runs in another thread, so the test sets a threading.Event."""
+    release = threading.Event()
+    original = rr._on_this_machine
+
+    async def _stalled(conn, run_id):
+        while not release.is_set():
+            await asyncio.sleep(0.01)
+        return await original(conn, run_id)
+
+    monkeypatch.setattr(rr, "_on_this_machine", _stalled)
+    return release
+
+
+def _queue_finished_behind_a_stalled_update(tc, ws, agent, task, monkeypatch) -> tuple[dict, threading.Event]:
+    """The run is running; its update stalls in the worker and its run_finished (completed) waits behind it."""
+    run = _start(tc, task)
+    ws.receive_json()
+    ws.send_json(_hello([_avail(agent)]))
+    assert ws.receive_json()["run_id"] == run["id"]
+    _wait_run(tc, task, run["id"], "running")
+    release = _stall_threaded(monkeypatch)
+    ws.send_text(_tool(run["id"], 1))
+    ws.send_json({"type": "run_finished", "run_id": run["id"], "outcome": "completed", "summary": "done"})
+    time.sleep(0.3)  # both are read and queued
+    return run, release
+
+
+async def test_a_run_finished_queued_before_the_socket_is_replaced_completes_the_run(db, tc_factory, monkeypatch):
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    release = threading.Event()
+    try:
+        with tc.websocket_connect(URL, headers=token["headers"]) as first:
+            run, release = _queue_finished_behind_a_stalled_update(tc, first, agent, task, monkeypatch)
+            with tc.websocket_connect(URL, headers=token["headers"]) as second:
+                second.receive_json()
+                _expect_close(first, 4409)
+                release.set()
+                _wait_run(tc, task, run["id"], "completed")
+    finally:
+        release.set()
+    out = tc.get(f"/api/tasks/{task['key']}/agent-runs").json()[0]
+    assert out["status"] == "completed" and out["reason"] is None
+
+
+async def test_unauthorized_close_applies_nothing(db, tc_factory, monkeypatch):
+    tc = tc_factory(lifespan=True)
+    await _manager_with_project(db, tc)
+    token, agent, task = _setup(tc)
+    release = threading.Event()
+    try:
+        with tc.websocket_connect(URL, headers=token["headers"]) as ws:
+            run, release = _queue_finished_behind_a_stalled_update(tc, ws, agent, task, monkeypatch)
+            assert tc.delete(f"/api/tokens/{token['id']}").status_code == 204
+            _expect_close(ws, 4401)
+            release.set()
+        _wait_run(tc, task, run["id"], "cancelled")
+        time.sleep(0.3)  # cleanup has run; nothing queued may end the run another way
+    finally:
+        release.set()
+    out = tc.get(f"/api/tasks/{task['key']}/agent-runs").json()[0]
+    assert out["status"] == "cancelled" and out["reason"] == "runner_unauthorized"

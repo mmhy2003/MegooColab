@@ -132,3 +132,23 @@ class Inbox:
                 self.worker.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self.worker
+
+    async def drain(self) -> None:
+        """After stop(): apply the run messages still waiting, in order, so a run_finished that arrived before the
+        connection ended is not lost. Anything else describes a connection that is gone and is dropped."""
+        items = list(self._taken)
+        self._taken.clear()
+        while not self._queue.empty():
+            items.append(self._queue.get_nowait())
+        items = [m for m in items if isinstance(m, RUN_MESSAGES)]
+        i = 0
+        while i < len(items):
+            if isinstance(items[i], RunUpdate):
+                j = i
+                while j < len(items) and j - i < BATCH_MAX and isinstance(items[j], RunUpdate):
+                    j += 1
+                await self._apply(self._handle_updates, items[i:j], 0)
+                i = j
+            else:
+                await self._apply(self._handle, items[i], 0)
+                i += 1

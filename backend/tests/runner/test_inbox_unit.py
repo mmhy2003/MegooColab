@@ -6,7 +6,7 @@ import uuid
 
 import app.runner.inbox as inbox_module
 from app.runner.inbox import End, Inbox
-from app.runner.protocol import AgentStatus, Heartbeat, RunUpdate
+from app.runner.protocol import AgentStatus, Heartbeat, RunFinished, RunSteerResult, RunUpdate
 from app.runner.registry import RunnerConn
 
 
@@ -182,3 +182,39 @@ async def test_updates_further_apart_than_the_window_are_separate_batches(monkey
     await _ended(inbox)
     assert calls == [[1], [2]]
     await inbox.stop()
+
+
+async def test_drain_applies_only_the_run_messages_left_after_stop_in_order(monkeypatch):
+    inbox, sock, calls = _batching(monkeypatch)
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def _stalled(conn, msg):
+        if isinstance(msg, Heartbeat):
+            started.set()
+            await release.wait()
+        calls.append(msg)
+
+    inbox._handle = _stalled
+    sock.text({"type": "heartbeat"})  # being applied when stop() is called
+    for seq in range(1, 5):
+        sock.text(_update(seq))
+    sock.text({"type": "hello", "runner_version": "0.1.0", "os": "linux", "arch": "amd64", "agents": []})
+    sock.text({"type": "run_finished", "run_id": str(RUN), "outcome": "completed", "summary": "done"})
+    sock.text(_status())
+    sock.text(_update(5))
+    sock.text({"type": "run_steer_result", "run_id": str(RUN), "message_id": str(uuid.uuid4()), "outcome": "injected"})
+    inbox.start()
+    await asyncio.wait_for(started.wait(), 2)
+    await asyncio.sleep(0.05)  # everything is read
+    stopping = asyncio.create_task(inbox.stop())
+    await asyncio.sleep(0.05)
+    release.set()
+    await asyncio.wait_for(stopping, 2)
+    assert len(calls) == 1 and isinstance(calls[0], Heartbeat)
+    await inbox.drain()
+    rest = calls[1:]
+    assert rest[:2] == [[1, 2, 3], [4]]
+    assert isinstance(rest[2], RunFinished)
+    assert rest[3] == [5]
+    assert isinstance(rest[4], RunSteerResult)
+    assert len(rest) == 5
