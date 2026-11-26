@@ -13,6 +13,7 @@ from app.agent_runs.models import AgentRun
 from app.agent_runs.service import (
     apply_update,
     apply_updates,
+    claim_held_runs,
     dispatch_pending,
     fail_disconnected_runs,
     fail_unclaimed_runs,
@@ -38,6 +39,7 @@ from app.runner.protocol import (
     AgentStatus,
     ConfigChanged,
     Hello,
+    RunCancel,
     RunFinished,
     RunsHeld,
     RunSteerResult,
@@ -50,7 +52,7 @@ from app.runner.protocol import (
     WelcomeBinding,
     runner_message,
 )
-from app.runner.registry import RunnerClosed, RunnerConn, registry
+from app.runner.registry import RESUME_CAPABILITY, RunnerClosed, RunnerConn, registry
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -250,7 +252,8 @@ async def _apply(conn: RunnerConn, msg) -> None:
         await _remember_machine(conn, msg.os)
         if "tools/1" in conn.capabilities:
             await _hub(conn, lambda db, token: hub_machines.deliver(db, token))
-        await _fail_unclaimed(conn)
+        if not (RESUME_CAPABILITY in conn.capabilities and grace.seconds() > 0):
+            await _fail_unclaimed(conn)  # a resume/1 runner's runs_held settles them instead
         await _apply_reports(conn, msg.agents)
     elif isinstance(msg, AgentStatus):
         await _apply_reports(conn, [msg])
@@ -274,8 +277,30 @@ async def _apply(conn: RunnerConn, msg) -> None:
 
             await _run_message(instructions.on_steer_result, msg.run_id, msg.message_id, msg.outcome, msg.error)
     elif isinstance(msg, RunsHeld):
-        pass  # accepted for now; claiming, cancelling and failing the runs it lists comes with the grace deadlines
+        await _runs_held(conn, msg)
     # Heartbeat only refreshes last_seen (the inbox's reader does that)
+
+
+def _holds_runs(conn: RunnerConn) -> bool:
+    """A connection that ended whose running runs wait for the runner to come back instead of failing now."""
+    return (grace.seconds() > 0 and conn.close_code != CLOSE_UNAUTHORIZED
+            and (RESUME_CAPABILITY in conn.capabilities or grace.pending(conn.token_id)))
+
+
+async def _runs_held(conn: RunnerConn, msg: RunsHeld) -> None:
+    """The runner lists the runs it still holds: they are this connection's; a listed run that is no longer running
+    gets run_cancel; the running runs it did not list fail; the token's deadline is settled."""
+    try:
+        async with SessionLocal() as db:
+            stale = await claim_held_runs(db, conn, msg.runs)
+        for run_id in stale:
+            with contextlib.suppress(RunnerClosed):
+                await conn.send(RunCancel(run_id=run_id))
+        await _fail_unclaimed(conn)
+    finally:
+        conn.runs_held_seen = True
+        grace.cancel(conn.token_id)
+    await _dispatch(conn.user_id)
 
 
 async def _run_updates(conn: RunnerConn, updates: list[RunUpdate]) -> None:
@@ -357,7 +382,10 @@ async def _cleanup(conn: RunnerConn, inbox: Inbox | None = None) -> None:
         except Exception:
             log.exception("runner disconnect: applying queued run messages failed")
     try:
-        await _fail_runs(conn)
+        if _holds_runs(conn):  # the runner may come back within the grace period and list them in runs_held
+            grace.hold(conn.token_id, conn.user_id, set(conn.run_ids))
+        else:
+            await _fail_runs(conn)
     except Exception:  # never let cleanup raise, but do not hide it
         log.exception("runner disconnect: failing running runs failed")
     try:

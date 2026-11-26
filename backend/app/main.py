@@ -64,6 +64,7 @@ from app.ratelimit.middleware import RateLimitMiddleware
 from app.ratelimit.router import router as rate_limits_router
 from app.ratelimit.store import RateLimited, rate_limited_response
 from app.realtime.router import router as realtime_router
+from app.runner import grace
 from app.runner.router import router as runner_router
 from app.search.router import router as search_router
 from app.setup.router import router as setup_router
@@ -144,6 +145,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await asyncio.wait_for(trigger_task, 5)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(usage_written(), 5)
+        grace.cancel_all()  # no runner's deadline outlives the app
         await hub.stop()
 
 
