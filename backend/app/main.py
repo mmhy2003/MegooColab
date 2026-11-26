@@ -124,6 +124,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.wait_for(hub.ready.wait(), timeout=10)
     except TimeoutError:
         log.error("event hub not connected yet; live updates start once the database is reachable")
+    # runs still running from before a restart wait for their runner, and fail if it never returns (MC-214)
+    try:
+        await grace.hold_at_startup()
+    except Exception:
+        log.exception("runner grace: scheduling startup deadlines failed")
     # agent-to-agent questions are routed here: runner connections live in this process (A2A-2)
     stop_routing = asyncio.Event()
     routing_task = asyncio.create_task(route_loop(stop_routing))
