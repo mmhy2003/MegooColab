@@ -24,6 +24,7 @@ from app.agent_runs.service import fail_orphaned_runs
 from app.agents.router import admin_router as admin_agents_router
 from app.agents.router import project_agents_router
 from app.agents.router import router as agents_router
+from app.ai.client import usage_written
 from app.ai.router import router as ai_router
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
@@ -141,6 +142,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await asyncio.wait_for(cron_task, 5)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(trigger_task, 5)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(usage_written(), 5)
         await hub.stop()
 
 

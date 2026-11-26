@@ -5,6 +5,7 @@ import contextlib
 import logging
 import signal
 
+from app.ai.client import usage_written
 from app.core.db import SessionLocal
 from app.core.logs import setup_logging
 from app.jobs import queue
@@ -51,6 +52,7 @@ async def _main() -> None:
 
     # the Telegram long poll waits up to half a minute at a time: beside the job loop, never in its way
     await asyncio.gather(run_worker(stop), run_telegram_poller(stop))
+    await usage_written()
 
 
 def main() -> None:

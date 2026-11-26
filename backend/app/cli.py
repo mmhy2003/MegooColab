@@ -6,6 +6,7 @@ import sys
 
 from sqlalchemy import select
 
+from app.ai.client import usage_written
 from app.auth import two_factor
 from app.auth.models import User
 from app.core.db import SessionLocal
@@ -38,5 +39,12 @@ async def run(argv: list[str]) -> int:
     return 2
 
 
+async def _main(argv: list[str]) -> int:
+    try:
+        return await run(argv)
+    finally:
+        await usage_written()
+
+
 if __name__ == "__main__":
-    sys.exit(asyncio.run(run(sys.argv[1:])))
+    sys.exit(asyncio.run(_main(sys.argv[1:])))

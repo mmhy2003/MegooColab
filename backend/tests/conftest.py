@@ -43,6 +43,7 @@ from pwdlib.hashers.argon2 import Argon2Hasher
 from sqlalchemy import text
 
 import app.models
+from app.ai.client import usage_written
 from app.core import security
 from app.core.db import Base, SessionLocal, engine
 from app.main import create_app
@@ -125,6 +126,7 @@ async def _migrated_database():
 @pytest.fixture(autouse=True)
 async def _truncate_tables(_migrated_database):
     yield
+    await usage_written()
     tables = [t.name for t in Base.metadata.sorted_tables]
     if tables:
         async with engine.begin() as conn:
