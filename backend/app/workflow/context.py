@@ -35,6 +35,9 @@ ContextProvider = Callable[[AsyncSession, Task, RunRole], Awaitable[str | None]]
 context_providers: list[ContextProvider] = []
 # what a resumed session is handed after its resume text (it never sees the full prompt's sections again)
 resume_providers: list[ContextProvider] = []
+# providers that may call an AI provider (the Knowledge Base and Memory): they never run under row locks. Their
+# sections are added after the commit that queued the run (app/agent_runs/late_context.py), so they must only read
+late_providers: list[ContextProvider] = []
 
 ROLE_KEY: dict[RunRole, str] = {
     RunRole.brainstorm: "brainstorm",
@@ -228,6 +231,11 @@ async def resume_extra(db: AsyncSession, task: Task, role: RunRole) -> str | Non
     """The resume providers' sections, joined; None when there is nothing to add."""
     parts = [s for p in resume_providers if (s := await _provided(db, task, role, p))]
     return "\n\n".join(parts) or None
+
+
+async def late_sections(db: AsyncSession, task: Task, role: RunRole) -> list[str]:
+    """The late providers' sections, in order; a failing provider is logged and skipped."""
+    return [s for p in late_providers if (s := await _provided(db, task, role, p))]
 
 
 async def _files_section(db: AsyncSession, task: Task) -> str | None:
