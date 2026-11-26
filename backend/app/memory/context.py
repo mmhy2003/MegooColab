@@ -80,5 +80,5 @@ async def memory_context(db: AsyncSession, task: Task, role: RunRole) -> str | N
 
 
 def register() -> None:
-    if memory_context not in context.context_providers:
-        context.context_providers.append(memory_context)
+    if memory_context not in context.late_providers:
+        context.late_providers.append(memory_context)
