@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     upload_dir: str = "/data/uploads"
     public_url: str = "http://localhost:8080"
     db_null_pool: bool = False
+    # pooled connections per process, plus the overflow it may open in a burst; the worker uses 5/10. Every process's
+    # pool_size + max_overflow together must stay under PostgreSQL's max_connections (100 by default)
+    db_pool_size: int = 20
+    db_max_overflow: int = 20
     run_migrations_on_startup: bool = True
     # tests and e2e: deterministic local embeddings, no provider calls
     ai_fake: bool = False

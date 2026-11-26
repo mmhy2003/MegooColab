@@ -45,6 +45,8 @@ Then edit `.env`. Every variable:
 | `VALKEY_PASSWORD` | The password of Valkey, which keeps the rate-limit counters. Used only between the containers; any characters work. | 64 hex characters |
 | `CLIENT_IP_HEADER` | Only behind a proxy that hides visitors' addresses (a Cloudflare tunnel, ...): the header it sets with the real address, e.g. `CF-Connecting-IP` or `X-Real-IP`. Without it, every visitor would share one per-address limit. **Set it only when every request reaches MegooColab through that proxy:** anyone who can reach Caddy directly can forge the header. | *(unset)* |
 | `RATE_LIMIT_*` | The rate limits, each with a default (see "Rate limits" below). | *(unset)* |
+| `DB_POOL_SIZE` | The backend's pooled database connections (default 20). The worker keeps 5. Together with `DB_MAX_OVERFLOW`, the backend's and the worker's connections must stay under PostgreSQL's `max_connections` (100). | `20` |
+| `DB_MAX_OVERFLOW` | The extra database connections the backend may open in a burst, above `DB_POOL_SIZE` (default 20). The worker may open 10. | `20` |
 | `MEMORY_DREAM_HOUR_UTC` | The hour (0–23, UTC) the memory "dreams" each night, unless an admin sets another one under Admin → Settings. | `3` |
 | `AI_FAKE` | Tests only: local fake embeddings and no AI provider calls. Never set it in production. | *(unset)* |
 | `MEMORY_EXTRACT_DELAY_SECONDS` | Tests only: how long after a change the memory reads a source (default 60). | *(unset)* |
