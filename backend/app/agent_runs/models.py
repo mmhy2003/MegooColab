@@ -64,6 +64,9 @@ class AgentRun(IdMixin, Base):
     session_ref: Mapped[str | None] = mapped_column(String(200))
     resume_session_ref: Mapped[str | None] = mapped_column(String(200))
     resume_prompt: Mapped[str | None] = mapped_column(Text)
+    # workflow runs: where in `prompt` the Knowledge Base and Memory sections go, once added after the commit
+    # (app/agent_runs/late_context.py); None: the prompt is complete
+    context_at: Mapped[int | None]
     # the model and effort it was sent to start on (run_start.model_choice); None: the agent's, as runs always were
     model_choice: Mapped[dict | None] = mapped_column(JSONB)
     mcp_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
