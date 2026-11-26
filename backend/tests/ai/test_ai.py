@@ -111,6 +111,7 @@ async def test_embed_records_usage_and_failure(db, client, real_mode, monkeypatc
     assert vecs == [[0.0, 1.0], [1.0, 1.0]]  # ordered by index
     assert calls[0]["model"] == "openai/text-embedding-3-small"
     assert calls[0]["api_key"] == "sk-secret-123"
+    await ai.usage_written()  # rows are written in the background: let the first commit before the second starts
 
     async def boom(**kw):
         raise litellm.exceptions.AuthenticationError("bad key", llm_provider="openai", model="x")
