@@ -60,12 +60,14 @@ type Manager struct {
 	LogCap        int                               // bytes of adapter output kept per run log; default 5 MiB
 	Executable    func() (string, error)            // this runner's own executable, put first on the agent's PATH; default os.Executable
 	Log           io.Writer                         // the runner's own log (failed service removals); default io.Discard
+	GraceUnit     time.Duration                     // one second of welcome.grace_seconds; default 1 s
 	// Where a run's images are downloaded from (the server's base URL and this runner's token), and with what.
 	ServerURL  string
 	Token      string
 	HTTPClient *http.Client // default: one with a 60 s timeout per image
 
 	send      func(any) error
+	out       *outbox // a run's messages that wait for the next connection
 	cacheRoot string
 	toolsMu   sync.Mutex // one Tool Hub job (push, scan, drift check) at a time
 
@@ -79,9 +81,14 @@ type Manager struct {
 	starts   *starts           // each program's starting model, kept in the cache
 	versions map[string]string // `--version` output by program path, size and time: run once per file
 	closed   bool
-	gen      int // connection generation; bumped by StopAll
-	ended    int // highest connection number known to be lost
-	wg       sync.WaitGroup
+	gen      int           // connection generation; bumped by StopAll
+	ended    int           // highest connection number known to be lost
+	grace    time.Duration // the server's grace period from the last welcome; 0 means none
+	heldSent int           // the connection runs_held was last sent on
+	// holdTimer stops the held runs when no welcome comes within the grace period; holdID tells a stale one apart.
+	holdTimer *time.Timer
+	holdID    int
+	wg        sync.WaitGroup
 }
 
 // New builds a manager. send writes a message to the server (conn.Client.Send).
@@ -96,7 +103,9 @@ func New(send func(any) error, cacheRoot string) *Manager {
 		LogCap:      logCap,
 		Executable:  os.Executable,
 		Log:         io.Discard,
+		GraceUnit:   time.Second,
 		send:        send,
+		out:         newOutbox(outboxLimit),
 		cacheRoot:   cacheRoot,
 		agents:      map[string]protocol.WelcomeAgent{},
 		runs:        map[string]*run{},
@@ -148,6 +157,10 @@ type run struct {
 	emitMu sync.Mutex // serializes seq assignment and sending
 	seq    int
 	closed bool // no more updates once run_finished is due
+
+	// abandoned: the server gave this run up (a new run_start for its task): it is cancelled and sends nothing more.
+	// Guarded by m.mu.
+	abandoned bool
 
 	mu              sync.Mutex
 	cancelRequested bool
@@ -201,7 +214,7 @@ func (r *run) sendLocked(kind string, data map[string]any) {
 			r.mu.Unlock()
 		}
 	}
-	_ = r.m.send(protocol.NewRunUpdate(r.id, r.seq, kind, data))
+	r.m.sendRun(protocol.NewRunUpdate(r.id, r.seq, kind, data))
 }
 
 // redactMessage replaces the token in message text, also when it is split
@@ -243,12 +256,13 @@ func (r *run) closeEmit() {
 	r.emitMu.Unlock()
 }
 
-// stale reports that the connection this run belongs to is gone. The server
-// has already failed the run, so nothing more is sent for it.
+// stale reports that the connection this run belongs to is gone, or that the
+// server gave the run up. The server has already failed or replaced the run,
+// so nothing more is sent for it.
 func (r *run) stale() bool {
 	r.m.mu.Lock()
 	defer r.m.mu.Unlock()
-	return r.gen != r.m.gen
+	return r.gen != r.m.gen || r.abandoned
 }
 
 func (r *run) cancelled() bool {
@@ -268,9 +282,13 @@ func truncate(s string, n int) string {
 // Whatever ends it (cancellation, 4401, replaced), every run is stopped before
 // it returns, and the connection's error is returned.
 func (m *Manager) Serve(ctx context.Context, c *conn.Client) error {
-	// The server fails a run when its runner disconnects, so any loss of the
-	// connection stops the in-flight runs; new ones are accepted after reconnect.
-	c.OnDisconnect = func(error) { m.StopAllUpTo(c.Session()) }
+	// Without a grace period the server fails a run when its runner disconnects,
+	// so a loss of the connection stops the in-flight runs. With one (the last
+	// welcome's grace_seconds) they keep going, their messages wait for the next
+	// connection and reconnects come at least every 5 s; the next welcome lists
+	// them in runs_held, or the grace timer stops them.
+	c.OnDisconnect = func(error) { m.disconnected(c.Session()) }
+	c.ReconnectCap = m.ReconnectCap
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 	go m.sweepDrafts(ctx)
@@ -292,6 +310,7 @@ func (m *Manager) Dispatch(ctx context.Context, env protocol.Envelope) {
 		var w protocol.Welcome
 		if env.Into(&w) == nil {
 			m.HandleWelcome(w)
+			m.resume(env.Conn, w)
 			m.toolsJob(m.sendDrift)
 		}
 	case protocol.TypeToolsPush:
@@ -439,8 +458,18 @@ func (m *Manager) finishRun(runID, outcome, summary, errMsg, sessionID string, b
 		e := truncate(errMsg, errorLimit)
 		rf.Error = &e
 	}
-	_ = m.send(rf)
+	m.sendRun(rf)
 }
+
+// graceOn reports whether the server gave a grace period, so a run's messages that cannot be sent are kept.
+func (m *Manager) graceOn() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.grace > 0
+}
+
+// sendRun sends a run's message, through the outbox when the server gave a grace period. m.mu must not be held.
+func (m *Manager) sendRun(msg any) { m.out.send(m.send, msg, m.graceOn()) }
 
 // HandleRunStart starts a run in the background, or answers right away when it
 // cannot or must not start.
@@ -483,12 +512,17 @@ func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn
 	}
 	limit := max(agent.MaxConcurrentRuns, 1)
 	n := 0
-	var prev []*run
+	var prev, replaced []*run
 	for _, r := range m.runs {
 		if r.agent != rs.AgentID {
 			continue
 		}
-		if r.gen == m.gen {
+		if r.gen == m.gen && !r.abandoned && r.task == rs.Task.Key {
+			// the server gave this run up and started a new one for the task: it stops, and the new run waits for it
+			r.abandoned = true
+			prev = append(prev, r)
+			replaced = append(replaced, r)
+		} else if r.gen == m.gen && !r.abandoned {
 			n++
 		} else if r.task == rs.Task.Key {
 			prev = append(prev, r) // stopped with a lost connection: the new run waits for it, never busy
@@ -496,6 +530,7 @@ func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn
 	}
 	if n >= limit {
 		m.mu.Unlock()
+		m.cancelAll(replaced)
 		m.finish(rs.RunID, "failed", "", "busy")
 		return
 	}
@@ -506,8 +541,15 @@ func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn
 	m.runs[rs.RunID] = r
 	m.wg.Add(1)
 	m.mu.Unlock()
+	m.cancelAll(replaced)
 
 	go m.execute(r, rs, agent)
+}
+
+func (m *Manager) cancelAll(runs []*run) {
+	for _, r := range runs {
+		m.requestCancel(r)
+	}
 }
 
 // HandleRunCancel stops a run: ACP session/cancel, then a kill after CancelGrace.
@@ -591,6 +633,7 @@ func (m *Manager) StopAllUpTo(lost int) []*run {
 func (m *Manager) Shutdown(ctx context.Context) {
 	m.mu.Lock()
 	m.closed = true
+	m.stopHoldLocked()
 	m.mu.Unlock()
 	runs := m.StopAll()
 	finished := make(chan struct{})

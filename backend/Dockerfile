@@ -19,4 +19,4 @@ RUN useradd --system --uid 10001 megoo && mkdir -p /data/uploads && chown megoo 
 USER megoo
 EXPOSE 8000
 # one worker: the live-update hub lives in-process (BRD scale is dozens of users)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--ws-ping-timeout", "60","--proxy-headers", "--forwarded-allow-ips", "*"]

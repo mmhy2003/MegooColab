@@ -65,6 +65,9 @@ services:
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+      RUNNER_GRACE_SECONDS: ${RUNNER_GRACE_SECONDS:-60}
       UPLOAD_DIR: /data/uploads
       # tests only: local fake embeddings instead of calling a provider
       AI_FAKE: ${AI_FAKE:-false}
@@ -113,6 +116,9 @@ services:
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost}
       RUN_MIGRATIONS_ON_STARTUP: "false"
+      # with the backend's 20 + 20: 55 of PostgreSQL's 100 connections in total
+      DB_POOL_SIZE: "5"
+      DB_MAX_OVERFLOW: "10"
       AI_FAKE: ${AI_FAKE:-false}
       MEMORY_EXTRACT_DELAY_SECONDS: ${MEMORY_EXTRACT_DELAY_SECONDS:-60}
       FORCE_COLOR: ${FORCE_COLOR:-}

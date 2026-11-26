@@ -3,8 +3,10 @@
 Fake mode (settings.ai_fake, tests and e2e) returns deterministic local vectors without network calls.
 """
 
+import asyncio
 import hashlib
 import json
+import logging
 import math
 import os
 import re
@@ -22,6 +24,8 @@ from app.core.db import SessionLocal
 
 # use the bundled price list instead of fetching it on import
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
+log = logging.getLogger(__name__)
 
 JOBS: tuple[str, ...] = ("embeddings", "extraction", "dreaming", "answering")
 FAKE_EMBED_MODEL = "fake/embed-64"
@@ -114,13 +118,36 @@ def fake_vector(text: str) -> list[float]:
     return [x / norm for x in vec]
 
 
-async def _record(job: str, model: str, *, ok: bool, input_tokens: int = 0, output_tokens: int = 0,
-                  cost: float | None = None, error_code: str | None = None) -> None:
-    # its own transaction: a failed call is recorded even when the caller rolls back
-    async with SessionLocal() as s:
-        s.add(AiUsage(job=job, model=model, ok=ok, input_tokens=input_tokens, output_tokens=output_tokens,
-                      cost_usd=cost, error_code=error_code))
-        await s.commit()
+# usage rows being written: kept here so the tasks are not collected before they finish
+_pending: set[asyncio.Task] = set()
+
+
+def _record(job: str, model: str, *, ok: bool, input_tokens: int = 0, output_tokens: int = 0,
+            cost: float | None = None, error_code: str | None = None) -> None:
+    # its own transaction: a failed call is recorded even when the caller rolls back. In the background, so a caller
+    # holding a connection never waits for a second one.
+    task = asyncio.create_task(_write_usage(job, model, ok=ok, input_tokens=input_tokens,
+                                            output_tokens=output_tokens, cost=cost, error_code=error_code))
+    _pending.add(task)
+    task.add_done_callback(_pending.discard)
+
+
+async def _write_usage(job: str, model: str, *, ok: bool, input_tokens: int, output_tokens: int,
+                       cost: float | None, error_code: str | None) -> None:
+    try:
+        async with SessionLocal() as s:
+            s.add(AiUsage(job=job, model=model, ok=ok, input_tokens=input_tokens, output_tokens=output_tokens,
+                          cost_usd=cost, error_code=error_code))
+            await s.commit()
+    except Exception:
+        log.exception("ai: recording AI usage failed")
+
+
+async def usage_written() -> None:
+    """Waits until the usage rows this loop started writing are written (or failed)."""
+    loop = asyncio.get_running_loop()
+    while pending := [t for t in _pending if t.get_loop() is loop]:
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 def _cost(litellm, response, call_type: str = "aembedding") -> float | None:
@@ -143,7 +170,7 @@ async def embed(
 ) -> tuple[str, list[list[float]]]:
     """Returns (model name, one vector per text). Raises AiNotConfigured when the job has no model."""
     if get_settings().ai_fake:
-        await _record(job, FAKE_EMBED_MODEL, ok=True, input_tokens=sum(len(t) for t in texts) // 4, cost=0.0)
+        _record(job, FAKE_EMBED_MODEL, ok=True, input_tokens=sum(len(t) for t in texts) // 4, cost=0.0)
         return FAKE_EMBED_MODEL, [fake_vector(t) for t in texts]
     resolved = await _resolve(db, job)
     if resolved is None:
@@ -161,10 +188,10 @@ async def embed(
                 model=model, input=batch, api_key=api_key, api_base=provider.api_base, timeout=timeout
             )
         except Exception as exc:
-            await _record(job, model, ok=False, error_code=type(exc).__name__[:100])
+            _record(job, model, ok=False, error_code=type(exc).__name__[:100])
             raise
         usage = getattr(response, "usage", None)
-        await _record(
+        _record(
             job,
             model,
             ok=True,
@@ -190,8 +217,8 @@ async def complete(
         if fake is None:
             raise AiNotConfigured(job)
         reply = fake(messages)
-        await _record(job, FAKE_LLM_MODEL, ok=True, input_tokens=sum(len(m["content"]) for m in messages) // 4,
-                      output_tokens=len(reply) // 4, cost=0.0)
+        _record(job, FAKE_LLM_MODEL, ok=True, input_tokens=sum(len(m["content"]) for m in messages) // 4,
+                output_tokens=len(reply) // 4, cost=0.0)
         return reply
     resolved = await _resolve(db, job)
     if resolved is None:
@@ -211,10 +238,10 @@ async def complete(
             max_retries=0,
         )
     except Exception as exc:
-        await _record(job, model, ok=False, error_code=type(exc).__name__[:100])
+        _record(job, model, ok=False, error_code=type(exc).__name__[:100])
         raise
     usage = getattr(response, "usage", None)
-    await _record(
+    _record(
         job,
         model,
         ok=True,

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import NullPool
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 
 
 class Base(DeclarativeBase):
@@ -29,12 +29,15 @@ class TimestampMixin:
     )
 
 
+def engine_options(settings: Settings) -> dict:
+    """create_async_engine's pool options: NullPool (tests) has no sizes."""
+    if settings.db_null_pool:
+        return {"pool_pre_ping": True, "poolclass": NullPool}
+    return {"pool_pre_ping": True, "pool_size": settings.db_pool_size, "max_overflow": settings.db_max_overflow}
+
+
 _settings = get_settings()
-engine = create_async_engine(
-    _settings.database_url,
-    pool_pre_ping=True,
-    **({"poolclass": NullPool} if _settings.db_null_pool else {}),
-)
+engine = create_async_engine(_settings.database_url, **engine_options(_settings))
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 

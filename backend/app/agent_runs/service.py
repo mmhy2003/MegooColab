@@ -2,7 +2,7 @@ import logging
 import re
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select, true, update
@@ -44,6 +44,7 @@ from app.runner.protocol import (
     RunModelChoice,
     RunStart,
     RunTask,
+    RunUpdate,
 )
 from app.runner.registry import (
     BRANCH_CAPABILITY,
@@ -702,19 +703,64 @@ async def fail_disconnected_runs(db: AsyncSession, conn: RunnerConn) -> None:
     ):
         if superseded and run.id not in conn.run_ids:
             continue
-        if run.cancelled_by is not None:  # a user asked for the cancel: the runner going away completes it
-            await _transition(
-                db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, actor_id=run.cancelled_by
-            )
-        elif conn.close_code == CLOSE_UNAUTHORIZED:
-            await _transition(
-                db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, reason="runner_unauthorized"
-            )
-        else:
-            await _transition(
-                db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
-            )
-            await _notify_offline(db, run)
+        if registry.conn_for_run(run.id) is not None:  # the runner came back and claimed it (runs_held)
+            continue
+        await _end_disconnected_run(db, run, owner_id, unauthorized=conn.close_code == CLOSE_UNAUTHORIZED)
+
+
+async def _end_disconnected_run(
+    db: AsyncSession, run: AgentRun, owner_id: uuid.UUID, *, unauthorized: bool = False
+) -> None:
+    """A running run whose runner is gone: a requested cancel completes; after a 4401 it is cancelled
+    (runner_unauthorized); otherwise it fails with runner_disconnected and the agent_offline notification."""
+    if run.cancelled_by is not None:  # a user asked for the cancel: the runner going away completes it
+        await _transition(
+            db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, actor_id=run.cancelled_by
+        )
+    elif unauthorized:
+        await _transition(
+            db, run, RunStatus.cancelled, "agent_run_cancelled", owner_id=owner_id, reason="runner_unauthorized"
+        )
+    else:
+        await _transition(
+            db, run, RunStatus.failed, "agent_run_failed", owner_id=owner_id, reason="runner_disconnected"
+        )
+        await _notify_offline(db, run)
+
+
+async def fail_held_runs(db: AsyncSession, token_id: uuid.UUID, user_id: uuid.UUID, run_ids: set[uuid.UUID]) -> None:
+    """A runner's grace period ran out: its running runs that no live connection holds end as on a disconnect. The
+    remembered run ids count even if a revoke unlinked their agents meanwhile."""
+    mine = or_(Agent.runner_token_id == token_id, AgentRun.id.in_(run_ids))
+    async for run, owner_id in _lock_runs_one_by_one(db, (RunStatus.running,), Agent.owner_id == user_id, mine):
+        if registry.conn_for_run(run.id) is not None:
+            continue
+        await _end_disconnected_run(db, run, owner_id)
+
+
+async def claim_held_runs(db: AsyncSession, conn: RunnerConn, run_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+    """runs_held: the listed runs this machine may still hold (running, of the owner's agent linked to its token)
+    become this connection's. The others are returned in the order listed, for run_cancel."""
+    if not run_ids:
+        return []
+    held = set((await db.execute(
+        select(AgentRun.id).join(Agent, Agent.id == AgentRun.agent_id).where(
+            AgentRun.id.in_(set(run_ids)), AgentRun.status == RunStatus.running,
+            Agent.runner_token_id == conn.token_id, Agent.owner_id == conn.user_id)
+    )).scalars())
+    conn.run_ids |= held
+    return [r for r in dict.fromkeys(run_ids) if r not in held]
+
+
+async def running_runs_by_token(db: AsyncSession) -> dict[tuple[uuid.UUID, uuid.UUID], set[uuid.UUID]]:
+    """Running runs of agents linked to a runner token, by (token id, owner id)."""
+    rows = await db.execute(
+        select(Agent.runner_token_id, Agent.owner_id, AgentRun.id).join(Agent, Agent.id == AgentRun.agent_id)
+        .where(AgentRun.status == RunStatus.running, Agent.runner_token_id.is_not(None)))
+    out: dict[tuple[uuid.UUID, uuid.UUID], set[uuid.UUID]] = {}
+    for token_id, owner_id, run_id in rows.all():
+        out.setdefault((token_id, owner_id), set()).add(run_id)
+    return out
 
 
 async def _notify_offline(db: AsyncSession, run: AgentRun) -> None:
@@ -1027,9 +1073,35 @@ async def apply_update(
 ) -> None:
     """Store one run update as a task event. Ignored unless the run is running, belongs to this runner's
     user and seq is new. Does not commit."""
+    task = await _store_update(db, conn_user_id, run_id, seq, kind, data)
+    if task is not None:
+        await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
+
+
+async def apply_updates(db: AsyncSession, conn_user_id: uuid.UUID, updates: list[RunUpdate]) -> None:
+    """apply_update for a batch, in one transaction: the same checks per update (owner, running, newer seq) and one
+    task.updated per task. Each event gets its own time, a microsecond apart, so the activity feed keeps the batch's
+    order (now() would give them all the transaction's start). Does not commit."""
+    start = await db.scalar(select(func.clock_timestamp()))
+    changed: dict[uuid.UUID, Task] = {}
+    for i, u in enumerate(updates):
+        task = await _store_update(db, conn_user_id, u.run_id, u.seq, u.kind, u.data,
+                                   created_at=start + timedelta(microseconds=i))
+        if task is not None:
+            changed[task.id] = task
+    for task in changed.values():
+        await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
+
+
+async def _store_update(
+    db: AsyncSession, conn_user_id: uuid.UUID, run_id: uuid.UUID, seq: int, kind: str, data: dict,
+    created_at: datetime | None = None,
+) -> Task | None:
+    """apply_update without its task.updated: returns the task whose views changed, if any. created_at, when given,
+    is the event's time."""
     clean = sanitize_update(kind, data)
     if clean is None:
-        return
+        return None
     # one conditional statement: ownership, running, and a strictly newer seq (idempotent on resend)
     claimed = (
         await db.execute(
@@ -1045,22 +1117,24 @@ async def apply_update(
         )
     ).first()
     if claimed is None:
-        return
+        return None
     if kind == "model_options":  # not progress to show: what the owner can pick from on My agents
         await db.execute(update(Agent).where(Agent.id == claimed.agent_id).values(known_models=clean["options"]))
         agent = await db.get(Agent, claimed.agent_id)
         await publish(db, Event(type="agents.updated", user_id=agent.owner_id))
-        return
+        return None
     if claimed.task_id is None:
-        return  # an answering run's progress is not stored: its answer is what counts
+        return None  # an answering run's progress is not stored: its answer is what counts
     task = await db.get(Task, claimed.task_id)
     if kind == "branch":  # not progress to show: where the task's branch started, recorded once
         if await record_start_branch(db, task, clean.get("start_branch") or "", clean.get("default_branch") or ""):
-            await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
-        return
+            return task
+        return None
     event = {**clean, "run_id": str(run_id), "agent_id": str(claimed.agent_id)}
-    await record_event(db, task, None, f"agent_{kind}", event)
-    await publish(db, Event(type="task.updated", project_id=task.project_id, task_id=task.id))
+    ev = await record_event(db, task, None, f"agent_{kind}", event)
+    if created_at is not None:
+        ev.created_at = created_at
+    return task
 
 
 async def finish_run(
