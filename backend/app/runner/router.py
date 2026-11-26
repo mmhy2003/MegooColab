@@ -28,6 +28,7 @@ from app.hub import importing as hub_importing
 from app.hub import machines as hub_machines
 from app.projects.models import Project
 from app.ratelimit.ws import CLOSE_RATE_LIMITED, connect_allowed
+from app.runner import grace
 from app.runner.inbox import Inbox
 from app.runner.protocol import (
     CLOSE_IDLE,
@@ -38,6 +39,7 @@ from app.runner.protocol import (
     ConfigChanged,
     Hello,
     RunFinished,
+    RunsHeld,
     RunSteerResult,
     RunUpdate,
     ToolsDrift,
@@ -111,6 +113,7 @@ async def build_welcome(user_id: uuid.UUID, token_id: uuid.UUID) -> Welcome:
                 )
                 for a in agents
             ],
+            grace_seconds=grace.seconds(),
         )
 
 
@@ -270,6 +273,8 @@ async def _apply(conn: RunnerConn, msg) -> None:
             )
 
             await _run_message(instructions.on_steer_result, msg.run_id, msg.message_id, msg.outcome, msg.error)
+    elif isinstance(msg, RunsHeld):
+        pass  # accepted for now; claiming, cancelling and failing the runs it lists comes with the grace deadlines
     # Heartbeat only refreshes last_seen (the inbox's reader does that)
 
 
