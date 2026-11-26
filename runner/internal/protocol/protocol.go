@@ -30,6 +30,7 @@ const (
 	TypeConfigChanged  = "config_changed"
 	TypeRunSteer       = "run_steer"
 	TypeRunSteerResult = "run_steer_result"
+	TypeRunsHeld       = "runs_held"
 )
 
 // AgentAvailability is the server's AgentReport.
@@ -88,6 +89,10 @@ const CapabilityCrons = "crons/1"
 // CapabilityStageModel is advertised in every hello: the runner takes run_start.model_choice, a run's own model and
 // effort (its workflow stage's), and puts even a resumed session on them.
 const CapabilityStageModel = "stagemodel/1"
+
+// CapabilityResume: the runner keeps its runs through a drop of up to welcome.grace_seconds, buffers their messages,
+// and lists them in runs_held on the next connection.
+const CapabilityResume = "resume/1"
 
 // Outcomes of a run_steer.
 const (
@@ -171,6 +176,25 @@ type Welcome struct {
 	Type   string         `json:"type"`
 	UserID string         `json:"user_id"`
 	Agents []WelcomeAgent `json:"agents"`
+	// GraceSeconds is how long the runner may hold its runs after a drop; 0 stops them at once.
+	GraceSeconds int `json:"grace_seconds,omitempty"`
+}
+
+// RunsHeldLimit is the most runs one runs_held lists.
+const RunsHeldLimit = 200
+
+// RunsHeld is sent after a connection's first welcome with a grace period: the runs the runner still holds.
+type RunsHeld struct {
+	Type string   `json:"type"`
+	Runs []string `json:"runs"`
+}
+
+// NewRunsHeld lists the first RunsHeldLimit runs, and an empty list rather than null.
+func NewRunsHeld(runs []string) RunsHeld {
+	if len(runs) > RunsHeldLimit {
+		runs = runs[:RunsHeldLimit]
+	}
+	return RunsHeld{Type: TypeRunsHeld, Runs: append([]string{}, runs...)}
 }
 
 // RunTask describes the task a run works on.

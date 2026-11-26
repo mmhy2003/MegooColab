@@ -216,3 +216,37 @@ func TestRunStartDecodesModelChoice(t *testing.T) {
 		t.Fatalf("no model_choice sent, got %+v", plain.ModelChoice)
 	}
 }
+
+func TestRunsHeldShape(t *testing.T) {
+	b, err := json.Marshal(NewRunsHeld(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(b), `{"type":"runs_held","runs":[]}`; got != want {
+		t.Fatalf("runs_held = %s, want %s", got, want)
+	}
+}
+
+func TestRunsHeldIsBounded(t *testing.T) {
+	ids := make([]string, 250)
+	for i := range ids {
+		ids[i] = strings.Repeat("r", i+1)
+	}
+	held := NewRunsHeld(ids)
+	if len(held.Runs) != RunsHeldLimit || RunsHeldLimit != 200 {
+		t.Fatalf("runs = %d, want 200", len(held.Runs))
+	}
+	if held.Runs[0] != ids[0] || held.Runs[199] != ids[199] {
+		t.Fatal("runs_held must keep the first RunsHeldLimit runs")
+	}
+}
+
+func TestWelcomeCarriesGraceSeconds(t *testing.T) {
+	var w Welcome
+	if err := json.Unmarshal([]byte(`{"type":"welcome","user_id":"u","agents":[],"grace_seconds":60}`), &w); err != nil {
+		t.Fatal(err)
+	}
+	if w.GraceSeconds != 60 {
+		t.Fatalf("grace_seconds = %d, want 60", w.GraceSeconds)
+	}
+}
