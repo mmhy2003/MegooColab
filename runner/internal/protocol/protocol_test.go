@@ -92,7 +92,7 @@ func TestWireFieldNames(t *testing.T) {
 
 func TestListsNeverNull(t *testing.T) {
 	data, _ := json.Marshal(NewHello("1", "linux", "amd64", nil))
-	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1","omp/1","images/1","drafts/1","secrets/1","crons/1","stagemodel/1"]}` {
+	if string(data) != `{"type":"hello","runner_version":"1","os":"linux","arch":"amd64","agents":[],"capabilities":["workflow/1","branch/1","model/1","steer/1","tools/1","omp/1","images/1","drafts/1","secrets/1","crons/1","stagemodel/1","resume/1"]}` {
 		t.Fatalf("hello = %s", data)
 	}
 	data, _ = json.Marshal(NewHello("1", "l", "a", []AgentAvailability{{AgentID: "x"}}))
@@ -198,6 +198,16 @@ func TestHelloAdvertisesStageModel(t *testing.T) {
 		}
 	}
 	t.Fatalf("capabilities = %v, want stagemodel/1", h.Capabilities)
+}
+
+func TestHelloAdvertisesResume(t *testing.T) {
+	h := NewHello("1", "linux", "amd64", nil)
+	for _, c := range h.Capabilities {
+		if c == "resume/1" {
+			return
+		}
+	}
+	t.Fatalf("capabilities = %v, want resume/1", h.Capabilities)
 }
 
 func TestRunStartDecodesModelChoice(t *testing.T) {

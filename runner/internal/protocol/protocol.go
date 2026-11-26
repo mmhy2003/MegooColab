@@ -358,7 +358,7 @@ func NewHello(version, os, arch string, agents []AgentAvailability) Hello {
 		}
 		out[i] = a
 	}
-	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages, CapabilityDrafts, CapabilitySecrets, CapabilityCrons, CapabilityStageModel}}
+	return Hello{Type: TypeHello, RunnerVersion: version, OS: os, Arch: arch, Agents: out, Capabilities: []string{CapabilityWorkflow, CapabilityBranch, CapabilityModel, CapabilitySteer, CapabilityTools, CapabilityOmp, CapabilityImages, CapabilityDrafts, CapabilitySecrets, CapabilityCrons, CapabilityStageModel, CapabilityResume}}
 }
 
 // NewHeartbeat builds a heartbeat.

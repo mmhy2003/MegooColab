@@ -60,6 +60,7 @@ type Manager struct {
 	LogCap        int                               // bytes of adapter output kept per run log; default 5 MiB
 	Executable    func() (string, error)            // this runner's own executable, put first on the agent's PATH; default os.Executable
 	Log           io.Writer                         // the runner's own log (failed service removals); default io.Discard
+	GraceUnit     time.Duration                     // one second of welcome.grace_seconds; default 1 s
 	// Where a run's images are downloaded from (the server's base URL and this runner's token), and with what.
 	ServerURL  string
 	Token      string
@@ -83,7 +84,11 @@ type Manager struct {
 	gen      int           // connection generation; bumped by StopAll
 	ended    int           // highest connection number known to be lost
 	grace    time.Duration // the server's grace period from the last welcome; 0 means none
-	wg       sync.WaitGroup
+	heldSent int           // the connection runs_held was last sent on
+	// holdTimer stops the held runs when no welcome comes within the grace period; holdID tells a stale one apart.
+	holdTimer *time.Timer
+	holdID    int
+	wg        sync.WaitGroup
 }
 
 // New builds a manager. send writes a message to the server (conn.Client.Send).
@@ -98,6 +103,7 @@ func New(send func(any) error, cacheRoot string) *Manager {
 		LogCap:      logCap,
 		Executable:  os.Executable,
 		Log:         io.Discard,
+		GraceUnit:   time.Second,
 		send:        send,
 		out:         newOutbox(outboxLimit),
 		cacheRoot:   cacheRoot,
@@ -271,9 +277,13 @@ func truncate(s string, n int) string {
 // Whatever ends it (cancellation, 4401, replaced), every run is stopped before
 // it returns, and the connection's error is returned.
 func (m *Manager) Serve(ctx context.Context, c *conn.Client) error {
-	// The server fails a run when its runner disconnects, so any loss of the
-	// connection stops the in-flight runs; new ones are accepted after reconnect.
-	c.OnDisconnect = func(error) { m.StopAllUpTo(c.Session()) }
+	// Without a grace period the server fails a run when its runner disconnects,
+	// so a loss of the connection stops the in-flight runs. With one (the last
+	// welcome's grace_seconds) they keep going, their messages wait for the next
+	// connection and reconnects come at least every 5 s; the next welcome lists
+	// them in runs_held, or the grace timer stops them.
+	c.OnDisconnect = func(error) { m.disconnected(c.Session()) }
+	c.ReconnectCap = m.ReconnectCap
 	done := make(chan error, 1)
 	go func() { done <- c.Run(ctx) }()
 	go m.sweepDrafts(ctx)
@@ -295,6 +305,7 @@ func (m *Manager) Dispatch(ctx context.Context, env protocol.Envelope) {
 		var w protocol.Welcome
 		if env.Into(&w) == nil {
 			m.HandleWelcome(w)
+			m.resume(env.Conn, w)
 			m.toolsJob(m.sendDrift)
 		}
 	case protocol.TypeToolsPush:
@@ -604,6 +615,7 @@ func (m *Manager) StopAllUpTo(lost int) []*run {
 func (m *Manager) Shutdown(ctx context.Context) {
 	m.mu.Lock()
 	m.closed = true
+	m.stopHoldLocked()
 	m.mu.Unlock()
 	runs := m.StopAll()
 	finished := make(chan struct{})
