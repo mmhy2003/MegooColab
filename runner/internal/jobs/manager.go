@@ -66,6 +66,7 @@ type Manager struct {
 	HTTPClient *http.Client // default: one with a 60 s timeout per image
 
 	send      func(any) error
+	out       *outbox // a run's messages that wait for the next connection
 	cacheRoot string
 	toolsMu   sync.Mutex // one Tool Hub job (push, scan, drift check) at a time
 
@@ -79,8 +80,9 @@ type Manager struct {
 	starts   *starts           // each program's starting model, kept in the cache
 	versions map[string]string // `--version` output by program path, size and time: run once per file
 	closed   bool
-	gen      int // connection generation; bumped by StopAll
-	ended    int // highest connection number known to be lost
+	gen      int           // connection generation; bumped by StopAll
+	ended    int           // highest connection number known to be lost
+	grace    time.Duration // the server's grace period from the last welcome; 0 means none
 	wg       sync.WaitGroup
 }
 
@@ -97,6 +99,7 @@ func New(send func(any) error, cacheRoot string) *Manager {
 		Executable:  os.Executable,
 		Log:         io.Discard,
 		send:        send,
+		out:         newOutbox(outboxLimit),
 		cacheRoot:   cacheRoot,
 		agents:      map[string]protocol.WelcomeAgent{},
 		runs:        map[string]*run{},
@@ -201,7 +204,7 @@ func (r *run) sendLocked(kind string, data map[string]any) {
 			r.mu.Unlock()
 		}
 	}
-	_ = r.m.send(protocol.NewRunUpdate(r.id, r.seq, kind, data))
+	r.m.sendRun(protocol.NewRunUpdate(r.id, r.seq, kind, data))
 }
 
 // redactMessage replaces the token in message text, also when it is split
@@ -439,8 +442,18 @@ func (m *Manager) finishRun(runID, outcome, summary, errMsg, sessionID string, b
 		e := truncate(errMsg, errorLimit)
 		rf.Error = &e
 	}
-	_ = m.send(rf)
+	m.sendRun(rf)
 }
+
+// graceOn reports whether the server gave a grace period, so a run's messages that cannot be sent are kept.
+func (m *Manager) graceOn() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.grace > 0
+}
+
+// sendRun sends a run's message, through the outbox when the server gave a grace period. m.mu must not be held.
+func (m *Manager) sendRun(msg any) { m.out.send(m.send, msg, m.graceOn()) }
 
 // HandleRunStart starts a run in the background, or answers right away when it
 // cannot or must not start.
