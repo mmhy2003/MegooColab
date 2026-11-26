@@ -4,6 +4,7 @@ import asyncio
 import json
 import uuid
 
+import app.runner.inbox as inbox_module
 from app.runner.inbox import End, Inbox
 from app.runner.protocol import AgentStatus, Heartbeat, RunUpdate
 from app.runner.registry import RunnerConn
@@ -137,3 +138,47 @@ async def test_stop_lets_a_running_handler_finish():
     await asyncio.wait_for(stopping, 2)
     assert len(finished) == 1
     assert inbox.reader.done() and inbox.worker.done()
+
+
+def _batching(monkeypatch):
+    """An inbox that records each handler call: a list of seqs for a batch of updates, the message otherwise."""
+    monkeypatch.setattr(inbox_module, "BATCH_MAX", 3)
+    monkeypatch.setattr(inbox_module, "BATCH_WINDOW_SECONDS", 0.05)
+    calls: list = []
+
+    async def _one(conn, msg):
+        calls.append(msg)
+
+    async def _many(conn, updates):
+        calls.append([u.seq for u in updates])
+
+    inbox, sock, _ = _inbox(handle=_one, handle_updates=_many)
+    return inbox, sock, calls
+
+
+async def test_consecutive_updates_are_applied_in_batches_of_at_most_batch_max(monkeypatch):
+    inbox, sock, calls = _batching(monkeypatch)
+    for seq in range(1, 6):
+        sock.text(_update(seq))
+    sock.text({"type": "heartbeat"})
+    sock.text(_update(6))
+    sock.text(_update(7))
+    sock.disconnect()
+    inbox.start()
+    await _ended(inbox)
+    assert calls[:2] == [[1, 2, 3], [4, 5]]
+    assert isinstance(calls[2], Heartbeat)
+    assert calls[3:] == [[6, 7]]
+    await inbox.stop()
+
+
+async def test_updates_further_apart_than_the_window_are_separate_batches(monkeypatch):
+    inbox, sock, calls = _batching(monkeypatch)
+    sock.text(_update(1))
+    inbox.start()
+    await asyncio.sleep(0.2)
+    sock.text(_update(2))
+    sock.disconnect()
+    await _ended(inbox)
+    assert calls == [[1], [2]]
+    await inbox.stop()

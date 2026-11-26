@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.agent_runs.models import AgentRun
 from app.agent_runs.service import (
     apply_update,
+    apply_updates,
     dispatch_pending,
     fail_disconnected_runs,
     fail_unclaimed_runs,
@@ -273,9 +274,21 @@ async def _apply(conn: RunnerConn, msg) -> None:
 
 
 async def _run_updates(conn: RunnerConn, updates: list[RunUpdate]) -> None:
-    """Run updates from this machine, each in its own transaction."""
+    """A batch of run updates in one transaction, one task.updated per task; if it fails, one by one as before."""
+    allowed: dict[uuid.UUID, bool] = {}
     for u in updates:
-        if await _on_this_machine(conn, u.run_id):
+        if u.run_id not in allowed:
+            allowed[u.run_id] = await _on_this_machine(conn, u.run_id)
+    mine = [u for u in updates if allowed[u.run_id]]
+    if not mine:
+        return
+    try:
+        async with SessionLocal() as db:
+            await apply_updates(db, conn.user_id, mine)
+            await db.commit()
+    except Exception:
+        log.exception("runner: a batch of %d run updates failed; applying them one by one", len(mine))
+        for u in mine:
             await _run_message(apply_update, conn.user_id, u.run_id, u.seq, u.kind, u.data)
 
 
