@@ -82,13 +82,13 @@ func (m *Manager) stopHoldLocked() bool {
 	return true
 }
 
-// heldRuns are the runs in flight on the current generation, oldest id first (sorted).
+// heldRuns are the runs in flight on the current generation and not abandoned, oldest id first (sorted).
 func (m *Manager) heldRuns() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var ids []string
 	for id, r := range m.runs {
-		if r.gen == m.gen {
+		if r.gen == m.gen && !r.abandoned {
 			ids = append(ids, id)
 		}
 	}

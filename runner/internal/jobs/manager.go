@@ -158,6 +158,10 @@ type run struct {
 	seq    int
 	closed bool // no more updates once run_finished is due
 
+	// abandoned: the server gave this run up (a new run_start for its task): it is cancelled and sends nothing more.
+	// Guarded by m.mu.
+	abandoned bool
+
 	mu              sync.Mutex
 	cancelRequested bool
 	conn            *acp.ClientSideConnection
@@ -252,12 +256,13 @@ func (r *run) closeEmit() {
 	r.emitMu.Unlock()
 }
 
-// stale reports that the connection this run belongs to is gone. The server
-// has already failed the run, so nothing more is sent for it.
+// stale reports that the connection this run belongs to is gone, or that the
+// server gave the run up. The server has already failed or replaced the run,
+// so nothing more is sent for it.
 func (r *run) stale() bool {
 	r.m.mu.Lock()
 	defer r.m.mu.Unlock()
-	return r.gen != r.m.gen
+	return r.gen != r.m.gen || r.abandoned
 }
 
 func (r *run) cancelled() bool {
@@ -507,12 +512,17 @@ func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn
 	}
 	limit := max(agent.MaxConcurrentRuns, 1)
 	n := 0
-	var prev []*run
+	var prev, replaced []*run
 	for _, r := range m.runs {
 		if r.agent != rs.AgentID {
 			continue
 		}
-		if r.gen == m.gen {
+		if r.gen == m.gen && !r.abandoned && r.task == rs.Task.Key {
+			// the server gave this run up and started a new one for the task: it stops, and the new run waits for it
+			r.abandoned = true
+			prev = append(prev, r)
+			replaced = append(replaced, r)
+		} else if r.gen == m.gen && !r.abandoned {
 			n++
 		} else if r.task == rs.Task.Key {
 			prev = append(prev, r) // stopped with a lost connection: the new run waits for it, never busy
@@ -520,6 +530,7 @@ func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn
 	}
 	if n >= limit {
 		m.mu.Unlock()
+		m.cancelAll(replaced)
 		m.finish(rs.RunID, "failed", "", "busy")
 		return
 	}
@@ -530,8 +541,15 @@ func (m *Manager) handleRunStart(ctx context.Context, rs protocol.RunStart, conn
 	m.runs[rs.RunID] = r
 	m.wg.Add(1)
 	m.mu.Unlock()
+	m.cancelAll(replaced)
 
 	go m.execute(r, rs, agent)
+}
+
+func (m *Manager) cancelAll(runs []*run) {
+	for _, r := range runs {
+		m.requestCancel(r)
+	}
 }
 
 // HandleRunCancel stops a run: ACP session/cancel, then a kill after CancelGrace.

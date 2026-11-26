@@ -446,6 +446,51 @@ func TestConcurrencyLimitReportsBusy(t *testing.T) {
 	}
 }
 
+func TestRunStartForATaskWithALiveRunCancelsTheOldRun(t *testing.T) {
+	e := newEnvWithCache(t, sleeping, 2, t.TempDir())
+	e.startRun("run-1", "MEG-1", "workspace")
+	e.waitUpdate("run-1")
+
+	t.Setenv("FAKEAGENT_SCENARIO", `[{"say":"again"}]`)
+	e.startRun("run-2", "MEG-1", "workspace")
+
+	deadline := time.Now().Add(10 * time.Second)
+	for !e.readReport().Cancelled {
+		if time.Now().After(deadline) {
+			t.Fatal("the old run's agent never received session/cancel")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if rf := e.finished("run-2"); rf.Outcome != "completed" || rf.Summary != "again" {
+		t.Fatalf("finished = %+v", rf)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	first2, last1 := -1, -1
+	for i, f := range e.srv.Frames() {
+		var m struct {
+			RunID string `json:"run_id"`
+		}
+		if err := json.Unmarshal(f.Raw, &m); err != nil {
+			t.Fatal(err)
+		}
+		switch {
+		case f.Type == protocol.TypeRunFinished && m.RunID == "run-1":
+			t.Error("a run_finished was sent for the abandoned run")
+		case f.Type == protocol.TypeRunUpdate && m.RunID == "run-1":
+			last1 = i
+		case f.Type == protocol.TypeRunUpdate && m.RunID == "run-2" && first2 < 0:
+			first2 = i
+		}
+	}
+	if first2 < 0 {
+		t.Fatal("run-2 sent no run_update")
+	}
+	if last1 > first2 {
+		t.Errorf("run-1 sent a run_update (frame %d) after run-2's first (frame %d)", last1, first2)
+	}
+}
+
 func TestUnknownAgentFails(t *testing.T) {
 	e := newEnvWithCache(t, "[]", 1, t.TempDir())
 	if err := e.srv.Send(protocol.RunStart{Type: protocol.TypeRunStart, RunID: "run-x", AgentID: "nope",
